@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 
-import { loginMethodLabel } from '@/features/security/components/login-session-utils'
+import { loginMethodLabel } from '@/lib/login-method'
 import { ROLE } from '@/lib/roles'
 
 import { renderAuditContent } from '../../lib/format'

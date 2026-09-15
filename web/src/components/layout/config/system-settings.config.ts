@@ -17,22 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { type TFunction } from 'i18next'
-import {
-  Box,
-  CreditCard,
-  Layout,
-  Settings,
-  Shield,
-  ShieldAlert,
-  Wrench,
-} from 'lucide-react'
+import { Box, Layout, Settings, Wrench } from 'lucide-react'
 
-import { getAuthSectionNavItems } from '@/features/system-settings/auth/section-registry.tsx'
-import { getBillingSectionNavItems } from '@/features/system-settings/billing/section-registry.tsx'
 import { getContentSectionNavItems } from '@/features/system-settings/content/section-registry.tsx'
 import { getModelsSectionNavItems } from '@/features/system-settings/models/section-registry.tsx'
 import { getOperationsSectionNavItems } from '@/features/system-settings/operations/section-registry.tsx'
-import { getSecuritySectionNavItems } from '@/features/system-settings/security/section-registry.tsx'
 import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
 
 import type { NavGroup, SidebarView } from '../types'
@@ -56,24 +45,9 @@ function getSystemSettingsNavGroups(t: TFunction): NavGroup[] {
           items: getSiteSectionNavItems(t),
         },
         {
-          title: t('Authentication'),
-          icon: Shield,
-          items: getAuthSectionNavItems(t),
-        },
-        {
-          title: t('Billing & Payment'),
-          icon: CreditCard,
-          items: getBillingSectionNavItems(t),
-        },
-        {
           title: t('Models & Routing'),
           icon: Box,
           items: getModelsSectionNavItems(t),
-        },
-        {
-          title: t('Security & Limits'),
-          icon: ShieldAlert,
-          items: getSecuritySectionNavItems(t),
         },
         {
           title: t('Console Content'),
