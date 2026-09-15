@@ -73,10 +73,6 @@ export function SidebarModulesSection({
       title: t('Console area'),
       description: t('Dashboards, tokens, and usage analytics.'),
     },
-    personal: {
-      title: t('Personal area'),
-      description: t('Wallet management and personal preferences.'),
-    },
     admin: {
       title: t('Admin area'),
       description: t('Global configuration and administrative tools.'),
@@ -123,20 +119,6 @@ export function SidebarModulesSection({
         description: t('Background job tracker for queued work.'),
       },
     },
-    personal: {
-      topup: {
-        title: t('Wallet'),
-        description: t('Top up balance and view billing history.'),
-      },
-      personal: {
-        title: t('Profile'),
-        description: t('Personal settings and profile management.'),
-      },
-      security: {
-        title: t('Security & Access'),
-        description: t('Manage your security settings and account access'),
-      },
-    },
     admin: {
       channel: {
         title: t('Channels'),
@@ -146,21 +128,9 @@ export function SidebarModulesSection({
         title: t('Models'),
         description: t('Manage catalog visibility and pricing.'),
       },
-      redemption: {
-        title: t('Redeem codes'),
-        description: t('Create and review invite or credit codes.'),
-      },
-      user: {
-        title: t('Users'),
-        description: t('Administer user accounts and roles.'),
-      },
       setting: {
         title: t('System settings'),
         description: t('Advanced platform configuration.'),
-      },
-      subscription: {
-        title: t('Subscription Management'),
-        description: t('Manage subscription plans and pricing.'),
       },
     },
   }

@@ -20,9 +20,9 @@ import {
   Activity,
   Box,
   ClipboardList,
-  CreditCard,
   FileText,
   FlaskConical,
+  GitBranch,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -31,11 +31,6 @@ import {
   Radio,
   ServerCog,
   Settings,
-  ShieldCheck,
-  Ticket,
-  User,
-  Users,
-  Wallet,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -47,6 +42,10 @@ import { ROLE } from '@/lib/roles'
  *
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
+ *
+ * PBR 保留范围（ui-spec §5）：模型/渠道/令牌/日志/仪表盘/试打/系统设置/任务插件/
+ * 系统信息/性能指标。多用户与计费（钱包/充值/订阅/兑换码/排名/个人中心/账号安全）
+ * 已随 W7 删除，此处不得再出现入口。
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
@@ -108,27 +107,6 @@ export function useSidebarData(): SidebarData {
         ],
       },
       {
-        id: 'personal',
-        title: t('Personal'),
-        items: [
-          {
-            title: t('Wallet'),
-            url: '/wallet',
-            icon: Wallet,
-          },
-          {
-            title: t('Profile'),
-            url: '/profile',
-            icon: User,
-          },
-          {
-            title: t('Security & Access'),
-            url: '/security',
-            icon: ShieldCheck,
-          },
-        ],
-      },
-      {
         id: 'admin',
         title: t('Admin'),
         items: [
@@ -143,19 +121,10 @@ export function useSidebarData(): SidebarData {
             icon: Box,
           },
           {
-            title: t('Users'),
-            url: '/users',
-            icon: Users,
-          },
-          {
-            title: t('Redemption Codes'),
-            url: '/redemption-codes',
-            icon: Ticket,
-          },
-          {
-            title: t('Subscriptions'),
-            url: '/subscriptions',
-            icon: CreditCard,
+            // PBR 增补：模型成员链（故障切换）入口。
+            title: t('Routing & Failover'),
+            url: '/models/routing',
+            icon: GitBranch,
           },
           {
             title: t('System Info'),
