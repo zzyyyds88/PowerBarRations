@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -95,12 +96,45 @@ func SyncChannelModels(c *gin.Context) {
 	}
 
 	added, removed := diffModels(local, remote)
+	// added/removed 为空时必须序列化成 []，不能是 null（api-spec §3 数组契约）。
+	if added == nil {
+		added = []string{}
+	}
+	if removed == nil {
+		removed = []string{}
+	}
+	force := isForce(c)
+
+	// 审查 B5：上游鉴权异常但返回 200 + 空清单时，整表覆盖会把渠道 models 清空，
+	// 正在被隐式路由/显式车道使用的成员会被静默摘掉。空清单默认拒绝，需 ?force=1。
+	emptyWipe := len(remote) == 0 && len(local) > 0
+	// 审查 B5：被移除的模型若仍被显式车道成员点名，摘掉会让该成员立即断流。
+	referenced := findRemovedModelReferences(channel.Id, removed)
+
+	// dry_run 是预览：始终返回差异与"是否会被拦截"，不写库、不报错，让调用方先看清楚。
 	if dryRun(c) {
 		c.JSON(http.StatusOK, gin.H{
 			"dry_run": true, "valid": true, "channel": channel.Name,
-			"diff":    gin.H{"models": gin.H{"add": added, "remove": removed}},
-			"current": local, "remote": remote,
+			"diff":           gin.H{"models": gin.H{"add": added, "remove": removed}},
+			"current":        local,
+			"remote":         remote,
+			"blocked":        emptyWipe || (len(referenced) > 0 && !force),
+			"empty_upstream": emptyWipe,
+			"referenced_by":  referenced,
 		})
+		return
+	}
+
+	if emptyWipe && !force {
+		apierr.Write(c, http.StatusConflict, apierr.CodeConflict,
+			"upstream returned an empty model list; refusing to wipe "+strconv.Itoa(len(local))+" local model(s)",
+			"retry with ?force=1 to confirm the wipe")
+		return
+	}
+	if len(referenced) > 0 && !force {
+		apierr.Write(c, http.StatusConflict, apierr.CodeConflict,
+			"refusing to remove models still referenced: "+strings.Join(referenced, ", "),
+			"update the lanes first, or retry with ?force=1 to override")
 		return
 	}
 
@@ -124,6 +158,48 @@ func SyncChannelModels(c *gin.Context) {
 	response := channelResponse(saved)
 	writeAudit(c, "sync-models", "channel", channel.Name, gin.H{"add": added, "remove": removed})
 	c.JSON(http.StatusOK, gin.H{"channel": channel.Name, "models": response["models"], "added": added, "removed": removed})
+}
+
+// isForce 解析 ?force=1/true/yes 覆盖开关。
+func isForce(c *gin.Context) bool {
+	switch strings.ToLower(strings.TrimSpace(c.Query("force"))) {
+	case "1", "true", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// findRemovedModelReferences 找出仍引用这些将被移除模型的显式车道成员。
+// 返回形如 "lane lane-a -> channel/upstream_model" 的清单，供 409 提示。
+func findRemovedModelReferences(channelID int, removed []string) []string {
+	removedSet := map[string]bool{}
+	for _, m := range removed {
+		if m = strings.TrimSpace(m); m != "" {
+			removedSet[m] = true
+		}
+	}
+	if len(removedSet) == 0 {
+		return nil
+	}
+	var members []model.LaneMember
+	if err := model.DB.Where("channel_id = ?", channelID).Find(&members).Error; err != nil {
+		return nil
+	}
+	refs := make([]string, 0, len(members))
+	for _, member := range members {
+		if !removedSet[strings.TrimSpace(member.UpstreamModel)] {
+			continue
+		}
+		var lane model.Lane
+		laneName := strconv.Itoa(member.LaneId)
+		if err := model.DB.Select("name").Where("id = ?", member.LaneId).First(&lane).Error; err == nil {
+			laneName = lane.Name
+		}
+		refs = append(refs, "lane "+laneName+" uses upstream_model "+member.UpstreamModel)
+	}
+	sort.Strings(refs)
+	return refs
 }
 
 func diffModels(local, remote []string) (added, removed []string) {
