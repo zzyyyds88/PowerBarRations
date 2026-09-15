@@ -21,6 +21,7 @@ import (
 	"pbr/constant"
 	"pbr/controller"
 	"pbr/i18n"
+	"pbr/internal/authutil"
 	"pbr/internal/legacy"
 	"pbr/internal/tlsutil"
 	"pbr/logger"
@@ -57,6 +58,9 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "tls" {
 		os.Exit(tlsutil.RunCLI(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "auth" {
+		os.Exit(authutil.RunCLI(os.Args[2:]))
 	}
 	startTime := time.Now()
 	kitutil.SetLogging(common.SysLog, func(message string) {

@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// HTTPS / 证书管理（api-spec §5.7）：
+// HTTPS / 证书管理（README §5.1；契约登记在 OpenAPI /api/v1/openapi.json）：
 //
 //	GET  /api/v1/tls               查看当前证书状态（来源/SAN/有效期/指纹）
 //	PUT  /api/v1/tls/certificate   导入运维提供的证书+私钥（PEM），写盘并热加载

@@ -5,10 +5,10 @@ import (
 	"io"
 	"net/http"
 
-	"pbr/constant"
 	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
+	"pbr/constant"
 )
 
 type readCloser struct {
@@ -31,7 +31,7 @@ func DecompressRequestMiddleware() gin.HandlerFunc {
 		}
 		maxMB := constant.MaxRequestBodyMB
 		if maxMB <= 0 {
-			maxMB = 32
+			maxMB = 128 // 与 common/gin.go 的请求体上限保持一致
 		}
 		maxBytes := int64(maxMB) << 20
 

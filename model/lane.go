@@ -53,7 +53,8 @@ type LaneRelayOverrides struct {
 	MemberAffinitySeconds                 *int `json:"member_affinity_seconds,omitempty"`
 }
 
-// DefaultLaneRelayConfig 默认取上游路由层 DefaultGroupRelayConfig（2/3/120/30/60/300）。
+// DefaultLaneRelayConfig 默认取上游路由层 DefaultGroupRelayConfig，但亲和改为 0
+// （2/3/120/30/60/0；design-v1 §7.3 明确不做粘滞，避免掩盖 priority 语义）。
 func DefaultLaneRelayConfig() LaneRelayConfig {
 	return LaneRelayConfig{
 		MemberMaxAttempts:                     2,

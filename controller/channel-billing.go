@@ -585,12 +585,11 @@ func updateAllChannelsBalance() error {
 		result, err := updateChannelBalance(channel)
 		if err != nil {
 			continue
-		} else if result.RawResponse == "" {
-			// err is nil & balance <= 0 means quota is used up
-			if result.Balance <= 0 {
-				service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, "", channel.GetAutoBan()), "余额不足")
-			}
 		}
+		// W7：余额查询结果只用于运维展示，不再据"余额<=0"自动禁用渠道。
+		// 计费执行链已随 W7 物理删除；把余额不足当成自动禁用条件属于计费残留，
+		// 且会让一次上游计费接口抖动静默摘掉正在使用的渠道。
+		_ = result
 		time.Sleep(common.RequestInterval)
 	}
 	return nil

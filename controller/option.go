@@ -79,6 +79,12 @@ func buildCompletionRatioMetaValue(optionValues map[string]string) string {
 	return string(jsonBytes)
 }
 
+// GetOptions / UpdateOption 属于 design-v1 §10.2.1 W7 明确**保留**的基座管理面
+// （`/api/option` 在保留清单内）。因此这里仍能读写 ModelRatio/GroupRatio 等比例价键：
+// 它们是 `setting/ratio_setting` 这一"惰性遗留"的存储（成本折算与模型名归一化仍引用），
+// 不参与准入、不扣额度。W7 物理删除的是计费/支付**执行链**与专属端点
+// （`/api/option/model_pricing*`、`/api/option/rest_model_ratio` 等），不是 /api/option 本身。
+// 渠道余额查询侧曾据"余额<=0"自动禁用渠道的逻辑已随 W7 一并移除（见 controller/channel-billing.go）。
 func GetOptions(c *gin.Context) {
 	var options []*model.Option
 	optionValues := make(map[string]string)
