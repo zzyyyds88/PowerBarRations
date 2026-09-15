@@ -110,13 +110,8 @@ def main():
     port, up_port, dead_port = free_port(), free_port(), free_port()
 
     print("--- 构建")
-    b1 = run(["go", "build", "-o", WORK + "/pbr", "."],
-             env={**os.environ, "GOCACHE": REPO + "/tmp/gocache", "GOTMPDIR": REPO + "/tmp"})
-    b2 = run(["go", "build", "-o", WORK + "/fakeupstream", "./internal/testutil/fakeupstream/cmd/fakeupstream"],
-             env={**os.environ, "GOCACHE": REPO + "/tmp/gocache", "GOTMPDIR": REPO + "/tmp"})
-    if b1.returncode or b2.returncode:
-        print(json.dumps({"error": "build failed", "stderr": (b1.stderr + b2.stderr)[-800:]})); return 1
-
+    # 先建控制台，再 go build：go:embed 会把当时磁盘上的 web/dist 一起内嵌，
+    # 顺序反了就会把仓库占位页封进二进制，UI 步骤必然失败。
     web_dist = os.path.join(REPO, "web", "dist")
     index_html = os.path.join(web_dist, "index.html")
     real_index = os.path.exists(index_html) and "/static/js/" in open(index_html, encoding="utf-8", errors="ignore").read()
@@ -128,6 +123,13 @@ def main():
             print(json.dumps({"error": "web build failed", "stderr": b.stderr[-800:]})); return 1
         real_index = os.path.exists(index_html) and "/static/js/" in open(index_html, encoding="utf-8", errors="ignore").read()
     print("--- 控制台产物:", "已构建" if real_index else "仅占位页（面板 UI 断言将退化为 API 直写）")
+
+    b1 = run(["go", "build", "-o", WORK + "/pbr", "."],
+             env={**os.environ, "GOCACHE": REPO + "/tmp/gocache", "GOTMPDIR": REPO + "/tmp"})
+    b2 = run(["go", "build", "-o", WORK + "/fakeupstream", "./internal/testutil/fakeupstream/cmd/fakeupstream"],
+             env={**os.environ, "GOCACHE": REPO + "/tmp/gocache", "GOTMPDIR": REPO + "/tmp"})
+    if b1.returncode or b2.returncode:
+        print(json.dumps({"error": "build failed", "stderr": (b1.stderr + b2.stderr)[-800:]})); return 1
 
     up = subprocess.Popen([WORK + "/fakeupstream", "-addr", f"127.0.0.1:{up_port}",
                            "-log", WORK + "/upstream.log"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
