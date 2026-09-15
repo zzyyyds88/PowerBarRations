@@ -137,6 +137,39 @@ func normalizeClickHouseDSN(dsn string) string {
 	return parsed.String()
 }
 
+// hardenSQLiteFilePermissions 把 SQLite 主库及 WAL/SHM 文件显式收紧到 0600。
+//
+// token-spec §2.5 承诺「数据库文件保持 600 权限、仅本机」，而 SQLite 建库受进程
+// umask 影响（常见 022 会得到 644）；渠道 key 以明文存库，因此必须显式收紧，
+// 不能依赖 umask。WAL/SHM 由 SQLite 以主库权限创建，主库收紧后它们才安全。
+func hardenSQLiteFilePermissions(dsn string) {
+	path := sqliteFilePath(dsn)
+	if path == "" {
+		return
+	}
+	for _, candidate := range []string{path, path + "-wal", path + "-shm"} {
+		if chmodErr := os.Chmod(candidate, 0o600); chmodErr != nil && !os.IsNotExist(chmodErr) {
+			common.SysError("pbr: tighten sqlite file permission failed: " + candidate + ": " + chmodErr.Error())
+		}
+	}
+}
+
+// sqliteFilePath 从 DSN 提取实际文件路径；内存库、空串与纯 URI 返回空串。
+func sqliteFilePath(dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" || strings.HasPrefix(dsn, ":memory:") {
+		return ""
+	}
+	dsn = strings.TrimPrefix(dsn, "file:")
+	if idx := strings.Index(dsn, "?"); idx >= 0 {
+		dsn = dsn[:idx]
+	}
+	if dsn == "" || strings.HasPrefix(dsn, ":") {
+		return ""
+	}
+	return dsn
+}
+
 func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error) {
 	dsn := os.Getenv(envName)
 	if dsn != "" {
@@ -162,6 +195,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 		if strings.HasPrefix(dsn, "local") {
 			common.SysLog("SQL_DSN not set, using SQLite as database")
 			db, err := gorm.Open(sqlite.Open(common.SQLitePath), newGormConfig(true))
+			hardenSQLiteFilePermissions(common.SQLitePath)
 			return db, common.DatabaseTypeSQLite, err
 		}
 		// Use MySQL
@@ -180,6 +214,7 @@ func chooseDB(envName string, isLog bool) (*gorm.DB, common.DatabaseType, error)
 	// Use SQLite
 	common.SysLog("SQL_DSN not set, using SQLite as database")
 	db, err := gorm.Open(sqlite.Open(common.SQLitePath), newGormConfig(true))
+	hardenSQLiteFilePermissions(common.SQLitePath)
 	return db, common.DatabaseTypeSQLite, err
 }
 

@@ -2,12 +2,11 @@ package middleware
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/relaykit/types"
-	"github.com/gin-gonic/gin"
 )
 
 // SystemPerformanceCheck 检查系统性能中间件
@@ -37,6 +36,16 @@ func SystemPerformanceCheck() gin.HandlerFunc {
 	}
 }
 
+// overloadStatusCode 本机资源过载的响应码。
+//
+// 不能用 503：模型面的 503 是"没有可用渠道"的专属契约（routing-spec §4.2 / ADR 0002），
+// 下游据此做 fallback 分类。本机繁忙与路由全挂是两码事，用 503 会让下游误判。
+// 取 529（非权威错误码，Cloudflare 用它表达"站点过载"）：语义明确、可重试，
+// 与既有的 429（上游限流）和 503（无可用）都不冲突。
+//
+// 该守卫默认关闭（performance_setting）；即便经管理面重新打开，也不会污染 503 契约。
+const overloadStatusCode = 529
+
 // checkSystemPerformance 检查系统性能是否超过阈值
 func checkSystemPerformance() *types.NewAPIError {
 	config := common.GetPerformanceMonitorConfig()
@@ -50,21 +59,21 @@ func checkSystemPerformance() *types.NewAPIError {
 	if config.CPUThreshold > 0 && int(status.CPUUsage) > config.CPUThreshold {
 		return types.NewErrorWithStatusCode(
 			fmt.Errorf("system cpu overloaded (current: %.1f%%, threshold: %d%%)", status.CPUUsage, config.CPUThreshold),
-			"system_cpu_overloaded", http.StatusServiceUnavailable)
+			"system_cpu_overloaded", overloadStatusCode)
 	}
 
 	// 检查内存
 	if config.MemoryThreshold > 0 && int(status.MemoryUsage) > config.MemoryThreshold {
 		return types.NewErrorWithStatusCode(
 			fmt.Errorf("system memory overloaded (current: %.1f%%, threshold: %d%%)", status.MemoryUsage, config.MemoryThreshold),
-			"system_memory_overloaded", http.StatusServiceUnavailable)
+			"system_memory_overloaded", overloadStatusCode)
 	}
 
 	// 检查磁盘
 	if config.DiskThreshold > 0 && int(status.DiskUsage) > config.DiskThreshold {
 		return types.NewErrorWithStatusCode(
 			fmt.Errorf("system disk overloaded (current: %.1f%%, threshold: %d%%)", status.DiskUsage, config.DiskThreshold),
-			"system_disk_overloaded", http.StatusServiceUnavailable)
+			"system_disk_overloaded", overloadStatusCode)
 	}
 
 	return nil

@@ -137,6 +137,11 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	return
 }
 
+// ResetStatusCode 按渠道级 status_code_mapping 改写上游错误码。
+//
+// 保留码：503 是模型面的**专属契约**（routing-spec §4.2 / ADR 0002），表示"没有可用
+// 渠道"，下游 fallback 分类依赖它。若允许把任意上游错误（429/500 等）映射成 503，
+// 下游会把"上游抖动"误判为"路由全挂"，破坏该契约。因此这里显式拒绝映射到 503。
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {
 	if newApiErr == nil {
 		return
@@ -158,8 +163,17 @@ func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) 
 		if !ok {
 			return
 		}
+		if isReservedStatusCode(intCode) {
+			return
+		}
 		newApiErr.StatusCode = intCode
 	}
+}
+
+// isReservedStatusCode 判定目标码是否为不可被渠道映射占用的保留码。
+// 目前仅 503：模型面用它表达"无可选成员"，语义由 ADR 0002 锁定。
+func isReservedStatusCode(code int) bool {
+	return code == http.StatusServiceUnavailable
 }
 
 func parseStatusCodeMappingValue(value any) (int, bool) {

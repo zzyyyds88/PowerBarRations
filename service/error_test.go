@@ -25,16 +25,29 @@ func TestResetStatusCode(t *testing.T) {
 		expectedCode     int
 	}{
 		{
-			name:             "map string value",
+			name:             "map string value to non-reserved code",
 			statusCode:       429,
-			statusCodeConfig: `{"429":"503"}`,
-			expectedCode:     503,
+			statusCodeConfig: `{"429":"502"}`,
+			expectedCode:     502,
 		},
 		{
-			name:             "map int value",
+			name:             "map int value to non-reserved code",
 			statusCode:       429,
-			statusCodeConfig: `{"429":503}`,
-			expectedCode:     503,
+			statusCodeConfig: `{"429":502}`,
+			expectedCode:     502,
+		},
+		{
+			// 审查 B6：503 是模型面「没有可用渠道」的保留码，禁止被渠道映射占用。
+			name:             "refuse mapping to reserved 503 (string)",
+			statusCode:       429,
+			statusCodeConfig: `{"429":"503"}`,
+			expectedCode:     429,
+		},
+		{
+			name:             "refuse mapping to reserved 503 (int)",
+			statusCode:       500,
+			statusCodeConfig: `{"500":503}`,
+			expectedCode:     500,
 		},
 		{
 			name:             "skip invalid string value",
