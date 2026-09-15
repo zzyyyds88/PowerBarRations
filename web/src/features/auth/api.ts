@@ -18,10 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import axios from 'axios'
 
-import { api, refreshAuthentication, type RefreshOutcome } from '@/lib/api'
+import { api, type RefreshOutcome } from '@/lib/api'
+import { pbrLogout } from '@/lib/pbr-auth'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { getServerErrorMessageKey } from '@/lib/server-error-message'
-import { useAuthStore } from '@/stores/auth-store'
 
 import {
   clearPasswordEncryptionCache,
@@ -125,20 +125,15 @@ export async function executeLogout(
   }
 }
 
-// User logout
+// User logout（PBR：POST /api/v1/auth/logout 清 HttpOnly 会话 Cookie）
 export async function logout(): Promise<ApiResponse> {
-  return executeLogout({
-    getExpectedSID: () => useAuthStore.getState().auth.session?.sid,
-    request: async (sid) => {
-      const res = await api.post('/api/user/auth/logout', undefined, {
-        headers: sid ? { 'X-Auth-Session': sid } : undefined,
-        skipAuthRefresh: true,
-        skipErrorHandler: true,
-      })
-      return res.data
-    },
-    refresh: refreshAuthentication,
-  })
+  try {
+    await pbrLogout()
+    return { success: true, message: '' }
+  } catch (error: unknown) {
+    // 登出失败不该阻塞前端清理本地状态；如实上报但不抛。
+    return { success: false, message: String(error) }
+  }
 }
 
 // ----------------------------------------------------------------------------

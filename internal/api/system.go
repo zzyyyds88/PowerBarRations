@@ -145,6 +145,18 @@ func Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logged_out": true})
 }
 
+// SessionStatus GET /api/v1/auth/session（免鉴权）：当前请求是否持有有效会话。
+//
+// 控制台用它做启动时的"是否已登录"判定：
+//   - 200 + {authenticated:true}：Cookie 有效，前端可直接进入
+//   - 200 + {authenticated:false}：无/无效会话，前端跳登录页
+//
+// 刻意不用 401：这是"查询状态"而非"受保护资源"，用 200 承载布尔值，
+// 免得前端把正常未登录误报成错误 toast。
+func SessionStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"authenticated": middleware.HasAdminSession(c)})
+}
+
 type passwordChangeRequest struct {
 	Current string `json:"current"`
 	New     string `json:"new"`

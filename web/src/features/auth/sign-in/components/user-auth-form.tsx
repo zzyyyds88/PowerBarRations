@@ -39,7 +39,8 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { login, wechatLoginByCode } from '@/features/auth/api'
+import { wechatLoginByCode } from '@/features/auth/api'
+import { pbrLogin } from '@/lib/pbr-auth'
 import { LegalConsent } from '@/features/auth/components/legal-consent'
 import { OAuthProviders } from '@/features/auth/components/oauth-providers'
 import { loginFormSchema } from '@/features/auth/constants'
@@ -91,14 +92,9 @@ export function UserAuthForm({
     (status?.password_login_enabled ??
       status?.data?.password_login_enabled ??
       true) !== false
-  const passwordLoginEncryptionEnabled =
-    (status?.password_login_encryption_enabled ??
-      status?.data?.password_login_encryption_enabled ??
-      false) === true
   const {
     isTurnstileEnabled,
     turnstileSiteKey,
-    turnstileToken,
     setTurnstileToken,
     validateTurnstile,
   } = useTurnstile()
@@ -140,7 +136,8 @@ export function UserAuthForm({
   const form = useForm<z.infer<typeof loginFormSchema>>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: {
-      username: '',
+      // PBR 无用户名：填固定占位，界面不渲染该字段。
+      username: 'admin',
       password: '',
     },
   })
@@ -167,7 +164,6 @@ export function UserAuthForm({
 
     if (!validateTurnstile()) return
 
-    const submittedTurnstileToken = turnstileToken
     if (isTurnstileEnabled) {
       setTurnstileToken('')
       setTurnstileWidgetKey((current) => current + 1)
@@ -175,20 +171,12 @@ export function UserAuthForm({
 
     setIsLoading(true)
     try {
-      const res = await login({
-        username: data.username,
-        password: data.password,
-        turnstile: submittedTurnstileToken,
-        passwordEncryptionEnabled: passwordLoginEncryptionEnabled,
-      })
-
-      if (res.success) {
-        form.setValue('password', '')
-        if (await handleLoginResult(res.data, redirectTo)) {
-          toast.success(t('Welcome back!'))
-        }
-      } else {
-        handleServerError(createServerError(res, loginFailedMessage))
+      // PBR：只有一个登录口令（无用户名）。服务端校验后签发 HttpOnly 会话 Cookie，
+      // 这里把结果适配成 new-api 前端的 AuthBundle 形状，其余流程不变。
+      const bundle = await pbrLogin(data.password)
+      form.setValue('password', '')
+      if (await handleLoginResult(bundle, redirectTo)) {
+        toast.success(t('Welcome back!'))
       }
     } catch (error: unknown) {
       handleServerError(AuthOperationError.from(error, loginFailedMessage))

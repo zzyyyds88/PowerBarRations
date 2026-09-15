@@ -21,6 +21,7 @@ import axios from 'axios'
 import { t } from 'i18next'
 
 import { publishAuthSessionEvent } from '@/lib/auth-session-sync'
+import { buildPBRBundle } from '@/lib/pbr-auth'
 import { hasSessionHint } from '@/lib/session-hint'
 import {
   useAuthStore,
@@ -273,18 +274,23 @@ export function createRefreshRunner(
   return () => run(0, true)
 }
 
+// PBR 适配：向 /api/v1/auth/session 查询会话是否有效，命中则合成 new-api 形状的 bundle。
+// 会话本身是 HttpOnly Cookie，前端拿不到也不需要 token；bundle 里的是本地占位值。
 async function requestRefresh(
-  expectedSID?: string
+  _expectedSID?: string
 ): Promise<AuthRefreshHTTPResponse> {
   try {
-    const response = await authClient.post(
-      '/api/user/auth/refresh',
-      undefined,
-      {
-        headers: expectedSID ? { 'X-Auth-Session': expectedSID } : undefined,
-      }
+    const response = await authClient.get("/api/v1/auth/session")
+    const authenticated = Boolean(
+      (response.data as { authenticated?: boolean } | undefined)?.authenticated
     )
-    return { status: response.status, data: response.data }
+    if (authenticated) {
+      return {
+        status: response.status,
+        data: { success: true, data: buildPBRBundle() },
+      }
+    }
+    return { status: 401, data: response.data }
   } catch (error: unknown) {
     if (!axios.isAxiosError(error)) return { status: 0, error }
     return {
