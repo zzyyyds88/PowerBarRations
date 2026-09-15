@@ -1,59 +1,27 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
-import { api } from '@/lib/api'
+import { getPBRSetupStatus, submitPBRSetup } from '@/lib/pbr-auth'
 
 import type { SetupFormValues, SetupResponse } from './types'
 
+/**
+ * 首启状态。PBR 只有一个 initialized 布尔；这里适配成上游 setup 依赖的
+ * `data.status` 形状，使 __root 的"未初始化则跳 /setup"判断继续可用。
+ */
 export async function getSetupStatus(): Promise<SetupResponse> {
-  const res = await api.get('/api/setup', {
-    // We want fresh status on every visit.
-    params: {
-      t: Date.now(),
-    },
-  })
-  return res.data
-}
-
-export async function submitSetup(
-  payload: Record<string, unknown>
-): Promise<SetupResponse> {
-  const res = await api.post('/api/setup', payload)
-  return res.data
-}
-
-export function buildSetupPayload(
-  values: SetupFormValues,
-  rootInitialized: boolean
-) {
-  const { usageMode, ...rest } = values
-
-  const basePayload = {
-    SelfUseModeEnabled: usageMode === 'self',
-    DemoSiteEnabled: usageMode === 'demo',
-  }
-
-  if (rootInitialized) {
-    return basePayload
-  }
-
+  const { initialized } = await getPBRSetupStatus()
   return {
-    ...rest,
-    ...basePayload,
+    success: true,
+    data: { status: initialized, root_init: false, database_type: '' },
+  }
+}
+
+/** 设置首个登录口令（POST /api/v1/setup），成功即签发会话。 */
+export async function submitSetup(
+  payload: SetupFormValues
+): Promise<SetupResponse> {
+  const res = await submitPBRSetup(payload.password)
+  return {
+    success: true,
+    message: res.warning ?? '',
+    data: { status: true, root_init: false, database_type: '' },
   }
 }
