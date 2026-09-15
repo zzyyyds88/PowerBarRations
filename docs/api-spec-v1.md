@@ -265,6 +265,9 @@ HTTP/1.1 401 Unauthorized
 |---|---|---|
 | GET | `/api/v1/models` | 全部可路由模型名：`{model, source: implicit\|explicit, member_count}` |
 | GET | `/api/v1/routes/{model}` | 解析该模型的**成员链**（含来源与优先级），用于排障与 UI 展示 |
+| PUT | `/api/v1/lanes/{model}` | **把某模型的成员链固化为显式顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
+
+**UI 心智**（design-v1 §7.7）：渠道管理填上游与模型 → 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。未固化时保持隐式链（渠道声明即自动成链）。
 
 ```bash
 curl -s $PBR/api/v1/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
