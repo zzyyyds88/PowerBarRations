@@ -33,10 +33,8 @@ import {
 import { Switch } from '@/components/ui/switch'
 
 import {
-  SettingsControlChildren,
   SettingsForm,
   SettingsSwitchContent,
-  SettingsControlGroup,
   SettingsSwitchItem,
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
@@ -175,39 +173,6 @@ export function HeaderNavigationSection({
     },
   ]
 
-  const accessModules: Array<{
-    enabledKey: keyof HeaderNavFormValues
-    requireAuthKey: keyof HeaderNavFormValues
-    requireAuthDependsOn: 'pricingEnabled' | 'rankingsEnabled'
-    title: string
-    description: string
-    requireAuthTitle: string
-    requireAuthDescription: string
-  }> = [
-    {
-      enabledKey: 'pricingEnabled',
-      requireAuthKey: 'pricingRequireAuth',
-      requireAuthDependsOn: 'pricingEnabled',
-      title: t('Model Square'),
-      description: t('Public model catalog and pricing page.'),
-      requireAuthTitle: t('Require login to view models'),
-      requireAuthDescription: t(
-        'Visitors must authenticate before accessing the pricing directory.'
-      ),
-    },
-    {
-      enabledKey: 'rankingsEnabled',
-      requireAuthKey: 'rankingsRequireAuth',
-      requireAuthDependsOn: 'rankingsEnabled',
-      title: t('Rankings'),
-      description: t('Public rankings page based on live usage data.'),
-      requireAuthTitle: t('Require login to view rankings'),
-      requireAuthDescription: t(
-        'Visitors must authenticate before accessing the rankings page.'
-      ),
-    },
-  ]
-
   return (
     <SettingsSection title={t('Header navigation')}>
       <Form {...form}>
@@ -244,56 +209,6 @@ export function HeaderNavigationSection({
             ))}
           </div>
 
-          <div className='grid gap-4 lg:grid-cols-2'>
-            {accessModules.map((module) => (
-              <SettingsControlGroup key={module.enabledKey}>
-                <FormField
-                  control={form.control}
-                  name={module.enabledKey}
-                  render={({ field }) => (
-                    <SettingsSwitchItem>
-                      <SettingsSwitchContent>
-                        <FormLabel>{module.title}</FormLabel>
-                        <FormDescription>{module.description}</FormDescription>
-                      </SettingsSwitchContent>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </SettingsSwitchItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name={module.requireAuthKey}
-                  render={({ field }) => (
-                    <SettingsControlChildren>
-                      <SettingsSwitchItem className='py-2'>
-                        <SettingsSwitchContent>
-                          <FormLabel>{module.requireAuthTitle}</FormLabel>
-                          <FormDescription>
-                            {module.requireAuthDescription}
-                          </FormDescription>
-                        </SettingsSwitchContent>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            disabled={!form.watch(module.requireAuthDependsOn)}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </SettingsSwitchItem>
-                    </SettingsControlChildren>
-                  )}
-                />
-              </SettingsControlGroup>
-            ))}
-          </div>
         </SettingsForm>
       </Form>
     </SettingsSection>
