@@ -59,7 +59,7 @@ export function AppShell() {
           <div className="text-sm font-semibold">{tc("appName")}</div>
           <div className="mt-1">
             <Badge tone={connected ? "ok" : "warn"}>
-              {connected ? "SSE connected" : "SSE reconnecting"}
+              {connected ? t("realtimeOn") : t("realtimeOff")}
             </Badge>
           </div>
         </div>
