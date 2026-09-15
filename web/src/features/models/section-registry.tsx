@@ -28,6 +28,12 @@ const MODELS_SECTIONS = [
     build: () => null, // Content is rendered directly in the page component
   },
   {
+    // PBR 增补：为每个模型配置成员顺序（故障切换）。
+    id: 'routing',
+    titleKey: 'Routing & Failover',
+    build: () => null,
+  },
+  {
     id: 'vendors',
     titleKey: 'Vendors',
     build: () => null,

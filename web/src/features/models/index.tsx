@@ -33,6 +33,7 @@ import { DeploymentsTable } from './components/deployments-table'
 import { CreateDeploymentDrawer } from './components/dialogs/create-deployment-drawer'
 import { ModelsDialogs } from './components/models-dialogs'
 import { ModelsPrimaryButtons } from './components/models-primary-buttons'
+import { ModelRoutingPanel } from './components/model-routing-panel'
 import { ModelsProvider, useModels } from './components/models-provider'
 import { ModelsTable } from './components/models-table'
 import { VendorsTable } from './components/vendors-table'
@@ -54,6 +55,7 @@ const SECTION_META: Record<
     titleKey: 'Model management',
     tabKey: 'Models',
   },
+  routing: { titleKey: 'Routing & Failover', tabKey: 'Routing & Failover' },
   vendors: { titleKey: 'Vendor management', tabKey: 'Vendors' },
   deployments: {
     titleKey: 'Deployments',
@@ -108,6 +110,9 @@ function ModelsContent() {
       </Button>
     )
     content = <VendorsTable />
+  } else if (activeSection === 'routing') {
+    actions = <></>
+    content = <ModelRoutingPanel />
   } else if (activeSection === 'deployments') {
     actions = (
       <Button onClick={() => setCreateDeploymentOpen(true)} size='sm'>
