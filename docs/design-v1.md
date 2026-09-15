@@ -657,8 +657,9 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 16.3 OpenAPI 生成
 
-- **以代码为源**：在路由注册处用结构体标签/注解生成 OpenAPI 3，`GET /api/v1/openapi.json` 返回运行时结果，避免手写文档漂移。
-- 验收断言：`openapi.json` 可被标准工具解析，且**所有已注册路由都出现在文档中**（新增路由漏档即验收失败）。
+- **以代码为源**：在路由注册处维护端点表，`GET /api/v1/openapi.json` 返回运行时结果。当前实现是 `internal/api/config_lifecycle.go` 的手写 `openAPIPaths()` 表（尚未改为结构体标签自动生成），靠下述守卫测试把"漏登记"变成构建期失败，效果等价于验收断言。
+- 验收断言：`openapi.json` 可被标准工具解析，且**所有已注册路由都出现在文档中**。落地为 `router/openapi_coverage_test.go` 的 `TestOpenAPICoversEveryRegisteredRoute`：对比 `engine.Routes()` 与端点表，双向校验（既不漏档、也不登记不存在的路由）。
+- 若将来改为标签生成，保留该守卫测试即可；漂移口径不变。
 
 ### 16.4 存储与迁移版本
 
@@ -677,7 +678,8 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 16.7 管理密钥的数量语义
 
-- 支持配置多把管理密钥（轮换过渡用），任一把均可全量操作，不区分权限；由 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 提供，**不入库**。
+- 支持配置多把管理密钥（轮换过渡用），任一把均可全量操作，不区分权限；由 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 提供，**不入库**。两变量同时存在时合并，任一匹配即通过（实现见 `middleware/pbr_auth.go`）。
+- 口令恢复的另一条途径 `pbr auth reset --db <pbr.db> --yes` 清库内凭据回到未初始化（实现见 `internal/authutil/cli.go`）。
 
 ### 16.8 决策记录（原"待确认"项已落实）
 
@@ -707,7 +709,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | 7 | 单价表 | **PBR 自建一张单价表**（人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`，留空或 0 = 该口径不折算；模型不在表里 = 完全不折算），存 `options` 表的 `PBRModelPrices` 键，随 `GET/PUT /api/v1/system/options` 读写并随 export/import 往返。只用于日志 `estimated_cost` 折算，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
 | 8 | 旧库日志 | **不迁移**；旧库整体归档保留，不额外导出 |
 | 9 | 请求头兼容 | 管理面仅收 `Authorization`；模型面 `Authorization` 与 `X-Api-Key` 都收（兼容存量客户端） |
-| 10 | 渠道模型清单来源 | 手工录入 + 可选"从上游拉取"（`POST /channels/{name}/sync-models`，即原蓝本的模型同步，收敛为渠道上的一个动作） |
+| 10 | 渠道模型清单来源 | 手工录入 + 可选"从上游拉取"（`POST /channels/{name}/sync-models`，即原蓝本的模型同步，收敛为渠道上的一个动作）。**保护性约束**：上游返回空清单默认拒绝清空（`?force=1` 覆盖）；要移除的模型仍被显式车道成员引用时返回 409（同样 `?force=1` 覆盖），避免一次上游抖动摘掉在用成员 |
 | 11 | 开工基座 | **以 new-api 源码迁入为基座**，非净室重写；前端另起（见 §10.5） |
 | 12 | 亲和默认值 | 默认 `member_affinity_seconds=0`（**与现网一致，避免故障切换后长时间粘在备用成员**），可配 |
 | 13 | 前端包管理与适配范围 | 蓝本用 **pnpm**，沿用；`group` 模块需按 PBR 车道模型重做（成员加上游模型名/别名/成员级覆盖、模式扩四种），并新增"模型路由"页——这是"迁移功能原理"里唯一需要实打实改造的模块 |

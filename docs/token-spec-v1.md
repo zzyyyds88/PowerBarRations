@@ -63,14 +63,19 @@
 
 两条本地途径（都需要机器访问权限，符合"自用"定位）：
 
-1. `PBR_ADMIN_KEY` 环境变量显式指定管理密钥（**覆盖**口令派生，便于无头/AI 部署）；
-2. CLI：`pbr auth reset` 清除库内 `admin_key_sha256`，使网关回到未初始化状态，下次重新设置口令。
+1. 环境变量显式指定管理密钥（**覆盖**口令派生，便于无头/AI 部署）：
+   - `PBR_ADMIN_KEY`：单把；
+   - `PBR_ADMIN_KEYS`：多把，逗号分隔（轮换过渡用，任一把均可全量操作，见 design-v1 §16.7）。
+   两者同时存在时合并，任一匹配即通过。
+2. CLI：`pbr auth reset --db <pbr.db> --yes` 清除库内 `admin_key_sha256`，使网关回到未初始化状态，下次重新设置口令。
+
+   `--db` 缺省取 `$SQLITE_PATH`；`--yes` 为破坏性动作的显式确认。命令只改库内凭据，不碰渠道/密钥数据。
 
 ### 2.5 安全取舍（须在 README 与代码注释写明）
 
-- SHA256 单次、无盐：抗离线爆破弱于 Argon2/bcrypt。**这是应用户指定的派生规则**；缓解手段是**启用 HTTPS** + 使用较长随机口令（建议 ≥16 字符，非强制），且数据库文件保持 600 权限、仅本机。
+- SHA256 单次、无盐：抗离线爆破弱于 Argon2/bcrypt。**这是应用户指定的派生规则**；缓解手段是**启用 HTTPS** + 使用较长随机口令（建议 ≥16 字符，非强制），且数据库文件收紧为 600 权限、仅本机（启动时对主库及 WAL/SHM 显式 `chmod 0600`，见 `model/main.go` 的 `hardenSQLiteFilePermissions`，不依赖进程 umask）。
 - **监听 `0.0.0.0` 对局域网开放**，不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。
-- **HTTPS**：`TLS_ENABLED=true` 时加载证书（`TLS_CERT_FILE`/`TLS_KEY_FILE`）；无证书则首次启动自动生成自签证书到 `TLS_DIR`。支持 `PUT /api/v1/tls/certificate` 导入自有证书并**热加载**（无需重启），见 README §8。
+- **HTTPS**：`TLS_ENABLED=true` 时加载证书（`TLS_CERT_FILE`/`TLS_KEY_FILE`）；无证书则首次启动自动生成自签证书到 `TLS_DIR`。支持 `PUT /api/v1/tls/certificate` 导入自有证书并**热加载**（无需重启），见 README §5.1。
 - 管理密钥不写日志、不返回（除 §2.2 设置成功时的一次）。
 
 ---

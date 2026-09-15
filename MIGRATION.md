@@ -78,8 +78,14 @@ pbr migrate \
   应用 C 的 `model_mapping` 得到真名 U → PBR 成员）。
 - **幂等**：以 `name` 为键 upsert，可重复跑；同一输入两次产出的计划逐字节一致。
 - **对账报告**：`unresolved`（无归属，必须人工裁决，不许静默丢弃）、`ambiguous`
-  （同优先级平局）、`widened`（旧白名单/模型限制被放宽为全部车道）。
+  （同优先级平局）、`widened`（旧白名单/模型限制被放宽为全部车道）、
+  `duplicate_key_names`（同名但明文不同的客户端密钥被自动改名，逐条列出原名/前缀/sha256 前 8 位/新名）。
 - **凭据**：渠道 key 与客户端密钥明文只写目标库；拿不到真实 key 时留 `__INJECT_BY_OPERATOR__`。
+- **同名不同明文**：库内 `client_keys.name` 有唯一约束。若旧库存在两条同名但明文不同的密钥，
+  迁移会按来源追加后缀改名（如 `name-octopus`）并写入 `duplicate_key_names`，**绝不静默覆盖**；
+  落库阶段还会再断言名字唯一，发现重复直接失败而非丢凭据。
+- **`--keys` 校验**：只接受 `octopus|newapi|both`，非法值立即 `exit 2`（不产出任何目标库），
+  避免把拼写错误（如 `new-api`）当成"零客户端凭据"成功写库。报告的 `key_source` 字段回显生效来源。
 - **只读旧库**：命令对旧库只读；读之前请自行拷贝副本（含 `-wal`/`-shm`）并 checkpoint。
 - **验收证据**：`ROUTING_DB=<octopus.db> VENDOR_DB=<new-api.db> bash verify/final/a4_migrate.sh`
   （在旧库副本上跑两次并证明幂等、目标库可被 PBR 加载）。

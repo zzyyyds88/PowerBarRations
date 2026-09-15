@@ -157,10 +157,11 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 | 默认权限 | 全量 | **允许全部车道**，只能显式拒绝 |
 
 - 管理密钥**不能**用于模型面，客户端密钥**不能**用于管理面。
-- 口令丢失：`PBR_ADMIN_KEY` 环境变量直接指定，或清掉库内凭据回到未初始化状态。
+- 口令丢失：`PBR_ADMIN_KEY`（单把）或 `PBR_ADMIN_KEYS`（多把，逗号分隔）环境变量直接指定，
+  或 `pbr auth reset --db <pbr.db> --yes` 清掉库内凭据回到未初始化状态（`--yes` 为破坏性动作确认）。
 - 口令变更即管理密钥变更，旧密钥立即失效。登录接口对连续失败做指数退避（上限 30s）。
-- 局域网内是明文 HTTP，且派生规则（单次 SHA256、无盐）抗离线爆破弱——
-  **口令必须是长随机串**（建议 ≥32 字符）。
+- Docker 默认 HTTPS（`TLS_ENABLED=true`）；裸机若关闭 TLS 则局域网内是明文 HTTP。
+  派生规则（单次 SHA256、无盐）抗离线爆破弱——**口令必须是长随机串**（建议 ≥32 字符）。
 
 ---
 
@@ -223,6 +224,22 @@ TLS_ENABLED=true TLS_CERT_FILE=/path/fullchain.pem TLS_KEY_FILE=/path/privkey.pe
   body `{"cert_pem":"-----BEGIN CERTIFICATE-----...","key_pem":"-----BEGIN PRIVATE KEY-----..."}`；
   写盘并在**下次握手立即生效，无需重启**。
 - 查看/重新自签：`GET /api/v1/tls`；`POST /api/v1/tls/self-signed` body `{"hosts":[...],"days":825}`。
+
+### 5.2 CLI 子命令
+
+```bash
+./pbr                        # 启动网关
+./pbr migrate --routing <octopus.db> --vendor <new-api.db> --target <pbr.db> \
+              --report /tmp/report.json --keys octopus|newapi|both [--dry-run]
+./pbr tls gen --out ./tls --host <host>[,<ip>] [--days 825]
+./pbr tls show --cert ./tls/cert.pem
+./pbr auth reset --db <pbr.db> --yes   # 清库内管理凭据→回到未初始化（破坏性，需 --yes）
+./pbr plugin <子命令>                  # 任务插件维护
+```
+
+- `migrate` 的 `--keys` 只接受 `octopus|newapi|both`，非法值 `exit 2`；同名不同明文的客户端密钥会被
+  自动改名并在报告 `duplicate_key_names` 留痕（详见 `MIGRATION.md`）。
+- `auth reset` 的 `--db` 缺省取 `$SQLITE_PATH`；也可用 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 临时覆盖口令派生。
 
 ---
 

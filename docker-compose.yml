@@ -38,8 +38,10 @@ services:
       SESSION_SECRET: "${PBR_SESSION_SECRET:?请先 export PBR_SESSION_SECRET=$(openssl rand -hex 32)}"
       CRYPTO_SECRET: "${PBR_CRYPTO_SECRET:?请先 export PBR_CRYPTO_SECRET=$(openssl rand -hex 32)}"
       GIN_MODE: "release"
-      # 无头/AI 部署可用它直接指定管理密钥（覆盖口令派生，token-spec §2.4）。
+      # 无头/AI 部署可直接指定管理密钥（覆盖口令派生，token-spec §2.4）：
+      #   PBR_ADMIN_KEY  单把；PBR_ADMIN_KEYS  多把，逗号分隔（轮换过渡）。
       # PBR_ADMIN_KEY: "${PBR_ADMIN_KEY:-}"
+      # PBR_ADMIN_KEYS: "${PBR_ADMIN_KEYS:-}"
     volumes:
       - pbr-data:/data
     healthcheck:

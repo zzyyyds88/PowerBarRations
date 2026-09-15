@@ -225,7 +225,7 @@ HTTP/1.1 401 Unauthorized
 | PUT | `/api/v1/channels/{name}` | 全量 upsert（`key` 只写不读） |
 | DELETE | `/api/v1/channels/{name}` | 删除（被车道引用时 409） |
 | POST | `/api/v1/channels/{name}/test` | 单渠道探活 |
-| POST | `/api/v1/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异） |
+| POST | `/api/v1/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；被显式车道成员点名的模型仍在引用时返回 409（同样需 `?force=1` 覆盖） |
 
 ### 5.4 客户端密钥
 
