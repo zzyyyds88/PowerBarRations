@@ -440,15 +440,19 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 		// 没有可换的替代者，只会把请求变成 503），但仍过熔断。
 		// 此前直接用 availabilityOf，把冷却也一并判了，导致指定成员一次失败后
 		// 冷却期内所有请求都 503——而它其实是好的。
-		if s.Runtime.circuitOpen(key) {
-			if nowMs() < s.Runtime.circuitOpenUntil(key) {
-				return // 熔断打开且退避未到 → 无可用
-			}
-			// 退避期到：半开放一个探测
+		//
+		// 半开状态必须走单探测槽：否则第一次探测把熔断翻成 half_open 后，
+		// 并发请求会绕过探测槽直接选中，形成"半开涌入"（routing-spec §2.1/§5.2）。
+		switch {
+		case s.Runtime.circuitState(key) == CircuitOpen && nowMs() < s.Runtime.circuitOpenUntil(key):
+			return // 熔断打开且退避未到 → 无可用
+		case s.Runtime.circuitState(key) == CircuitOpen,
+			s.Runtime.circuitState(key) == CircuitHalfOpen:
+			// 退避期到或半开在途：只放行唯一探测者，槽被占则本轮无可用。
 			if !s.Runtime.takeProbe(key) {
 				return
 			}
-			s.Runtime.recordProbeStart(key, true)
+			s.Runtime.recordProbeStart(key, s.Runtime.circuitState(key) == CircuitOpen)
 		}
 		ok = true
 	})
@@ -654,6 +658,32 @@ func (s *State) SuccessAttempt(member string) Attempt {
 		Status:     "success",
 		DurationMs: s.elapsedMs(),
 	}
+}
+
+// ReportMemberUnavailable 记一次"成员自身不可用"（渠道被禁用/删除、循环内
+// 取不到 key 或注入上下文失败）。routing-spec §3 第 4.2 步要求这算该成员的一次
+// 失败并计入冷却/熔断，否则被禁用渠道的车道会无限重选同一成员。
+//
+// 成员当前不在 s.current（还没被选中就发现不可用）时，也补一条 failed 尝试，
+// 让 attempts 链能解释"为什么这个成员被跳过"。
+func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string) {
+	if s == nil || member == nil || s.Runtime == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := memberKeyOf(member)
+	s.Runtime.withLock(func() {
+		s.history = append(s.history, Attempt{
+			AttemptNum: len(s.history) + 1,
+			Member:     memberLabel(member),
+			Status:     "failed",
+			ErrorKind:  KindSoftTransient,
+			Msg:        "member unavailable: " + reason,
+		})
+		s.Runtime.recordFailure(key, KindSoftTransient, s.cooldownSeconds, CurrentCircuitSettings())
+	})
+	s.markAttemptedLocked(key)
 }
 
 // ReleaseProbe 归还本请求占用的探测槽（幂等）。

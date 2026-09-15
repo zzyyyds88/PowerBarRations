@@ -41,7 +41,25 @@ const (
 	weightLimit  = 0.2
 	weightOther  = 0.5
 	openBackoffK = 2 // 重复打开时的退避倍数：open_seconds × 2^k
+
+	// hardFailureCooldownMultiplier 硬鉴权/欠费类失败的冷却倍率：
+	// routing-spec §4.1 要求 hard_auth「冷却取较长档」，因为凭据失效不会在
+	// 秒级自愈，按软故障时长回避只会让请求反复撞墙。
+	hardFailureCooldownMultiplier = 2
 )
+
+// cooldownSecondsFor 按错误分类决定冷却时长：硬鉴权/欠费取 base 的较长档。
+func cooldownSecondsFor(kind ErrorKind, base int) int {
+	if base <= 0 {
+		return base
+	}
+	switch kind {
+	case KindHardAuth, KindHardQuota:
+		return base * hardFailureCooldownMultiplier
+	default:
+		return base
+	}
+}
 
 // CircuitSettings 熔断参数（经 system/options 配置，见 route.ConfigureCircuit）。
 type CircuitSettings struct {
@@ -173,6 +191,15 @@ func (r *Runtime) circuitOpen(key string) bool {
 	return circuit != nil && circuit.State == CircuitOpen
 }
 
+// circuitState 该成员当前熔断态；无条目返回 closed。
+func (r *Runtime) circuitState(key string) string {
+	circuit := r.Circuits[key]
+	if circuit == nil {
+		return CircuitClosed
+	}
+	return circuit.State
+}
+
 // circuitOpenUntil 熔断退避截止时刻（ms）；未打开时返回 0。
 func (r *Runtime) circuitOpenUntil(key string) int64 {
 	circuit := r.Circuits[key]
@@ -270,12 +297,21 @@ const (
 
 func (r *Runtime) availabilityOf(key string, memberCooldownSeconds int, settings CircuitSettings) availability {
 	now := nowMs()
-	if circuit := r.Circuits[key]; circuit != nil && circuit.State == CircuitOpen {
-		if now < circuit.OpenUntil {
-			return availSkip
+	if circuit := r.Circuits[key]; circuit != nil {
+		switch circuit.State {
+		case CircuitOpen:
+			if now < circuit.OpenUntil {
+				return availSkip
+			}
+			// 退避期到：半开，放一个探测请求。
+			return availProbeReady
+		case CircuitHalfOpen:
+			// 半开且探测在途：只能由单探测槽持有者使用。若这里返回 availOK，
+			// 并发请求会把"半开的成员"当健康成员直接选中，绕过单探测槽一拥而上
+			// （routing-spec §2.1/§5.2：半开只放行一个探测请求）。
+			// 返回 availProbeReady 后由 takeProbe 判定：槽被占则跳过。
+			return availProbeReady
 		}
-		// 退避期到：半开，放一个探测请求。
-		return availProbeReady
 	}
 	until := r.Cooldowns[key]
 	if until == 0 {
@@ -292,12 +328,18 @@ func (r *Runtime) availabilityOf(key string, memberCooldownSeconds int, settings
 // 例如探测槽已被占用）。文档要求据此解释"为什么没用优先级最高的那个成员"。
 func (r *Runtime) SkipReason(key string) string {
 	now := nowMs()
-	if circuit := r.Circuits[key]; circuit != nil && circuit.State == CircuitOpen {
-		if now < circuit.OpenUntil {
-			return "circuit_break"
+	if circuit := r.Circuits[key]; circuit != nil {
+		switch circuit.State {
+		case CircuitOpen:
+			if now < circuit.OpenUntil {
+				return "circuit_break"
+			}
+			// 退避已到但探测槽被别人占着 → 本轮只是被跳过
+			return "skipped"
+		case CircuitHalfOpen:
+			// 半开探测在途，槽被占 → 本轮跳过。
+			return "skipped"
 		}
-		// 退避已到但探测槽被别人占着 → 本轮只是被跳过
-		return "skipped"
 	}
 	if until := r.Cooldowns[key]; until != 0 {
 		if now < until {
@@ -329,6 +371,8 @@ func (r *Runtime) releaseProbe(key string) {
 // recordFailure 记一次失败：更新熔断计分，必要时打开熔断；尝试预算耗尽则进入冷却。
 func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSeconds int, settings CircuitSettings) {
 	now := nowMs()
+	// routing-spec §4.1：hard_auth / hard_quota 冷却取较长档。
+	memberCooldownSeconds = cooldownSecondsFor(kind, memberCooldownSeconds)
 	// §6：亲和期内**当前成员**失败 → 立即结束亲和（照搬线上语义）。
 	// 否则该成员会在剩余亲和窗口内继续被粘滞，形成"失败→仍粘着→再失败"。
 	// 独立探测失败不影响当前路由，故只在 key 就是当前成员时清除。

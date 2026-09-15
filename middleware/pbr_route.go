@@ -142,12 +142,17 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 		channel, err := model.GetChannelById(member.ChannelId, true)
 		if err != nil || channel == nil || channel.Status != common.ChannelStatusEnabled {
 			logger.LogWarn(c, fmt.Sprintf("pbr: 跳过不可用成员 channel_id=%d model=%s", member.ChannelId, member.UpstreamModel))
+			// routing-spec §3 第 4.2 步：渠道被禁用或不存在 → 记为该成员的一次失败
+			// （计入冷却/熔断），继续循环。此前只"跳过不计数"，导致被禁用渠道的
+			// 车道永远选不中替代成员、也不会冷却/熔断，请求反复撞在同一成员上。
+			state.ReportMemberUnavailable(member, "channel disabled or missing")
 			// 该成员可能是被放行的"探测"，跳过它必须归还探测槽，否则槽被永久占住
 			state.ReleaseProbe()
 			continue
 		}
 		if apiErr := SetupContextForSelectedChannel(c, channel, modelName); apiErr != nil {
 			logger.LogWarn(c, fmt.Sprintf("pbr: 成员 channel_id=%d model=%s 注入上下文失败: %s", member.ChannelId, member.UpstreamModel, apiErr.Error()))
+			state.ReportMemberUnavailable(member, "context injection failed: "+apiErr.Error())
 			state.ReleaseProbe()
 			continue
 		}
