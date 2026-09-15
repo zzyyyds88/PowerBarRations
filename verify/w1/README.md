@@ -57,7 +57,7 @@ go test ./internal/route/ ./model/ -run 'Chain|Lane|Route|Alias|Pinned|Failover|
 | 管理面鉴权 | 无凭据 / 错误密钥访问 `/api/v1/lanes` | 均 401 | 日志第 15–16 行 |
 | 私有数据自查 | `grep -rn 'sk-w1-...' --exclude-dir=verify` | 源码无测试密钥残留 | 日志第 75 行 |
 
-回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（41 个包 ok）；
+回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包 ok）；
 `bash verify/w0/smoke.sh` 仍 PASS（W0 的转发链路现在实际走的就是 PBR 路由）。
 
 脚本首次运行暴露并修掉两个真实缺陷：

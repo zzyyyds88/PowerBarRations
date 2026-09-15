@@ -48,7 +48,7 @@ bash verify/w3/smoke.sh          # 独立端口 6794 + 独立 SQLite + 内置假
 | 审计 | 记录 channel/lane/client_key 变更与 rotate，且不含请求正文 | 日志第 74–77 行 |
 | 零正文/零明文入库 | 数据库与运行日志均 grep 不到请求正文哨兵、客户端密钥明文、管理密钥明文 | 日志第 80–83 行 |
 
-回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（41 个包）；
+回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包）；
 `verify/w1` PASS=22、`verify/w2` PASS=31 均未回退。
 
 脚本暴露并修掉的真实缺陷：`/api/v1/setup` 提前创建"迁移期记账锚点用户"会把基座

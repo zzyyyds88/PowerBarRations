@@ -209,25 +209,56 @@ check "压测后仍能正常服务" "$ALIVE" "200"
 echo "  句柄数=$FD 线程数=$THREADS（GOMAXPROCS=$(nproc)）"
 
 echo "--- 8) 聚合统计与明细一致"
-# 先数明细再查聚合，避免"聚合查完又有新行落库"的时序假失败
-ROWS_NOW=$(python3 - "$WORK/pbr.db" <<'PYROWS2'
+# 审查 B4：第 7 步末发的 after-load 请求与第 8 步计数之间存在竞态——晚到的日志写入
+# 会让「明细」与「聚合」两次读数差 1，导致历史 README 的 PASS=12 不可稳定复现。
+# 修法：先等明细/小时聚合两个读数连续稳定（在途写入全部落库），再对三种读数做
+# 带重试的一致性比对，任何一次三者相等即判定通过。
+python3 - "$WORK/pbr.db" <<'PYSTABLE'
+import sqlite3, sys, time
+conn = sqlite3.connect(sys.argv[1])
+def read():
+    rows = conn.execute("SELECT COUNT(*) FROM pbr_request_logs").fetchone()[0]
+    hourly = conn.execute("SELECT COALESCE(SUM(requests),0) FROM pbr_stats_hourly WHERE group_kind='lane'").fetchone()[0]
+    return rows, hourly
+last = None
+stable = 0
+deadline = time.time() + 30
+while time.time() < deadline:
+    cur = read()
+    if cur == last:
+        stable += 1
+        if stable >= 3:
+            print("  明细/小时聚合已稳定：rows=%d hourly=%d" % cur)
+            break
+    else:
+        stable = 0
+        last = cur
+    time.sleep(0.5)
+PYSTABLE
+ROWS_NOW=""; STATS_TOTAL=""; HOURLY=""; MATCHED=no
+for attempt in 1 2 3 4 5 6; do
+  ROWS_NOW=$(python3 - "$WORK/pbr.db" <<'PYROWS2'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
 print(conn.execute("SELECT COUNT(*) FROM pbr_request_logs").fetchone()[0])
 PYROWS2
 )
-STATS=$(curl -s "${A[@]}" "$BASE/api/v1/stats?granularity=hour&group_by=lane")
-STATS_TOTAL=$(echo "$STATS" | jget 'sum(i["requests"] for i in d["items"])')
-echo "  stats 合计请求数：$STATS_TOTAL；此刻日志行数：$ROWS_NOW"
-check "聚合请求数与日志行数一致" "$STATS_TOTAL" "$ROWS_NOW"
-HOURLY=$(python3 - "$WORK/pbr.db" <<'PYHOURLY'
+  STATS=$(curl -s "${A[@]}" "$BASE/api/v1/stats?granularity=hour&group_by=lane")
+  STATS_TOTAL=$(echo "$STATS" | jget 'sum(i["requests"] for i in d["items"])')
+  HOURLY=$(python3 - "$WORK/pbr.db" <<'PYHOURLY'
 import sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
 print(conn.execute("SELECT COALESCE(SUM(requests),0) FROM pbr_stats_hourly WHERE group_kind='lane'").fetchone()[0])
 PYHOURLY
 )
-echo "  小时聚合表（lane 维度）合计：$HOURLY"
+  echo "  [第 ${attempt} 次] stats 合计=$STATS_TOTAL 小时聚合=$HOURLY 日志行数=$ROWS_NOW"
+  if [[ "$STATS_TOTAL" == "$ROWS_NOW" && "$HOURLY" == "$ROWS_NOW" ]]; then MATCHED=yes; break; fi
+  sleep 2
+done
+check "聚合请求数与日志行数一致" "$STATS_TOTAL" "$ROWS_NOW"
 check "小时聚合表与明细一致" "$HOURLY" "$ROWS_NOW"
+if [[ "$MATCHED" == yes ]]; then PASS=$((PASS+1)); echo "  PASS: 三种读数在一次快照内一致（无时序竞态）";
+else echo "  FAIL: 重试 6 次仍有读数差异（明细/聚合不一致）"; FAIL=$((FAIL+1)); fi
 
 echo
 echo "--- 私有数据自查"

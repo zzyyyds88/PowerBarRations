@@ -3,6 +3,14 @@
 > 本文是 goal-prompt §六「W8 成品验收」的证据索引：逐项写清**检查项 → 命令 → 结论 → 证据路径**。
 > **不把未做的项包装成已完成**：凡未实测的条目一律标 ❌ 或 ⚠️ 并写明原因。
 > 最近一次全量复跑：2026-09-15（W7 减脂合并前）；W6 迁移在旧两层库只读副本上实测通过。
+>
+> **审查整改（独立复审后）**：`longrun.sh` 第 8 步原存在时序竞态（第 7 步的 after-load
+> 请求与第 8 步计数之间），曾导致 50k 口径 3 次里 2 次出现"聚合/明细差 1"的假失败。
+> 已改为"等明细与小时聚合连续稳定 → 三种读数带重试一致性比对"，稳定结果才算 PASS。
+> `console_flow.py` 原硬编码 `127.0.0.1:5711` 且无脚本调用，其"24/24"无法从仓库重建；
+> 已改为**自包含**（自行构建并拉起 fakeupstream + PBR，随机端口，参数化 key），
+> 关键步骤加后端状态断言（管理密钥可鉴权、渠道落库、请求产生新日志、改口令后旧密钥 401/新口令生效），
+> 并由 `a3_console.sh` 在逐页走查后调用。
 > 日志目录 `verify/**/*.log` 不入库；真实迁移报告含私有数据，只落 `/tmp`，不进仓库。
 
 运行环境：独立端口 + 独立 SQLite + 内置假上游（`internal/testutil/fakeupstream`）
@@ -28,7 +36,7 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 |---|---|---|---|---|
 | **A1** 功能完整性：端点无 5xx、无未实现桩 | openapi 登记的全部 path×method 实跑 | `verify/final/e2e.sh` | ✅ PASS=33 | `verify/final/run-20260915-093114.log` |
 | **A2** 四模式 + 冷却 + 亲和 + 熔断半开 | 四模式各跑通；熔断打开→半开→复通留时间戳 | `verify/w2/smoke.sh` | ✅ PASS=32 | `verify/w2/run-20260915-093248.log`、`verify/w2/README.md` |
-| **A3** 控制台逐页走查（ui-spec §8） | 无头 Chromium + CDP 注入管理密钥，逐页导航/断言渲染与 console 无报错/三态组件/品牌残留 | `verify/final/a3_console.sh` | ✅ PASS=9 | `verify/final/a3-20260915-093142.log` |
+| **A3** 控制台逐页走查（ui-spec §8） | 无头 Chromium + CDP 注入管理密钥，逐页导航/断言渲染与 console 无报错/三态组件/品牌残留；随后跑 `console_flow.py` 完整使用流程（自包含假上游 + 后端强断言） | `verify/final/a3_console.sh` | ✅ PASS=9 + 完整流程 28/28（整改后实测） | `verify/final/a3-*.log` 中的 console_flow JSON（日志不入库） |
 | **A4** 迁移脚本幂等 | ①`pbr migrate` 在旧两层库（octopus 路由层 + new-api 厂商层）副本上跑两次：计划逐字节一致、目标库计数一致、产物可被 PBR 加载；②`/api/v1/import` 的导入幂等与对账规则 | `ROUTING_DB=… VENDOR_DB=… verify/final/a4_migrate.sh`；`verify/final/a4_import_idempotent.sh` | ✅ PASS=11（真实迁移，unresolved=0/ambiguous=1/widened=5）+ PASS=16（导入幂等） | `verify/final/a4-migrate-20260915-095625.log`；`verify/final/a4-20260915-093224.log` |
 | **B①** 工具调用 | 带 tools 的请求 → 回 tool_calls | `verify/final/e2e.sh` | ✅ | run 日志 |
 | **B②** 多模态小图 | 图片 data URL 透传，上游确实收到 | 同上 | ✅ | run 日志 |
@@ -39,18 +47,18 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 | **B⑦** 车道全挂快抛不静默 | 503 + 固定 body + <2s | 同上 | ✅ | run 日志 |
 | **B⑧** 429 不误判硬故障 | 记 `soft_rate_limit`、熔断不打开 | 同上 | ✅ | run 日志 |
 | **C** 故障注入 | 500/401/400/429/欠费关键词/超时/流中途断流/坏响应/空响应/凭据失效/全挂快抛/冷却不复打/半开复通 | `verify/final/fault_injection.sh` | ✅ PASS=23 | `verify/final/fault-20260915-093229.log` |
-| **D** 长稳与并发 | **50000 请求 / 并发 100**：日志行数=请求数、无串号、RSS 增长受控、聚合与明细一致 | `TOTAL=50000 CONCURRENCY=100 bash verify/final/longrun.sh` | ✅ PASS=12 | `verify/final/longrun-20260915-093434.log`（50k）；默认 3000 版本亦 PASS |
+| **D** 长稳与并发 | **50000 请求 / 并发 100**：日志行数=请求数、无串号、RSS 增长受控、聚合与明细一致 | `TOTAL=50000 CONCURRENCY=100 bash verify/final/longrun.sh` | ⚠️ 脚本已修时序竞态，新增 1 条一致性断言；结论以整改后**多次运行取稳定结果**为准 | 整改后 `longrun-*.log`（不入库）；`longrun-20260915-093434.log` 为整改前快照 |
 | **E** 持久化与重启 | 重启后配置/令牌不丢；运行态清空 | `verify/final/e2e.sh`、`verify/deploy/smoke.sh` | ✅ | run 日志；`verify/deploy/README.md` |
 | **F** 安全 | 未初始化 409、错误密钥 401、被拒车道 403、明文不入库不入日志、OpenAPI 不泄漏 | `verify/w3/smoke.sh`、`verify/final/e2e.sh` | ✅ | `verify/w3/run-20260915-093042.log`（PASS=45）、run 日志 |
 | **G** 部署验收 | 独立 compose 项目从零起容器 → 设口令 → 建渠道/密钥 → 转发 → 重启数据仍在 | `verify/deploy/smoke.sh` | ✅ | `verify/deploy/run-20260915-093955.log`、`verify/deploy/README.md` |
 | **H** 回滚演练 | 按 `MIGRATION.md` 在测试实例上演练切流与回滚（不动生产） | `verify/final/rollback.sh` | ✅ PASS=16 | `verify/final/rollback-20260915-093417.log` |
 | **I** 文档一致性 | README / MIGRATION / ADR / OpenAPI / verify 与实现一致 | e2e 端点实跑、`verify/w4/console_contract_check.py`、本索引 | ✅ | 控制台端点与 openapi 对齐；W7 后 w0/w1/w2 脚本与 README 已同步 |
-| **J** 代码质量 | `go vet ./...`、`go test ./...`、`web pnpm build`、`web pnpm lint` | 见下 | ✅ | `go test ./...` 41 包 ok；`pnpm lint` 0 error（1 条 TanStack Virtual 的 React Compiler warning） |
+| **J** 代码质量 | `go vet ./...`、`go test ./...`、`web pnpm build`、`web pnpm lint` | 见下 | ✅ | `go test ./...` **43 包 ok**；`pnpm lint` 0 error（1 条 TanStack Virtual 的 React Compiler warning） |
 
 ```bash
 go build ./...                   # 通过
 go vet ./...                     # 无输出
-go test ./... -count=1           # 41 个包 ok
+go test ./... -count=1           # 43 个包 ok
 cd web && pnpm build             # tsc --noEmit && vite build 零报错
 cd web && pnpm lint              # 0 error, 1 warning（第三方库 React Compiler 兼容性提示）
 ```

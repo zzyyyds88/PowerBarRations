@@ -42,7 +42,7 @@ bash verify/w5/smoke.sh          # 独立端口 6795 + 独立 SQLite + 内置假
 | 只存元数据 | 表里没有 `quota`/`remain_quota`/`content`/`body` 列，`error_summary` 里 grep 不到请求正文 | 日志第 45–47 行 |
 | /stats 聚合 | 按车道聚合出 `w5-model`，成功数 ≤ 请求数；`success=false` 过滤有效 | 日志第 51–53 行 |
 
-回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（41 个包）；
+回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包）；
 `verify/w1` PASS=22、`verify/w2` PASS=31、`verify/w3` PASS=44 均未回退。
 
 脚本暴露并修掉一个真实缺陷：客户端身份在鉴权中间件里写入日志载体时载体尚未建立

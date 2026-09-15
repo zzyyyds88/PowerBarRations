@@ -104,5 +104,23 @@ brand=$(echo "$REPORT" | jget 'len(d["brand_hits"])')
 check "无第三方品牌残留" "$brand" "0"
 
 echo
+echo "--- 4) 完整使用流程（console_flow.py 自包含：自己拉假上游/PBR/浏览器）"
+# 审查 B3：console_flow.py 已改为自包含并强化后端断言；这里以外部实例模式复用
+# 本脚本已拉起的服务与假上游，避免重复构建，同时保证它不再依赖任何外部残留进程。
+FLOW_REPORT=$(python3 "$REPO/verify/final/console_flow.py" "$REPO" "$WORK/flow-shots" "$PBR_PW" \
+  --base-url "$BASE" --admin-key "$ADMIN_KEY" \
+  --upstream-url "http://127.0.0.1:$UPSTREAM_PORT" --upstream-key "$GOOD_KEY")
+FLOW_RC=$?
+echo "$FLOW_REPORT" | tail -c 3000
+echo
+if [[ $FLOW_RC == 2 ]]; then
+  echo "  SKIP: console_flow 环境不支持"
+else
+  flow_total=$(echo "$FLOW_REPORT" | jget 'len(d["steps"])' 2>/dev/null || echo 0)
+  flow_failed=$(echo "$FLOW_REPORT" | jget 'd["failed"]' 2>/dev/null || echo 999)
+  check "完整使用流程失败数为 0（共 ${flow_total} 断言）" "$flow_failed" "0"
+fi
+
+echo
 echo "=== 结果：PASS=$PASS FAIL=$FAIL ==="
 [[ $FAIL == 0 ]] || exit 1

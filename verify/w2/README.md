@@ -50,7 +50,7 @@ go test ./internal/route/ -count=1
 | 欠费关键词 | 注入 400 + `Your credit balance is too low` | 归类 `hard_quota`，进冷却；单成员车道返回固定 503 | 日志第 78–80 行 |
 | 清除熔断/冷却 | `POST /lanes/solo-model/circuits/reset` | `{"reset":<清除的熔断器条目数>}`（api-spec §6.6） | 日志第 84 行 |
 
-回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（41 个包）；
+回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包）；
 `bash verify/w1/smoke.sh` 仍 PASS=22 FAIL=0（W2 未破坏 W1 的门）。
 
 脚本首次运行暴露并修掉一个真实缺陷：尝试轮数上界少算一轮，导致"成员预算耗尽"时

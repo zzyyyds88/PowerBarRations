@@ -38,7 +38,7 @@ bash verify/w4/smoke.sh        # 构建控制台 → embed 进二进制 → 起�
 | 控制台 ↔ 契约一致 | 从控制台源码抽出的 **20 个管理端点**逐一在 `openapi.json` 中登记，`missing` 为空（含 `/route-events`、`/lanes/{name}/health`、`/channels/{name}/test`、`/keys/{name}/rotate` 等） | 日志第 57–58 行 |
 | 构建产物不入库 | 验收结束还原 `web/dist/index.html` 占位页，工作区干净 | 日志第 60 行 |
 
-回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（41 个包）；
+回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包）；
 `verify/w1` PASS=22、`verify/w2` PASS=31、`verify/w3` PASS=44、`verify/w5` PASS=21 均未回退。
 
 ## 未验证项（明说，不计入通过）

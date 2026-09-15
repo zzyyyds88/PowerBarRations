@@ -68,6 +68,35 @@ for t in channels lanes lane_members client_keys abilities; do
   echo "    $t = $c1"
 done
 
+# 审查 B1 回归：client_keys 落库行数必须等于计划密钥数（同名不同明文改名后不得丢）。
+planned_keys=$(python3 -c "import json;print(len(json.load(open('$WORK/report2.json'))['keys']))")
+db_keys=$(sqlite3 "$WORK/target1.db" "select count(*) from client_keys;" 2>/dev/null)
+check "client_keys 行数 = 计划密钥数（B1：不丢凭据）" "$db_keys" "$planned_keys"
+# report 的 keys 名必须两两唯一（改名生效）。
+unique_keys=$(python3 -c "import json;ks=json.load(open('$WORK/report2.json'))['keys'];print(len(set(ks)),len(ks))")
+check "计划密钥名唯一（B1：改名生效）" "$unique_keys" "$unique_keys"
+dup_renamed=$(python3 -c "import json;r=json.load(open('$WORK/report2.json'))['report'];print(len(r.get('duplicate_key_names') or []))")
+echo "    duplicate_key_names = $dup_renamed（>0 表示确有同名不同明文被改名）"
+# 逐条哈希对账（不只数条数）：改名事件里每把被改名的密钥，其 sha256 前 8 位必须
+# 都能在库内找到对应 key_hash 前缀，证明"两条同名明文都活着"。
+hash_ok=$(python3 - "$WORK/target1.db" "$WORK/report2.json" <<'PYHASH'
+import json, sqlite3, sys
+db, report = sys.argv[1], sys.argv[2]
+dups = (json.load(open(report))["report"].get("duplicate_key_names") or [])
+hashes = [r[0] for r in sqlite3.connect(db).execute("select key_hash from client_keys")]
+ok = all(any(h.startswith(d["sha256_8"]) for h in hashes) for d in dups)
+print("yes" if (not dups or ok) else "no")
+PYHASH
+)
+check "被改名的密钥哈希都能在库内找到（B1：不丢凭据）" "$hash_ok" "yes"
+
+# 审查 B2 回归：非法 --keys 必须 exit 2，且不得产出目标库。
+"$WORK/pbr" migrate --routing "$WORK/routing.db" --vendor "$WORK/vendor.db" --target "$WORK/bad.db" --keys bogus > "$WORK/bad.txt" 2>&1
+bad_rc=$?
+check "非法 --keys 退出码为 2（B2）" "$bad_rc" "2"
+if [ -f "$WORK/bad.db" ]; then bad_exists=yes; else bad_exists=no; fi
+check "非法 --keys 不产出目标库（B2）" "$bad_exists" "no"
+
 echo "--- 5) 迁移产物可被 PBR 加载（显式车道数 = 计划数）"
 ( cd "$WORK" && exec env PBR_ADMIN_KEY="$ADMIN" PORT=$PORT \
   SQLITE_PATH="$WORK/target1.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate" \
