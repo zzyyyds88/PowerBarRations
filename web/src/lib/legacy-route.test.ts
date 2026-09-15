@@ -28,13 +28,16 @@ describe('legacy frontend route migration', () => {
       '/console': '/dashboard',
       '/console/models': '/models',
       '/console/deployment': '/models/deployments',
-      '/console/subscription': '/subscriptions',
       '/console/channel': '/channels',
       '/console/token': '/keys',
       '/console/playground': '/playground',
-      '/console/redemption': '/redemption-codes',
-      '/console/user': '/users',
-      '/console/personal': '/profile',
+      // 多用户/计费旧路径（subscription/redemption/user/personal）已删，
+      // 统一兜底到 /dashboard。
+      '/console/subscription': '/dashboard',
+      '/console/redemption': '/dashboard',
+      '/console/user': '/dashboard',
+      '/console/personal': '/dashboard',
+      '/console/topup': '/dashboard',
       '/console/log': '/usage-logs',
       '/console/midjourney': '/usage-logs/drawing',
       '/console/task': '/usage-logs/task',
@@ -51,7 +54,7 @@ describe('legacy frontend route migration', () => {
       '/sign-in?redirect=%2Fkeys#continue'
     )
     expect(resolveLegacyRoute('/console/topup?source=email#orders')).toBe(
-      '/wallet?source=email#orders'
+      '/dashboard?source=email#orders'
     )
   })
 
@@ -61,9 +64,6 @@ describe('legacy frontend route migration', () => {
       dashboard: '/system-settings/content/dashboard',
       chats: '/system-settings/content/chat',
       drawing: '/system-settings/content/drawing',
-      payment: '/system-settings/billing/payment',
-      ratio: '/system-settings/billing/model-pricing',
-      ratelimit: '/system-settings/security/rate-limit',
       models: '/system-settings/models/global',
       'model-deployment': '/system-settings/models/model-deployment',
       performance: '/system-settings/operations/performance',

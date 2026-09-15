@@ -69,7 +69,7 @@ export async function getPBRSetupStatus(): Promise<PBRSetupStatus> {
     credentials: 'same-origin',
     cache: 'no-store',
   })
-  if (!res.ok) throw new Error('setup status request failed: ' + res.status)
+  if (!res.ok) throw new Error(`setup status request failed: ${res.status}`)
   return (await res.json()) as PBRSetupStatus
 }
 
@@ -82,7 +82,9 @@ export async function submitPBRSetup(password: string): Promise<{ warning?: stri
     body: JSON.stringify({ password }),
   })
   const body = (await res.json().catch(() => ({}))) as { warning?: string; error?: { message?: string } }
-  if (!res.ok) throw new Error(body.error?.message || 'setup failed: ' + res.status)
+  if (!res.ok) {
+    throw new Error(body.error?.message || `setup failed: ${res.status}`)
+  }
   return body
 }
 

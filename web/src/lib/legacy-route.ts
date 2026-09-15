@@ -18,30 +18,29 @@ For commercial licensing, please contact support@quantumnous.com
 */
 const legacyOrigin = 'https://legacy-route.invalid'
 
+// 上游 new-api 旧控制台（/console/*）到新控制台的映射。
+// 只保留 PBR 仍然存在的目标页；多用户/计费类旧路径
+// （subscription/redemption/user/personal/topup）不再单列，统一由下方
+// `/console/` 前缀兜底到 /dashboard，避免跳到已删除的路由。
 const legacyConsoleRoutes: Record<string, string> = {
   '/console': '/dashboard',
   '/console/models': '/models',
   '/console/deployment': '/models/deployments',
-  '/console/subscription': '/subscriptions',
   '/console/channel': '/channels',
   '/console/token': '/keys',
   '/console/playground': '/playground',
-  '/console/redemption': '/redemption-codes',
-  '/console/user': '/users',
-  '/console/personal': '/profile',
   '/console/log': '/usage-logs',
   '/console/midjourney': '/usage-logs/drawing',
   '/console/task': '/usage-logs/task',
 }
 
+// 旧设置页 tab → 新设置页子节。仅映射仍存在的 sections
+// （content/models/operations/site），计费与安全子节已随 W7 删除。
 const legacySettingsTabs: Record<string, string> = {
   operation: '/system-settings/operations/behavior',
   dashboard: '/system-settings/content/dashboard',
   chats: '/system-settings/content/chat',
   drawing: '/system-settings/content/drawing',
-  payment: '/system-settings/billing/payment',
-  ratio: '/system-settings/billing/model-pricing',
-  ratelimit: '/system-settings/security/rate-limit',
   models: '/system-settings/models/global',
   'model-deployment': '/system-settings/models/model-deployment',
   performance: '/system-settings/operations/performance',
@@ -77,9 +76,6 @@ export function resolveLegacyRoute(rawHref: string): string | null {
   }
   if (pathname === '/forbidden') {
     return buildTargetHref('/403', source)
-  }
-  if (pathname === '/console/topup') {
-    return buildTargetHref('/wallet', source)
   }
   if (pathname === '/console/setting') {
     const tab = source.searchParams.get('tab') ?? ''

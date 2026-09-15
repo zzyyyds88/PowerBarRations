@@ -35,13 +35,52 @@ export function ModelRoutingPanel() {
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<string>('')
 
-  const modelsQuery = useQuery({
-    queryKey: modelsKey,
-    queryFn: listPBRModels,
-  })
-
+  const modelsQuery = useQuery({ queryKey: modelsKey, queryFn: listPBRModels })
   const models: PBRModelSummary[] = modelsQuery.data ?? []
   const active = selected || models[0]?.model || ''
+
+  let listContent
+  if (modelsQuery.isLoading) {
+    listContent = (
+      <div className='text-muted-foreground flex items-center gap-2 p-3 text-sm'>
+        <Loader2 className='size-4 animate-spin' /> {t('Loading...')}
+      </div>
+    )
+  } else if (models.length === 0) {
+    listContent = (
+      <EmptyState
+        title={t('No routable models yet')}
+        description={t(
+          'Add a channel and declare its models, then the model appears here.'
+        )}
+      />
+    )
+  } else {
+    listContent = (
+      <ul className='space-y-1'>
+        {models.map((m) => (
+          <li key={m.model}>
+            <button
+              type='button'
+              onClick={() => setSelected(m.model)}
+              className={cn(
+                'hover:bg-accent w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors',
+                active === m.model && 'bg-accent font-medium'
+              )}
+            >
+              <span className='block truncate'>{m.model}</span>
+              <span className='text-muted-foreground text-xs'>
+                {m.source === 'explicit'
+                  ? t('Explicit chain')
+                  : t('Implicit chain')}{' '}
+                · {t('{{count}} members', { count: m.member_count })}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    )
+  }
 
   return (
     <div className='grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]'>
@@ -53,41 +92,7 @@ export function ModelRoutingPanel() {
         </CardHeader>
         <Separator />
         <CardContent className='min-h-0 overflow-auto p-2'>
-          {modelsQuery.isLoading ? (
-            <div className='text-muted-foreground flex items-center gap-2 p-3 text-sm'>
-              <Loader2 className='size-4 animate-spin' /> {t('Loading...')}
-            </div>
-          ) : models.length === 0 ? (
-            <EmptyState
-              title={t('No routable models yet')}
-              description={t(
-                'Add a channel and declare its models, then the model appears here.'
-              )}
-            />
-          ) : (
-            <ul className='space-y-1'>
-              {models.map((m) => (
-                <li key={m.model}>
-                  <button
-                    type='button'
-                    onClick={() => setSelected(m.model)}
-                    className={cn(
-                      'hover:bg-accent w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                      active === m.model && 'bg-accent font-medium'
-                    )}
-                  >
-                    <span className='block truncate'>{m.model}</span>
-                    <span className='text-muted-foreground text-xs'>
-                      {m.source === 'explicit'
-                        ? t('Explicit chain')
-                        : t('Implicit chain')}{' '}
-                      · {t('{{count}} members', { count: m.member_count })}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+          {listContent}
         </CardContent>
       </Card>
 
@@ -135,26 +140,24 @@ function RouteEditor({
     queryFn: () => getPBRRoute(model),
   })
 
-  const members: EditableMember[] = (
-    draft ??
-    (routeQuery.data?.members ?? []).map((m) => ({
+  const sourceMembers: EditableMember[] = (routeQuery.data?.members ?? []).map(
+    (m) => ({
       channel: m.channel,
       upstream_model: m.upstream_model,
       priority: m.priority,
-    }))
-  ).slice()
+    })
+  )
+  const members: EditableMember[] = [...(draft ?? sourceMembers)]
 
   // 优先级按列表顺序重排：第一个最大。
   const reorder = (next: EditableMember[]) => {
-    setDraft(
-      next.map((m, index) => ({ ...m, priority: next.length - index }))
-    )
+    setDraft(next.map((m, index) => ({ ...m, priority: next.length - index })))
   }
 
   const move = (index: number, delta: number) => {
     const target = index + delta
     if (target < 0 || target >= members.length) return
-    const next = members.slice()
+    const next = [...members]
     const [item] = next.splice(index, 1)
     next.splice(target, 0, item)
     reorder(next)
@@ -162,7 +165,7 @@ function RouteEditor({
 
   const setPriority = (index: number, value: string) => {
     const parsed = Number.parseInt(value, 10)
-    const next = members.slice()
+    const next = [...members]
     next[index] = { ...next[index], priority: Number.isNaN(parsed) ? 0 : parsed }
     setDraft(next)
   }
@@ -192,6 +195,78 @@ function RouteEditor({
   })
 
   const dirty = draft !== null
+
+  let body
+  if (routeQuery.isLoading) {
+    body = (
+      <div className='text-muted-foreground flex items-center gap-2 text-sm'>
+        <Loader2 className='size-4 animate-spin' /> {t('Loading...')}
+      </div>
+    )
+  } else if (members.length === 0) {
+    body = (
+      <EmptyState
+        title={t('No members')}
+        description={t(
+          'No channel declares this model yet. Add it in Channels first.'
+        )}
+      />
+    )
+  } else {
+    body = (
+      <div className='space-y-2'>
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'Requests try members top-down by priority; on failure the router escapes to the next one.'
+          )}
+        </p>
+        {members.map((m, index) => (
+          <div
+            key={`${m.channel}/${m.upstream_model}`}
+            className='flex items-center gap-2 rounded-md border p-2'
+          >
+            <span className='text-muted-foreground w-6 text-center text-xs'>
+              {index + 1}
+            </span>
+            <div className='min-w-0 flex-1'>
+              <div className='truncate text-sm font-medium'>{m.channel}</div>
+              <div className='text-muted-foreground truncate text-xs'>
+                {t('upstream model')}: {m.upstream_model}
+              </div>
+            </div>
+            <div className='flex items-center gap-1'>
+              <Label className='text-muted-foreground text-xs'>
+                {t('Priority')}
+              </Label>
+              <Input
+                className='h-8 w-20'
+                value={String(m.priority)}
+                onChange={(event) => setPriority(index, event.target.value)}
+              />
+            </div>
+            <Button
+              size='icon'
+              variant='ghost'
+              aria-label={t('Move up')}
+              disabled={index === 0}
+              onClick={() => move(index, -1)}
+            >
+              <ArrowUp className='size-4' />
+            </Button>
+            <Button
+              size='icon'
+              variant='ghost'
+              aria-label={t('Move down')}
+              disabled={index === members.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              <ArrowDown className='size-4' />
+            </Button>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <Card className='min-h-0 overflow-hidden'>
@@ -229,72 +304,7 @@ function RouteEditor({
         </div>
       </CardHeader>
       <Separator />
-      <CardContent className='min-h-0 overflow-auto p-3'>
-        {routeQuery.isLoading ? (
-          <div className='text-muted-foreground flex items-center gap-2 text-sm'>
-            <Loader2 className='size-4 animate-spin' /> {t('Loading...')}
-          </div>
-        ) : members.length === 0 ? (
-          <EmptyState
-            title={t('No members')}
-            description={t(
-              'No channel declares this model yet. Add it in Channels first.'
-            )}
-          />
-        ) : (
-          <div className='space-y-2'>
-            <p className='text-muted-foreground text-xs'>
-              {t(
-                'Requests try members top-down by priority; on failure the router escapes to the next one.'
-              )}
-            </p>
-            {members.map((m, index) => (
-              <div
-                key={`${m.channel}/${m.upstream_model}`}
-                className='flex items-center gap-2 rounded-md border p-2'
-              >
-                <span className='text-muted-foreground w-6 text-center text-xs'>
-                  {index + 1}
-                </span>
-                <div className='min-w-0 flex-1'>
-                  <div className='truncate text-sm font-medium'>{m.channel}</div>
-                  <div className='text-muted-foreground truncate text-xs'>
-                    {t('upstream model')}: {m.upstream_model}
-                  </div>
-                </div>
-                <div className='flex items-center gap-1'>
-                  <Label className='text-muted-foreground text-xs'>
-                    {t('Priority')}
-                  </Label>
-                  <Input
-                    className='h-8 w-20'
-                    value={String(m.priority)}
-                    onChange={(event) => setPriority(index, event.target.value)}
-                  />
-                </div>
-                <Button
-                  size='icon'
-                  variant='ghost'
-                  aria-label={t('Move up')}
-                  disabled={index === 0}
-                  onClick={() => move(index, -1)}
-                >
-                  <ArrowUp className='size-4' />
-                </Button>
-                <Button
-                  size='icon'
-                  variant='ghost'
-                  aria-label={t('Move down')}
-                  disabled={index === members.length - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  <ArrowDown className='size-4' />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
+      <CardContent className='min-h-0 overflow-auto p-3'>{body}</CardContent>
     </Card>
   )
 }

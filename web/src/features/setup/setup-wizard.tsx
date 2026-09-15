@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Loader2 } from 'lucide-react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -77,7 +77,8 @@ export function SetupWizard() {
     },
   })
 
-  const password = form.watch('password')
+  // 用 useWatch 而非 form.watch：后者与 React Compiler 不兼容（lint 规则）。
+  const password = useWatch({ control: form.control, name: 'password' })
 
   return (
     <div className='relative flex min-h-svh flex-col items-center justify-center gap-6 p-6'>
