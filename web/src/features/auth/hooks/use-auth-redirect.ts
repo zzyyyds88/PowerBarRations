@@ -28,7 +28,6 @@ import { applyAuthBundle, isAuthBundle } from '@/lib/api'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
 
-import { isLoginChallenge } from '../secure-verification/api'
 
 /**
  * Hook for handling authentication redirects and user data management
@@ -85,23 +84,10 @@ export function useAuthRedirect() {
         await handleLoginSuccess(result, redirectTo)
         return true
       }
-      if (!isLoginChallenge(result)) {
-        throw new AuthOperationError('Login failed')
-      }
-      if (result.expires_at * 1000 <= Date.now()) {
-        throw new AuthOperationError(
-          'Login flow expired. Please sign in again.'
-        )
-      }
-      useAuthStore.getState().auth.setPendingLoginVerification({
-        challenge: result,
-        redirectTo:
-          sanitizeAuthRedirect(redirectTo, window.location.origin) ?? undefined,
-      })
-      await navigate({ to: '/otp', replace: true })
-      return false
+      // PBR 只有口令登录，不产生二次验证 challenge，也没有注册页。
+      throw new AuthOperationError('Login failed')
     },
-    [handleLoginSuccess, navigate, sessionID]
+    [handleLoginSuccess, sessionID]
   )
 
   /**
@@ -111,17 +97,9 @@ export function useAuthRedirect() {
     void navigate({ to: '/sign-in', replace: true })
   }, [navigate])
 
-  /**
-   * Redirect to register page
-   */
-  const redirectToRegister = useCallback(() => {
-    void navigate({ to: '/sign-up', replace: true })
-  }, [navigate])
-
   return {
     handleLoginSuccess,
     handleLoginResult,
     redirectToLogin,
-    redirectToRegister,
   }
 }
