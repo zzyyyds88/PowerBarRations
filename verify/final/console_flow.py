@@ -339,12 +339,25 @@ def _random_secret(n: int = 20) -> str:
     return "".join(random.choice(alphabet) for _ in range(n))
 
 
+def _restore_tracked_dist(repo: str) -> None:
+    """把仓库跟踪的 web/dist/index.html 还原为占位页、清掉 assets。
+
+    控制台产物是构建物（.gitignore 已排除 /web/dist/assets/），但 index.html 被跟踪为
+    占位页。脚本自己构建后必须还原，否则每次跑都会把真实入口写进工作区、留成脏改动。
+    """
+    subprocess.run(["git", "checkout", "--", "web/dist/index.html"], cwd=repo,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    shutil.rmtree(os.path.join(repo, "web", "dist", "assets"), ignore_errors=True)
+
+
 def _build_console(repo: str) -> None:
     """先构建控制台，保证 web/dist/index.html 是真实入口而非仓库占位页。
 
     PBR 二进制用 go:embed web/dist 内嵌控制台；仓库里跟踪的 index.html 只是占位页
     （"控制台将在 W4 迁入"）。若跳过此步，go build 得到的是占位控制台，所有 UI 步骤
     都会失败（审查发现的真实缺陷：脚本自称自包含，却没有构建控制台）。
+
+    构建产物用完由 _restore_tracked_dist 还原，脚本不留下脏工作区。
     """
     dist_index = os.path.join(repo, "web", "dist", "index.html")
     built = subprocess.run(["pnpm", "build"], cwd=os.path.join(repo, "web"),
@@ -718,6 +731,8 @@ def main() -> int:
                     p.kill()
                 except Exception:
                     pass
+        # 还原脚本自己构建的 web/dist，绝不把脏改动留给调用者。
+        _restore_tracked_dist(repo)
 
 
 if __name__ == "__main__":
