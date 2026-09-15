@@ -316,6 +316,8 @@ func InjectGoogleAnalytics() {
 }
 
 func InitResources() error {
+	// 会话 Cookie 的 Secure 标记由 common 的配置提供（避免 middleware → common 依赖环）。
+	middleware.SetSessionCookieSecureProvider(func() bool { return common.SessionCookieSecure })
 	// Initialize resources here if needed
 	// This is a placeholder function for future resource initialization
 	err := godotenv.Load(".env")

@@ -94,6 +94,8 @@ func Setup(c *gin.Context) {
 	// 基座的 /api/setup 在"已存在 root 用户"时会拒绝初始化，提前建会把它挤掉。
 	// 锚点改为首次使用 PBR 客户端密钥访问模型面时懒建（SetupContextForPBRClientKey）。
 	writeAudit(c, "setup", "admin_credential", "admin")
+	// 首启后直接签发浏览器会话：控制台不再需要把管理密钥存 localStorage。
+	middleware.IssueAdminSession(c)
 	resp := gin.H{
 		"initialized": true,
 		"admin_key":   adminKey,
@@ -132,7 +134,15 @@ func Login(c *gin.Context) {
 		return
 	}
 	loginBackoff.succeed()
-	c.JSON(http.StatusOK, gin.H{"token": adminKey})
+	// 签发 HttpOnly 会话 Cookie（浏览器用）；同时返回管理密钥供 AI/脚本直接取用。
+	middleware.IssueAdminSession(c)
+	c.JSON(http.StatusOK, gin.H{"token": adminKey, "admin_key": adminKey})
+}
+
+// Logout POST /api/v1/auth/logout（需鉴权或幂等）：清除会话 Cookie。
+func Logout(c *gin.Context) {
+	middleware.ClearAdminSession(c)
+	c.JSON(http.StatusOK, gin.H{"logged_out": true})
 }
 
 type passwordChangeRequest struct {
@@ -159,6 +169,8 @@ func ChangePassword(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	// 口令变了，签名材料随之变化，旧会话全部失效；给当前浏览器续签一个新会话。
+	middleware.IssueAdminSession(c)
 	writeAudit(c, "update", "admin_credential", "admin")
 	c.JSON(http.StatusOK, gin.H{"updated": true})
 }

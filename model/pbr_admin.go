@@ -46,6 +46,16 @@ func IsPBRInitialized() bool {
 	return err == nil && cred != nil && cred.AdminKeySha256 != ""
 }
 
+// PBRAdminKeySha256 返回库内管理密钥哈希；未初始化返回空串。
+// 会话签名（internal/session）需要它作为派生输入，因此独立暴露。
+func PBRAdminKeySha256() string {
+	cred, err := GetPBRAdminCredential()
+	if err != nil || cred == nil {
+		return ""
+	}
+	return cred.AdminKeySha256
+}
+
 // GetPBRAdminCredential 读取管理凭据；未初始化返回 (nil, nil)。
 func GetPBRAdminCredential() (*PBRAdminCredential, error) {
 	var cred PBRAdminCredential
