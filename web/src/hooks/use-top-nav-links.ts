@@ -21,7 +21,6 @@ import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
 import { parseHeaderNavModulesFromStatus } from '@/lib/nav-modules'
-import { useAuthStore } from '@/stores/auth-store'
 
 export type TopNavLink = {
   title: string
@@ -37,16 +36,15 @@ export type TopNavLink = {
  * {
  *   home: true,
  *   console: true,
- *   pricing: { enabled: true, requireAuth: false },
- *   rankings: { enabled: true, requireAuth: false },
  *   docs: true,
  *   about: true
  * }
+ *
+ * PBR 无公开定价页与排行页，故不再产出 pricing/rankings 链接。
  */
 export function useTopNavLinks(): TopNavLink[] {
   const { t } = useTranslation()
   const { status } = useStatus()
-  const { auth } = useAuthStore()
 
   // Parse HeaderNavModules
   const modules = useMemo(() => {
@@ -57,8 +55,6 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // Documentation link (may be external)
   const docsLink: string | undefined = status?.docs_link as string | undefined
-
-  const isAuthed = !!auth?.user
 
   const links: TopNavLink[] = []
 
@@ -72,19 +68,7 @@ export function useTopNavLinks(): TopNavLink[] {
     links.push({ title: t('Console'), href: '/dashboard' })
   }
 
-  // Pricing
-  const pricing = modules?.pricing
-  if (pricing && typeof pricing === 'object' && pricing.enabled) {
-    const requiresAuth = pricing.requireAuth && !isAuthed
-    links.push({ title: t('Model Square'), href: '/pricing', requiresAuth })
-  }
-
-  // Rankings
-  const rankings = modules?.rankings
-  if (rankings && typeof rankings === 'object' && rankings.enabled) {
-    const requiresAuth = rankings.requireAuth && !isAuthed
-    links.push({ title: t('Rankings'), href: '/rankings', requiresAuth })
-  }
+  // PBR 已删除公开定价页（/pricing）与排行页（/rankings）：不再产出这两个入口。
 
   // Docs (supports external links)
   if (modules?.docs !== false) {

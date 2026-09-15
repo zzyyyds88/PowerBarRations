@@ -23,7 +23,6 @@ import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as AuthenticatedChat2linkRouteImport } from './routes/_authenticated/chat2link'
 import { Route as AuthenticatedSystemSettingsRouteRouteImport } from './routes/_authenticated/system-settings/route'
 import { Route as AboutIndexRouteImport } from './routes/about/index'
-import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
@@ -40,7 +39,6 @@ import { Route as AuthenticatedTaskPluginsIndexRouteImport } from './routes/_aut
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedUsageLogsAuditRouteImport } from './routes/_authenticated/usage-logs/audit'
-import { Route as PricingModelIdIndexRouteImport } from './routes/pricing/$modelId/index'
 import { Route as AuthenticatedSystemSettingsContentIndexRouteImport } from './routes/_authenticated/system-settings/content/index'
 import { Route as AuthenticatedSystemSettingsContentSectionRouteImport } from './routes/_authenticated/system-settings/content/$section'
 import { Route as AuthenticatedSystemSettingsModelsIndexRouteImport } from './routes/_authenticated/system-settings/models/index'
@@ -117,11 +115,6 @@ const AuthenticatedSystemSettingsRouteRoute =
 const AboutIndexRoute = AboutIndexRouteImport.update({
   id: '/about/',
   path: '/about/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PricingIndexRoute = PricingIndexRouteImport.update({
-  id: '/pricing/',
-  path: '/pricing/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SetupIndexRoute = SetupIndexRouteImport.update({
@@ -217,11 +210,6 @@ const AuthenticatedUsageLogsAuditRoute =
     path: '/usage-logs/audit',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const PricingModelIdIndexRoute = PricingModelIdIndexRouteImport.update({
-  id: '/pricing/$modelId/',
-  path: '/pricing/$modelId/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const AuthenticatedSystemSettingsContentIndexRoute =
   AuthenticatedSystemSettingsContentIndexRouteImport.update({
     id: '/content/',
@@ -284,7 +272,6 @@ export interface FileRoutesByFullPath {
   '/503': typeof errors503Route
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/about/': typeof AboutIndexRoute
-  '/pricing/': typeof PricingIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
@@ -301,7 +288,6 @@ export interface FileRoutesByFullPath {
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
-  '/pricing/$modelId/': typeof PricingModelIdIndexRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
   '/system-settings/models/$section': typeof AuthenticatedSystemSettingsModelsSectionRoute
   '/system-settings/operations/$section': typeof AuthenticatedSystemSettingsOperationsSectionRoute
@@ -323,7 +309,6 @@ export interface FileRoutesByTo {
   '/503': typeof errors503Route
   '/chat2link': typeof AuthenticatedChat2linkRoute
   '/about': typeof AboutIndexRoute
-  '/pricing': typeof PricingIndexRoute
   '/setup': typeof SetupIndexRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
@@ -340,7 +325,6 @@ export interface FileRoutesByTo {
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
   '/task-plugins': typeof AuthenticatedTaskPluginsIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
-  '/pricing/$modelId': typeof PricingModelIdIndexRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
   '/system-settings/models/$section': typeof AuthenticatedSystemSettingsModelsSectionRoute
   '/system-settings/operations/$section': typeof AuthenticatedSystemSettingsOperationsSectionRoute
@@ -366,7 +350,6 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/chat2link': typeof AuthenticatedChat2linkRoute
   '/about/': typeof AboutIndexRoute
-  '/pricing/': typeof PricingIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
@@ -383,7 +366,6 @@ export interface FileRoutesById {
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
   '/_authenticated/task-plugins/': typeof AuthenticatedTaskPluginsIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
-  '/pricing/$modelId/': typeof PricingModelIdIndexRoute
   '/_authenticated/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
   '/_authenticated/system-settings/models/$section': typeof AuthenticatedSystemSettingsModelsSectionRoute
   '/_authenticated/system-settings/operations/$section': typeof AuthenticatedSystemSettingsOperationsSectionRoute
@@ -408,7 +390,6 @@ export interface FileRouteTypes {
     | '/503'
     | '/chat2link'
     | '/about/'
-    | '/pricing/'
     | '/setup/'
     | '/chat/$chatId'
     | '/dashboard/$section'
@@ -425,7 +406,6 @@ export interface FileRouteTypes {
     | '/system-settings/'
     | '/task-plugins/'
     | '/usage-logs/'
-    | '/pricing/$modelId/'
     | '/system-settings/content/$section'
     | '/system-settings/models/$section'
     | '/system-settings/operations/$section'
@@ -447,7 +427,6 @@ export interface FileRouteTypes {
     | '/503'
     | '/chat2link'
     | '/about'
-    | '/pricing'
     | '/setup'
     | '/chat/$chatId'
     | '/dashboard/$section'
@@ -464,7 +443,6 @@ export interface FileRouteTypes {
     | '/system-settings'
     | '/task-plugins'
     | '/usage-logs'
-    | '/pricing/$modelId'
     | '/system-settings/content/$section'
     | '/system-settings/models/$section'
     | '/system-settings/operations/$section'
@@ -489,7 +467,6 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/chat2link'
     | '/about/'
-    | '/pricing/'
     | '/setup/'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
@@ -506,7 +483,6 @@ export interface FileRouteTypes {
     | '/_authenticated/system-settings/'
     | '/_authenticated/task-plugins/'
     | '/_authenticated/usage-logs/'
-    | '/pricing/$modelId/'
     | '/_authenticated/system-settings/content/$section'
     | '/_authenticated/system-settings/models/$section'
     | '/_authenticated/system-settings/operations/$section'
@@ -529,9 +505,7 @@ export interface RootRouteChildren {
   errors500Route: typeof errors500Route
   errors503Route: typeof errors503Route
   AboutIndexRoute: typeof AboutIndexRoute
-  PricingIndexRoute: typeof PricingIndexRoute
   SetupIndexRoute: typeof SetupIndexRoute
-  PricingModelIdIndexRoute: typeof PricingModelIdIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -632,13 +606,6 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about/'
       preLoaderRoute: typeof AboutIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pricing/': {
-      id: '/pricing/'
-      path: '/pricing'
-      fullPath: '/pricing/'
-      preLoaderRoute: typeof PricingIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/setup/': {
@@ -752,13 +719,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/usage-logs/audit'
       preLoaderRoute: typeof AuthenticatedUsageLogsAuditRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/pricing/$modelId/': {
-      id: '/pricing/$modelId/'
-      path: '/pricing/$modelId'
-      fullPath: '/pricing/$modelId/'
-      preLoaderRoute: typeof PricingModelIdIndexRouteImport
-      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/system-settings/content/': {
       id: '/_authenticated/system-settings/content/'
@@ -924,9 +884,7 @@ const rootRouteChildren: RootRouteChildren = {
   errors500Route: errors500Route,
   errors503Route: errors503Route,
   AboutIndexRoute: AboutIndexRoute,
-  PricingIndexRoute: PricingIndexRoute,
   SetupIndexRoute: SetupIndexRoute,
-  PricingModelIdIndexRoute: PricingModelIdIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
