@@ -832,6 +832,7 @@ func openAPIPaths() gin.H {
 		"/setup":         secured("post", "首次设置登录口令", nil),
 		"/auth/login":    secured("post", "口令换管理密钥并签发会话 Cookie", nil),
 		"/auth/logout":   secured("post", "清除会话 Cookie", nil),
+		"/auth/session":  secured("get", "查询当前是否持有有效会话", nil),
 		"/auth/password": secured("post", "修改口令（管理密钥随之变化）", nil),
 		"/capabilities":  secured("get", "适配器、模式与能力枚举", nil),
 		"/openapi.json":  secured("get", "OpenAPI 3 文档", nil),

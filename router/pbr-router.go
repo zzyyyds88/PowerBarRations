@@ -23,6 +23,8 @@ func SetPBRRouter(router *gin.Engine) {
 	group.POST("/auth/login", api.Login)
 	// 登出只清 Cookie，幂等且无需先鉴权（未带 Cookie 也返回成功）。
 	group.POST("/auth/logout", api.Logout)
+	// 会话状态查询：免鉴权，200 承载布尔值（控制台启动判定）。
+	group.GET("/auth/session", api.SessionStatus)
 
 	authed := group.Group("")
 	authed.Use(middleware.PBRAuth())

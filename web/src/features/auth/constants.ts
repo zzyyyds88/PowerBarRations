@@ -24,9 +24,11 @@ import { accountPasswordSchema } from '@/lib/password-policy'
 // Form Schemas
 // ============================================================================
 
+// PBR：无账号体系，只有登录口令（token-spec §2）。
+// username 保留在 schema 里（表单默认填固定占位、界面隐藏）以维持上游 RHF 类型契约。
 export const loginFormSchema = z.object({
   username: z.string().min(1, 'Please enter your username or email'),
-  password: z.string().min(1, 'Please enter your password'),
+  password: z.string().min(1, '请输入登录口令'),
 })
 
 export const registerFormSchema = z

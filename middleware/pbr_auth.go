@@ -140,6 +140,11 @@ func SetSessionCookieSecureProvider(fn func() bool) {
 	}
 }
 
+// HasAdminSession 当前请求是否持有有效会话 Cookie（供会话状态查询复用）。
+func HasAdminSession(c *gin.Context) bool {
+	return verifySessionCookie(c)
+}
+
 // verifySessionCookie 校验请求携带的会话 Cookie。
 func verifySessionCookie(c *gin.Context) bool {
 	token := session.TokenFromRequest(c.Request)

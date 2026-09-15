@@ -24,10 +24,8 @@ import { useAuthStore } from '@/stores/auth-store'
 
 export const Route = createFileRoute('/_authenticated')({
   beforeLoad: async ({ location }) => {
-    // The root guard may have skipped its refresh because no session hint was
-    // present. That skip is an optimization for public pages and must not
-    // decide a protected route, so resolve against the server before
-    // redirecting. An in-memory session returns without a request.
+    // PBR：会话是 HttpOnly Cookie，前端以 /api/v1/auth/session 的查询结果为准。
+    // resolveAuthentication 命中后会把合成的 bundle 写入 store（user/accessToken 非空）。
     await resolveAuthentication()
 
     const { auth } = useAuthStore.getState()
