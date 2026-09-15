@@ -805,6 +805,9 @@ func GetOpenAPI(c *gin.Context) {
 	c.JSON(http.StatusOK, doc)
 }
 
+// OpenAPIPathsForTest 暴露端点表给路由覆盖守卫测试（design-v1 §16.3）。
+func OpenAPIPathsForTest() gin.H { return openAPIPaths() }
+
 // openAPIPaths 端点表：新增端点时同步这里。
 func openAPIPaths() gin.H {
 	pathParam := func(name string) []gin.H {
