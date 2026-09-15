@@ -98,7 +98,7 @@ check "全部页面深链直达（刷新不丢位置）" "$n_routed" "$n_total"
 errs=$(echo "$REPORT" | jget 'len(d["console_errors"])')
 check "无页面级 console 报错" "$errs" "0"
 
-for key in Skeleton EmptyState ErrorBox Loading; do
+for key in Skeleton EmptyState ErrorState LoadingState; do
   check "三态组件存在（$key）" "$(echo "$REPORT" | jget "d[\"three_states\"][\"$key\"]")" "True"
 done
 
