@@ -50,6 +50,11 @@ HTTP/1.1 401 Unauthorized
 5. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
 6. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。
 7. **幂等键（可选）**：请求头 `Idempotency-Key` 可用于重试去重。
+8. **管理面不做全局限流**：PBR 是自用单用户网关，管理面 `/api/*` 与静态控制台**默认关闭**基座遗留的全局限流
+   （`GLOBAL_API_RATE_LIMIT_ENABLE`/`GLOBAL_WEB_RATE_LIMIT_ENABLE` 默认 `false`）。控制台一次页面加载会并发多个
+   管理请求，基座默认的 360/120 次窗口（继承自 new-api 的多租户公网假设）会把正常浏览打成 429。
+   限流只作用于**客户端密钥与模型面**（`rate_limit_rpm`/`max_concurrency`，见 token-spec §3.4）与登录失败退避。
+   公网部署如确需，可显式打开上述环境变量。
 
 ---
 
