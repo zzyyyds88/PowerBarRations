@@ -10,7 +10,7 @@
 
 | 面 | 前缀 | 凭据 |
 |---|---|---|
-| 管理面 | `/api/v1/*` | `Authorization: Bearer <管理密钥>` |
+| 管理面 | `/api/v1/*` | **二选一**：`Authorization: Bearer <管理密钥>`（AI/脚本）或 HttpOnly 会话 Cookie（浏览器，登录后自动携带） |
 | 模型面 | `/v1/*` | `Authorization: Bearer <客户端密钥>`（同时兼容 `X-Api-Key`） |
 
 **管理密钥由登录口令派生**（无账号体系，详见 [`token-spec-v1.md`](token-spec-v1.md) §2）：
@@ -19,9 +19,11 @@
 管理密钥 = Base64( SHA256( 登录口令 ) )
 ```
 
-- 首次启动时未初始化，必须先 `POST /api/v1/setup` 设置口令；否则除 `/health`、`/version`、`/setup*` 外一律 `409`/`401`。
+- 首次启动时未初始化，必须先 `POST /api/v1/setup` 设置口令；否则除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`。
 - 服务端只存 `sha256(管理密钥)`；口令与管理密钥明文都不落库。
-- 无会话、无 cookie、无 JWT refresh、无访问令牌轮换（口令变更即管理密钥变更）。
+- **浏览器走会话 Cookie**：`POST /api/v1/auth/login` 成功后签发 HttpOnly Cookie，控制台**不再把管理密钥写进 localStorage**；`POST /api/v1/auth/logout` 清除。
+- **AI/脚本走 Bearer**：管理密钥 = `Base64(SHA256(登录口令))`，由调用方自行计算，无需人工复制（见 token-spec §2.1）。
+- 两条通道等价：任一通过即鉴权成功。口令变更后旧 Cookie 与新签名不匹配，自动失效。
 - **监听 `0.0.0.0` 对局域网开放**（模型面与管理面同端口），凭凭据鉴权、不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。局域网为明文 HTTP，故口令须为长随机串。
 - 可用 `PBR_ADMIN_KEY` 环境变量显式覆盖（无头/AI 部署）；客户端密钥只存哈希，明文仅在创建/轮换响应出现一次。
 
@@ -195,9 +197,10 @@ HTTP/1.1 401 Unauthorized
 | GET | `/api/v1/health` | 存活与依赖状态（**免鉴权**） |
 | GET | `/api/v1/version` | 版本与构建信息（**免鉴权**） |
 | GET | `/api/v1/setup/status` | `{initialized}`（免鉴权） |
-| POST | `/api/v1/setup` | 首次设置登录口令，返回一次性派生管理密钥（仅未初始化时可用） |
-| POST | `/api/v1/auth/login` | 口令换管理密钥 |
-| POST | `/api/v1/auth/password` | 修改口令（会改变管理密钥） |
+| POST | `/api/v1/setup` | 首次设置登录口令，**签发会话 Cookie** 并返回派生管理密钥（仅未初始化时可用） |
+| POST | `/api/v1/auth/login` | 口令校验通过→**签发会话 Cookie**，并返回派生管理密钥 |
+| POST | `/api/v1/auth/logout` | 清除会话 Cookie |
+| POST | `/api/v1/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签） |
 | GET | `/api/v1/capabilities` | 适配器、模式、能力枚举 |
 | GET | `/api/v1/openapi.json` | OpenAPI 3 文档 |
 | GET | `/api/v1/system/options` | 全局选项 |
@@ -499,16 +502,23 @@ HTTP/1.1 503 Service Unavailable
 
 ## 7. AI 调用手册（典型工作流）
 
-> 供 harness / 自动化 AI 直接照抄。所有调用只需 `$PBR` 与 `$ADMIN_KEY`。
+> 供 harness / 自动化 AI 直接照抄。**AI 只要知道登录口令，就能自己算出管理密钥**，
+> 不需要人工复制任何东西：
+>
+> ```bash
+> ADMIN_KEY=$(printf '%s' '<登录口令>' | openssl dgst -sha256 -binary | openssl base64 -A)
+> # 等价 python：base64.b64encode(hashlib.sha256(pw.encode()).digest()).decode()
+> ```
+>
+> 之后所有管理调用带 `-H "Authorization: Bearer $ADMIN_KEY"` 即可。
 
 ### 7.1 起步三步
 
 ```bash
-# 0) 只有首次需要：设置登录口令，拿到派生管理密钥（之后可用
-#    printf '%s' '<口令>' | sha256sum | cut -d' ' -f1 | xxd -r -p | base64 自行重算）
+# 0) 只有首次需要：设置登录口令（响应会带 admin_key，但 AI 也可自行计算）
 curl -sf $PBR/api/v1/setup/status
 curl -sfX POST $PBR/api/v1/setup -H 'Content-Type: application/json' \
-  -d '{"password":"<16 位以上随机口令>"}'      # 响应含一次性 admin_key
+  -d '{"password":"<16 位以上随机口令>"}'      # 响应含 admin_key；浏览器另得到会话 Cookie
 
 # 1) 探活（无需鉴权）
 curl -sf $PBR/api/v1/health || echo "gateway down"
