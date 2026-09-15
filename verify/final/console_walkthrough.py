@@ -31,15 +31,19 @@ try:
 except ImportError:  # pragma: no cover
     websocket = None
 
+# new-api 风格控制台的保留页（T1/T2 迁移后的实际路由）。
 PAGES = [
-    ("/", "dashboard", "dashboard"),
-    ("/lanes", "lanes", "lanes"),
+    ("/", "home", "home"),
+    ("/dashboard", "dashboard", "dashboard"),
     ("/channels", "channels", "channels"),
     ("/models", "models", "models"),
-    ("/logs", "logs", "logs"),
+    ("/models/routing", "models-routing", "routing"),
     ("/keys", "keys", "keys"),
+    ("/usage-logs", "usage-logs", "logs"),
     ("/playground", "playground", "playground"),
-    ("/settings", "settings", "settings"),
+    ("/task-plugins", "task-plugins", "task-plugins"),
+    ("/system-info", "system-info", "system-info"),
+    ("/system-settings/site", "system-settings", "settings"),
 ]
 
 # 环境噪声（GPU/dbus/字体等），不是页面错误。
@@ -182,7 +186,7 @@ def main() -> int:
         # 先访问同源页面，再用登录口令经同源 fetch 登录：
         # 服务端会下发 HttpOnly 会话 Cookie（token-spec §2.3），与真实浏览器行为一致。
         # 控制台不再把管理密钥存 localStorage，因此这里也改为设置"已登录"标记。
-        cdp.send("Page.navigate", {"url": f"{base}/login"})
+        cdp.send("Page.navigate", {"url": f"{base}/sign-in"})
         time.sleep(2.5)
         login_js = (
             "(async function(){"
@@ -248,13 +252,31 @@ def main() -> int:
                     src_all.append(os.path.join(root, f))
         joined = "\n".join(open(p, encoding="utf-8", errors="replace").read() for p in src_all)
 
+        # 品牌残留：只查真正的"品牌面"，不误伤合法的上游中继协议名（渠道类型
+        # "New API/One API" 是本网关要对接的上游协议，必须保留）。
         brand_hits = []
-        for brand in ("new-api", "New API", "octopus", "Octopus", "one-api"):
-            for p in src_all:
-                text = open(p, encoding="utf-8", errors="replace").read()
-                for i, line in enumerate(text.splitlines(), 1):
-                    if brand in line and not line.strip().startswith(("//", "*", "/*")):
-                        brand_hits.append(f"{os.path.relpath(p, repo)}:{i}: {line.strip()[:90]}")
+
+        # 1) 外壳标题/元信息不得是上游品牌
+        index_path = os.path.join(repo, "web/index.html")
+        if os.path.exists(index_path):
+            for i, line in enumerate(open(index_path, encoding="utf-8", errors="replace").read().splitlines(), 1):
+                if "<title>New API" in line or 'content="New API"' in line:
+                    brand_hits.append(f"web/index.html:{i}: {line.strip()[:90]}")
+
+        # 2) 旧蓝本（octopus 控制台）不得残留任何标识
+        for p in src_all:
+            text = open(p, encoding="utf-8", errors="replace").read()
+            for i, line in enumerate(text.splitlines(), 1):
+                if "octopus" in line.lower() and not line.strip().startswith(("//", "*", "/*")):
+                    brand_hits.append(f"{os.path.relpath(p, repo)}:{i}: {line.strip()[:90]}")
+
+        # 3) 渲染出的文档标题不得是上游品牌
+        try:
+            title_val = ((cdp.evaluate("document.title").get("result") or {}).get("result") or {}).get("value") or ""
+        except Exception:
+            title_val = ""
+        if title_val.strip() == "New API":
+            brand_hits.append("document.title == 'New API'")
 
         summary = {
             "pages": results,
