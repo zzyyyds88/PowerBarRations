@@ -38,6 +38,10 @@ interface SyncModelsResult {
   added?: string[];
   removed?: string[];
   diff?: { models?: { add?: string[]; remove?: string[] } };
+  // sync-models 的保护性字段：空上游清单或被车道引用的模型会被拦截。
+  blocked?: boolean;
+  empty_upstream?: boolean;
+  referenced_by?: string[];
 }
 
 /** 后端聚合未承诺耗时字段；若未来补上，这里做可选读取而不是伪造数字。 */
@@ -401,6 +405,13 @@ export function Channels() {
         setDiff(null);
         toast.info(t("syncNoChange"));
         return;
+      }
+      // 保护性拦截：空上游清单（防误清空）或被车道成员引用的模型（防摘掉在用成员）。
+      if (result.blocked) {
+        const reason = result.empty_upstream
+          ? t("syncBlockedEmpty")
+          : t("syncBlockedReferenced", { refs: (result.referenced_by ?? []).join("; ") });
+        toast.warning(reason);
       }
       // 先看差异再确认：不直接落库。
       setDiff({ channel: name, add, remove });

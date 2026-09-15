@@ -36,6 +36,10 @@ export const qk = {
   logs: (params: string) => ["logs", params] as const,
   log: (id: number) => ["log", id] as const,
   stats: (params: string) => ["stats", params] as const,
+  // stats 的前缀键：各项 stats 查询键形如 ["stats", "<查询串>"]，写操作后要失效
+  // 全部 stats 查询必须用这个前缀。若误用 qk.stats("") 得到 ["stats", ""]，
+  // partialMatchKey 要求第二项字符串相等，永远匹配不到真实键（写后不刷新）。
+  statsRoot: ["stats"] as const,
   keys: ["keys"] as const,
   options: ["system-options"] as const,
   audit: ["audit"] as const,

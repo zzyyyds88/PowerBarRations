@@ -337,7 +337,7 @@ export function Keys() {
       setIssued({ name: created.name, key: created.key ?? "" });
       setDraft(emptyDraft());
       setFormOpen(false);
-      invalidate([qk.keys, qk.stats("")]);
+      invalidate([qk.keys, qk.statsRoot]);
       toast.success(t("createDone", { name: created.name }));
     } catch (error) {
       fail(error);
@@ -395,7 +395,7 @@ export function Keys() {
       await deleteKey(name);
       setPending(null);
       if (editing === name) setEditing(null);
-      invalidate([qk.keys, qk.stats("")]);
+      invalidate([qk.keys, qk.statsRoot]);
       toast.success(t("deleteDone", { name }));
     } catch (error) {
       fail(error);

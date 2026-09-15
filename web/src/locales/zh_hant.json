@@ -189,6 +189,8 @@
     "syncAdded": "新增",
     "syncRemoved": "移除",
     "syncApplied": "已同步（新增 {added}，移除 {removed}）",
+    "syncBlockedEmpty": "上游回傳空模型清單，已拒絕清空通路；確認要清空請加 ?force=1。",
+    "syncBlockedReferenced": "以下模型仍被顯式車道引用，已拒絕移除：{refs}；確認要移除請先改車道或加 ?force=1。",
     "statsEmpty": "該通路在統計視窗內沒有請求記錄。",
     "statsWindow": "統計視窗",
     "statsWindow7d": "近 7 天"

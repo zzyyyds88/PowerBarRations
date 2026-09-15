@@ -189,6 +189,8 @@
     "syncAdded": "Added",
     "syncRemoved": "Removed",
     "syncApplied": "Synced (added {added}, removed {removed})",
+    "syncBlockedEmpty": "Upstream returned an empty model list; refusing to wipe the channel. Add ?force=1 to confirm.",
+    "syncBlockedReferenced": "Still referenced by explicit lanes: {refs}. Update the lanes or add ?force=1 to override.",
     "statsEmpty": "No requests recorded for this channel in the stats window.",
     "statsWindow": "Stats window",
     "statsWindow7d": "Last 7 days"

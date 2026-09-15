@@ -189,6 +189,8 @@
     "syncAdded": "新增",
     "syncRemoved": "移除",
     "syncApplied": "已同步（新增 {added}，移除 {removed}）",
+    "syncBlockedEmpty": "上游返回空模型清单，已拒绝清空渠道；确认要清空请加 ?force=1。",
+    "syncBlockedReferenced": "以下模型仍被显式车道引用，已拒绝移除：{refs}；确认要移除请先改车道或加 ?force=1。",
     "statsEmpty": "该渠道在统计窗口内没有请求记录。",
     "statsWindow": "统计窗口",
     "statsWindow7d": "近 7 天"
