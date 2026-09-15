@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { t } from 'i18next'
 
-import type { ApiResponse } from '@/features/profile/types'
+import type { ApiResponse } from '@/lib/api-response'
 import { api } from '@/lib/api'
 import { createServerError } from '@/lib/server-error-message'
 

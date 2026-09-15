@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getUserProfile } from '@/features/profile/api'
 import {
   ADMIN_PERMISSION_RESOURCES,
   ADMIN_PERMISSION_ACTIONS,
@@ -67,25 +66,8 @@ export function AuditLogs() {
     }
     await queryClient.cancelQueries({ queryKey: ['audit', userId, 'all'] })
     queryClient.removeQueries({ queryKey: ['audit', userId, 'all'] })
-    try {
-      const profile = await getUserProfile()
-      const latest = useAuthStore.getState().auth.user
-      if (
-        profile.success &&
-        profile.data &&
-        latest &&
-        profile.data.id === userId &&
-        latest.id === userId
-      ) {
-        useAuthStore.getState().auth.setUser({
-          ...latest,
-          role: profile.data.role,
-          permissions: profile.data.permissions,
-        })
-      }
-    } catch {
-      // Keep the denied scope closed when refreshing capabilities fails.
-    }
+    // PBR 是单用户网关，权限恒为全量，没有"刷新用户权限"这回事
+    // （原 getUserProfile 依赖的 /api/user/self 已随 W7 多用户面删除）。
   }, [queryClient, userId])
   return (
     <SectionPageLayout fixedContent>
