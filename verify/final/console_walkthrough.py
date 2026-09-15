@@ -34,16 +34,16 @@ except ImportError:  # pragma: no cover
 # new-api 风格控制台的保留页（T1/T2 迁移后的实际路由）。
 PAGES = [
     ("/", "home", "home"),
-    ("/dashboard", "dashboard", "dashboard"),
+    ("/dashboard/overview", "dashboard", "dashboard"),
     ("/channels", "channels", "channels"),
-    ("/models", "models", "models"),
+    ("/models/metadata", "models", "models"),
     ("/models/routing", "models-routing", "routing"),
     ("/keys", "keys", "keys"),
-    ("/usage-logs", "usage-logs", "logs"),
+    ("/usage-logs/common", "usage-logs", "logs"),
     ("/playground", "playground", "playground"),
     ("/task-plugins", "task-plugins", "task-plugins"),
     ("/system-info", "system-info", "system-info"),
-    ("/system-settings/site", "system-settings", "settings"),
+    ("/system-settings/site/system-info", "system-settings", "settings"),
 ]
 
 # 环境噪声（GPU/dbus/字体等），不是页面错误。
@@ -228,7 +228,7 @@ def main() -> int:
 
             # 渲染成功判据：根节点有实际内容（长度 + 非空 root），且路由停在预期路径
             root_rendered = len(html) > 2000
-            routed = got_path.rstrip("/") == path.rstrip("/") or (path == "/" and got_path == "/")
+            routed = (got_path.rstrip("/") == path.rstrip("/") or got_path.startswith(path.rstrip("/") + "/") or (path == "/" and got_path == "/"))
             results.append(
                 {
                     "page": path,
@@ -284,11 +284,12 @@ def main() -> int:
             "pages_routed": sum(1 for r in results if r["routed"]),
             "pages_total": len(PAGES),
             "console_errors": [e for r in results for e in r["console_errors"]],
+            # new-api 控制台的三态组件命名（旧 octopus 蓝本是 ErrorBox/Loading）。
             "three_states": {
                 "Skeleton": "Skeleton" in joined,
                 "EmptyState": "EmptyState" in joined,
-                "ErrorBox": "ErrorBox" in joined,
-                "Loading": "Loading" in joined,
+                "ErrorState": "ErrorState" in joined,
+                "LoadingState": "LoadingState" in joined,
             },
             "brand_hits": brand_hits,
         }

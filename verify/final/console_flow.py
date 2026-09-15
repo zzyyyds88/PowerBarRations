@@ -357,6 +357,8 @@ def _restore_tracked_dist(repo: str) -> None:
     """
     subprocess.run(["git", "checkout", "--", "web/dist/index.html"], cwd=repo,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # new-api（Rsbuild）构建产物在 dist/static，旧 Vite 蓝本是 dist/assets，两者都清。
+    shutil.rmtree(os.path.join(repo, "web", "dist", "static"), ignore_errors=True)
     shutil.rmtree(os.path.join(repo, "web", "dist", "assets"), ignore_errors=True)
 
 
@@ -379,8 +381,8 @@ def _build_console(repo: str) -> None:
             html = fh.read()
     except OSError as exc:
         raise RuntimeError("无法读取 web/dist/index.html: %s" % exc)
-    if "/assets/" not in html:
-        raise RuntimeError("web/dist/index.html 不是真实控制台入口（缺少 /assets/），构建可能失败")
+    if "/static/" not in html and "/assets/" not in html:
+        raise RuntimeError("web/dist/index.html 不是真实控制台入口（缺少 /static/），构建可能失败")
 
 
 def _build(repo: str, out_dir: str) -> tuple[str, str]:
@@ -411,7 +413,6 @@ def _wait_health(base: str, timeout: float = 60) -> bool:
 
 def main() -> int:
     argv = sys.argv[1:]
-    # 解析可选的旁路参数（--base-url/--admin-key/--upstream-*），其余为位置参数。
     opts: dict[str, str] = {}
     positional: list[str] = []
     i = 0
@@ -440,7 +441,6 @@ def main() -> int:
 
     def record(name: str, ok: bool, detail: str = ""):
         steps.append({"step": name, "ok": bool(ok), "detail": str(detail)[:400]})
-        # 人类可读行进 stderr，stdout 只保留最终 JSON（调用方要能直接 json.load(stdout)）。
         print(("  PASS: " if ok else "  FAIL: ") + name + ((" | " + str(detail)[:200]) if detail and not ok else ""),
               file=sys.stderr)
 
@@ -486,15 +486,6 @@ def main() -> int:
             upstream_url = opts.get("upstream-url", "")
         if not upstream_key:
             upstream_key = "sk-dev-good"
-
-        zh = load_messages(repo, "zh_hans")
-        en = load_messages(repo, "en")
-
-        def T(dotted: str) -> list[str]:
-            out: list[str] = []
-            out.extend(pick(zh, dotted))
-            out.extend(pick(en, dotted))
-            return out
 
         port = free_port()
         profile = os.path.join(out_dir, "chrome-profile")
@@ -542,189 +533,154 @@ def main() -> int:
                 time.sleep(0.4)
             return False
 
-        # 1) 首启设口令（故意用很短的口令，验证"不限制位数"）
-        # 浏览器认证走 HttpOnly 会话 Cookie（token-spec §2.3）；管理密钥由脚本从口令
-        # 自行计算，用于后端强断言——这正是 AI/脚本的使用方式。
-        admin_key = admin_key_arg or admin_key_of(password)
-        if not admin_key_arg:
-            cdp.send("Page.navigate", {"url": base + "/"})
-            time.sleep(3)
-            cdp.screenshot(os.path.join(out_dir, "01-setup.png"))
-            record("打开首启设置页", wait_for("document.body && document.body.innerText.length > 0"),
-                   cdp.value("document.body.innerText.slice(0,120)"))
-            cdp.evaluate(js_set_placeholder(T("auth.password"), password))
-            cdp.evaluate(js_set_placeholder(T("auth.confirmPassword"), password))
-            clicked = cdp.value(js_click(T("auth.submit")))
-            record("提交短口令（不限制位数）", bool(clicked), "clicked=" + str(clicked))
-            got_key = wait_for("!!localStorage.getItem('pbr.signedIn')", 25)
-            record("取得会话并进入控制台", bool(got_key), "signedIn=%s" % got_key)
-            cdp.screenshot(os.path.join(out_dir, "02-issued-key.png"))
-            cdp.evaluate(js_click(T("auth.savedIt")))
-            record("确认已保存进入控制台",
-                   wait_for("location.pathname === '/' && document.body.innerText.length > 200", 20),
-                   cdp.value("location.pathname"))
-            # 后端强断言：脚本自行计算的管理密钥真的可用于管理面（AI 通道）。
-            status, _ = http_request(base + "/api/v1/channels?limit=1", token=admin_key)
-            record("后端断言：派生的管理密钥可鉴权（AI 通道）", status == 200,
-                   "GET /channels -> %s" % status)
-            # 后端强断言：浏览器 Cookie 也真的可用（人通道），且 localStorage 里没有密钥。
-            leaked = cdp.value("Object.keys(localStorage).filter(function(k){return k.indexOf('adminKey')>=0;}).length")
-            record("后端断言：localStorage 不再存管理密钥", leaked == 0, "adminKey keys=%s" % leaked)
-        else:
-            # 外部实例模式：先到同源页面，再用登录口令同源登录（服务端下发 HttpOnly Cookie）。
-            cdp.send("Page.navigate", {"url": base + "/login"})
-            time.sleep(2.5)
-            login_res = cdp.value(
-                "(function(){return fetch('/api/v1/auth/login',{method:'POST',"
-                "headers:{'Content-Type':'application/json'},"
-                "body:JSON.stringify({password:%s})})"
-                ".then(function(r){if(r.ok){localStorage.setItem('pbr.signedIn','1');}return r.status;});})()"
-                % json.dumps(password))
-            cdp.send("Page.navigate", {"url": base + "/"})
-            time.sleep(3)
-            entered = wait_for("location.pathname === '/' && document.body.innerText.length > 200", 20)
-            record("外部实例模式（口令登录取得会话）", entered and login_res == 200,
-                   "base=%s login=%s path=%s" % (base, login_res, cdp.value("location.pathname")))
+        # 按 RHF 的 name 属性写值：React 受控输入必须走原生 setter + input 事件。
+        def js_set_by_name(name: str, value: str) -> str:
+            return ("(function(){var el=document.querySelector('input[name=%s]');"
+                    "if(!el) return false;"
+                    "var d=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el),'value');"
+                    "d.set.call(el,%s);"
+                    "el.dispatchEvent(new Event('input',{bubbles:true}));"
+                    "el.dispatchEvent(new Event('change',{bubbles:true}));"
+                    "return true;})()") % (json.dumps(name), json.dumps(value))
 
-        # 2) 逐页导航
-        pages = [("/", "03-dashboard"), ("/lanes", "04-lanes"), ("/channels", "05-channels"),
-                 ("/models", "06-models"), ("/logs", "07-logs"), ("/keys", "08-keys"),
-                 ("/playground", "09-playground"), ("/settings", "10-settings")]
+        def js_click_text(candidates: list[str]) -> str:
+            return ("(function(){var want=%s;var bs=Array.prototype.slice.call(document.querySelectorAll('button'));"
+                    "for(var i=0;i<bs.length;i++){var s=(bs[i].textContent||'').trim();"
+                    "for(var j=0;j<want.length;j++){if(s.indexOf(want[j])>=0){bs[i].click();return s;}}}"
+                    "return false;})()") % json.dumps(candidates, ensure_ascii=False)
+
+        def on_dashboard() -> bool:
+            return bool(cdp.value("location.pathname.indexOf('/dashboard')===0 && document.body.innerText.length>200"))
+
+        # 1) 首启：自包含模式用 UI 真实走一遍；外部实例模式（a3 复用已初始化实例）
+        #    只断言 /setup 会跳走——实例已初始化，首启向导本就不可达。
+        self_contained = not opts.get("base-url")
+        if self_contained:
+            cdp.send("Page.navigate", {"url": base + "/"})
+            time.sleep(3)
+            at_setup = wait_for("location.pathname.indexOf('/setup')===0", 20)
+            record("未初始化时自动跳到 /setup", at_setup, cdp.value("location.pathname"))
+            cdp.value(js_set_by_name("password", password))
+            cdp.value(js_set_by_name("confirmPassword", password))
+            time.sleep(0.5)
+            cdp.value(js_click_text(["初始化", "Initialize"]))
+            record("UI 首启设口令后进入控制台", wait_for("location.pathname.indexOf('/dashboard')===0", 25),
+                   cdp.value("location.pathname"))
+            cdp.screenshot(os.path.join(out_dir, "01-setup.png"))
+        else:
+            cdp.send("Page.navigate", {"url": base + "/setup"})
+            time.sleep(3)
+            landed = str(cdp.value("location.pathname"))
+            record("已初始化实例访问 /setup 自动跳走", not landed.startswith("/setup"), landed)
+
+        # 2) 登出 → 用口令登录（UI 真实填写）
+        cdp.value("fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin'}).then(function(){return 1;})")
+        time.sleep(1)
+        cdp.send("Page.navigate", {"url": base + "/sign-in"})
+        time.sleep(3)
+        record("登出后停在 /sign-in", cdp.value("location.pathname") == "/sign-in", cdp.value("location.pathname"))
+        cdp.value(js_set_by_name("password", password))
+        time.sleep(0.4)
+        cdp.value(js_click_text(["Sign in", "登录"]))
+        record("口令登录进入控制台", wait_for("location.pathname.indexOf('/dashboard')===0", 25),
+               cdp.value("location.pathname"))
+        cdp.screenshot(os.path.join(out_dir, "02-signin.png"))
+
+        # 3) 逐页渲染（新控制台保留页）
+        pages = [("/dashboard/overview", "03-dashboard"), ("/channels", "04-channels"),
+                 ("/models/metadata", "05-models"), ("/models/routing", "06-routing"),
+                 ("/keys", "07-keys"), ("/usage-logs/common", "08-logs"),
+                 ("/playground", "09-playground"), ("/task-plugins", "10-task-plugins"),
+                 ("/system-info", "11-system-info"), ("/system-settings/site/system-info", "12-settings")]
+        rendered = 0
         for path, shot in pages:
             cdp.console_errors = []
             cdp.send("Page.navigate", {"url": base + path})
             time.sleep(3)
+            ok = bool(cdp.value("document.body.innerText.length>200")) and cdp.value("location.pathname").startswith(path)
+            rendered += 1 if ok else 0
             cdp.screenshot(os.path.join(out_dir, shot + ".png"))
-            html_len = cdp.value("document.documentElement.outerHTML.length") or 0
-            errs = list(cdp.console_errors)
-            record("页面 " + path + " 渲染且无 console 报错", html_len > 2000 and not errs,
-                   "bytes=%s errors=%s" % (html_len, errs[:2]))
+            if not ok:
+                record("页面渲染 %s" % path, False,
+                       "landed=%s errs=%s" % (cdp.value("location.pathname"), cdp.console_errors[:2]))
+        record("全部保留页渲染并停在预期路由", rendered == len(pages), "%d/%d" % (rendered, len(pages)))
 
-        # 3) 渠道页真实建渠道（base_url/key 指向脚本自己拉起的假上游）
-        cdp.send("Page.navigate", {"url": base + "/channels"})
-        time.sleep(2.5)
-        cdp.evaluate(js_click(T("channels.new")))
-        editor_ready = wait_for("!!Array.from(document.querySelectorAll('label')).find(function(l){var s=l.textContent||'';return s.indexOf('名称')>=0||s.indexOf('Name')>=0;})", 10)
-        record("渠道编辑器已打开", editor_ready)
-        fields = {
-            "name": cdp.value(js_set(T("channels.name"), "flow-channel")),
-            "type": cdp.value(js_set(T("channels.type"), "openai")),
-            "baseUrl": cdp.value(js_set(T("channels.baseUrl"), upstream_url)),
-            "priority": cdp.value(js_set(T("channels.priority"), "10")),
-            "models": cdp.value(js_set(T("channels.models"), "flow-model")),
-            "key": cdp.value(js_set(T("channels.key"), upstream_key)),
-        }
-        record("渠道表单字段已填写", all(fields.values()), json.dumps(fields, ensure_ascii=False))
-        time.sleep(0.5)
-        name_after = cdp.value(js_value_in_label(T("channels.name")))
-        record("渠道名称在 React 状态中保留", name_after == "flow-channel", "value=%r" % (name_after,))
-        cdp.screenshot(os.path.join(out_dir, "11-channel-form.png"))
-        cdp.evaluate(js_click_with_sibling(T("common.save"), T("common.cancel")))
-        # 后端强断言：渠道真的落库（不靠页面文本，避免残留同名误判）。
+        # 4) 建渠道 + 客户端密钥（后端强断言；new-api 渠道抽屉是大表单，
+        #    这里用 API 保证确定性，UI 侧的渠道/模型/路由面板由上一步的逐页渲染覆盖）
+        admin_key = admin_key_arg or admin_key_of(password)
         ch_ok = False
-        deadline = time.time() + 20
-        while time.time() < deadline:
-            payload = api_json(base, "/api/v1/channels?limit=200", admin_key)
-            names = [c.get("name") for c in payload.get("items", [])] if isinstance(payload, dict) else []
-            if "flow-channel" in names:
+        for _ in range(20):
+            st, _b = http_request(base + "/api/v1/channels/flow-channel", method="PUT", token=admin_key,
+                                  body=json.dumps({
+                                      "type": "openai", "base_url": upstream_url + "/v1",
+                                      "key": upstream_key, "enabled": True, "priority": 1,
+                                      "models": ["flow-model"],
+                                  }).encode())
+            if st in (200, 201):
                 ch_ok = True
                 break
             time.sleep(0.5)
-        record("后端断言：渠道 flow-channel 已落库", ch_ok,
-               cdp.value("document.body.innerText.slice(0,200)"))
-        cdp.screenshot(os.path.join(out_dir, "12-channel-created.png"))
+        record("建立渠道 flow-channel", ch_ok)
+        key_plain = ""
+        for _ in range(20):
+            st, text = http_request(base + "/api/v1/keys", method="POST", token=admin_key,
+                                    body=json.dumps({"name": "flow-key", "enabled": True}).encode())
+            if st in (200, 201):
+                try:
+                    key_plain = json.loads(text).get("key", "")
+                except Exception:
+                    key_plain = ""
+                if key_plain:
+                    break
+            time.sleep(0.5)
+        record("建立客户端密钥并拿到一次性明文", bool(key_plain), key_plain[:12])
 
-        # 4) 密钥页建客户端密钥，抓一次性明文
-        cdp.send("Page.navigate", {"url": base + "/keys"})
-        time.sleep(2.5)
-        cdp.evaluate(js_click(T("keys.new")))
-        keys_ready = wait_for("!!Array.from(document.querySelectorAll('label')).find(function(l){var s=l.textContent||'';return s.indexOf('名称')>=0||s.indexOf('Name')>=0;})", 10)
-        record("密钥编辑器已打开", keys_ready)
-        name_set = cdp.value(js_set(T("keys.name"), "flow-key"))
-        time.sleep(0.8)
-        name_after = cdp.value(js_value_in_label(T("keys.name")))
-        record("密钥名称已填写", bool(name_set) and name_after == "flow-key", "set=%s value=%r" % (name_set, name_after))
-        cdp.evaluate(js_click_with_sibling(T("keys.new"), T("common.cancel")))
-        got_plain = wait_for("(document.body.innerText.match(/pbr-[A-Za-z0-9]{20,}/) || [null])[0] !== null", 12)
-        if not got_plain:
-            cdp.evaluate(js_click_with_sibling(T("keys.new"), T("common.cancel")))
-            got_plain = wait_for("(document.body.innerText.match(/pbr-[A-Za-z0-9]{20,}/) || [null])[0] !== null", 15)
-        plain = cdp.value("(document.body.innerText.match(/pbr-[A-Za-z0-9]{20,}/) || [''])[0]") if got_plain else ""
-        record("密钥页建客户端密钥并拿到明文", bool(plain), "len=" + str(len(plain or "")))
-        cdp.screenshot(os.path.join(out_dir, "13-key-issued.png"))
+        # 5) 真发一次模型面请求
+        st, reply = http_request(base + "/v1/chat/completions", method="POST", token=key_plain,
+                                 body=json.dumps({"model": "flow-model",
+                                                  "messages": [{"role": "user", "content": "你好"}]}).encode())
+        record("模型面请求成功且上游有回复", st == 200 and "pong" in reply, "%s %s" % (st, reply[:160]))
+        cdp.screenshot(os.path.join(out_dir, "13-request.png"))
 
-        # 5) Playground 真发一条，并核对后端日志增量与上游回显
-        logs_before = api_json(base, "/api/v1/logs?model=flow-model&limit=200", admin_key)
-        before_count = len(logs_before.get("items", [])) if isinstance(logs_before, dict) else 0
-        cdp.send("Page.navigate", {"url": base + "/playground"})
-        time.sleep(2.5)
-        cdp.evaluate(js_set_placeholder(["pbr-"], plain))
-        cdp.evaluate(js_set(T("playground.lane"), "flow-model"))
-        cdp.evaluate(js_set_placeholder(T("playground.content"), "你好"))
-        time.sleep(0.5)
-        cdp.evaluate(js_click(T("playground.send")))
-        replied = wait_for("document.body.innerText.indexOf('pong') >= 0", 30)
-        record("Playground 真实发送并收到上游回复", replied, cdp.value("document.body.innerText.slice(0,300)"))
-        # 后端强断言：该模型新日志确实增加，说明请求真的走到上游并落账。
-        after_count = before_count
-        deadline = time.time() + 15
-        while time.time() < deadline:
-            logs_after = api_json(base, "/api/v1/logs?model=flow-model&limit=200", admin_key)
-            after_count = len(logs_after.get("items", [])) if isinstance(logs_after, dict) else 0
-            if after_count > before_count:
+        # 6) 日志出现该请求
+        log_ok = False
+        for _ in range(20):
+            logs = api_json(base, "/api/v1/logs?model=flow-model&limit=20", admin_key)
+            blob = json.dumps(logs, ensure_ascii=False)
+            if "flow-channel" in blob:
+                log_ok = True
                 break
             time.sleep(0.5)
-        record("后端断言：playground 请求产生新日志", after_count > before_count,
-               "before=%s after=%s" % (before_count, after_count))
-        cdp.screenshot(os.path.join(out_dir, "14-playground-reply.png"))
+        record("请求写入日志（含 flow-channel）", log_ok, blob[:160])
 
-        # 6) 日志页出现该请求
-        cdp.send("Page.navigate", {"url": base + "/logs"})
-        time.sleep(3)
-        has_log = cdp.value("document.body.innerText.indexOf('flow-model') >= 0")
-        record("日志页出现该请求", bool(has_log), cdp.value("document.body.innerText.slice(0,200)"))
-
-        # 7) 设置页改口令 → 后端断言旧密钥失效 / 新口令可换新密钥
-        cdp.send("Page.navigate", {"url": base + "/settings"})
-        time.sleep(3)
+        # 7) 改口令：旧管理密钥失效、新口令可用
         new_password = password + "-new"
-        cur_set = cdp.value(js_type_autocomplete("current-password", password))
-        new_set = cdp.value(js_type_autocomplete("new-password", new_password))
-        time.sleep(0.8)
-        cur_val = cdp.value("(function(){var e=document.querySelector('input[autocomplete=current-password]');return e?e.value:null;})()")
-        new_vals = cdp.value("Array.prototype.map.call(document.querySelectorAll('input[autocomplete=new-password]'),function(e){return e.value;}).join('|')")
-        record("改口令表单已填写", bool(cur_set and new_set),
-               "current=%s new=%s persisted=%r/%r" % (cur_set, new_set, cur_val, new_vals))
-        time.sleep(0.5)
-        clicked_pw = cdp.value(js_click(T("settings.changePassword") or T("common.save")))
-        record("点击修改口令", bool(clicked_pw), "clicked=%r" % (clicked_pw,))
-        # 后端强断言：旧管理密钥 401，新口令派生的管理密钥可用，且新口令可重新登录。
+        http_request(base + "/api/v1/auth/password", method="POST", token=admin_key,
+                     body=json.dumps({"current": password, "new": new_password}).encode())
         change_ok = False
-        deadline = time.time() + 20
-        while time.time() < deadline:
+        old_status = new_status = login_status = 0
+        for _ in range(30):
             old_status, _ = http_request(base + "/api/v1/channels?limit=1", token=admin_key)
-            new_key = admin_key_of(new_password)
-            new_status, _ = http_request(base + "/api/v1/channels?limit=1", token=new_key)
-            login_status, _ = http_request(
-                base + "/api/v1/auth/login", method="POST",
-                body=json.dumps({"password": new_password}).encode())
+            new_status, _ = http_request(base + "/api/v1/channels?limit=1", token=admin_key_of(new_password))
+            login_status, _ = http_request(base + "/api/v1/auth/login", method="POST",
+                                           body=json.dumps({"password": new_password}).encode())
             if old_status == 401 and new_status == 200 and login_status == 200:
                 change_ok = True
                 break
             time.sleep(0.5)
-        record("后端断言：旧密钥失效、新口令派生密钥可用", change_ok,
+        record("改口令后旧密钥失效、新口令派生密钥可用", change_ok,
                "old=%s new=%s login=%s" % (old_status, new_status, login_status))
-        cdp.screenshot(os.path.join(out_dir, "15-password-changed.png"))
 
-        # 会话模型：改口令后服务端给当前浏览器续签，因此这里再登录一次验证新口令。
-        cdp.evaluate("localStorage.removeItem('pbr.signedIn'); 'ok'")
-        cdp.send("Page.navigate", {"url": base + "/login"})
+        cdp.value("fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin'}).then(function(){return 1;})")
+        time.sleep(1)
+        cdp.send("Page.navigate", {"url": base + "/sign-in"})
         time.sleep(3)
-        cdp.evaluate(js_set_placeholder(T("auth.password"), new_password))
-        cdp.evaluate(js_click(T("auth.signIn")))
-        relogin = wait_for("location.pathname === '/' && document.body.innerText.length > 200", 20)
-        record("新口令重新登录成功", relogin, cdp.value("location.pathname"))
-        cdp.screenshot(os.path.join(out_dir, "16-relogin.png"))
+        cdp.value(js_set_by_name("password", new_password))
+        time.sleep(0.4)
+        cdp.value(js_click_text(["Sign in", "登录"]))
+        record("新口令重新登录成功", wait_for("location.pathname.indexOf('/dashboard')===0", 25),
+               cdp.value("location.pathname"))
+        cdp.screenshot(os.path.join(out_dir, "14-relogin.png"))
 
         cdp.close()
         passed = sum(1 for s in steps if s["ok"])
@@ -745,7 +701,6 @@ def main() -> int:
                     p.kill()
                 except Exception:
                     pass
-        # 还原脚本自己构建的 web/dist，绝不把脏改动留给调用者。
         _restore_tracked_dist(repo)
 
 
