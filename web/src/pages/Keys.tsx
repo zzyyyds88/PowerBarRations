@@ -4,8 +4,8 @@ import { useTranslations } from "use-intl";
 import { toast } from "sonner";
 import { AlertTriangle, KeyRound, Plus, RotateCw, Trash2 } from "lucide-react";
 import { createKey, deleteKey, rotateKey, updateKey } from "@/api/keys";
-import { qk, useInvalidate, useKeys, useLanes, useStats } from "@/api/queries";
-import type { ClientKey, Lane } from "@/api/types";
+import { qk, useInvalidate, useKeys, useModels, useStats } from "@/api/queries";
+import type { ClientKey } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge, EmptyState, ErrorBox, Skeleton } from "@/components/common/AsyncState";
@@ -120,42 +120,82 @@ function StatCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** 车道多选：候选取自 useLanes()，点击即切换。 */
+/**
+ * 权限多选：候选 = 全部**路由键**（/models 返回的模型名），点击即切换。
+ *
+ * 关键修正：判定对象是路由键（token-spec §3.2），不是"显式车道"。隐式路由
+ * （渠道声明 models 即自动成链）根本没有 lane 记录，只列 useLanes() 会让
+ * 没建车道时一个都选不了。此外必须支持手填：模型可能尚未创建，
+ * 但令牌要先准备好权限。
+ */
 function LanePicker({
-  lanes,
+  candidates,
   selected,
   onToggle,
   emptyLabel,
+  addPlaceholder,
+  addLabel,
 }: {
-  lanes: Lane[];
+  candidates: string[];
   selected: string[];
   onToggle: (name: string) => void;
   emptyLabel: string;
+  addPlaceholder: string;
+  addLabel: string;
 }) {
-  if (lanes.length === 0) {
-    return <p className="text-xs text-slate-500 dark:text-slate-400">{emptyLabel}</p>;
-  }
+  const [typing, setTyping] = useState("");
+  // 已选但不在候选里的（手填的）也要显示出来，否则用户看不到自己加过什么。
+  const extra = selected.filter((name) => !candidates.includes(name));
+  const all = [...candidates, ...extra];
+  const submitTyping = () => {
+    const value = typing.trim();
+    if (!value) return;
+    if (!all.includes(value)) onToggle(value);
+    setTyping("");
+  };
   return (
-    <div className="flex flex-wrap gap-1.5 rounded-md border border-slate-200 p-2 dark:border-slate-700">
-      {lanes.map((lane) => {
-        const on = selected.includes(lane.name);
-        return (
-          <button
-            key={lane.name}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onToggle(lane.name)}
-            className={cn(
-              "rounded px-2 py-0.5 text-xs transition-colors",
-              on
-                ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700",
-            )}
-          >
-            {lane.name}
-          </button>
-        );
-      })}
+    <div className="space-y-1.5">
+      {all.length === 0 ? (
+        <p className="text-xs text-slate-500 dark:text-slate-400">{emptyLabel}</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5 rounded-md border border-slate-200 p-2 dark:border-slate-700">
+          {all.map((name) => {
+            const on = selected.includes(name);
+            return (
+              <button
+                key={name}
+                type="button"
+                aria-pressed={on}
+                onClick={() => onToggle(name)}
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs transition-colors",
+                  on
+                    ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700",
+                )}
+              >
+                {name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <Input
+          value={typing}
+          placeholder={addPlaceholder}
+          onChange={(event) => setTyping(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              submitTyping();
+            }
+          }}
+        />
+        <Button variant="outline" onClick={submitTyping} disabled={typing.trim() === ""}>
+          {addLabel}
+        </Button>
+      </div>
     </div>
   );
 }
@@ -164,7 +204,7 @@ function LanePicker({
 function KeyForm({
   draft,
   onChange,
-  lanes,
+  routeKeys,
   busy,
   submitLabel,
   onSubmit,
@@ -173,7 +213,7 @@ function KeyForm({
 }: {
   draft: KeyDraft;
   onChange: (draft: KeyDraft) => void;
-  lanes: Lane[];
+  routeKeys: string[];
   busy: boolean;
   submitLabel: string;
   onSubmit: () => void;
@@ -199,10 +239,12 @@ function KeyForm({
     <div>
       <span className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">{label}</span>
       <LanePicker
-        lanes={lanes}
+        candidates={routeKeys}
         selected={draft[field]}
         onToggle={(name) => toggleLane(field, name)}
         emptyLabel={t("noLanes")}
+        addPlaceholder={t("addLanePlaceholder")}
+        addLabel={tc("add")}
       />
       <span className="mt-1 block text-xs text-slate-500 dark:text-slate-400">{hint}</span>
     </div>
@@ -286,7 +328,8 @@ export function Keys() {
   const t = useTranslations("keys");
   const tc = useTranslations("common");
   const keysQuery = useKeys();
-  const lanesQuery = useLanes();
+  // 权限判定的对象是**路由键（模型名）**，不是显式车道：隐式路由没有 lane 记录。
+  const modelsQuery = useModels();
   const invalidate = useInvalidate();
 
   // 用量卡数据源：/stats?group_by=key（StatBucket.group 即令牌名）。
@@ -312,7 +355,7 @@ export function Keys() {
   const [pending, setPending] = useState<{ kind: "rotate" | "delete"; name: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const lanes = lanesQuery.data?.items ?? [];
+  const routeKeys = (modelsQuery.data?.items ?? []).map((item) => item.model);
 
   const usage = useMemo(() => {
     const map = new Map<string, KeyUsage>();
@@ -449,7 +492,7 @@ export function Keys() {
         <KeyForm
           draft={draft}
           onChange={setDraft}
-          lanes={lanes}
+          routeKeys={routeKeys}
           busy={busy}
           submitLabel={t("new")}
           onSubmit={() => void create()}
@@ -626,7 +669,7 @@ export function Keys() {
                     <KeyForm
                       draft={editDraft}
                       onChange={setEditDraft}
-                      lanes={lanes}
+                      routeKeys={routeKeys}
                       busy={busy}
                       nameLocked
                       submitLabel={tc("save")}
