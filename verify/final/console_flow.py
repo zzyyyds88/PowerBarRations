@@ -601,8 +601,9 @@ def main() -> int:
             rendered += 1 if ok else 0
             cdp.screenshot(os.path.join(out_dir, shot + ".png"))
             if not ok:
+                body = str(cdp.value("document.body.innerText.slice(0,200)"))
                 record("页面渲染 %s" % path, False,
-                       "landed=%s errs=%s" % (cdp.value("location.pathname"), cdp.console_errors[:2]))
+                       "landed=%s errs=%s body=%s" % (cdp.value("location.pathname"), cdp.console_errors[:2], body.replace("\n", " | ")))
         record("全部保留页渲染并停在预期路由", rendered == len(pages), "%d/%d" % (rendered, len(pages)))
 
         # 4) 建渠道 + 客户端密钥（后端强断言；new-api 渠道抽屉是大表单，
