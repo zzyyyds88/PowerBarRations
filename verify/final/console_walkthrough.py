@@ -11,7 +11,8 @@
 依赖：chromium（本机 /usr/local/bin/chromium）、python3 `websocket-client`。
 若缺依赖，脚本以退出码 2 明确报"跳过原因"，不伪装成通过。
 
-用法：console_walkthrough.py <base_url> <admin_key> <repo_root> <out_dir>
+用法：console_walkthrough.py <base_url> <login_password> <repo_root> <out_dir>
+（第二参数是**登录口令**：脚本用它在页面内同源登录，服务端下发 HttpOnly 会话 Cookie。）
 输出：JSON 到 stdout；截图与 DOM 落在 out_dir。
 """
 
@@ -124,7 +125,7 @@ def fetch_json(url: str, timeout: float = 10):
 
 
 def main() -> int:
-    base, admin_key, repo, out_dir = sys.argv[1:5]
+    base, login_password, repo, out_dir = sys.argv[1:5]
     if websocket is None:
         print(json.dumps({"skipped": "python websocket-client 未安装（pip install websocket-client）"}))
         return 2
@@ -178,10 +179,24 @@ def main() -> int:
         cdp.send("Page.enable")
         cdp.send("Log.enable")
 
-        # 先访问同源页面，再注入管理密钥（等价于用户登录后 localStorage 里有值）
+        # 先访问同源页面，再用登录口令经同源 fetch 登录：
+        # 服务端会下发 HttpOnly 会话 Cookie（token-spec §2.3），与真实浏览器行为一致。
+        # 控制台不再把管理密钥存 localStorage，因此这里也改为设置"已登录"标记。
         cdp.send("Page.navigate", {"url": f"{base}/login"})
         time.sleep(2.5)
-        cdp.evaluate(f'localStorage.setItem("pbr.adminKey", {json.dumps(admin_key)}); "ok"')
+        login_js = (
+            "(async function(){"
+            "const r=await fetch('/api/v1/auth/login',{method:'POST',"
+            "headers:{'Content-Type':'application/json'},"
+            f"body:JSON.stringify({{password:{json.dumps(login_password)}}})}});"
+            "if(r.ok){localStorage.setItem('pbr.signedIn','1');}"
+            "return r.status;})()"
+        )
+        login_result = cdp.evaluate(login_js)
+        login_status = ((login_result.get("result") or {}).get("result") or {}).get("value")
+        if login_status != 200:
+            print(json.dumps({"error": "登录失败，无法走查", "status": login_status}))
+            return 1
 
         results = []
         for path, name, expect in PAGES:

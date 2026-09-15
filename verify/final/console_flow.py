@@ -24,6 +24,7 @@
 """
 
 import base64
+import hashlib
 import json
 import os
 import random
@@ -68,6 +69,15 @@ def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def admin_key_of(password: str) -> str:
+    """按 token-spec §2.1 计算管理密钥：Base64(SHA256(登录口令))。
+
+    浏览器不再保存管理密钥，所以脚本要从口令自行计算（这正是 AI/脚本的做法）。
+    """
+    digest = hashlib.sha256(password.encode("utf-8")).digest()
+    return base64.b64encode(digest).decode("ascii")
 
 try:
     import websocket  # type: ignore
@@ -533,8 +543,10 @@ def main() -> int:
             return False
 
         # 1) 首启设口令（故意用很短的口令，验证"不限制位数"）
-        admin_key = admin_key_arg
-        if not admin_key:
+        # 浏览器认证走 HttpOnly 会话 Cookie（token-spec §2.3）；管理密钥由脚本从口令
+        # 自行计算，用于后端强断言——这正是 AI/脚本的使用方式。
+        admin_key = admin_key_arg or admin_key_of(password)
+        if not admin_key_arg:
             cdp.send("Page.navigate", {"url": base + "/"})
             time.sleep(3)
             cdp.screenshot(os.path.join(out_dir, "01-setup.png"))
@@ -544,28 +556,35 @@ def main() -> int:
             cdp.evaluate(js_set_placeholder(T("auth.confirmPassword"), password))
             clicked = cdp.value(js_click(T("auth.submit")))
             record("提交短口令（不限制位数）", bool(clicked), "clicked=" + str(clicked))
-            got_key = wait_for("!!localStorage.getItem('pbr.adminKey')", 25)
-            admin_key = cdp.value("localStorage.getItem('pbr.adminKey')") if got_key else ""
-            record("取得管理密钥并落本地", bool(admin_key), "len=" + str(len(admin_key or "")))
+            got_key = wait_for("!!localStorage.getItem('pbr.signedIn')", 25)
+            record("取得会话并进入控制台", bool(got_key), "signedIn=%s" % got_key)
             cdp.screenshot(os.path.join(out_dir, "02-issued-key.png"))
             cdp.evaluate(js_click(T("auth.savedIt")))
             record("确认已保存进入控制台",
                    wait_for("location.pathname === '/' && document.body.innerText.length > 200", 20),
                    cdp.value("location.pathname"))
-            # 后端强断言：管理密钥真的可用于管理面。
+            # 后端强断言：脚本自行计算的管理密钥真的可用于管理面（AI 通道）。
             status, _ = http_request(base + "/api/v1/channels?limit=1", token=admin_key)
-            record("后端断言：管理密钥可鉴权", status == 200, "GET /channels -> %s" % status)
+            record("后端断言：派生的管理密钥可鉴权（AI 通道）", status == 200,
+                   "GET /channels -> %s" % status)
+            # 后端强断言：浏览器 Cookie 也真的可用（人通道），且 localStorage 里没有密钥。
+            leaked = cdp.value("Object.keys(localStorage).filter(function(k){return k.indexOf('adminKey')>=0;}).length")
+            record("后端断言：localStorage 不再存管理密钥", leaked == 0, "adminKey keys=%s" % leaked)
         else:
-            # 外部实例模式：先把调用方给的管理密钥注入 localStorage，再进控制台，
-            # 与 console_walkthrough.py 的注入方式一致（否则会停在登录页）。
+            # 外部实例模式：先到同源页面，再用登录口令同源登录（服务端下发 HttpOnly Cookie）。
             cdp.send("Page.navigate", {"url": base + "/login"})
-            time.sleep(2)
-            cdp.evaluate("localStorage.setItem('pbr.adminKey', %s); 'ok'" % json.dumps(admin_key))
+            time.sleep(2.5)
+            login_res = cdp.value(
+                "(function(){return fetch('/api/v1/auth/login',{method:'POST',"
+                "headers:{'Content-Type':'application/json'},"
+                "body:JSON.stringify({password:%s})})"
+                ".then(function(r){if(r.ok){localStorage.setItem('pbr.signedIn','1');}return r.status;});})()"
+                % json.dumps(password))
             cdp.send("Page.navigate", {"url": base + "/"})
             time.sleep(3)
             entered = wait_for("location.pathname === '/' && document.body.innerText.length > 200", 20)
-            record("外部实例模式（注入管理密钥并进入控制台）", entered,
-                   "base=%s path=%s" % (base, cdp.value("location.pathname")))
+            record("外部实例模式（口令登录取得会话）", entered and login_res == 200,
+                   "base=%s login=%s path=%s" % (base, login_res, cdp.value("location.pathname")))
 
         # 2) 逐页导航
         pages = [("/", "03-dashboard"), ("/lanes", "04-lanes"), ("/channels", "05-channels"),
@@ -679,31 +698,26 @@ def main() -> int:
         time.sleep(0.5)
         clicked_pw = cdp.value(js_click(T("settings.changePassword") or T("common.save")))
         record("点击修改口令", bool(clicked_pw), "clicked=%r" % (clicked_pw,))
-        # 后端强断言：旧管理密钥 401，且新口令可换到可用管理密钥。
+        # 后端强断言：旧管理密钥 401，新口令派生的管理密钥可用，且新口令可重新登录。
         change_ok = False
         deadline = time.time() + 20
         while time.time() < deadline:
             old_status, _ = http_request(base + "/api/v1/channels?limit=1", token=admin_key)
-            login_status, login_body = http_request(
+            new_key = admin_key_of(new_password)
+            new_status, _ = http_request(base + "/api/v1/channels?limit=1", token=new_key)
+            login_status, _ = http_request(
                 base + "/api/v1/auth/login", method="POST",
                 body=json.dumps({"password": new_password}).encode())
-            token_ok = False
-            if login_status == 200:
-                try:
-                    new_token = json.loads(login_body).get("token", "")
-                    token_ok = bool(new_token) and http_request(
-                        base + "/api/v1/channels?limit=1", token=new_token)[0] == 200
-                except Exception:
-                    token_ok = False
-            if old_status == 401 and token_ok:
+            if old_status == 401 and new_status == 200 and login_status == 200:
                 change_ok = True
                 break
             time.sleep(0.5)
-        record("后端断言：旧管理密钥失效且新口令生效", change_ok,
-               "old_status=%s login_status=%s" % (old_status, login_status))
+        record("后端断言：旧密钥失效、新口令派生密钥可用", change_ok,
+               "old=%s new=%s login=%s" % (old_status, new_status, login_status))
         cdp.screenshot(os.path.join(out_dir, "15-password-changed.png"))
 
-        cdp.evaluate("localStorage.removeItem('pbr.adminKey'); 'ok'")
+        # 会话模型：改口令后服务端给当前浏览器续签，因此这里再登录一次验证新口令。
+        cdp.evaluate("localStorage.removeItem('pbr.signedIn'); 'ok'")
         cdp.send("Page.navigate", {"url": base + "/login"})
         time.sleep(3)
         cdp.evaluate(js_set_placeholder(T("auth.password"), new_password))

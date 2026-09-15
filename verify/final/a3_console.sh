@@ -2,8 +2,9 @@
 # W8-A3：控制台逐页走查（真实无头浏览器 + 鉴权）。
 #
 # 流程：构建控制台与网关 → 独立端口/独立 SQLite 起服务 → 设口令建渠道 →
-#       用 CDP 把管理密钥注入 localStorage → 逐页导航、断言渲染与 console 无报错、
-#       截图存档 → 源码级检查三态组件与品牌残留。
+#       用 CDP 以登录口令同源登录（服务端下发 HttpOnly 会话 Cookie）→ 逐页导航、
+#       断言渲染与 console 无报错、截图存档 → 源码级检查三态组件与品牌残留，
+#       最后跑 console_flow.py 完整使用流程（自包含假上游 + 后端强断言）。
 #
 # 全程本地：独立端口、独立 SQLite；不触碰任何现网容器与凭据。
 set -uo pipefail
@@ -75,7 +76,8 @@ sleep 1
 echo "  数据就绪：1 渠道 / 1 车道 / 1 密钥 / 1 条请求日志"
 
 echo "--- 2) 浏览器逐页走查（CDP）"
-REPORT=$(python3 "$REPO/verify/final/console_walkthrough.py" "$BASE" "$ADMIN_KEY" "$REPO" "$WORK/shots")
+# 走查脚本用**登录口令**在页面内同源登录（服务端下发 HttpOnly 会话 Cookie）。
+REPORT=$(python3 "$REPO/verify/final/console_walkthrough.py" "$BASE" "$PBR_PW" "$REPO" "$WORK/shots")
 RC=$?
 echo "$REPORT" | head -c 4000
 echo
