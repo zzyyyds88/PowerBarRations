@@ -339,8 +339,30 @@ def _random_secret(n: int = 20) -> str:
     return "".join(random.choice(alphabet) for _ in range(n))
 
 
+def _build_console(repo: str) -> None:
+    """先构建控制台，保证 web/dist/index.html 是真实入口而非仓库占位页。
+
+    PBR 二进制用 go:embed web/dist 内嵌控制台；仓库里跟踪的 index.html 只是占位页
+    （"控制台将在 W4 迁入"）。若跳过此步，go build 得到的是占位控制台，所有 UI 步骤
+    都会失败（审查发现的真实缺陷：脚本自称自包含，却没有构建控制台）。
+    """
+    dist_index = os.path.join(repo, "web", "dist", "index.html")
+    built = subprocess.run(["pnpm", "build"], cwd=os.path.join(repo, "web"),
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if built.returncode != 0:
+        raise RuntimeError("pnpm build 失败: " + built.stdout.decode()[-600:])
+    try:
+        with open(dist_index, encoding="utf-8") as fh:
+            html = fh.read()
+    except OSError as exc:
+        raise RuntimeError("无法读取 web/dist/index.html: %s" % exc)
+    if "/assets/" not in html:
+        raise RuntimeError("web/dist/index.html 不是真实控制台入口（缺少 /assets/），构建可能失败")
+
+
 def _build(repo: str, out_dir: str) -> tuple[str, str]:
-    """构建 PBR 与 fakeupstream 两个二进制，返回 (pbr_bin, upstream_bin)。"""
+    """构建控制台 + PBR + fakeupstream，返回 (pbr_bin, upstream_bin)。"""
+    _build_console(repo)
     pbr_bin = os.path.join(out_dir, "pbr")
     up_bin = os.path.join(out_dir, "fakeupstream")
     env = dict(os.environ)
