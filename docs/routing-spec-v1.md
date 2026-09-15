@@ -1,0 +1,263 @@
+# PowerBarRations 路由与故障转移规格 v1
+
+> 规范性文件，从属于 [`design-v1.md`](design-v1.md) §7。
+> 语义基准：线上路由层 `bestruirui/octopus@e7a1455` 的 `internal/relay/route.go` + `handler.go`（已逐行读过）。
+> 本文用占位符（`lane-alpha` / `channel-a` / `model-x`）示意，**不含部署私有数据**。
+
+---
+
+## 1. 对象与运行态
+
+### 1.1 路由键 = 模型名（核心语义）
+
+请求体里的 `model` **就是路由键**。网关不要求你为每个模型预先建对象：
+
+```
+上游1  ——  模型1 模型2 模型3
+上游2  ——  模型1 模型2 模型3
+
+下游请求 模型1 → 先打 上游1的模型1 → 失败则打 上游2的模型1
+```
+
+- **任何模型都自动可路由**：只要某个渠道声明它提供该模型，该模型名就立刻可用，无需"建车道"。
+- 渠道声明自己提供的模型清单（`Channel.Models []string`）；对每个模型名，取**所有**声明提供它的渠道，按渠道 `priority` 降序排成成员链 —— 这就是"上游1失败换上游2"的故障链。
+- `Channel.Priority`：**数字大者优先**（沿用上游渠道优先级语义）；相同则按渠道 id 保证确定性顺序。
+- **统一约定**：隐式成员与显式车道成员的 `priority` 均为**数字大者优先**（不再用"1=首选"的反向语义）。
+- **显式车道是可选覆盖层**：用于自定义顺序、成员别名、或把不同上游的**不同**模型名聚到一个名字下（池化）。显式车道同名时优先于隐式链。
+
+**解析顺序**（对请求的 `model`）：
+
+1. 存在同名**显式车道** → 用它的成员链；
+2. 否则生成**隐式车道**：所有声明提供该模型的渠道，按渠道 priority 排序；
+3. 两者皆无（无渠道声明该模型）→ 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`。
+
+> 第 3 条是刻意的：让"模型名写错"与"上游全挂"对下游呈现同一错误形态，下游无需分支。
+
+### 1.2 持久配置
+
+```go
+type Channel struct {
+    Name     string
+    Priority int      // 隐式成员的排序依据；数字大者优先
+    Models   []string // 本渠道提供的模型名（路由键）；可从上游拉取同步
+    // base_url/key/type/param_override/enabled/proxy 见 design-v1 §3.4
+}
+
+type Lane struct { // 显式车道（可选覆盖层）
+    Name    string
+    Mode    string   // failover(默认) | manual | weighted | round_robin
+    Config  LaneRelayConfig
+    Members []LaneMember
+}
+
+type LaneMember struct {
+    Channel       string
+    UpstreamModel string // 实际发给上游的模型名；与路由键不同即为"改名"
+    PublicAlias   string
+    Priority      int    // 数字大者优先
+    Weight        int
+    Overrides     map[string]int // 成员级六键覆盖
+}
+```
+
+- 隐式车道的成员：`Channel=渠道, UpstreamModel=路由键, Priority=渠道 priority`，不可单独配置别名/覆盖。
+- 显式车道的成员：完全可控，支持改名与别名（把多个上游的**不同**模型名聚到一个自定义名字下，就走这里）。
+
+### 1.3 进程内运行态（每车道一份，全部请求共享）
+
+沿用线上路由层的形状并扩展：
+
+```go
+type LaneRuntime struct {
+    LaneID         int
+    CurrentMemberID int              // 当前承载成员；0=未建立
+    ProbeMemberID   int              // 正在占用"恢复探测"的成员；每车道同时只允许一个
+    AffinityUntil   int64            // 亲和截止（Unix ms）；0=无亲和
+    AffinityArmed   bool             // 故障切换后，下一次成功才启动亲和
+    Cooldowns       map[int]int64    // 成员ID -> 冷却截止（Unix ms）
+    Circuits        map[int]*Circuit // 成员ID -> 熔断器状态（§5）
+}
+```
+
+- **进程内、重启清空**，与线上一致；README 必须写明。
+- 成员被删除或渠道被删除时，清理其残留状态（参考线上 `groupRouteLocked` 的清理逻辑）。
+- 状态经 SSE 推送给控制台（§7）。
+
+---
+
+## 2. 选择算法（按模式）
+
+### 2.1 manual
+
+- 使用人工指定的 `active_member`。
+- 若该成员被禁用，**直接返回无可用**（不静默换人）——manual 的语义是"就要这一个"。
+- 不参与冷却/亲和（但仍过熔断：熔断打开时返回无可用，§5）。
+
+### 2.2 failover（默认）
+
+按线上算法照搬：
+
+1. 亲和期未到且 `CurrentMemberID != 0` → **沿用当前成员**（不提前探测已恢复的高优先级成员）。
+2. 否则按 priority **降序**遍历成员：
+   - 该成员处于冷却且未到期 → 跳过；
+   - 该成员冷却**已到期** → 若 `ProbeMemberID` 已被占用则跳过；否则占用探测位并返回该成员（**只放行一个探测请求**，避免全部请求同时涌向尚未恢复的成员）；
+   - 正常可用 → 设为 `CurrentMemberID` 并返回。
+3. 遍历中遇到 `CurrentMemberID` 即停止（说明比它优先级更高的成员都不可选），沿用当前成员。
+4. 一个都选不出且无当前成员 → 无可用。
+
+### 2.3 weighted（新增）
+
+- 在**可用成员**（未冷却、熔断未打开）中按 `weight` 加权随机；权重全为 0 时退化为等概率。
+- 不做"当前成员粘滞"；但仍受冷却/熔断约束。成功/失败的冷却逻辑与 failover 相同。
+
+### 2.4 round_robin（新增）
+
+- 在可用成员中轮询；维护一个进程内游标，按 priority 顺序环形推进，跳过不可用成员。
+- 同样受冷却/熔断约束。
+
+> 四种模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同。
+
+---
+
+## 3. 请求尝试循环
+
+单个请求的完整流程（对线上 `handler.go` 的移植 + 明确化）：
+
+1. 读取客户端请求体一次；解析 `model`（车道名或成员别名）与 `stream`。
+2. 校验该请求所用客户端密钥对该车道/别名是否有权限（令牌规格见 token-spec）；无权 → `403 forbidden_scope`。
+3. 车道不存在 → `404 lane_not_found`（模型面按 §4.1 语义返回，不是 400 静默）。
+4. 进入尝试循环（每轮重新读取车道配置，支持热更新）：
+   1. 选择成员（§2）。无可用 → **直接快抛 503**（见 §4.2，与线上"轮询等待"不同）。
+   2. 解析渠道；渠道被禁用或不存在 → 记为该成员的一次失败（计入冷却/熔断），继续循环。
+   3. 改写上游请求体：`model` = `member.upstream_model`；OpenAI chat 流式补 `stream_options.include_usage=true`。
+   4. 建立本轮独立可取消上下文，设置超时：流式=首事件超时，非流式=整响应超时。
+   5. 发送并等待：流式等首个有效事件，非流式等完整响应。
+   6. 本轮结束（成功取得可提交响应 / 失败 / 超时 / 客户端取消）。
+5. 成功且**尚未提交** → 记成功、按 §5/§6 更新运行态、复制上游响应头、写响应。
+6. **提交点**：流式=向客户端写出第一个事件；非流式=写出完整响应体。提交后**不再允许故障转移**：此后任何错误原样传给客户端（§4.3）。
+
+### 3.1 失败计数与重试
+
+- 以"**同一成员在本请求内的连续失败次数**"计数；成员改变则从 1 重新计数（对齐线上）。
+- 未达该成员的 `max_attempts`（默认取车道六键，可用成员级覆盖）→ 等待 `retry_interval` 后**重试同一成员**。
+- 达到 → 该成员进入冷却，立即重新选路（下一轮会选下一个成员）。
+- 客户端取消/断开 → 不计失败、不冷却，归还探测占用（对齐线上）。
+- 人工中止本轮（不适用 PBR 的 HTTP 场景）→ 不计失败，重试。
+
+---
+
+## 4. 错误分类（**相对线上新增**）
+
+线上对**任何**错误一律累计失败并最终冷却，不区分 429 与 401。PBR 必须分类，否则限流会误伤健康成员。
+
+### 4.1 分类表
+
+| 类别 | 判据 | 是否原地重试 | 是否触发冷却/熔断 | 是否换下一成员 |
+|---|---|---|---|---|
+| `soft_rate_limit` | HTTP 429 / 明确的限流体 | 是（预算内） | 计数权重低，不单凭它打开熔断 | 是 |
+| `soft_transient` | 408、5xx、连接超时/EOF、上游空响应 | 是（预算内） | 是 | 是 |
+| `hard_auth` | 401 / 403（非欠费类）、key 失效 | 否，立即 | 是，冷却取较长档 | 是 |
+| `hard_quota` | 命中欠费/额度关键词（如 `arrearage` 等，条目属部署数据） | 否，立即 | 是 | 是 |
+| `client_error` | 400/422 且**未命中**关键词（请求本身不合法） | 否 | **否** | **否**，原样返回客户端 |
+| `bad_response` | 200 但响应体不合法/无法解析 | 是（预算内） | 是 | 是 |
+| `canceled` | 客户端断开 / 上下文取消 | 否 | 否 | 否，静默结束 |
+
+- **关键词优先于状态码**：欠费类上游以 400 到达且不在默认重试码集内，关键词是唯一捕获路径（design-v1 §7.6）。
+- `client_error` 不得触发冷却，也不得换成员——否则一个错误请求会把健康成员打冷。
+
+### 4.2 全部成员耗尽
+
+- 尝试预算用尽或无可选成员 → **立即返回 503**，body 形态固定为：
+
+  ```json
+  { "error": { "message": "No available channel for model lane-alpha" } }
+  ```
+
+- **这是对线上的明确偏离**：线上在无可选成员时是"等待并轮询重试"，会造成请求悬挂至客户端超时。PBR 采用快抛，因为下游 harness 的 fallback 分类依赖这个 503 体，且悬挂会让上游故障表现为本地卡死。
+- 快抛前必须已把本次所有尝试写入日志（含 `cooldown` / `circuit_break` 状态），便于事后定位。
+
+### 4.3 已提交后的错误
+
+- 一旦提交（首字节已写出），错误**原样转发**给客户端并结束请求；不换成员、不重试。
+- 流式响应在上游发出结束事件后，即使连接未立即关闭，也要按聚合结果正常收尾（不能把"已完整交付"误判为取消）。
+
+---
+
+## 5. 熔断器（新增）
+
+### 5.1 键与状态
+
+- 键 = `laneID : memberID`（成员粒度；等价于 `channel:upstream_model` 在车道内的组合）。
+- 三态：`closed / open / half_open`。
+
+### 5.2 转换
+
+- `closed`：累计失败。达阈值 `circuit_failure_threshold` 打开。**硬故障计数权重高；软故障（429）权重低**，使持续限流不会像硬故障那样快速打开。
+- `open`：持续 `circuit_open_seconds`（默认取该成员冷却时长）。期间该成员等价于"冷却中"，被选择算法跳过。
+- `half_open`：到期后放开**一个**探测请求（复用 `ProbeMemberID` 单槽，与冷却探测共用机制）。
+  - 成功 → `closed`，写一条恢复事件日志，并解除冷却；
+  - 失败 → 回到 `open`，且退避时长按次数指数增长（`open_seconds × 2^k`，设上限）。
+- 阈值与时长经 `system/options` 配置，可用 `POST /api/v1/lanes/{n}/circuits/reset` 手动清除。
+
+### 5.3 与冷却的关系
+
+- **冷却**（六键 `member_cooldown_seconds`）= 成员尝试预算耗尽后的短期回避；
+- **熔断** = 基于历史失败率的长期回避。
+- 二者作用于同一份"该成员当前是否可选"的判断：`可选 = 不在冷却 && 熔断 != open`。实现上可统一为一个 `MemberAvailability` 查询，避免两套逻辑打架。
+
+---
+
+## 6. 冷却与亲和（线上语义，照搬）
+
+- 成员尝试预算耗尽 → `Cooldowns[memberID] = now + member_cooldown_seconds`。
+- 冷却到期 → 只放行一个探测请求（`ProbeMemberID` 单槽）；探测成功即解除冷却。
+- **亲和**：故障切换后的**首次成功**才启动（`AffinityArmed`），持续 `member_affinity_seconds`；期间整个车道沿用当前成员，不提前切回高优先级成员。亲和期内当前成员失败 → 立即结束亲和。
+- 车道内所有请求共享 `CurrentMemberID`（这是线上设计：车道级粘滞，不是每请求独立）。
+
+---
+
+## 7. 运行态对外的暴露
+
+- `GET /api/v1/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind`，以及 `current_member` / `probe_member` / `affinity_until`。
+- `GET /api/v1/route-events`（SSE）→ 推送车道运行态增量（形状对齐线上 `RouteState`），供控制台的"成员状态"实时显示；连接拥塞时服务端断开由客户端重连取快照。
+- 控制台另有 30s 轮询兜底（对齐线上 `refetchInterval`），SSE 仅作加速，不作为唯一数据源。
+
+---
+
+## 8. 超时
+
+- 流式：`member_stream_first_event_timeout_seconds`（等首事件）；提交后不再设总超时，交由客户端断开。
+- 非流式：`member_non_stream_response_timeout_seconds`（等完整响应）。
+- 超时按"真实失败"处理（计入尝试次数与冷却），与"客户端取消"严格区分。
+- 车道级默认 + 成员级覆盖；成员级未设则继承。
+
+**算术**：最坏判定耗时 = 成员数 × max_attempts ×（超时 + 重试间隔）；端到端 = 客户端重试次数 × 该数。
+
+---
+
+## 9. 每尝试日志
+
+每次尝试落一条 `attempts` 元素：
+
+```json
+{ "attempt_num": 1, "member": "channel-a/model-x", "status": "failed",
+  "error_kind": "soft_rate_limit", "duration_ms": 800, "msg": "429 too many requests" }
+```
+
+`status ∈ success | failed | cooldown | circuit_break | skipped`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）。
+
+---
+
+## 10. 与线上的差异清单（实现时不可回退）
+
+| 项 | 线上 | PBR |
+|---|---|---|
+| 错误分类 | 无，一律计失败 | 按 §4.1 分类，429 不误伤 |
+| 全部成员耗尽 | 轮询等待 | **快抛 503**（下游契约） |
+| 熔断器 | 无 | 三态 + 半开 + 指数退避 |
+| 模式 | manual / failover | failover / manual / weighted / round_robin |
+| 成员改名 | 不支持（无别名列） | `upstream_model` + `public_alias` |
+| 运行态粒度 | 分组 | 车道（同） | 
+| 客户端身份校验 | `supported_models` 白名单（默认拒） | 令牌默认放行 + 显式拒绝（token-spec） |
+| 路由键 | 分组名（必须先建分组，否则"模型找不到"） | **模型名**：渠道声明即自动可路由，任意模型零配置可用（§1.1） |
+| 隐式车道 | 无此概念 | 由渠道模型清单自动生成成员链；显式车道为可选覆盖层 |

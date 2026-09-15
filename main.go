@@ -1,0 +1,391 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"embed"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"pbr/common"
+	"pbr/constant"
+	"pbr/controller"
+	"pbr/i18n"
+	"pbr/internal/legacy"
+	"pbr/internal/tlsutil"
+	"pbr/logger"
+	"pbr/middleware"
+	"pbr/model"
+	"pbr/pkg/jsplugin"
+	perfmetrics "pbr/pkg/perf_metrics"
+	"pbr/relay"
+	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"pbr/router"
+	"pbr/service"
+	_ "pbr/setting/performance_setting"
+	"pbr/setting/ratio_setting"
+
+	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
+
+	_ "net/http/pprof"
+)
+
+//go:embed web/dist
+var buildFS embed.FS
+
+//go:embed web/dist/index.html
+var indexPage []byte
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		os.Exit(legacy.RunCLI(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "tls" {
+		os.Exit(tlsutil.RunCLI(os.Args[2:]))
+	}
+	startTime := time.Now()
+	kitutil.SetLogging(common.SysLog, func(message string) {
+		logger.LogError(nil, message)
+	})
+	kitutil.SetSystemErrorLogging(common.SysError)
+
+	err := InitResources()
+	if err != nil {
+		common.FatalLog("failed to initialize resources: " + err.Error())
+		return
+	}
+
+	common.SysLog(common.SystemName + " " + common.Version + " started")
+	if os.Getenv("GIN_MODE") != "debug" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+	if common.DebugEnabled {
+		common.SysLog("running in debug mode")
+	}
+
+	kitutil.Debug.Store(common.DebugEnabled)
+
+	defer func() {
+		err := model.CloseDB()
+		if err != nil {
+			common.FatalLog("failed to close database: " + err.Error())
+		}
+	}()
+
+	if common.RedisEnabled {
+		// for compatibility with old versions
+		common.MemoryCacheEnabled = true
+	}
+	if common.MemoryCacheEnabled {
+		common.SysLog("memory cache enabled")
+		common.SysLog(fmt.Sprintf("sync frequency: %d seconds", common.SyncFrequency))
+
+		// Add panic recovery and retry for InitChannelCache
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					common.SysLog(fmt.Sprintf("InitChannelCache panic: %v, retrying once", r))
+					// Retry once
+					_, _, fixErr := model.FixAbility()
+					if fixErr != nil {
+						common.FatalLog(fmt.Sprintf("InitChannelCache failed: %s", fixErr.Error()))
+					}
+				}
+			}()
+			model.InitChannelCache()
+		}()
+
+		go model.SyncChannelCache(common.SyncFrequency)
+	}
+
+	// Warm pricing after channel cache initialization so Advanced Custom
+	// endpoint inference can read cached route settings on first request.
+	model.GetPricing()
+
+	// 热更新配置
+	go model.SyncOptions(common.SyncFrequency)
+	go controller.SyncTaskPlugins()
+
+	// W7（design-v1 §10.2.1）：数据看板/额度聚合随计费与多用户面删除。
+
+	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
+		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
+		if err != nil {
+			common.FatalLog("failed to parse CHANNEL_UPDATE_FREQUENCY: " + err.Error())
+		}
+		go controller.AutomaticallyUpdateChannels(frequency)
+	}
+
+	// Codex credential auto-refresh check every 10 minutes, refresh when expires within 1 day
+	service.StartCodexCredentialAutoRefreshTask()
+
+	// Report this process as a system instance so the System Info page can show
+	// all currently alive nodes in multi-instance deployments.
+	service.StartSystemInstanceReporter()
+
+	// Wire task polling adaptor factory (breaks service -> relay import cycle).
+	// Must run before the system task runner starts: the async_task_poll handler
+	// calls service.RunTaskPollingOnce, which needs this factory set.
+	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
+		a := relay.GetTaskAdaptor(platform)
+		if a == nil {
+			return nil
+		}
+		return a
+	}
+
+	// Register the periodic channel test, upstream model update, and async task
+	// polling (Midjourney / Suno / video) jobs as scheduled system tasks
+	// (DB-lease dedup across masters + run history), then start the runner that
+	// schedules and executes them. Master-only execution and the UpdateTask
+	// switch are enforced inside the runner and each handler's Enabled().
+	controller.RegisterScheduledSystemTasks()
+	service.StartSystemTaskRunner()
+
+	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
+		common.BatchUpdateEnabled = true
+		common.SysLog("batch update enabled with interval " + strconv.Itoa(common.BatchUpdateInterval) + "s")
+		model.InitBatchUpdater()
+	}
+
+	if os.Getenv("ENABLE_PPROF") == "true" {
+		gopool.Go(func() {
+			log.Println(http.ListenAndServe("0.0.0.0:8005", nil))
+		})
+		go common.Monitor()
+		common.SysLog("pprof enabled")
+	}
+
+	err = common.StartPyroScope()
+	if err != nil {
+		common.SysError(fmt.Sprintf("start pyroscope error : %v", err))
+	}
+
+	// Initialize HTTP server
+	server := gin.New()
+	if err := middleware.ConfigureTrustedProxies(server); err != nil {
+		common.FatalLog("failed to configure trusted proxies: " + err.Error())
+		return
+	}
+	server.Use(gin.CustomRecovery(func(c *gin.Context, err any) {
+		common.SysLog(fmt.Sprintf("panic detected: %v", err))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{
+				"message": fmt.Sprintf("Panic detected, error: %v. Please submit a issue here: https://github.com/Calcium-Ion/new-api", err),
+				"type":    "new_api_panic",
+			},
+		})
+	}))
+	// This will cause SSE not to work!!!
+	//server.Use(gzip.Gzip(gzip.DefaultCompression))
+	server.Use(middleware.RequestId())
+	server.Use(middleware.Version())
+	server.Use(middleware.I18n())
+	middleware.SetUpLogger(server)
+	InjectUmamiAnalytics()
+	InjectGoogleAnalytics()
+
+	// 设置路由
+	router.SetRouter(server, router.WebAssets{
+		BuildFS:   buildFS,
+		IndexPage: indexPage,
+	})
+	var port = os.Getenv("PORT")
+	if port == "" {
+		port = strconv.Itoa(*common.Port)
+	}
+
+	// PBR_BIND 可收紧监听地址（局域网部署默认 0.0.0.0，见 docs/api-spec-v1.md §1）。
+	bind := os.Getenv("PBR_BIND")
+	if bind == "" {
+		bind = "0.0.0.0"
+	}
+
+	// HTTPS：TLS_ENABLED=true 时加载/自动生成证书（详见 internal/tlsutil）。
+	tlsManager, tlsErr := tlsutil.SetupFromEnv()
+	if tlsErr != nil {
+		common.FatalLog("failed to initialize TLS: " + tlsErr.Error())
+		return
+	}
+	tlsutil.Default = tlsManager
+
+	srv := &http.Server{
+		Addr:    bind + ":" + port,
+		Handler: server,
+	}
+	listener, listenErr := net.Listen("tcp", srv.Addr)
+	if listenErr != nil {
+		common.FatalLog("failed to listen on " + srv.Addr + ": " + listenErr.Error())
+		return
+	}
+	scheme := "http"
+	if tlsManager.Enabled() {
+		scheme = "https"
+		listener = tls.NewListener(listener, &tls.Config{
+			GetCertificate: tlsManager.GetCertificate,
+			MinVersion:     tls.VersionTLS12,
+		})
+	}
+	go func() {
+		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			common.FatalLog("failed to start " + scheme + " server: " + err.Error())
+		}
+	}()
+	common.SysLog(fmt.Sprintf("%s listening on %s:%s (tls=%v, source=%s)", scheme, bind, port, tlsManager.Enabled(), tlsManager.Source()))
+
+	time.Sleep(100 * time.Millisecond)
+
+	common.LogStartupSuccess(startTime, port)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+	common.SysLog(fmt.Sprintf("received signal: %v, shutting down...", sig))
+
+	// SSE streams may run for minutes; give them time to finish before forced exit
+	shutdownTimeout := time.Duration(common.GetEnvOrDefault("SHUTDOWN_TIMEOUT_SECONDS", 120)) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
+	}
+	// W7（design-v1 §10.2.1）：额度看板缓存随计费面删除，退出时无需落库。
+	common.SysLog("server exited")
+}
+
+func InjectUmamiAnalytics() {
+	analyticsInjectBuilder := &strings.Builder{}
+	if os.Getenv("UMAMI_WEBSITE_ID") != "" {
+		umamiSiteID := os.Getenv("UMAMI_WEBSITE_ID")
+		umamiScriptURL := os.Getenv("UMAMI_SCRIPT_URL")
+		if umamiScriptURL == "" {
+			umamiScriptURL = "https://analytics.umami.is/script.js"
+		}
+		analyticsInjectBuilder.WriteString("<script defer src=\"")
+		analyticsInjectBuilder.WriteString(umamiScriptURL)
+		analyticsInjectBuilder.WriteString("\" data-website-id=\"")
+		analyticsInjectBuilder.WriteString(umamiSiteID)
+		analyticsInjectBuilder.WriteString("\"></script>")
+	}
+	analyticsInjectBuilder.WriteString("<!--Umami QuantumNous-->\n")
+	analyticsInject := []byte(analyticsInjectBuilder.String())
+	placeholder := []byte("<!--umami-->\n")
+	indexPage = bytes.ReplaceAll(indexPage, placeholder, analyticsInject)
+}
+
+func InjectGoogleAnalytics() {
+	analyticsInjectBuilder := &strings.Builder{}
+	if os.Getenv("GOOGLE_ANALYTICS_ID") != "" {
+		gaID := os.Getenv("GOOGLE_ANALYTICS_ID")
+		// Google Analytics 4 (gtag.js)
+		analyticsInjectBuilder.WriteString("<script async src=\"https://www.googletagmanager.com/gtag/js?id=")
+		analyticsInjectBuilder.WriteString(gaID)
+		analyticsInjectBuilder.WriteString("\"></script>")
+		analyticsInjectBuilder.WriteString("<script>")
+		analyticsInjectBuilder.WriteString("window.dataLayer = window.dataLayer || [];")
+		analyticsInjectBuilder.WriteString("function gtag(){dataLayer.push(arguments);}")
+		analyticsInjectBuilder.WriteString("gtag('js', new Date());")
+		analyticsInjectBuilder.WriteString("gtag('config', '")
+		analyticsInjectBuilder.WriteString(gaID)
+		analyticsInjectBuilder.WriteString("');")
+		analyticsInjectBuilder.WriteString("</script>")
+	}
+	analyticsInjectBuilder.WriteString("<!--Google Analytics QuantumNous-->\n")
+	analyticsInject := []byte(analyticsInjectBuilder.String())
+	placeholder := []byte("<!--Google Analytics-->\n")
+	indexPage = bytes.ReplaceAll(indexPage, placeholder, analyticsInject)
+}
+
+func InitResources() error {
+	// Initialize resources here if needed
+	// This is a placeholder function for future resource initialization
+	err := godotenv.Load(".env")
+	if err != nil {
+		if common.DebugEnabled {
+			common.SysLog("No .env file found, using default environment variables. If needed, please create a .env file and set the relevant variables.")
+		}
+	}
+
+	// 加载环境变量
+	common.InitEnv()
+
+	logger.SetupLogger()
+
+	// Initialize model settings
+	ratio_setting.InitRatioSettings()
+
+	service.InitHttpClient()
+
+	service.InitTokenEncoders()
+
+	// Initialize SQL Database
+	err = model.InitDB()
+	if err != nil {
+		common.FatalLog("failed to initialize database: " + err.Error())
+		return err
+	}
+	if common.PasswordLoginEncryptionEnabled {
+		if err = model.InitPasswordEncryption(); err != nil {
+			common.FatalLog("failed to initialize password encryption: " + err.Error())
+			return err
+		}
+	}
+
+	model.CheckSetup()
+
+	// Initialize options, should after model.InitDB()
+	if common.IsMasterNode {
+		if err := model.MigrateRetiredFrontendOptions(); err != nil {
+			common.SysError("failed to migrate retired frontend options: " + err.Error())
+		}
+	}
+	model.InitOptionMap()
+
+	// 清理旧的磁盘缓存文件
+	common.CleanupOldCacheFiles()
+
+	// Initialize SQL Database
+	err = model.InitLogDB()
+	if err != nil {
+		return err
+	}
+
+	// Initialize Redis
+	err = common.InitRedisClient()
+	if err != nil {
+		return err
+	}
+
+	perfmetrics.Init()
+
+	// 启动系统监控
+	common.StartSystemMonitor()
+
+	// Initialize i18n
+	err = i18n.Init()
+	if err != nil {
+		common.SysError("failed to initialize i18n: " + err.Error())
+		// Don't return error, i18n is not critical
+	} else {
+		common.SysLog("i18n initialized with languages: " + strings.Join(i18n.SupportedLanguages(), ", "))
+	}
+	// 用户语言懒加载、自定义 OAuth 提供商与登录工件清理都随多用户面在 W7 删除
+	// （design-v1 §10.2.1），这里不再有对应的启动钩子。
+
+	return nil
+}
