@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode 
 import { useTranslations } from "use-intl";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
-import { getAdminKey, setAdminKey } from "@/api/client";
+import { setSessionFlag } from "@/api/client";
+import { logout as logoutRequest } from "@/api/session";
 import {
   changeAdminPassword,
   exportConfigBundle,
@@ -262,12 +263,19 @@ export function Settings() {
   const setLocale = useSettingStore((state) => state.setLocale);
 
   // ---- 账户 ----
-  const [adminKey, setAdminKeyState] = useState(() => getAdminKey());
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [accountError, setAccountError] = useState<unknown>(null);
   const [accountBusy, setAccountBusy] = useState(false);
+
+  // ---- 管理密钥（供 AI 用）----
+  // 浏览器不保存管理密钥（认证走 HttpOnly 会话 Cookie）。需要给 AI 配置时，
+  // 由用户在此输入登录口令，本地计算 Base64(SHA256(口令))，口令不离开浏览器。
+  const [keyPassword, setKeyPassword] = useState("");
+  const [derivedKey, setDerivedKey] = useState("");
+  const [keyError, setKeyError] = useState<unknown>(null);
+  const [keyBusy, setKeyBusy] = useState(false);
 
   // ---- 备份 ----
   const [exportBusy, setExportBusy] = useState(false);
@@ -319,11 +327,28 @@ export function Settings() {
   );
 
   const adminKeyPrefix = useMemo(() => {
-    if (!adminKey) return tc("notConfigured");
-    return adminKey.length > ADMIN_KEY_PREFIX_LENGTH
-      ? `${adminKey.slice(0, ADMIN_KEY_PREFIX_LENGTH)}…`
-      : adminKey;
-  }, [adminKey, tc]);
+    if (!derivedKey) return tc("notConfigured");
+    return derivedKey.length > ADMIN_KEY_PREFIX_LENGTH
+      ? `${derivedKey.slice(0, ADMIN_KEY_PREFIX_LENGTH)}…`
+      : derivedKey;
+  }, [derivedKey, tc]);
+
+  const deriveKey = async () => {
+    setKeyError(null);
+    if (!keyPassword) {
+      setKeyError(new Error(ta("passwordRequired")));
+      return;
+    }
+    setKeyBusy(true);
+    try {
+      setDerivedKey(await deriveAdminKey(keyPassword));
+      setKeyPassword("");
+    } catch (error) {
+      setKeyError(error);
+    } finally {
+      setKeyBusy(false);
+    }
+  };
 
   // 导入 diff 的"真实变更"总数：unchanged 不算变更。
   const importChanges = useMemo(() => {
@@ -351,16 +376,9 @@ export function Settings() {
     setAccountBusy(true);
     try {
       await changeAdminPassword(currentPassword, newPassword);
-      // 口令变了 ⇒ 管理密钥随之变（token-spec §2.3）。按公开派生规则就地重算，
-      // 免得用户刚改完口令就被自己的旧 Bearer 踢回登录页；重算失败则退回登录页。
-      try {
-        const derived = await deriveAdminKey(newPassword);
-        setAdminKey(derived);
-        setAdminKeyState(derived);
-      } catch {
-        setAdminKey("");
-        setAdminKeyState("");
-      }
+      // 口令变了 ⇒ 管理密钥与旧会话都随之变。服务端已给当前浏览器续签新会话
+      // （token-spec §2.3），因此这里只需清空表单与已展示的派生密钥。
+      setDerivedKey("");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -645,19 +663,49 @@ export function Settings() {
           </Button>
         </Section>
 
-        {/* API 密钥 */}
+        {/* API 密钥（供 AI 用） */}
         <Section title={t("apiKey")}>
           <div className="flex items-center justify-between gap-3 text-sm">
             <span className="text-slate-500 dark:text-slate-400">{t("apiKeyAlgorithm")}</span>
             <code className="font-mono text-xs">Base64(SHA256(login password))</code>
           </div>
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-slate-500 dark:text-slate-400">{t("apiKeyPrefix")}</span>
-            <code className="break-all font-mono text-xs">{adminKeyPrefix}</code>
-          </div>
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("howToRecompute")}</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">{t("apiKeyLocalHint")}</p>
-          <CopyButton value={adminKey} />
+          <Field label={t("keyPasswordLabel")} hint={t("keyPasswordHint")}>
+            <Input
+              type="password"
+              autoComplete="current-password"
+              value={keyPassword}
+              onChange={(event) => setKeyPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void deriveKey();
+              }}
+            />
+          </Field>
+          {keyError ? <ErrorBox error={keyError} /> : null}
+          <Button disabled={keyBusy || keyPassword.length === 0} onClick={() => void deriveKey()}>
+            {t("deriveKey")}
+          </Button>
+          {derivedKey ? (
+            <>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-slate-500 dark:text-slate-400">{t("apiKeyPrefix")}</span>
+                <code className="break-all font-mono text-xs">{adminKeyPrefix}</code>
+              </div>
+              <CopyButton value={derivedKey} />
+            </>
+          ) : null}
+          <Button
+            variant="outline"
+            onClick={() => {
+              void logoutRequest().catch(() => undefined).finally(() => {
+                setSessionFlag(false);
+                window.location.assign("/login");
+              });
+            }}
+          >
+            {t("signOut")}
+          </Button>
         </Section>
 
         {/* 外观 */}

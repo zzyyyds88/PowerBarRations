@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslations } from "use-intl";
 import { toast } from "sonner";
-import { setAdminKey } from "@/api/client";
+import { setSessionFlag } from "@/api/client";
 import { login, setupAdmin } from "@/api/session";
 import { useInvalidate, qk } from "@/api/queries";
 import { ErrorBox } from "@/components/common/AsyncState";
@@ -172,12 +172,14 @@ export function Login({ initialized }: { initialized: boolean }) {
     try {
       if (!initialized) {
         const result = await setupAdmin(password);
+        // 服务端已签发会话 Cookie；这里展示一次管理密钥供 AI 配置使用。
+        setSessionFlag(true);
         setIssuedKey(result.admin_key);
-        setAdminKey(result.admin_key);
         if (result.warning) toast.warning(result.warning);
       } else {
-        const result = await login(password);
-        setAdminKey(result.token);
+        await login(password);
+        // 浏览器靠 HttpOnly Cookie 鉴权，本地只记"已登录"标记。
+        setSessionFlag(true);
         await invalidate([qk.setupStatus]);
         navigate("/", { replace: true });
       }

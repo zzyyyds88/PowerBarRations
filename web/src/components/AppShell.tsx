@@ -11,7 +11,8 @@ import {
   Settings as SettingsIcon,
   Sparkles,
 } from "lucide-react";
-import { setAdminKey } from "@/api/client";
+import { setSessionFlag } from "@/api/client";
+import { logout as logoutRequest } from "@/api/session";
 import { useRouteEvents } from "@/hooks/useRouteEvents";
 import { useInvalidate, qk } from "@/api/queries";
 import { cn } from "@/lib/utils";
@@ -44,8 +45,11 @@ export function AppShell() {
   });
 
   const logout = () => {
-    setAdminKey("");
-    navigate("/login", { replace: true });
+    // 先让服务端清 Cookie，再清本地标记并回登录页（后端已失效则静默继续）。
+    void logoutRequest().catch(() => undefined).finally(() => {
+      setSessionFlag(false);
+      navigate("/login", { replace: true });
+    });
   };
 
   return (

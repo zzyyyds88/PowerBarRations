@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { getAdminKey } from "@/api/client";
+import { hasSessionFlag } from "@/api/client";
 import { useSetupStatus } from "@/api/queries";
 import { Loading } from "@/components/common/AsyncState";
 import { AppShell } from "@/components/AppShell";
@@ -23,7 +23,8 @@ import { Settings } from "@/pages/Settings";
 export function App() {
   const status = useSetupStatus();
   const location = useLocation();
-  const authed = Boolean(getAdminKey());
+  // 本地只记"登录过"的标记；真正的凭据是服务端 HttpOnly Cookie。
+  const authed = hasSessionFlag();
 
   if (status.isLoading) return <Loading />;
 

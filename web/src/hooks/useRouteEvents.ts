@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getAdminKey } from "@/api/client";
 import { openRouteEvents, parseRouteEvent } from "@/api/routeEvents";
 
 /**
  * 车道运行态 SSE（ui-spec §4）。
  *
  * 关键约定：
- * - 用 fetch + ReadableStream 读 SSE 并带 Authorization 头（不用 EventSource，
- *   它无法带自定义头），管理密钥不进 URL；
+ * - 用 fetch + ReadableStream 读 SSE（统一错误处理与中断控制）；
+ *   认证走 HttpOnly 会话 Cookie，由浏览器自动携带，密钥不进 URL；
  * - **断开必须自动重连**，重连后先取一次快照再接受增量；
  * - 另有 30s 轮询兜底（在 queryClient 的 refetchInterval 里配置）。
  */
@@ -41,12 +40,6 @@ export function useRouteEvents(onSnapshotNeeded: () => void) {
     const run = async (): Promise<void> => {
       if (stopped.current) return;
       controller = new AbortController();
-      const key = getAdminKey();
-      if (!key) {
-        setConnected(false);
-        scheduleReconnect();
-        return;
-      }
       try {
         const response = await openRouteEvents(controller.signal);
         if (!response.ok || !response.body) {
