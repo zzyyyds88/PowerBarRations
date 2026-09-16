@@ -529,7 +529,7 @@ it('changing rows per page resets pagination and sends the selected page size', 
 })
 
 it.each([10, 100])(
-  'role %i defaults to all audit records and can switch both ways',
+  'role %i always queries the admin audit endpoint with no scope tabs',
   async (role) => {
     useAuthStore.getState().auth.setUser({
       id: 1,
@@ -548,35 +548,26 @@ it.each([10, 100])(
         <AuditLogs />
       </QueryClientProvider>
     )
-    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
     await waitFor(() =>
       expect(get).toHaveBeenCalledWith('/api/console/audit', expect.anything())
     )
-    expect(get).not.toHaveBeenCalledWith('/api/console/audit/self', expect.anything())
-    await userEvent.click(screen.getByRole('tab', { name: 'Only Mine' }))
-    await waitFor(() =>
-      expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', expect.anything())
+    // PBR 单用户：只有一个视图，不再有 "Only Mine"（该端点未注册，审查 F18）。
+    expect(get).not.toHaveBeenCalledWith(
+      '/api/console/audit/self',
+      expect.anything()
     )
-    expect(screen.getByRole('tab', { name: 'Only Mine' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
-    await userEvent.click(screen.getByRole('tab', { name: 'All' }))
-    await waitFor(() =>
-      expect(get).toHaveBeenLastCalledWith('/api/console/audit', expect.anything())
-    )
-    expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
+    expect(
+      screen.queryByRole('tablist', { name: 'View scope' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('tab', { name: 'Only Mine' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'All' })).not.toBeInTheDocument()
   }
 )
 
 it.each([1, 10])(
-  'role %i without an audit grant queries only its own records without scope tabs',
+  'role %i queries the admin audit endpoint without scope tabs',
   async (role) => {
     useAuthStore.getState().auth.setUser({ id: 2, username: 'alice', role })
     const get = vi.spyOn(api, 'get').mockResolvedValue({
@@ -591,9 +582,12 @@ it.each([1, 10])(
       </QueryClientProvider>
     )
     await waitFor(() =>
-      expect(get).toHaveBeenCalledWith('/api/console/audit/self', expect.anything())
+      expect(get).toHaveBeenCalledWith('/api/console/audit', expect.anything())
     )
-    expect(get).not.toHaveBeenCalledWith('/api/console/audit', expect.anything())
+    expect(get).not.toHaveBeenCalledWith(
+      '/api/console/audit/self',
+      expect.anything()
+    )
     expect(
       screen.queryByRole('tablist', { name: 'View scope' })
     ).not.toBeInTheDocument()
@@ -601,7 +595,7 @@ it.each([1, 10])(
   }
 )
 
-it('clears global records and open details on revocation, falls back to self, and refreshes permissions', async () => {
+it('clears cached records and open details when the admin audit endpoint denies access', async () => {
   const admin = {
     id: 1,
     username: 'admin',
@@ -619,20 +613,9 @@ it('clears global records and open details on revocation, falls back to self, an
     undefined,
     { status: 403 } as AxiosResponse
   )
-  let revoked = false
+  let denied = false
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
-    if (url === '/api/user/self') {
-      return {
-        data: {
-          success: true,
-          data: {
-            ...admin,
-            permissions: { admin_permissions: { audit: { read: false } } },
-          },
-        },
-      }
-    }
-    if (url === '/api/console/audit' && revoked) throw forbidden
+    if (url === '/api/console/audit' && denied) throw forbidden
     return {
       data: {
         success: true,
@@ -677,27 +660,29 @@ it('clears global records and open details on revocation, falls back to self, an
   expect(
     await screen.findByRole('dialog', { name: 'Log Details' })
   ).toBeVisible()
-  revoked = true
+
+  // 端点开始拒绝（例如凭据被替换）：详情关闭、缓存清掉、列表不再展示旧数据。
+  denied = true
   await client.invalidateQueries({ queryKey: ['audit', 1, 'all'] })
   await waitFor(() =>
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   )
   await waitFor(() =>
-    expect(get).toHaveBeenCalledWith('/api/console/audit/self', expect.anything())
+    expect(client.getQueriesData({ queryKey: ['audit', 1, 'all'] })).toHaveLength(
+      0
+    )
   )
-  await waitFor(() => expect(get).toHaveBeenCalledWith('/api/user/self'))
   expect(screen.queryByText('other-account')).not.toBeInTheDocument()
-  expect(screen.queryByRole('tab', { name: 'All' })).not.toBeInTheDocument()
-  expect(client.getQueriesData({ queryKey: ['audit', 1, 'all'] })).toHaveLength(
-    0
-  )
+  // 其它会话的缓存不受影响。
   expect(client.getQueryData(['audit', 99, 'all'])).toEqual({
     items: ['separate-session'],
   })
-  expect(
-    useAuthStore.getState().auth.user?.permissions?.admin_permissions?.audit
-      .read
-  ).toBe(false)
+  // 只打管理端点：不存在 "self" 回退（该端点未注册）。
+  expect(get).not.toHaveBeenCalledWith(
+    '/api/console/audit/self',
+    expect.anything()
+  )
+  expect(screen.queryByRole('tab', { name: 'All' })).not.toBeInTheDocument()
 })
 
 it('mobile access history keeps pagination visible and puts result filters in a drawer', async () => {
