@@ -99,7 +99,7 @@ type PBRRequestLog struct {
 	TotalMs  int64 `json:"total_ms"`
 	IsStream bool  `json:"is_stream"`
 
-	Attempts      string  `json:"expects_attempts" gorm:"column:attempts;type:text"`
+	Attempts      string  `json:"attempts" gorm:"column:attempts;type:text"`
 	TotalAttempts int     `json:"total_attempts"`
 	EstimatedCost float64 `json:"estimated_cost"`
 }
