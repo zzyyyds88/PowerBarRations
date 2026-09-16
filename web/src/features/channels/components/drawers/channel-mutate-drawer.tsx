@@ -188,6 +188,7 @@ import {
 } from '../../lib/task-plugin-base-url'
 import type { Channel } from '../../types'
 import { ChannelPluginExtensions } from '../channel-plugin-extensions'
+import { ChannelPricesEditor } from '../channel-prices-editor'
 import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
@@ -1491,6 +1492,31 @@ export function ChannelMutateDrawer({
           <FormDescription>
             {t(
               'Network proxy for this channel (supports HTTP, HTTPS, SOCKS5, and SOCKS5H)'
+            )}
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
+
+  const pbrPricesFields = (
+    <FormField
+      control={form.control}
+      name='pbr_prices'
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('Upstream unit prices')}</FormLabel>
+          <FormControl>
+            <ChannelPricesEditor
+              value={field.value ?? []}
+              onChange={field.onChange}
+              disabled={sensitiveLocked}
+            />
+          </FormControl>
+          <FormDescription>
+            {t(
+              'CNY per 1M tokens, used for cost accounting only. A channel price overrides the global default price.'
             )}
           </FormDescription>
           <FormMessage />
@@ -4108,6 +4134,7 @@ export function ChannelMutateDrawer({
                 {proxyFields}
                 {httpProtocolFields}
                 {httpShardsFields}
+                {pbrPricesFields}
               </fieldset>
             </div>
             {upstreamModelDetectionFields}

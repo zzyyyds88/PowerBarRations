@@ -10,6 +10,18 @@ import (
 	"pbr/relaykit/types"
 )
 
+// ChannelModelPrice 是渠道级上游单价（人民币/百万 token），用于成本折算。
+//
+// 与全局 PBRModelPrices 的关系：渠道价优先（上游实际采购价可能因渠道而异），
+// 未配置时回落到全局默认价，再没有就不折算（estimated_cost=0）。
+type ChannelModelPrice struct {
+	Model      string  `json:"model"`
+	Input      float64 `json:"input,omitempty"`
+	Output     float64 `json:"output,omitempty"`
+	CacheRead  float64 `json:"cache_read,omitempty"`
+	CacheWrite float64 `json:"cache_write,omitempty"`
+}
+
 type ChannelSettings struct {
 	TaskPluginKey          string `json:"task_plugin_key,omitempty"`
 	ForceFormat            bool   `json:"force_format,omitempty"`
@@ -24,6 +36,8 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// PBRPrices 渠道级上游单价（成本折算用，见 ChannelModelPrice）。
+	PBRPrices []ChannelModelPrice `json:"pbr_prices,omitempty"`
 }
 
 const (

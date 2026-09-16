@@ -34,8 +34,6 @@ import {
   useCanEditModelPricing,
   type ModelPricingConfig,
 } from '@/features/model-pricing/api'
-import { modelPricingDisplay } from '@/features/model-pricing/pricing'
-import { ModelPriceCell } from '@/features/pricing/components/model-price-cell'
 import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
@@ -46,11 +44,12 @@ import type { Model, Vendor } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
 import { ModelSquareStatus } from './model-square-status'
+import { ModelUnitPriceCell } from './model-unit-price-cell'
 import { useModels } from './models-provider'
 
 export function useModelsColumns(
   vendors: Vendor[] = [],
-  pricing?: ModelPricingConfig,
+  _pricing?: ModelPricingConfig,
   pricingState?: 'loading' | 'error'
 ): ColumnDef<Model>[] {
   const { t } = useTranslation()
@@ -59,11 +58,6 @@ export function useModelsColumns(
   const vendorMap = useMemo(
     () => new Map(vendors.map((vendor) => [vendor.id, vendor])),
     [vendors]
-  )
-  const priceMap = useMemo(
-    () =>
-      new Map(pricing?.entries.map((entry) => [entry.model_name, entry]) ?? []),
-    [pricing]
   )
   const rules = getNameRuleConfig(t)
   return [
@@ -172,28 +166,7 @@ export function useModelsColumns(
             </span>
           )
         }
-        const entry = priceMap.get(row.original.model_name)
-        return (
-          <Button
-            variant='ghost'
-            className='h-auto w-full max-w-full min-w-0 justify-start px-0 py-1 text-left font-normal hover:bg-transparent'
-            aria-label={t('View pricing for {{model}}', {
-              model: row.original.model_name,
-            })}
-            onClick={() => {
-              setCurrentRow(row.original)
-              setOpen('price-model')
-            }}
-          >
-            <ModelPriceCell
-              model={modelPricingDisplay(
-                entry ?? { model_name: row.original.model_name, effective: {} }
-              )}
-              options={{ tokenUnit: 'M' }}
-              showExpression={false}
-            />
-          </Button>
-        )
+        return <ModelUnitPriceCell modelName={row.original.model_name} />
       },
     },
     {

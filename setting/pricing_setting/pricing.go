@@ -126,7 +126,7 @@ func Normalize(list []ModelPrice) ([]ModelPrice, error) {
 	return out, nil
 }
 
-// Estimate 按单价表折算一次请求的成本（人民币）。模型不在表里 → 0（不折算）。
+// Estimate 按全局单价表折算一次请求的成本（人民币）。模型不在表里 → 0（不折算）。
 func Estimate(model string, prompt, completion, cacheRead, cacheWrite int) float64 {
 	mu.RLock()
 	price, ok := prices[strings.TrimSpace(model)]
@@ -134,6 +134,11 @@ func Estimate(model string, prompt, completion, cacheRead, cacheWrite int) float
 	if !ok {
 		return 0
 	}
+	return EstimateWithPrice(price, prompt, completion, cacheRead, cacheWrite)
+}
+
+// EstimateWithPrice 用指定单价折算一次请求成本（人民币）。渠道级上游单价走这里。
+func EstimateWithPrice(price ModelPrice, prompt, completion, cacheRead, cacheWrite int) float64 {
 	const perMillion = 1_000_000.0
 	cost := float64(prompt) * price.Input / perMillion
 	cost += float64(completion) * price.Output / perMillion

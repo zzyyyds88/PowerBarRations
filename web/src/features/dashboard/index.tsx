@@ -113,6 +113,12 @@ const LazyFlowCharts = lazy(() =>
   }))
 )
 
+const LazyCostDashboard = lazy(() =>
+  import('./components/cost/cost-dashboard').then((m) => ({
+    default: m.CostDashboard,
+  }))
+)
+
 function LogStatCardsFallback() {
   return (
     <div className='overflow-hidden rounded-lg border'>
@@ -182,6 +188,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   },
   models: {
     titleKey: 'Model Call Analytics',
+  },
+  cost: {
+    titleKey: 'Cost analytics',
   },
   flow: {
     titleKey: 'Flow',
@@ -408,6 +417,13 @@ export function Dashboard() {
                   filters={modelFilters}
                   sensitiveVisible={flowSensitiveVisible}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'cost' && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyCostDashboard />
               </Suspense>
             </FadeIn>
           )}
