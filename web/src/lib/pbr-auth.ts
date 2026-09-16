@@ -9,7 +9,7 @@ auth store 的 user/accessToken/session 字段）无需改动即可工作。
 
 映射：
   - POST /api/v1/auth/login   {password} → 签发会话 Cookie
-  - GET  /api/v1/auth/session            → {authenticated: boolean}
+  - GET  /api/v1/auth/session            → {authenticated: boolean, stale: boolean}
   - POST /api/v1/auth/logout             → 清 Cookie
   - GET  /api/v1/setup/status            → {initialized: boolean}
   - POST /api/v1/setup       {password}  → 首个口令 + 签发会话
@@ -88,21 +88,59 @@ export async function submitPBRSetup(password: string): Promise<{ warning?: stri
   return body
 }
 
-/** 查询当前是否持有有效会话（PBR /api/v1/auth/session）。 */
-export async function getPBRSession(): Promise<boolean> {
+/**
+ * 会话状态（PBR /api/v1/auth/session，token-spec §2.5.1）。
+ *
+ * `stale=true` 表示浏览器带了会话 Cookie 但服务端已不认它——最典型的是管理口令
+ * 变更后签名材料随之变化，旧会话立即失效。此时必须清除本地态并让用户知道
+ * "凭据已变更"，否则会卡在"看似已登录、实际每个请求都 401"的状态。
+ */
+export interface PBRSessionState {
+  authenticated: boolean
+  stale: boolean
+}
+
+/** 查询当前会话状态（PBR /api/v1/auth/session）。 */
+export async function getPBRSessionState(): Promise<PBRSessionState> {
   const res = await fetch('/api/v1/auth/session', {
     credentials: 'same-origin',
     cache: 'no-store',
   })
-  if (!res.ok) return false
-  const body = (await res.json().catch(() => ({}))) as { authenticated?: boolean }
-  return Boolean(body.authenticated)
+  if (!res.ok) return { authenticated: false, stale: false }
+  const body = (await res.json().catch(() => ({}))) as {
+    authenticated?: boolean
+    stale?: boolean
+  }
+  return {
+    authenticated: Boolean(body.authenticated),
+    stale: Boolean(body.stale),
+  }
+}
+
+/** 查询当前是否持有有效会话（兼容旧调用方）。 */
+export async function getPBRSession(): Promise<boolean> {
+  return (await getPBRSessionState()).authenticated
+}
+
+/**
+ * 主动丢弃服务端会话 Cookie。
+ *
+ * 登录接口已经会用同名 Cookie 覆盖旧值，所以这一步是"双保险"，主要给
+ * 检测到 `stale` 时调用：让浏览器立刻丢掉失效 Cookie，避免它继续被携带。
+ */
+export async function discardPBRSession(): Promise<void> {
+  await pbrLogout()
 }
 
 /**
  * 口令登录（PBR /api/v1/auth/login）。成功返回合成 bundle，失败抛出可读错误。
+ *
+ * 登录前先清掉可能残留的失效 Cookie（口令变更后旧会话即失效，见 token-spec §2.5.1）：
+ * 服务端登录成功本会用同名 Cookie 覆盖，但对**登录失败**的响应不会下发新 Cookie，
+ * 残留旧值会让后续请求继续 401，制造"登录成功却进不去"的错觉。这里显式清一次。
  */
 export async function pbrLogin(password: string): Promise<AuthBundle> {
+  await discardPBRSession()
   const res = await fetch('/api/v1/auth/login', {
     method: 'POST',
     credentials: 'same-origin',

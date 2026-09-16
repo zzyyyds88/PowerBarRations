@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"pbr/common"
 	"pbr/internal/session"
@@ -79,4 +81,56 @@ func TestChangePasswordReissuesSession(t *testing.T) {
 	require.Len(t, cookies, 1, "改口令后必须续签当前会话")
 	assert.Equal(t, session.CookieName, cookies[0].Name)
 	assert.NotEmpty(t, cookies[0].Value)
+}
+
+// token-spec §2.5.1：会话状态必须区分"没登录"与"带了 Cookie 但已失效"。
+//
+// 真实故障现场：管理口令变更后旧 Cookie 立即失效，但前端只看 authenticated=false，
+// 于是"登录成功却每个请求都 401"。这里锁定 stale 字段的契约。
+func TestSessionStatusDistinguishesStaleCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAPITestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.PBRAdminCredential{}))
+
+	// 用第一版口令签发的会话 Cookie。
+	firstKey, err := model.SetPBRAdminPassword("First-Pass-2026")
+	require.NoError(t, err)
+	staleCookie, err := session.Issue(model.HashAdminKey(firstKey), time.Hour, time.Now())
+	require.NoError(t, err)
+
+	// 改口令 → 签名材料变化，旧 Cookie 失效。
+	_, err = model.SetPBRAdminPassword("Second-Pass-2026")
+	require.NoError(t, err)
+
+	status := func(cookie string) map[string]any {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+		if cookie != "" {
+			c.Request.AddCookie(&http.Cookie{Name: session.CookieName, Value: cookie})
+		}
+		SessionStatus(c)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var body map[string]any
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+		return body
+	}
+
+	// 1) 没带 Cookie：未登录，且不是 stale。
+	none := status("")
+	assert.Equal(t, false, none["authenticated"])
+	assert.Equal(t, false, none["stale"], "没带 Cookie 不得报 stale")
+
+	// 2) 带了失效 Cookie：未登录 + stale=true（前端据此清态并提示"凭据已变更"）。
+	stale := status(staleCookie)
+	assert.Equal(t, false, stale["authenticated"])
+	assert.Equal(t, true, stale["stale"], "口令变更后的旧 Cookie 必须标记为 stale")
+
+	// 3) 用新口令签发的新 Cookie：有效，且不是 stale。
+	secondKey := model.DeriveAdminKey("Second-Pass-2026")
+	fresh, err := session.Issue(model.HashAdminKey(secondKey), time.Hour, time.Now())
+	require.NoError(t, err)
+	valid := status(fresh)
+	assert.Equal(t, true, valid["authenticated"])
+	assert.Equal(t, false, valid["stale"], "有效会话不得报 stale")
 }

@@ -145,6 +145,26 @@ func HasAdminSession(c *gin.Context) bool {
 	return verifySessionCookie(c)
 }
 
+// SessionCookieState 描述请求携带的会话 Cookie 状态，供 GET /api/v1/auth/session 区分
+// "没登录"与"带了 Cookie 但已失效"（token-spec §2.5.1）。
+//
+// Stale=true 表示浏览器持有 Cookie 但校验不通过——典型场景是管理口令变更后签名材料
+// 随之变化，旧会话立即失效。前端必须据此清除本地态并提示"凭据已变更"，而不是让用户
+// 停留在"看似已登录、实际全 401"的状态。
+type SessionCookieState struct {
+	Present bool
+	Valid   bool
+}
+
+// Stale 表示带了 Cookie 但已失效。
+func (s SessionCookieState) Stale() bool { return s.Present && !s.Valid }
+
+// AdminSessionCookieState 读取当前请求的会话 Cookie 状态。
+func AdminSessionCookieState(c *gin.Context) SessionCookieState {
+	present := strings.TrimSpace(session.TokenFromRequest(c.Request)) != ""
+	return SessionCookieState{Present: present, Valid: verifySessionCookie(c)}
+}
+
 // verifySessionCookie 校验请求携带的会话 Cookie。
 func verifySessionCookie(c *gin.Context) bool {
 	token := session.TokenFromRequest(c.Request)
