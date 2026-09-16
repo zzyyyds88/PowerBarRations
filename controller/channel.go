@@ -788,8 +788,6 @@ func DeleteDisabledChannel(c *gin.Context) {
 type ChannelTag struct {
 	Tag            string  `json:"tag"`
 	NewTag         *string `json:"new_tag"`
-	Priority       *int64  `json:"priority"`
-	Weight         *uint   `json:"weight"`
 	ModelMapping   *string `json:"model_mapping"`
 	Models         *string `json:"models"`
 	Groups         *string `json:"groups"`
@@ -888,7 +886,8 @@ func EditTagChannels(c *gin.Context) {
 		}
 		channelTag.HeaderOverride = common.GetPointer[string](trimmed)
 	}
-	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.Priority, channelTag.Weight, channelTag.ParamOverride, channelTag.HeaderOverride)
+	// 渠道 priority/weight 已删除：入参传 nil（EditChannelByTag 内部同样忽略）。
+	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, nil, nil, channelTag.ParamOverride, channelTag.HeaderOverride)
 	if err != nil {
 		common.ApiError(c, err)
 		return

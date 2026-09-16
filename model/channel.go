@@ -77,10 +77,10 @@ type ChannelSortOptions struct {
 	IDSort    bool
 }
 
+// 渠道 priority/weight 列已删除：排序字段不再包含 priority，默认按 id 降序。
 var channelSortColumns = map[string]string{
 	"id":            "id",
 	"name":          "name",
-	"priority":      "priority",
 	"balance":       "balance",
 	"response_time": "response_time",
 	"test_time":     "test_time",
@@ -117,7 +117,7 @@ func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 		})
 	}
 	return query.Order(clause.OrderByColumn{
-		Column: clause.Column{Name: "priority"},
+		Column: clause.Column{Name: "id"},
 		Desc:   true,
 	})
 }
