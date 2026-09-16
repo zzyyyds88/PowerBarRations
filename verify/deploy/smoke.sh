@@ -68,17 +68,17 @@ export PBR_GOPROXY="$(go env GOPROXY)"
 docker compose -p "$PROJECT" -f "$REPO/docker-compose.yml" -f "$REPO/verify/deploy/compose.override.yml" ps 2>/dev/null | head -5
 
 echo "--- 3) 等待健康检查"
-BASE="https://127.0.0.1:$PORT"
+BASE="http://127.0.0.1:$PORT"
 ok=0
 for i in $(seq 1 90); do
-  if curl -skf "$BASE/api/v1/health" >/dev/null 2>&1; then ok=1; break; fi
+  if curl -sf "$BASE/api/v1/health" >/dev/null 2>&1; then ok=1; break; fi
   sleep 1
 done
 if [[ $ok != 1 ]]; then
   echo "FAIL: 容器未就绪"; docker logs pbr 2>&1 | tail -40; exit 1
 fi
 echo "ready after ${i}s"
-HEALTH=$(curl -sk "$BASE/api/v1/health")
+HEALTH=$(curl -s "$BASE/api/v1/health")
 echo "  $HEALTH"
 check "健康检查通过" "$HEALTH" '"status":"ok"'
 
@@ -86,57 +86,57 @@ H='-H Content-Type:application/json'
 jget() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(eval(sys.argv[1],{"d":d}))' "$1"; }
 
 echo "--- 4) 首启设口令"
-ADMIN_KEY=$(curl -sk $H -d '{"password":"'"$PBR_PW"'"}' "$BASE/api/v1/setup" | jget 'd["admin_key"]')
+ADMIN_KEY=$(curl -s $H -d '{"password":"'"$PBR_PW"'"}' "$BASE/api/v1/setup" | jget 'd["admin_key"]')
 [[ -n "$ADMIN_KEY" ]] || { echo "FAIL: 未取得管理密钥"; exit 1; }
 A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
 echo "  admin_key: 已取得（${#ADMIN_KEY} 字节，不打印）"
 
 echo "--- 5) 建渠道（指向容器外的假上游）与客户端密钥"
-curl -sk "${A[@]}" -X PUT -d '{
+curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://'"$BRIDGE_IP"':'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
   "priority":10,"models":["deploy-model"],"enabled":true
 }' "$BASE/api/v1/channels/deploy-channel" > /dev/null
-curl -sk "${A[@]}" -X PUT -d '{
+curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"failover",
   "members":[{"channel":"deploy-channel","upstream_model":"deploy-model","priority":1}]
 }' "$BASE/api/v1/lanes/deploy-model" > /dev/null
-CLIENT_PLAIN=$(curl -sk "${A[@]}" -X POST -d '{"name":"deploy-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')
+CLIENT_PLAIN=$(curl -s "${A[@]}" -X POST -d '{"name":"deploy-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')
 [[ -n "$CLIENT_PLAIN" ]] || { echo "FAIL: 未取得客户端密钥"; exit 1; }
 echo "  渠道与客户端密钥已建立"
 
 echo "--- 6) 跑通一发真实请求"
-RESP=$(curl -sk -X POST "$BASE/v1/chat/completions" \
+RESP=$(curl -s -X POST "$BASE/v1/chat/completions" \
   -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' \
   -d '{"model":"deploy-model","messages":[{"role":"user","content":"ping"}]}')
 echo "  $(echo "$RESP" | head -c 240)"
 check "容器内网关转发成功" "$RESP" 'pong from fake upstream'
 check "响应 model 回填请求名" "$RESP" '"model":"deploy-model"'
-SERVED=$(curl -sk -D - -o /dev/null -X POST "$BASE/v1/chat/completions" \
+SERVED=$(curl -s -D - -o /dev/null -X POST "$BASE/v1/chat/completions" \
   -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' \
   -d '{"model":"deploy-model","messages":[{"role":"user","content":"ping"}]}' | grep -i '^x-served-by:' | tr -d '\r')
 check "X-Served-By 指向成员" "$SERVED" 'channel=1:deploy-channel'
 
 echo "--- 7) 数据卷持久化：重启容器后配置与密钥仍在"
-BEFORE_KEY=$(curl -sk "${A[@]}" "$BASE/api/v1/keys/deploy-client")
+BEFORE_KEY=$(curl -s "${A[@]}" "$BASE/api/v1/keys/deploy-client")
 docker restart pbr >/dev/null 2>&1
 ok=0
 for i in $(seq 1 60); do
-  if curl -skf "$BASE/api/v1/health" >/dev/null 2>&1; then ok=1; break; fi
+  if curl -sf "$BASE/api/v1/health" >/dev/null 2>&1; then ok=1; break; fi
   sleep 1
 done
 [[ $ok == 1 ]] || { echo "FAIL: 重启后未就绪"; docker logs pbr 2>&1 | tail -30; exit 1; }
-AFTER_KEY=$(curl -sk "${A[@]}" "$BASE/api/v1/keys/deploy-client")
+AFTER_KEY=$(curl -s "${A[@]}" "$BASE/api/v1/keys/deploy-client")
 check "重启后客户端密钥仍在" "$AFTER_KEY" '"name":"deploy-client"'
 check "重启后前缀未变" "$AFTER_KEY" "$(echo "$BEFORE_KEY" | jget 'd["key_prefix"]')"
-RESP2=$(curl -sk -X POST "$BASE/v1/chat/completions" \
+RESP2=$(curl -s -X POST "$BASE/v1/chat/completions" \
   -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' \
   -d '{"model":"deploy-model","messages":[{"role":"user","content":"ping"}]}')
 check "重启后原密钥仍可转发" "$RESP2" 'pong from fake upstream'
-AFTER_CH=$(curl -sk "${A[@]}" "$BASE/api/v1/models")
+AFTER_CH=$(curl -s "${A[@]}" "$BASE/api/v1/models")
 check "重启后模型路由仍在" "$AFTER_CH" '"model":"deploy-model"'
 
 echo "--- 8) 冷却/熔断状态按设计重启清空（进程内运行态）"
-HEALTH_AFTER=$(curl -sk "${A[@]}" "$BASE/api/v1/lanes/deploy-model/health" 2>/dev/null)
+HEALTH_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/deploy-model/health" 2>/dev/null)
 assert_json "重启后运行态无残留冷却" "$HEALTH_AFTER" "all(m['cooldown_until']==0 for m in d['members'])"
 
 echo "--- 9) 现网容器未被触碰"
