@@ -46,7 +46,12 @@ func ListLogs(c *gin.Context) {
 	}
 	filter.Since, filter.Until = since, until
 	if cursor != "" {
-		filter.BeforeId, _ = strconv.Atoi(cursor)
+		id, convErr := strconv.Atoi(cursor)
+		if convErr != nil {
+			apierr.Validation(c, "cursor is not a valid cursor")
+			return
+		}
+		filter.BeforeId = id
 	}
 
 	entries, err := model.ListPBRRequestLogs(filter)

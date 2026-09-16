@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"pbr/internal/apierr"
 	"pbr/model"
 
 	"github.com/gin-gonic/gin"
@@ -39,7 +40,12 @@ func ListAudit(c *gin.Context) {
 	}
 	beforeId := 0
 	if cursor != "" {
-		beforeId, _ = strconv.Atoi(cursor)
+		id, convErr := strconv.Atoi(cursor)
+		if convErr != nil {
+			apierr.Validation(c, "cursor is not a valid cursor")
+			return
+		}
+		beforeId = id
 	}
 	entries, err := model.ListPBRAudits(limit, beforeId)
 	if err != nil {
