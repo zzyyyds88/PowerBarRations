@@ -739,7 +739,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 16.10 Webhook 事件通知（已定）
 
-**定位**：把路由运行态的故障事件推送给外部消费方（本机 Hermes 通知中心等），**只推事件、不承载指令**。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
+**定位**：把路由运行态的故障事件推送给**任意外部消费方**，**只推事件、不承载指令**。这是管理 API 的一部分：PBR 只负责**定义推送契约并投递**，接收方的验签、路由、呈现一律由消费方自行实现（本机对接——如推给某 agent 的通知通道——由该 agent 侧做，PBR 不内置任何针对特定接收者的集成）。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
 
 **事件源**：`internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown`）。经订阅钩子**异步旁路**投递，绝不阻塞请求路径。v1 不含探活启停事件。
 
@@ -747,12 +747,12 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 **投递语义**：
 - 请求体 JSON：`{"type":"pbr","text":"<人类可读摘要>","event":{ts,type,lane,member,detail}}`——带 `text` 字段使"只展示文本"的消费方（通知中心红色档）零改造接入。
-- 签名**对齐本机通知中心既有格式**：头 `X-Webhook-Timestamp`（Unix 秒）+ `X-Webhook-Signature-V2`（HMAC-SHA256(secret, "{ts}.{body}")，hex）。
+- 签名采用**通用 HMAC-SHA256 方案**：头 `X-Webhook-Timestamp`（Unix 秒）+ `X-Webhook-Signature-V2`（`HMAC-SHA256(secret, "{ts}.{raw_body}")`，hex）。验签步骤与偏差窗口写入 api-spec §5.8 与 /doc 手册，消费方照文档实现即可，不依赖任何具体接收端。
 - 单次投递超时 8s；失败按 5s/30s/120s 退避重试 3 次，耗尽记入投递日志（`webhook_deliveries` 表：ts、target、event、status、http_status、error、attempt）。
 - **防风暴**：同一 (target, lane, member, event) 在 60s 窗口内只发一条（合并计数），避免抖动上游刷屏。
 - 投递日志随 `PBRLogRetentionDays` 由 prune 一并清理。
 
-**管理面**：`GET/PUT /api/v1/webhooks`、`POST /api/v1/webhooks/test`、`GET /api/v1/webhooks/deliveries`（契约见 api-spec §5.8）。
+**管理面**：`GET/PUT /api/webhooks`、`POST /api/webhooks/test`、`GET /api/webhooks/deliveries`（规范前缀 `/api`，`/api/v1` 为兼容别名；契约见 api-spec §5.8）。
 
 **验收**：手动熔断一个成员 → 目标秒级收到签名正确的 JSON；目标不可达时重试与死信符合上表；投递日志可查；控制台可编辑并回读。
 

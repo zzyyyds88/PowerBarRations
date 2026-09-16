@@ -314,14 +314,37 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/webhooks` | 读配置：targets 数组（`secret` 回显掩码 `****+末4位`） |
-| PUT | `/api/v1/webhooks` | 写配置（同形状；`secret` 留空 = 保留原值） |
-| POST | `/api/v1/webhooks/test` | 向指定 target 同步发一条测试事件，返回投递结果 |
-| GET | `/api/v1/webhooks/deliveries` | 投递记录（cursor 分页，按 ts 倒序） |
+| GET | `/api/webhooks` | 读配置：targets 数组（`secret` 回显掩码 `****+末4位`） |
+| PUT | `/api/webhooks` | 写配置（同形状；`secret` 留空 = 保留原值） |
+| POST | `/api/webhooks/test` | 向指定 target 同步发一条测试事件，返回投递结果 |
+| GET | `/api/webhooks/deliveries` | 投递记录（cursor 分页，按 ts 倒序） |
 
-事件请求体：`{"type":"pbr","text":"<人类可读摘要>","event":{"ts":…,"type":"circuit_open","lane":"…","member":"channel:model","detail":"…"}}`。
-签名头：`X-Webhook-Timestamp`（Unix 秒）+ `X-Webhook-Signature-V2`（`HMAC-SHA256(secret, "{ts}.{body}")` hex），与常见外部通知网关的既有校验格式一致。
-失败语义见 design-v1 §16.10（8s 超时、5s/30s/120s 三次退避、60s 防风暴合并、投递日志）。
+**这是通用推送接口，PBR 只定义契约并投递；接收方的验签、路由、呈现由消费方自行实现**（PBR 不内置针对特定接收端的集成）。
+
+事件请求体（`Content-Type: application/json`）：
+
+```json
+{
+  "type": "pbr",
+  "text": "[PBR] lane-a/ch-a:model-1 熔断打开（60s）：连续失败 hard_auth",
+  "event": {
+    "ts": 1789600000000,
+    "type": "circuit_open",
+    "lane": "model-1",
+    "member": "ch-a:model-1",
+    "detail": "open_seconds=60 score=2"
+  }
+}
+```
+
+- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`。
+
+**验签（消费方必做）**：
+1. 读头 `X-Webhook-Timestamp`（Unix 秒）与 `X-Webhook-Signature-V2`；
+2. 对**原始请求体字节**计算 `HMAC-SHA256(secret, "{ts}.{body}")` 的 hex，与其比较（常数时间比较）；
+3. `ts` 与本地时间偏差超过 ±300s 拒收（防重放）。
+
+失败语义见 design-v1 §16.10（8s 超时、5s/30s/120s 三次退避、60s 防风暴合并、投递日志随日志保留期清理）。`2xx` 视为送达；其他状态码/超时进入重试。
 
 ## 6. 关键请求/响应示例
 
