@@ -22,10 +22,10 @@
 ```
 
 - **车道是唯一入口**：不存在"隐式车道"。渠道声明了某个模型但没有对应车道时，该模型**不可调用**（503），必须先在模型管理里把它的成员链固化成车道。
-- 渠道声明自己提供的模型清单（`Channel.Models []string`）；`Channel.Priority` 只用于"一键固化"时生成车道成员的**初始顺序**（数字大者优先；相同按渠道 id）。
+- 渠道只声明自己提供的模型清单（`Channel.Models []string`）与上游真名映射；**渠道没有 `priority`/`weight`**（已物理删除）：路由顺序完全由车道的成员顺序决定，不在渠道上排序。
 - **渠道模型映射**（`Channel.ModelMapping`，JSON dict：路由键 → 上游真名）：上游命名不一致时在渠道管理里配置一次，参与该渠道所有车道成员的上游名解析。
 - **成员上游名解析优先级**：成员级显式改名 > 渠道映射 > 路由键本身。
-- 车道成员 `priority` **数字大者优先**（不再用"1=首选"的反向语义）。
+- 车道成员 `priority` 是**车道内顺序**（数字大者优先），由界面上的"上移/下移"维护；成员数组顺序即写库顺序。
 
 **解析顺序**（对请求的 `model`）：
 
@@ -34,8 +34,8 @@
 3. 都没有 → 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`（对"没建车道"与"上游全挂"不做区分，下游无需分支）。
 
 **配置入口**：
-- 模型管理页为每个模型展示"渠道声明 → 建议成员链"，一键保存即固化成车道；`POST /api/lanes/seed` 可批量为所有未配车道的模型生成（按渠道 priority）。
-- 车道作为可选的高级层仍完整保留：四种模式、六键、成员级覆盖、别名。
+- 模型管理页为每个模型展示已固化的成员链与可添加的候选渠道，人工增删/排序后保存即固化成车道；`POST /api/lanes/seed` 可批量为所有未配车道的模型生成（按渠道 id 升序生成初始顺序）。
+- 车道作为可选的高级层仍完整保留：两种模式、六键、成员级覆盖、别名。
 
 > 第 3 条是刻意的：让"模型名写错"与"上游全挂"对下游呈现同一错误形态，下游无需分支。
 
@@ -44,15 +44,14 @@
 ```go
 type Channel struct {
     Name         string
-    Priority     int               // 仅用于"一键固化"生成车道成员的初始顺序；数字大者优先
-    Models       []string          // 本渠道提供的路由键；可从上游拉取同步
+    Models       []string          // 本渠道提供的路由键；可从上游自动探测或手工维护
     ModelMapping map[string]string // 路由键 → 上游真名（上游命名不一致时配置一次）
     // base_url/key/type/param_override/enabled/proxy 见 design-v1 §3.4
 }
 
 type Lane struct { // 车道：唯一路由入口（不再有隐式覆盖层）
     Name    string
-    Mode    string   // failover(默认) | manual | weighted | round_robin
+    Mode    string   // failover(默认) | manual
     Config  LaneRelayConfig
     Members []LaneMember
 }
@@ -61,8 +60,7 @@ type LaneMember struct {
     Channel       string
     UpstreamModel string // 可选：成员级改名覆盖；留空则用渠道 ModelMapping，再退回路由键
     PublicAlias   string
-    Priority      int    // 数字大者优先
-    Weight        int
+    Priority      int    // 车道内顺序：数字大者优先
     Overrides     map[string]int // 成员级六键覆盖
 }
 ```
@@ -70,7 +68,7 @@ type LaneMember struct {
 - **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
 - **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则成员级显式改名会被渠道映射悄悄反向覆盖（优先级倒挂）。非 PBR 链路（任务插件、显式渠道 pin）不受此约束。
 - 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。
-- 车道在 `failover` 下按 priority 降序遍历；`weighted` 按**成员** `weight` 加权；`round_robin` 环形推进。渠道自身的 `weight` 与模型路由无关（仅残留在基座遗留选择链）。
+- 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。**
 
 ### 1.3 进程内运行态（每车道一份，全部请求共享）
 
@@ -106,26 +104,22 @@ type LaneRuntime struct {
 
 按线上算法照搬：
 
-1. 亲和期未到且 `CurrentMemberID != 0` → **沿用当前成员**（不提前探测已恢复的高优先级成员）。
-2. 否则按 priority **降序**遍历成员：
+1. 亲和期未到且 `CurrentMemberID != 0` → **沿用当前成员**（不提前探测已恢复的更靠前成员）。
+2. 否则按成员顺序（`priority` 降序）遍历成员：
    - 该成员处于冷却且未到期 → 跳过；
    - 该成员冷却**已到期** → 若 `ProbeMemberID` 已被占用则跳过；否则占用探测位并返回该成员（**只放行一个探测请求**，避免全部请求同时涌向尚未恢复的成员）；
    - 探测位**按请求归属**：只有真正占用了该槽的那次请求（在其失败换人、不换人收尾、或整个请求收尾时）可以归还它；未占槽的并发请求归还槽是禁止的，否则"单探测"在并发下失效；
    - 正常可用 → 设为 `CurrentMemberID` 并返回。
-3. 遍历中遇到 `CurrentMemberID` 即停止（说明比它优先级更高的成员都不可选），沿用当前成员。
+3. 遍历中遇到 `CurrentMemberID` 即停止（说明比它更靠前的成员都不可选），沿用当前成员。
 4. 一个都选不出且无当前成员 → 无可用。
 
-### 2.3 weighted（新增）
+### 2.3 已删除的模式：weighted / round_robin
 
-- 在**可用成员**（未冷却、熔断未打开）中按 `weight` 加权随机；权重全为 0 时退化为等概率。
-- 不做"当前成员粘滞"；但仍受冷却/熔断约束。成功/失败的冷却逻辑与 failover 相同。
+- 本规格 v1 早期曾定义 `weighted`（按成员 `weight` 加权随机）与 `round_robin`（环形轮询）两种模式，**现均已删除**，成员 `weight` 字段一并删除。
+- 理由：本项目是单用户自用网关，随机/轮询会让"这次为什么走了另一个上游"无法解释，排障成本远大于收益。需要打散负载时，正确做法是拆车道（不同模型名各自成链）或调整成员顺序。
+- 兼容：`PUT /api/lanes/{name}` 遇到 `mode` 不在 `failover|manual` 时返回既有 `422 invalid_mode`；导入旧配置里的 `weighted`/`round_robin` 与成员 `weight` 会被忽略（不报错）。
 
-### 2.4 round_robin（新增）
-
-- 在可用成员中轮询；维护一个进程内游标，按 priority 顺序环形推进，跳过不可用成员。
-- 同样受冷却/熔断约束。
-
-> 四种模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同。
+> 两种模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同。
 
 ---
 
@@ -267,7 +261,7 @@ type LaneRuntime struct {
 | 错误分类 | 无，一律计失败 | 按 §4.1 分类，429 不误伤 |
 | 全部成员耗尽 | 轮询等待 | **快抛 503**（下游契约） |
 | 熔断器 | 无 | 三态 + 半开 + 指数退避 |
-| 模式 | manual / failover | failover / manual / weighted / round_robin |
+| 模式 | manual / failover | failover / manual（`weighted`/`round_robin` 已删） |
 | 成员改名 | 不支持（无别名列） | `upstream_model` + `public_alias` |
 | 运行态粒度 | 分组 | 车道（同） | 
 | 客户端身份校验 | `supported_models` 白名单（默认拒） | 令牌默认放行 + 显式拒绝（token-spec） |

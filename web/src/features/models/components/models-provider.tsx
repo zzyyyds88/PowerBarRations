@@ -19,13 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState } from 'react'
 
-import type {
-  Model,
-  ModelTabCategory,
-  Vendor,
-  SyncLocale,
-  SyncSource,
-} from '../types'
+import type { Model, SyncLocale, SyncSource } from '../types'
 
 // ============================================================================
 // Types
@@ -34,14 +28,11 @@ import type {
 type DialogType =
   | 'create-model'
   | 'update-model'
-  | 'price-model'
-  | 'create-vendor'
-  | 'vendors'
-  | 'update-vendor'
   | 'missing-models'
   | 'sync-wizard'
   | 'prefill-groups'
   | 'description'
+  | 'model-routing'
   | null
 
 type ModelsContextType = {
@@ -49,10 +40,6 @@ type ModelsContextType = {
   setOpen: (open: DialogType) => void
   currentRow: Model | null
   setCurrentRow: (model: Model | null) => void
-  currentVendor: Vendor | null
-  setCurrentVendor: (vendor: Vendor | null) => void
-  selectedVendor: string | null
-  setSelectedVendor: (vendor: string | null) => void
   descriptionData: { modelName: string; description: string } | null
   setDescriptionData: (
     data: { modelName: string; description: string } | null
@@ -61,8 +48,6 @@ type ModelsContextType = {
   setSyncWizardOptions: React.Dispatch<
     React.SetStateAction<{ locale: SyncLocale; source: SyncSource }>
   >
-  tabCategory: ModelTabCategory
-  setTabCategory: (category: ModelTabCategory) => void
 }
 
 // ============================================================================
@@ -78,8 +63,6 @@ const ModelsContext = createContext<ModelsContextType | undefined>(undefined)
 export function ModelsProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState<DialogType>(null)
   const [currentRow, setCurrentRow] = useState<Model | null>(null)
-  const [currentVendor, setCurrentVendor] = useState<Vendor | null>(null)
-  const [selectedVendor, setSelectedVendor] = useState<string | null>(null)
   const [descriptionData, setDescriptionData] = useState<{
     modelName: string
     description: string
@@ -91,7 +74,6 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
     locale: 'zh',
     source: 'official',
   })
-  const [tabCategory, setTabCategory] = useState<ModelTabCategory>('metadata')
 
   return (
     <ModelsContext.Provider
@@ -100,16 +82,10 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
         setOpen,
         currentRow,
         setCurrentRow,
-        currentVendor,
-        setCurrentVendor,
-        selectedVendor,
-        setSelectedVendor,
         descriptionData,
         setDescriptionData,
         syncWizardOptions,
         setSyncWizardOptions,
-        tabCategory,
-        setTabCategory,
       }}
     >
       {children}

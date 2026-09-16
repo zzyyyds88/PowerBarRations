@@ -35,7 +35,6 @@ const model = {
   status: 1,
   sync_official: 1,
   name_rule: 0,
-  vendor_id: 3,
   endpoints: '',
   supported_endpoints: ['openai'],
   created_time: 1,
@@ -46,7 +45,6 @@ afterEach(() => {
   cleanup()
   useAuthStore.getState().auth.reset()
 })
-
 
 describe('metadata editing', () => {
   it.each([
@@ -124,24 +122,17 @@ describe('metadata editing', () => {
     }
   )
 
-  it('allows an administrator to save metadata without loading or changing system pricing', async () => {
+  it('allows an administrator to save metadata without writing system pricing', async () => {
     useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
-    const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
       if (url === '/api/console/models/7') {
         return { data: { success: true, data: model } }
       }
-      if (url === '/api/vendors/') {
-        return {
-          data: {
-            success: true,
-            data: {
-              items: [
-                { id: 3, name: 'Existing vendor', icon: 'Gemini.Color' },
-                { id: 4, name: 'Another vendor', icon: 'Gemini.Color' },
-              ],
-            },
-          },
-        }
+      if (url === '/api/option/') {
+        return { data: { success: true, data: [] } }
+      }
+      if (url === '/api/channel/search') {
+        return { data: { success: true, data: { items: [], total: 0 } } }
       }
       return { data: { success: false, message: 'Root only' } }
     })
@@ -163,28 +154,11 @@ describe('metadata editing', () => {
     )
     const description = await screen.findByLabelText('Description')
     await waitFor(() => expect(description).toHaveValue('Original'))
-    expect(screen.getByRole('combobox', { name: 'Vendor' })).toHaveValue(
-      'Existing vendor'
-    )
     const user = userEvent.setup()
-    expect(screen.getByText('Gemini.Color')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Custom model icon' }))
     const icon = screen.getByRole('combobox', { name: 'Icon' })
     await user.type(icon, 'Claude.Avatar')
     await user.keyboard('{Escape}')
     expect(screen.getByText('Claude.Avatar')).toBeVisible()
-    await user.click(
-      screen.getByRole('button', { name: 'Inherit vendor icon' })
-    )
-    expect(
-      screen.queryByRole('combobox', { name: 'Icon' })
-    ).not.toBeInTheDocument()
-    expect(screen.getByText('Gemini.Color')).toBeVisible()
-    const vendorInput = screen.getByRole('combobox', { name: 'Vendor' })
-    await user.click(vendorInput)
-    await user.type(vendorInput, 'Another')
-    await user.click(screen.getByRole('option', { name: 'Another vendor' }))
-    expect(vendorInput).toHaveValue('Another vendor')
     await user.clear(description)
     await user.type(description, 'Updated metadata')
     await user.click(
@@ -192,14 +166,15 @@ describe('metadata editing', () => {
     )
     await waitFor(() => expect(put).toHaveBeenCalled())
     expect(
-      get.mock.calls.some(([url]) => String(url).startsWith('/api/option'))
+      put.mock.calls.some(([url]) => String(url).startsWith('/api/option'))
     ).toBe(false)
-    expect(put.mock.calls.every(([url]) => url === '/api/console/models/')).toBe(true)
+    expect(
+      put.mock.calls.every(([url]) => url === '/api/console/models/')
+    ).toBe(true)
     expect(put.mock.calls[0][1]).toMatchObject({
       description: 'Updated metadata',
-      icon: '',
+      icon: 'Claude.Avatar',
       model_name: 'example-model',
-      vendor_id: 4,
       endpoints: '',
     })
   })

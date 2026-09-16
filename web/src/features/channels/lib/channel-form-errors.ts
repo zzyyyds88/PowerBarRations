@@ -25,8 +25,6 @@ type ChannelFormErrorMap = Partial<
 >
 
 const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
-  'priority',
-  'weight',
   'test_model',
   'auto_ban',
   'tag',

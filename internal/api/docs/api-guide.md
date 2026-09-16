@@ -32,14 +32,15 @@
 
 - 渠道：`GET /api/channels`、`GET|PUT|DELETE /api/channels/{name}`、
   `POST /api/channels/{name}/test`、`POST /api/channels/{name}/sync-models`
-- 车道（显式覆盖层）：`GET /api/lanes`、`GET|PUT|DELETE /api/lanes/{name}`、
-  `PUT /api/lanes/{name}/members`、`GET /api/lanes/{name}/health`、
-  `POST /api/lanes/{name}/probe`、`POST /api/lanes/{name}/circuits/reset`
-- 模型路由：`GET /api/models`（全部路由键）、`GET /api/routes/{model}`（成员链）
+- 车道（唯一路由入口，ADR 0005）：`GET /api/lanes`、`GET|PUT|DELETE /api/lanes/{name}`、
+  `GET /api/lanes/{name}/health`、`POST /api/lanes/{name}/probe`、
+  `POST /api/lanes/{name}/circuits/reset`、`POST /api/lanes/seed`
+- 模型路由：`GET /api/models`（全部路由键）、`GET /api/routes/{model}`（成员链；
+  未配车道时返回候选建议链，只作"可添加成员"，不参与运行期路由）
 - 客户端密钥：`GET|POST /api/keys`、`GET|PUT|DELETE /api/keys/{name}`、
   `POST /api/keys/{name}/rotate`
 - 观测：`GET /api/logs`、`GET /api/logs/{id}`、`POST /api/logs/prune`、
-  `GET /api/stats`、`GET /api/route-events`（SSE）
+  `GET /api/stats`（`group_by=lane|channel|key|model|channel_model`）、`GET /api/route-events`（SSE）
 - 系统：`GET|PUT /api/system/options`
 - 配置生命周期：`GET /api/export`、`POST /api/import?dry_run=true`
 - HTTPS：`GET /api/tls`、`PUT /api/tls/certificate`、`POST /api/tls/self-signed`
@@ -54,9 +55,13 @@
 ```bash
 curl -sk "${A[@]}" -X PUT "$BASE/api/channels/ch-a" -d '{
   "type":"openai","base_url":"https://vendor.example/v1","key":"sk-...",
-  "priority":10,"models":["model-1"],"enabled":true}'
+  "models":["model-1"],"enabled":true}'
 
-# 显式车道（可选；不建则靠"渠道声明 models"的隐式链）
+# 可选：先探测上游模型清单，看差异后再落库
+curl -sk "${A[@]}" -X POST "$BASE/api/channels/ch-a/sync-models?dry_run=true"
+
+# 车道是唯一路由入口：不建车道该模型不可调用（503）。
+# members 数组顺序即故障切换顺序，priority 由控制台按位置生成（首位最大）。
 curl -sk "${A[@]}" -X PUT "$BASE/api/lanes/lane-a" -d '{
   "enabled":true,"mode":"failover",
   "config":{"member_max_attempts":2,"member_retry_interval_seconds":3,
@@ -74,7 +79,8 @@ curl -sk -H "Authorization: Bearer $KEY" "$BASE/v1/chat/completions" \
 
 ### 4.2 排障：某模型为什么失败
 
-1. `GET /api/routes/{model}` 看成员链与来源（implicit / explicit）。
+1. `GET /api/routes/{model}` 看成员链与来源（`explicit`=已配车道可调用，
+   `unconfigured`=渠道声明但未配车道，不可调用）。
 2. `GET /api/lanes/{name}/health` 看 `circuit` / `cooldown_until` / `last_error_kind`。
 3. `GET /api/logs?success=false&model={model}` 看 `attempts` 链。
 4. `POST /api/lanes/{name}/probe` 逐成员真实探活；必要时 `POST .../circuits/reset`。

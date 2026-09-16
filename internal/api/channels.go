@@ -59,12 +59,10 @@ type channelPayload struct {
 	Name          string                   `json:"name"`
 	Type          *string                  `json:"type"`
 	BaseURL       *string                  `json:"base_url"`
-	Priority      *int                     `json:"priority"`
 	Models        []string                 `json:"models"`
 	ParamOverride json.RawMessage          `json:"param_override"`
 	Enabled       *bool                    `json:"enabled"`
 	Proxy         *string                  `json:"proxy"`
-	Weight        *int                     `json:"weight"`
 	Key           string                   `json:"key"`
 	Prices        *[]dto.ChannelModelPrice `json:"prices"`
 	// ModelMapping 路由键 → 上游真名（ADR 0005）；省略则保持原值。
@@ -94,8 +92,6 @@ func channelResponse(ch *model.Channel) gin.H {
 		"name":           ch.Name,
 		"type":           ChannelTypeSlug(ch.Type),
 		"base_url":       ch.GetBaseURL(),
-		"priority":       int(ch.GetPriority()),
-		"weight":         ch.GetWeight(),
 		"models":         models,
 		"param_override": jsonObject(derefString(ch.ParamOverride)),
 		"enabled":        ch.Status == common.ChannelStatusEnabled,
@@ -326,19 +322,8 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 		return nil, &apiError{code: apierr.CodeValidationFailed, message: "base_url is required"}
 	}
 
-	if payload.Priority != nil {
-		priority := int64(*payload.Priority)
-		channel.Priority = &priority
-	}
-	if payload.Weight != nil {
-		// 负权重会被 uint 回绕成巨大值、落库成负数，再读回 *uint 时报 scan error，
-		// 从而污染整张渠道缓存并让所有路由 500（实测 P0）。这里必须在写库前拒绝。
-		if *payload.Weight < 0 || *payload.Weight > 2147483647 {
-			return nil, &apiError{code: apierr.CodeValidationFailed, message: "weight must be between 0 and 2147483647"}
-		}
-		weight := uint(*payload.Weight)
-		channel.Weight = &weight
-	}
+	// 渠道 priority/weight 已删除：请求体里出现这两个字段一律忽略（保持旧客户端
+	// 与旧导出文件的向后兼容），路由顺序只在车道上。
 	if payload.Enabled != nil {
 		if *payload.Enabled {
 			channel.Status = common.ChannelStatusEnabled

@@ -42,7 +42,6 @@ export const channelSchema = z.object({
   test_model: z.string().nullish(),
   status: z.number(), // 1: enabled, 0: manual disabled, 2: auto disabled
   name: z.string(),
-  weight: z.number().nullish(),
   created_time: z.number(),
   test_time: z.number(),
   response_time: z.number(), // in milliseconds
@@ -55,7 +54,6 @@ export const channelSchema = z.object({
   used_quota: z.number().default(0),
   model_mapping: z.string().nullish(),
   status_code_mapping: z.string().nullish(),
-  priority: z.number().nullish(),
   auto_ban: z.number().nullish(),
   other_info: z.string().default(''),
   tag: z.string().nullish(),
@@ -272,7 +270,6 @@ export interface MultiKeyStatusResponse {
 export type ChannelSortBy =
   | 'id'
   | 'name'
-  | 'priority'
   | 'balance'
   | 'response_time'
   | 'test_time'
@@ -342,8 +339,6 @@ export interface BatchSetTagParams {
 export interface TagOperationParams {
   tag: string
   new_tag?: string
-  priority?: number
-  weight?: number
   model_mapping?: string
   models?: string
   groups?: string
@@ -362,8 +357,6 @@ export interface ChannelFormData {
   models: string
   group: string
   model_mapping?: string
-  priority?: number
-  weight?: number
   test_model?: string
   auto_ban?: number
   status: number

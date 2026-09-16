@@ -65,18 +65,6 @@ func TestValidateBundleRejectsMissingMemberChannel(t *testing.T) {
 
 func strPtr(value string) *string { return &value }
 
-// 负权重会被 uint 回绕成巨大值、落库成负数，再读回 *uint 时报 scan error，
-// 从而污染整张渠道缓存并让所有路由 500。必须在写库前拒绝。
-func TestBuildChannelRejectsNegativeWeight(t *testing.T) {
-	setupAPITestDB(t)
-	negative := -1
-	_, err := buildChannel("neg", nil, &channelPayload{
-		Type: strPtr("openai"), BaseURL: strPtr("http://upstream.example"), Weight: &negative,
-	}, true)
-	require.Error(t, err)
-	assert.Contains(t, err.message, "weight must be between")
-}
-
 // param_override 必须是 JSON 对象；裸字符串也是合法 JSON，但合并时会出错。
 func TestBuildChannelRejectsNonObjectParamOverride(t *testing.T) {
 	setupAPITestDB(t)

@@ -81,7 +81,7 @@ HTTP/1.1 401 Unauthorized
 | 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/setup`） |
 | 422 | `lane_has_no_members` | 启用车道但无成员 |
 | 422 | `member_channel_missing` | 成员引用的渠道不存在 |
-| 422 | `invalid_mode` | 模式不在 failover/manual/weighted/round_robin |
+| 422 | `invalid_mode` | 模式不在 failover/manual（`weighted`/`round_robin` 已删） |
 | 502 | `upstream_error` | 探活时上游返回错误 |
 | 503 | `no_available_member` | 模型面：车道无可用成员（body 形态见 §6.1） |
 
@@ -98,7 +98,6 @@ HTTP/1.1 401 Unauthorized
   "name": "channel-a",
   "type": "openai",
   "base_url": "https://vendor.example/v1",
-  "priority": 1,
   "models": ["model-1", "model-2", "model-3"],
   "param_override": {},
   "enabled": true,
@@ -114,8 +113,8 @@ HTTP/1.1 401 Unauthorized
 }
 ```
 
-- `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。
-- `priority`：仅用于"一键固化"（`POST /api/lanes/seed`）生成车道成员的**初始顺序**，数字大者优先；已有车道以其自身成员顺序为准。
+- `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游自动探测。
+- **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。折算优先级：渠道价 > 全局默认单价表（`system/options.model_prices`）> 不折算。省略该字段时保持原值。
@@ -137,15 +136,17 @@ HTTP/1.1 401 Unauthorized
     "member_affinity_seconds": 0
   },
   "members": [
-    { "channel": "channel-a", "upstream_model": "model-x", "public_alias": "", "priority": 1, "weight": 1 },
-    { "channel": "channel-b", "upstream_model": "model-x", "public_alias": "", "priority": 2, "weight": 3,
+    { "channel": "channel-a", "upstream_model": "model-x", "public_alias": "", "priority": 2 },
+    { "channel": "channel-b", "upstream_model": "model-x", "public_alias": "", "priority": 1,
       "overrides": { "member_max_attempts": 1 } }
   ]
 }
 ```
 
 - 成员在请求/响应中用 `channel`（渠道名）引用，不暴露内部 ID。
-- **`priority` 数字大者优先**（与渠道 `priority` 一致），示例中的 1/2 仅为占位。
+- **`mode` 只有 `failover`（默认）与 `manual`**；`weighted` / `round_robin` 已删除，传入返回 `422 invalid_mode`。
+- **`priority` 是车道内顺序，数字大者优先**（示例中的 2/1 表示 channel-a 先试）。控制台用"上移/下移"维护，写库即该值；成员数组顺序与 `priority` 降序一致。
+- **成员没有 `weight` 字段**（随 `weighted` 模式一并删除）；旧配置里出现会被忽略。
 - `overrides` 为成员级六键覆盖，省略字段表示继承车道。
 - **每条车道都是显式对象**：`GET /lanes` 就是全部路由入口，不存在隐藏的自动链（ADR 0005）；没建车道的模型一律 `503`。
 
@@ -233,7 +234,7 @@ HTTP/1.1 401 Unauthorized
 | GET | `/api/lanes` | 列表（cursor） |
 | GET | `/api/lanes/{name}` | 详情（含成员） |
 | PUT | `/api/lanes/{name}` | 全量 upsert（含成员，按数组顺序即优先级） |
-| POST | `/api/lanes/seed` | **一键固化**：为所有"渠道已声明但无车道"的模型按渠道 priority 生成 failover 车道（幂等；`?dry_run=true` 只返回将创建的车道名） |
+| POST | `/api/lanes/seed` | **一键固化**：为所有"渠道已声明但无车道"的模型生成 failover 车道，初始顺序按渠道 id 升序（幂等；`?dry_run=true` 只返回将创建的车道名） |
 | DELETE | `/api/lanes/{name}` | 删除 |
 | PUT | `/api/lanes/{name}/members` | 仅替换成员列表（有序全量） |
 | POST | `/api/lanes/{name}/probe` | 逐成员探活 |
@@ -269,7 +270,7 @@ HTTP/1.1 401 Unauthorized
 | GET | `/api/logs` | 过滤：`lane` `channel` `key` `success` `since` `until` `cursor` `limit` |
 | GET | `/api/logs/{id}` | 单条（含 attempts 链） |
 | POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变** |
-| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响 |
+| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。`channel_model` 的 `group` 形如 `渠道␟模型` |
 | GET | `/api/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
 | GET | `/api/audit` | 变更审计 |
 
@@ -285,9 +286,9 @@ HTTP/1.1 401 Unauthorized
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured, routable: bool, member_count}`。`unconfigured` = 渠道声明了但没有车道，**当前不可调用** |
-| GET | `/api/routes/{model}` | 该模型的成员链（含来源、优先级与解析后的上游真名）。无车道时返回**建议成员链**（按渠道 priority）并标 `source: unconfigured`、`routable: false` |
+| GET | `/api/routes/{model}` | 该模型的成员链（含来源、顺序与解析后的上游真名）。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用 |
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
-| POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 priority 生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射） |
+| POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 id 升序生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射） |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
 
@@ -326,7 +327,7 @@ curl -s $PBR/api/capabilities -H "Authorization: Bearer $ADMIN_KEY"
 ```json
 {
   "api_version": "v1",
-  "lane_modes": ["failover", "manual", "weighted", "round_robin"],
+  "lane_modes": ["failover", "manual"],
   "adapters": ["openai", "anthropic", "gemini", "ollama", "…共 40 家，完整列表见实际实现…"],
   "inbound_formats": ["openai", "openai_responses", "anthropic", "embeddings"]
 }
@@ -370,8 +371,8 @@ curl -s -X PUT $PBR/api/lanes/lane-alpha \
       "member_affinity_seconds": 0
     },
     "members": [
-      { "channel": "channel-a", "upstream_model": "model-x", "priority": 1, "weight": 1 },
-      { "channel": "channel-b", "upstream_model": "model-y", "priority": 2, "weight": 1 }
+      { "channel": "channel-a", "upstream_model": "model-x", "priority": 2 },
+      { "channel": "channel-b", "upstream_model": "model-y", "priority": 1 }
     ]
   }'
 ```
@@ -648,11 +649,11 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
 | 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
 | 任务插件 | `/api/plugin/task/**` |
-| 厂商 / 部署 / 预填组 | `/api/vendors/**`、`/api/deployments/**`、`/api/prefill_group/**` |
+| 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
 | 管理员日志 / 任务视图 | `/api/log/**`、`/api/task`、`/api/mj/` |
 | 系统任务 / 系统信息 / 性能 | `/api/system-task/**`、`/api/system-info/**`、`/api/performance/**`、`/api/perf-metrics/**` |
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
-导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据、任务插件、厂商/部署等"控制台运维面"
+导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据、任务插件等"控制台运维面"
 以同一管理密钥在 `/api/console/**` 及上述基座路径可用。要把某一项提升为稳定契约，先在 §5 补端点再实现。
 

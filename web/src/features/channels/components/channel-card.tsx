@@ -35,9 +35,9 @@ const SENSITIVE_MASK = '••••'
  * Bespoke channel card for the card view. Reuses every column's existing cell
  * renderer via `flexRender`, so the table's information and interactions are
  * preserved: row selection, provider/multi-key/IO.NET type badge, id,
- * name/remark + warning icons, status (with tooltips), groups, inline
- * priority/weight spinners, balance refresh, response/test times, tag
- * expand-collapse, and the per-row (or per-tag) actions menu.
+ * name/remark + warning icons, status (with tooltips), groups, balance
+ * refresh, response/test times, tag expand-collapse, and the per-row
+ * (or per-tag) actions menu.
  */
 function ChannelCardComponent({
   row,
@@ -72,8 +72,6 @@ function ChannelCardComponent({
   const nameCell = renderCell('name')
   const statusCell = renderCell('status')
   const actionsCell = renderCell('actions')
-  const priorityCell = renderCell('priority')
-  const weightCell = renderCell('weight')
   const balanceCell = renderCell('balance')
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
@@ -109,7 +107,7 @@ function ChannelCardComponent({
         </div>
 
         {/* Body: left column (id/name + balance) paired with a right-aligned
-          column (priority/weight + response/test time). */}
+          column (response/test time). */}
         <div className='flex items-start justify-between gap-3'>
           {/* Left column */}
           <div className='flex min-w-0 flex-1 flex-col gap-3 overflow-hidden'>
@@ -134,19 +132,11 @@ function ChannelCardComponent({
           </div>
 
           {/* Right column (sits on the right, content left-aligned). A single
-            grid with content-sized columns keeps Priority/Weight and
-            Response/Last Tested aligned without wasting horizontal space. */}
+            grid with content-sized columns keeps Response/Last Tested aligned
+            without wasting horizontal space. */}
           <div className='grid shrink-0 grid-cols-[auto_auto] items-center gap-x-3 gap-y-1'>
-            <span className={labelClass}>{t('Priority')}</span>
-            <span className={labelClass}>{t('Weight')}</span>
-            <div className='flex justify-start'>{priorityCell}</div>
-            <div className='flex justify-start'>{weightCell}</div>
-            <span className={cn('mt-2', labelClass)}>
-              {fieldLabels.response_time}
-            </span>
-            <span className={cn('mt-2', labelClass)}>
-              {fieldLabels.test_time}
-            </span>
+            <span className={labelClass}>{fieldLabels.response_time}</span>
+            <span className={labelClass}>{fieldLabels.test_time}</span>
             <div className='overflow-hidden text-sm'>
               {responseCell ?? <span className='text-muted-foreground'>-</span>}
             </div>

@@ -32,8 +32,8 @@ import {
 import { createServerError } from '@/lib/server-error-message'
 
 import { deleteModel, deleteModels } from '../../api'
+import { modelsQueryKeys } from '../../lib'
 import type { Model } from '../../types'
-import { invalidateVendorData } from '../../vendor-api'
 
 interface ModelDeleteDialogProps {
   models: Pick<Model, 'id' | 'model_name' | 'name_rule'>[]
@@ -73,7 +73,7 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
       return response.data
     },
     onSuccess: async (result) => {
-      await invalidateVendorData(client)
+      await client.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
       if (removePricing) await invalidateModelPricing(client)
       if (removeFromChannels) {
         await client.invalidateQueries({ queryKey: ['channels'] })

@@ -27,6 +27,14 @@ import {
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
+/** 旧的多分区模型页入口：平面化后统一回落到 metadata 分区。 */
+const LEGACY_MODELS_SECTIONS = new Set([
+  'routing',
+  'vendors',
+  'deployments',
+  'deployment',
+])
+
 const modelsSearchSchema = z.object({
   vPage: z.number().optional().catch(1),
   vPageSize: z.number().optional().catch(20),
@@ -35,12 +43,7 @@ const modelsSearchSchema = z.object({
   page: z.number().optional().catch(1),
   pageSize: z.number().optional().catch(10),
   filter: z.string().optional().catch(''),
-  vendor: z.array(z.string()).optional().catch([]),
   status: z.array(z.string()).optional().catch([]),
-  square_state: z
-    .array(z.enum(['visible', 'unavailable', 'hidden', 'partial']))
-    .optional()
-    .catch([]),
   sync: z.array(z.string()).optional().catch([]),
   dPage: z.number().optional().catch(1),
   dPageSize: z.number().optional().catch(10),
@@ -59,7 +62,10 @@ export const Route = createFileRoute('/_authenticated/models/$section')({
     }
 
     const validSections = MODELS_SECTION_IDS as unknown as string[]
-    if (!validSections.includes(params.section)) {
+    if (
+      LEGACY_MODELS_SECTIONS.has(params.section) ||
+      !validSections.includes(params.section)
+    ) {
       throw redirect({
         to: '/models/$section',
         params: { section: MODELS_DEFAULT_SECTION },

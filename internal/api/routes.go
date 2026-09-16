@@ -44,7 +44,6 @@ func GetRoute(c *gin.Context) {
 			"channel":        m.Channel,
 			"upstream_model": m.UpstreamModel,
 			"priority":       m.Priority,
-			"weight":         m.Weight,
 		}
 		if m.UpstreamOverride != "" && m.UpstreamOverride != m.UpstreamModel {
 			item["upstream_override"] = m.UpstreamOverride

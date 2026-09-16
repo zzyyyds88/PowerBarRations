@@ -43,14 +43,14 @@ export ADMIN_KEY='<上一步返回的 admin_key>'
 curl -s -X PUT $BASE/api/v1/channels/vendor-a \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{"type":"openai","base_url":"https://vendor.example/v1",
-       "key":"__INJECT_BY_OPERATOR__","priority":20,
+       "key":"__INJECT_BY_OPERATOR__",
        "models":["model-1","model-2"],"enabled":true}'
 
 # 3) 固化车道：渠道声明只是候选，必须把成员链固化成车道才可调用
 curl -s -X POST "$BASE/api/v1/lanes/seed?dry_run=true" -H "Authorization: Bearer $ADMIN_KEY"  # 先预览
 curl -s -X POST $BASE/api/v1/lanes/seed -H "Authorization: Bearer $ADMIN_KEY"                # 再落库
 # 也可只固化一个模型：PUT $BASE/api/v1/lanes/model-1  body {"enabled":true,"mode":"failover",
-#   "members":[{"channel":"vendor-a","priority":20}]}
+#   "members":[{"channel":"channel-a"},{"channel":"channel-b"}]}
 
 # 4) 建客户端密钥（明文只回显一次）
 curl -s -X POST $BASE/api/v1/keys -H "Authorization: Bearer $ADMIN_KEY" \
@@ -88,19 +88,19 @@ docker run -d --name pbr -p 5700:5700 \
 ### 2.1 路由键 = 模型名，且**必须先固化车道**
 
 ```
-渠道/vendor-a（priority 20）—— model-1, model-2
-渠道/vendor-b（priority 10）—— model-1, model-2
+渠道/channel-a —— model-1, model-2
+渠道/channel-b —— model-1, model-2
 
-固化后（POST /api/v1/lanes/seed 或逐条 PUT /api/v1/lanes/{model}）：
-请求 model-1  →  vendor-a 的 model-1  →（失败）→  vendor-b 的 model-1
+固化后（POST /api/v1/lanes/seed 或逐条 PUT /api/v1/lanes/{model}，顺序人工排定）：
+请求 model-1  →  channel-a 的 model-1  →（失败）→  channel-b 的 model-1
 ```
 
 - **车道是唯一路由入口**（[ADR 0005](docs/adr/0005-lane-required-and-channel-model-mapping.md)）：
   渠道声明 `models` 只是"候选成员来源"，**不等于可调用**；没有同名启用车道时请求该模型
   一律 `503 No available channel for model <X>`。
-- 一步固化：`POST /api/v1/lanes/seed`（按渠道 `priority` 生成 failover 车道，幂等；
+- 一步固化：`POST /api/v1/lanes/seed`（为渠道已声明但无车道的模型生成 failover 车道，初始顺序按渠道 id 升序，幂等；
   `?dry_run=true` 先看将创建哪些），或按 §2.2 手工建/改。
-- 排序依据是渠道 `priority`，**数字大者优先**；相同则按渠道 id 定序（仅用于 seed 生成的初始顺序）。
+- **渠道没有优先级/权重**（已物理删除）：路由顺序只由车道的成员顺序决定，在模型页的「路由与故障切换」里用上移/下移人工排定。
 - 上游命名与路由键不一致时，在**渠道**上配 `model_mapping`（路由键 → 上游真名），
   配置一次即对该渠道的所有车道成员生效；成员级 `upstream_model` 可再覆盖它。
 - 没有任何渠道声明该模型 → 同样是 `503 No available channel for model <X>`，
@@ -108,7 +108,7 @@ docker run -d --name pbr -p 5700:5700 \
 - 请求名带思考后缀（如 `model-1-thinking`）时，原文未命中会按基座既有规则归一化再匹配一次，
   响应里的 `model` 仍是请求原文。
 
-### 2.2 车道（唯一入口：顺序 / 改名 / 池化 / 四种模式）
+### 2.2 车道（唯一入口：顺序 / 改名 / 池化 / 两种模式）
 
 需要自定义顺序、成员改名、或池化不同上游的不同模型名时就写车道：
 
@@ -117,14 +117,14 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' -d '{
   "enabled": true, "mode": "failover",
   "members": [
-    {"channel":"vendor-a","upstream_model":"real-name-a","priority":20},
-    {"channel":"vendor-b","upstream_model":"real-name-b","priority":10,"weight":3}
+    {"channel":"channel-a","upstream_model":"real-name-a","priority":2},
+    {"channel":"channel-b","upstream_model":"real-name-b","priority":1}
   ]}'
 ```
 
-`mode` 四种：`failover`（默认，按优先级降序取首个可用）、`manual`（只用手工指定的
-`active_member`，不可用即无可用）、`weighted`（按 `weight` 加权随机）、`round_robin`（环形轮询）。
-四者共用同一套冷却/熔断/超时与尝试预算。
+`mode` 两种：`failover`（默认，按成员顺序取首个可用）、`manual`（只用手工指定的
+`active_member`，不可用即无可用）。两者共用同一套冷却/熔断/超时与尝试预算。
+`weighted` / `round_robin` 与其成员 `weight` 已删除（单用户网关不需要随机/轮询负载均衡）。
 
 ### 2.3 六键与超时算术
 
@@ -152,7 +152,7 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
   成功即复通并写恢复事件；重复打开按 `open_seconds × 2^k` 指数退避（设上限）。
 - **错误分类**：欠费关键词优先于状态码；`client_error`（请求本身不合法）不冷却、不换人、
   不记熔断分——否则一个坏请求会把健康成员打冷。
-- **亲和**：默认 0 = 不做粘滞，高优先级成员恢复后立刻切回；需要压抖动时按车道显式配置。
+- **亲和**：默认 0 = 不做粘滞，故障成员恢复后立刻切回；需要压抖动时按车道显式配置。
 - **自动恢复**：`AutomaticEnableChannelEnabled` 默认 `true`（**与旧系统相反**，旧系统默认关闭）。
   它只是"允许把自动禁用的渠道写回 `enabled`"的许可；**真正执行复通的是渠道巡检任务**：
   `monitor_setting.auto_test_channel_enabled` **默认 `false`**（控制台"系统设置 → 系统"里打开），
@@ -199,10 +199,14 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 | 限流误判 | 429 与 401 一视同仁 | 分类处理，429 不误伤 |
 | 全挂行为 | 轮询等待（请求悬挂） | 503 快抛（下游可分类） |
 | 自愈 | 只禁不通，无半开 | 熔断三态 + 半开自动复通 |
-| 模式 | manual / failover | failover / manual / weighted / round_robin |
+| 模式 | manual / failover | failover / manual（`weighted`/`round_robin` 已删） |
 | 准入 | 白名单（忘配就 400） | 默认放行 + 显式拒绝 |
 | 账号 | 多用户 + 计费 | 单用户、无计费（成本只折算展示） |
 | 运维 | 改文件、拷库、抓前端 | 全部 HTTP API + OpenAPI |
+| 渠道字段 | 优先级/权重决定选路 | **渠道只有模型清单与上游真名映射**；顺序只在车道上 |
+| 模型清单 | 手工录入 | **填好上游即可自动探测** `/models` 并提示合并 |
+| 成本视图 | 按渠道/模型单独看 | 看板可按**渠道 × 模型**看花费与 token |
+| 控制台冗余入口 | 厂商、部署、模型广场等 | **已删**：供应商与 io.net 部署前后端下线，模型页无"广场展示"，模型页为单一平面列表 |
 
 ---
 
@@ -215,7 +219,7 @@ GET  /api/v1/routes/{model}             # 某模型的成员链（排障用）
 GET  /api/v1/lanes/{name}/health        # 冷却/熔断/亲和快照（含带时间戳事件）
 POST /api/v1/lanes/{name}/probe         # 逐成员真实探活
 GET  /api/v1/logs?success=false         # 元数据日志（含 attempts 链）
-GET  /api/v1/stats?granularity=hour&group_by=lane
+GET  /api/v1/stats?granularity=hour&group_by=lane    # group_by 另有 channel|model|key|channel_model
 GET  /api/v1/export                     # 导出配置（不含密钥明文与哈希）
 POST /api/v1/import?dry_run=true        # 导入前先看 diff
 GET  /api/v1/openapi.json               # 完整契约

@@ -69,8 +69,9 @@ var defaultVendorIcons = map[string]string{
 	"Azure":      "AzureAI",
 }
 
-// initDefaultVendorMapping 简化的默认供应商映射
-func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vendor, enableAbilities []AbilityWithChannel) {
+// initDefaultVendorMapping 按模型名规则推断展示用供应商，并返回 模型名→供应商 ID。
+// 供应商表已随 Vendors 功能物理删除，这里只构建纯展示数据，不写库、不参与路由或计费。
+func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]PricingVendor, enableAbilities []AbilityWithChannel) map[string]int {
 	patterns := make([]string, 0, len(defaultVendorRules))
 	for pattern := range defaultVendorRules {
 		patterns = append(patterns, pattern)
@@ -81,31 +82,28 @@ func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]*Vend
 		}
 		return strings.Compare(a, b)
 	})
+	modelVendorIDs := make(map[string]int, len(enableAbilities))
 	for _, ability := range enableAbilities {
 		modelName := ability.Model
-		if _, exists := metaMap[modelName]; exists {
-			continue
-		}
-
-		// 匹配供应商
-		vendorID := 0
 		modelLower := strings.ToLower(modelName)
 		for _, pattern := range patterns {
 			vendorName := defaultVendorRules[pattern]
 			if strings.Contains(modelLower, pattern) {
-				vendorID = getDisplayVendor(vendorName, vendorMap)
+				modelVendorIDs[modelName] = getDisplayVendor(vendorName, vendorMap)
 				break
 			}
 		}
 
-		// 创建模型元数据
-		metaMap[modelName] = &Model{
-			ModelName: modelName,
-			VendorID:  vendorID,
-			Status:    1,
-			NameRule:  NameRuleExact,
+		// 为缺少元数据的模型补一条合成记录，保持定价目录的展示口径。
+		if _, exists := metaMap[modelName]; !exists {
+			metaMap[modelName] = &Model{
+				ModelName: modelName,
+				Status:    1,
+				NameRule:  NameRuleExact,
+			}
 		}
 	}
+	return modelVendorIDs
 }
 
 // Default vendor entries are presentation data. Reading pricing must never
@@ -136,7 +134,7 @@ var defaultVendorDisplayIDs = map[string]int{
 	"零一万物":       -1023,
 }
 
-func getDisplayVendor(vendorName string, vendorMap map[int]*Vendor) int {
+func getDisplayVendor(vendorName string, vendorMap map[int]PricingVendor) int {
 	for id, vendor := range vendorMap {
 		if strings.EqualFold(vendor.Name, vendorName) {
 			return id
@@ -146,7 +144,7 @@ func getDisplayVendor(vendorName string, vendorMap map[int]*Vendor) int {
 	if id == 0 {
 		return 0
 	}
-	vendorMap[id] = &Vendor{Id: id, Name: vendorName, Status: 1, Icon: getDefaultVendorIcon(vendorName)}
+	vendorMap[id] = PricingVendor{ID: id, Name: vendorName, Icon: getDefaultVendorIcon(vendorName)}
 	return id
 }
 

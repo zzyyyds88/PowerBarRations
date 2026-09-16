@@ -14,39 +14,22 @@ import (
 
 // GetAllModelsMeta 获取模型列表（分页）
 func GetAllModelsMeta(c *gin.Context) {
-	listModelsMeta(c, "", "")
+	listModelsMeta(c, "")
 }
 
 // SearchModelsMeta 搜索模型列表
 func SearchModelsMeta(c *gin.Context) {
-	listModelsMeta(c, c.Query("keyword"), c.Query("vendor"))
+	listModelsMeta(c, c.Query("keyword"))
 }
 
-func listModelsMeta(c *gin.Context, keyword, vendor string) {
-	squareState := model.ModelSquareState(c.Query("square_state"))
-	switch squareState {
-	case "", model.ModelSquareVisible, model.ModelSquareUnavailable, model.ModelSquareHidden, model.ModelSquarePartial:
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid model square state"})
-		return
-	}
-
+func listModelsMeta(c *gin.Context, keyword string) {
 	pageInfo := common.GetPageQuery(c)
-	if squareState != "" && (pageInfo.GetPage() < 1 || pageInfo.GetPageSize() < 1) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid pagination"})
-		return
-	}
 	offset, limit := pageInfo.GetStartIdx(), pageInfo.GetPageSize()
-	if squareState != "" {
-		// Visibility depends on live channels and metadata rules. Filter the
-		// enriched candidate set before counting and paginating the results.
-		offset, limit = 0, -1
-	}
 	search := model.SearchModels
 	if c.Query("include_channel_models") == "true" {
 		search = model.SearchModelsWithChannels
 	}
-	modelsMeta, total, err := search(keyword, vendor, c.Query("status"), c.Query("sync_official"), offset, limit)
+	modelsMeta, total, err := search(keyword, c.Query("status"), c.Query("sync_official"), offset, limit)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -55,31 +38,13 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		common.ApiError(c, err)
 		return
 	}
-	if squareState != "" {
-		filtered := make([]*model.Model, 0, len(modelsMeta))
-		for _, metadata := range modelsMeta {
-			if metadata.SquareState == squareState {
-				filtered = append(filtered, metadata)
-			}
-		}
-		total = int64(len(filtered))
-		start := len(filtered)
-		if pageInfo.GetPage()-1 <= len(filtered)/pageInfo.GetPageSize() {
-			start = (pageInfo.GetPage() - 1) * pageInfo.GetPageSize()
-		}
-		end := min(start+pageInfo.GetPageSize(), len(filtered))
-		modelsMeta = filtered[start:end]
-	}
-
-	vendorCounts, _ := model.GetVendorModelCounts()
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(modelsMeta)
 	common.ApiSuccess(c, gin.H{
-		"items":         modelsMeta,
-		"total":         total,
-		"page":          pageInfo.GetPage(),
-		"page_size":     pageInfo.GetPageSize(),
-		"vendor_counts": vendorCounts,
+		"items":     modelsMeta,
+		"total":     total,
+		"page":      pageInfo.GetPage(),
+		"page_size": pageInfo.GetPageSize(),
 	})
 }
 
@@ -269,9 +234,6 @@ func enrichModels(models []*model.Model) error {
 	}
 	connections, err := model.GetModelConnections()
 	if err != nil {
-		return err
-	}
-	if err := model.FillModelSquareStates(models, configured, connections); err != nil {
 		return err
 	}
 	for _, metadata := range models {

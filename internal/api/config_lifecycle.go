@@ -34,8 +34,6 @@ type ChannelConfig struct {
 	// BaseURL 与 Proxy 用非指针：导出总是给出确定值（空串即"无"），
 	// 导入侧据此覆盖；要"保持原值"必须显式省略整个字段（见 §5.6 的缺席/空值语义）。
 	BaseURL       string   `json:"base_url"`
-	Priority      int      `json:"priority"`
-	Weight        int      `json:"weight"`
 	Models        []string `json:"models"`
 	ParamOverride any      `json:"param_override,omitempty"`
 	Enabled       bool     `json:"enabled"`
@@ -53,7 +51,6 @@ type LaneMemberConfig struct {
 	UpstreamModel string `json:"upstream_model"`
 	PublicAlias   string `json:"public_alias,omitempty"`
 	Priority      int    `json:"priority"`
-	Weight        int    `json:"weight"`
 	Overrides     any    `json:"overrides,omitempty"`
 }
 
@@ -132,7 +129,6 @@ func BuildConfigBundle() (*ConfigBundle, error) {
 				UpstreamModel: member.UpstreamModel,
 				PublicAlias:   member.PublicAlias,
 				Priority:      member.Priority,
-				Weight:        member.Weight,
 				Overrides:     jsonObject(member.Overrides),
 			})
 		}
@@ -336,8 +332,6 @@ func channelPayloadFromConfig(config ChannelConfig) *channelPayload {
 		BaseURL: &config.BaseURL,
 		Enabled: &config.Enabled,
 	}
-	priority, weight := config.Priority, config.Weight
-	payload.Priority, payload.Weight = &priority, &weight
 	payload.Models = config.Models
 	if config.ParamOverride != nil {
 		encoded, _ := json.Marshal(config.ParamOverride)
@@ -372,7 +366,6 @@ func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
 			UpstreamModel: member.UpstreamModel,
 			PublicAlias:   member.PublicAlias,
 			Priority:      member.Priority,
-			Weight:        member.Weight,
 		}
 		if member.Overrides != nil {
 			encoded, _ := json.Marshal(member.Overrides)
@@ -680,8 +673,6 @@ func exportedChannelConfig(channel *model.Channel, models []string) ChannelConfi
 		Name:          channel.Name,
 		Type:          ChannelTypeSlug(channel.Type),
 		BaseURL:       channel.GetBaseURL(),
-		Priority:      int(channel.GetPriority()),
-		Weight:        channel.GetWeight(),
 		Models:        models,
 		ParamOverride: jsonObject(derefString(channel.ParamOverride)),
 		Enabled:       channel.Status == common.ChannelStatusEnabled,
@@ -735,7 +726,6 @@ func laneDigestOfLane(lane *model.Lane) string {
 			UpstreamModel: member.UpstreamModel,
 			PublicAlias:   member.PublicAlias,
 			Priority:      member.Priority,
-			Weight:        member.Weight,
 			Overrides:     jsonObject(member.Overrides),
 		})
 	}
@@ -771,7 +761,7 @@ func clientKeyDigestOf(key *model.ClientKey) string {
 func GetCapabilities(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"api_version":     "v1",
-		"lane_modes":      []string{model.LaneModeFailover, model.LaneModeManual, model.LaneModeWeighted, model.LaneModeRoundRobin},
+		"lane_modes":      []string{model.LaneModeFailover, model.LaneModeManual},
 		"adapters":        AdapterList(),
 		"inbound_formats": []string{"openai", "openai_responses", "anthropic", "embeddings"},
 		"circuit": gin.H{
@@ -880,7 +870,7 @@ func openAPIPaths() gin.H {
 			"get": secured("get", "车道列表", nil)["get"],
 		},
 		"/lanes/seed": gin.H{
-			"post": secured("post", "为未配车道的模型按渠道 priority 一键生成 failover 车道（幂等）", []gin.H{dryRunParam})["post"],
+			"post": secured("post", "为未配车道的模型按渠道 id 升序一键生成 failover 车道（幂等）", []gin.H{dryRunParam})["post"],
 		},
 		"/lanes/{name}": gin.H{
 			"get":    secured("get", "车道详情", pathParam("name"))["get"],

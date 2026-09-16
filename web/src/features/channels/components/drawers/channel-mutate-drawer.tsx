@@ -26,7 +26,6 @@ import {
   ClipboardPaste,
   Loader2,
   Server,
-  Sparkles,
   Trash2,
   Copy,
   FileText,
@@ -58,7 +57,6 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
-import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { JsonCodeEditor } from '@/components/json-code-editor'
 import { JsonEditor } from '@/components/json-editor'
@@ -134,6 +132,7 @@ import {
   ADD_MODE_OPTIONS,
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_STATUS_LABELS,
+  CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPE_WARNINGS,
@@ -165,6 +164,7 @@ import {
   extractMappingSourceModels,
   hasModelConfigChanged,
   findMissingModelsInMapping,
+  normalizeModelName,
   validateModelMappingJson,
 } from '../../lib'
 import {
@@ -245,6 +245,15 @@ const MODEL_MAPPING_PREVIEW_FALLBACK: Array<{
 
 const ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT = 3
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
+// Channel types whose upstream requires an explicit base URL before probing.
+const DISCOVERY_BASE_URL_REQUIRED_TYPES = new Set([
+  3,
+  8,
+  36,
+  45,
+  CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_TASK_PLUGIN,
+])
 const SENSITIVE_FORM_FIELDS = [
   'type',
   'base_url',
@@ -1117,6 +1126,35 @@ export function ChannelMutateDrawer({
     () => ({ kind: 'saved', channelId: channelId || 0 }),
     [channelId]
   )
+  // Auto discovery starts only once the connection fields the probe needs are
+  // valid: type + key for unsaved channels, and the saved record for existing
+  // ones (the saved request reuses the stored credential).
+  const discoveryConnectionReady = useMemo(() => {
+    if (!MODEL_FETCHABLE_TYPES.has(currentType)) return false
+    if (!previewModels) return Boolean(channelData?.data)
+    if (
+      !isEditing &&
+      currentType !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
+      !currentKey?.trim()
+    ) {
+      return false
+    }
+    if (
+      DISCOVERY_BASE_URL_REQUIRED_TYPES.has(currentType) &&
+      !currentBaseUrl?.trim()
+    ) {
+      return false
+    }
+    return true
+  }, [
+    channelData?.data,
+    currentBaseUrl,
+    currentKey,
+    currentType,
+    isEditing,
+    previewModels,
+  ])
+
   const discovery = useChannelModelDiscovery({
     enabled:
       open &&
@@ -1124,6 +1162,7 @@ export function ChannelMutateDrawer({
       MODEL_FETCHABLE_TYPES.has(currentType) &&
       (!isEditing || Boolean(channelData?.data)),
     request: previewModels ? previewRequest : savedRequest,
+    autoFetch: discoveryConnectionReady,
   })
   const fetchDiscoveredModels = discovery.fetch
   const handleFetchModels = useCallback(async () => {
@@ -1151,6 +1190,50 @@ export function ChannelMutateDrawer({
     }
     await fetchDiscoveredModels()
   }, [isEditing, canDiscoverModels, form, t, fetchDiscoveredModels])
+
+  // De-duplicate and trim upstream results before summarizing or merging them.
+  const normalizedDiscoveredModels = useMemo(
+    () => [
+      ...new Set(discovery.models.map(normalizeModelName).filter(Boolean)),
+    ],
+    [discovery.models]
+  )
+  const discoveredNewModels = useMemo(() => {
+    const existingModels = isEditing
+      ? initialModelsRef.current
+      : currentModelsArray
+    const existing = new Set(existingModels.map(normalizeModelName))
+    return normalizedDiscoveredModels.filter((model) => !existing.has(model))
+  }, [currentModelsArray, isEditing, normalizedDiscoveredModels])
+
+  const handleAddAllDiscoveredModels = useCallback(() => {
+    updateModels(normalizedDiscoveredModels, true)
+  }, [normalizedDiscoveredModels, updateModels])
+
+  const handleAddNewDiscoveredModels = useCallback(() => {
+    updateModels(discoveredNewModels, true)
+  }, [discoveredNewModels, updateModels])
+
+  let discoveryMessage = t(
+    'Fill in the connection fields to discover upstream models automatically.'
+  )
+  if (discovery.status === 'loading') {
+    discoveryMessage = t('Fetching models...')
+  } else if (discovery.status === 'stale') {
+    discoveryMessage = t(
+      'Connection settings changed. Fetch models again to refresh the list.'
+    )
+  } else if (discovery.status === 'success') {
+    discoveryMessage = t(
+      'Found {{count}} upstream models · {{added}} new · {{existing}} existing',
+      {
+        count: normalizedDiscoveredModels.length,
+        added: discoveredNewModels.length,
+        existing:
+          normalizedDiscoveredModels.length - discoveredNewModels.length,
+      }
+    )
+  }
 
   // Handle model operations
   const handleFillRelatedModels = useCallback(() => {
@@ -1848,56 +1931,6 @@ export function ChannelMutateDrawer({
         icon={<Route className='h-3.5 w-3.5' />}
         iconTone='info'
       />
-      <div className='grid gap-4 sm:grid-cols-2'>
-        <FormField
-          control={form.control}
-          name='priority'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Priority')}</FormLabel>
-              <FormControl>
-                <Input
-                  type='number'
-                  placeholder='0'
-                  {...field}
-                  onChange={(e) => field.onChange(Number(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>
-                {t(FIELD_DESCRIPTIONS.PRIORITY)}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {currentType === CHANNEL_TYPE_TASK_PLUGIN && (
-          <FormField
-            control={form.control}
-            name='weight'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Weight')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='number'
-                    placeholder='0'
-                    {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Used only for legacy task-plugin channel selection. Model routing uses lane ordering (priority) instead.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-      </div>
-
       <FormField
         control={form.control}
         name='test_model'
@@ -2816,96 +2849,129 @@ export function ChannelMutateDrawer({
               )}
             />
 
-            {MODEL_FETCHABLE_TYPES.has(currentType) && (
-              <div aria-live='polite' className='mt-4 space-y-3'>
-                {discovery.status === 'loading' && (
-                  <LoadingState
-                    className='min-h-0 py-4'
-                    message={t('Fetching models...')}
-                  />
-                )}
-                {discovery.status === 'error' && (
-                  <ErrorState
-                    className='min-h-0 p-3'
-                    title={t('Failed to fetch models')}
-                    description={getServerErrorMessage(
-                      discovery.error,
-                      t('Failed to fetch models')
-                    )}
-                    onRetry={() => {
-                      void handleFetchModels()
-                    }}
-                  />
-                )}
-                {discovery.status === 'stale' && (
-                  <Alert>
-                    <AlertDescription>
-                      {t(
-                        'Connection settings changed. Fetch models again to refresh the list.'
+            {MODEL_FETCHABLE_TYPES.has(currentType) &&
+              discovery.status === 'error' && (
+                <ErrorState
+                  className='mt-4 min-h-0 p-3'
+                  title={t('Failed to fetch models')}
+                  description={getServerErrorMessage(
+                    discovery.error,
+                    t('Failed to fetch models')
+                  )}
+                  onRetry={() => {
+                    void handleFetchModels()
+                  }}
+                />
+              )}
+            {MODEL_FETCHABLE_TYPES.has(currentType) &&
+              discovery.status !== 'error' && (
+                <div
+                  role='status'
+                  aria-live='polite'
+                  className='border-border/60 bg-muted/20 mt-4 space-y-3 rounded-lg border p-3'
+                >
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <div className='flex min-w-0 items-center gap-2'>
+                      {discovery.status === 'loading' && (
+                        <Loader2
+                          className='text-muted-foreground size-3.5 shrink-0 animate-spin'
+                          aria-hidden='true'
+                        />
                       )}
-                      <Button
-                        type='button'
-                        variant='outline'
-                        size='sm'
-                        onClick={handleFetchModels}
-                      >
-                        {t('Fetch Models')}
-                      </Button>
-                    </AlertDescription>
-                  </Alert>
-                )}
-                {discovery.status === 'success' &&
-                  discovery.models.length === 0 && (
-                    <EmptyState
-                      className='min-h-0 p-3'
-                      title={t('No models returned by the upstream')}
-                      description={t(
-                        'You can add models manually or try fetching again.'
-                      )}
-                      action={
+                      <span className='text-muted-foreground min-w-0 text-xs'>
+                        {discoveryMessage}
+                      </span>
+                    </div>
+                    {canDiscoverModels ? (
+                      <div className='flex flex-wrap items-center gap-2'>
                         <Button
                           type='button'
                           variant='outline'
                           size='sm'
                           onClick={handleFetchModels}
+                          disabled={discovery.status === 'loading'}
                         >
-                          {t('Retry')}
+                          <RefreshCw
+                            className='mr-1.5 size-3.5'
+                            aria-hidden='true'
+                          />
+                          {t('Re-fetch')}
                         </Button>
-                      }
-                    />
-                  )}
-                {discovery.status === 'success' &&
-                  discovery.models.length > 0 && (
-                    <UpstreamModelSelection
-                      models={discovery.models}
-                      selected={currentModelsArray}
-                      existingModels={
-                        isEditing
-                          ? initialModelsRef.current
-                          : currentModelsArray
-                      }
-                      onChange={handleModelsChange}
-                      showChanges={isEditing}
-                      redirectModels={redirectModelList}
-                      redirectSourceModels={redirectModelKeyList}
-                    />
-                  )}
-                {isEditing && !previewModels && (
-                  <p className='text-muted-foreground text-xs'>
-                    {t(
-                      'Model discovery uses the saved channel connection settings.'
+                        {discovery.status === 'success' &&
+                          normalizedDiscoveredModels.length > 0 && (
+                            <>
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='sm'
+                                onClick={handleAddAllDiscoveredModels}
+                              >
+                                {t('Add all')}
+                              </Button>
+                              {discoveredNewModels.length > 0 && (
+                                <Button
+                                  type='button'
+                                  variant='secondary'
+                                  size='sm'
+                                  onClick={handleAddNewDiscoveredModels}
+                                >
+                                  {t('Add new only')}
+                                </Button>
+                              )}
+                            </>
+                          )}
+                      </div>
+                    ) : (
+                      <span className='text-muted-foreground text-xs'>
+                        {t('No permission to perform this action')}
+                      </span>
                     )}
-                  </p>
-                )}
-                {!isEditing && isBatchMode && (
-                  <p className='text-muted-foreground text-xs'>
-                    {t(
-                      'Model discovery uses the first key; other keys are not tested.'
+                  </div>
+                  {discovery.status === 'success' &&
+                    normalizedDiscoveredModels.length === 0 && (
+                      <div className='space-y-1'>
+                        <p className='text-xs font-medium'>
+                          {t('No models returned by the upstream')}
+                        </p>
+                        <p className='text-muted-foreground text-xs'>
+                          {t(
+                            'You can add models manually or try fetching again.'
+                          )}
+                        </p>
+                      </div>
                     )}
-                  </p>
-                )}
-              </div>
-            )}
+                  {discovery.status === 'success' &&
+                    normalizedDiscoveredModels.length > 0 && (
+                      <UpstreamModelSelection
+                        models={normalizedDiscoveredModels}
+                        selected={currentModelsArray}
+                        existingModels={
+                          isEditing
+                            ? initialModelsRef.current
+                            : currentModelsArray
+                        }
+                        onChange={handleModelsChange}
+                        showChanges={isEditing}
+                        redirectModels={redirectModelList}
+                        redirectSourceModels={redirectModelKeyList}
+                      />
+                    )}
+                  {isEditing && !previewModels && (
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Model discovery uses the saved channel connection settings.'
+                      )}
+                    </p>
+                  )}
+                  {!isEditing && isBatchMode && (
+                    <p className='text-muted-foreground text-xs'>
+                      {t(
+                        'Model discovery uses the first key; other keys are not tested.'
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
 
             <Separator className='my-4' />
 
@@ -2913,9 +2979,7 @@ export function ChannelMutateDrawer({
               <div>
                 <p className='text-sm font-medium'>{t('Quick actions')}</p>
                 <p className='text-muted-foreground text-xs'>
-                  {t(
-                    'Use presets or upstream discovery to populate the model list faster.'
-                  )}
+                  {t('Use presets to populate the model list faster.')}
                 </p>
               </div>
               <div className='flex flex-wrap gap-2'>
@@ -2929,27 +2993,6 @@ export function ChannelMutateDrawer({
                   <FileText className='mr-2 h-4 w-4' aria-hidden='true' />
                   {t('Fill Related Models')}
                 </Button>
-                {MODEL_FETCHABLE_TYPES.has(currentType) && (
-                  <>
-                    <Button
-                      type='button'
-                      variant='outline'
-                      size='sm'
-                      onClick={handleFetchModels}
-                      disabled={
-                        !canDiscoverModels || discovery.status === 'loading'
-                      }
-                    >
-                      <Sparkles className='mr-2 h-4 w-4' aria-hidden='true' />
-                      {t('Fetch from Upstream')}
-                    </Button>
-                    {!canDiscoverModels && (
-                      <span className='text-muted-foreground basis-full text-xs'>
-                        {t('No permission to perform this action')}
-                      </span>
-                    )}
-                  </>
-                )}
                 <Button
                   type='button'
                   variant='outline'
@@ -4272,7 +4315,7 @@ export function ChannelMutateDrawer({
                   'Sensitive channel settings are read-only for your account.'
                 )}{' '}
                 {t(
-                  'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
+                  'You can still edit non-sensitive operations fields such as models and groups.'
                 )}
               </AlertDescription>
             </Alert>

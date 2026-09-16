@@ -33,7 +33,15 @@ export type PBRStatBucket = {
   estimated_cost: number
 }
 
-export type PBRStatsGroupBy = 'lane' | 'channel' | 'key' | 'model'
+export type PBRStatsGroupBy =
+  | 'lane'
+  | 'channel'
+  | 'key'
+  | 'model'
+  | 'channel_model'
+
+// 「渠道 × 模型」分组的 group 形如 `渠道␟模型`（api-spec §5.5）。
+export const PBR_CHANNEL_MODEL_SEPARATOR = '␟'
 
 export type PBRStatsResponse = {
   granularity: 'hour' | 'day'

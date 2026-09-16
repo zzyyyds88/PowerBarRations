@@ -33,12 +33,10 @@ func setupImportTestDB(t *testing.T) {
 func TestExportBundleIncludesChannelMappingAndPrices(t *testing.T) {
 	setupImportTestDB(t)
 	mapping := `{"model-1":"vendor-a/model-1"}`
-	priority := int64(20)
-	weight := uint(3)
 	channel := &model.Channel{
 		Name: "vendor-a", Type: 1, Key: "sk-secret", Status: common.ChannelStatusEnabled,
 		Group: "default", Models: "model-1,model-2", BaseURL: strPtr("https://vendor.example/v1"),
-		ModelMapping: &mapping, Priority: &priority, Weight: &weight,
+		ModelMapping: &mapping,
 	}
 	settingJSON, err := json.Marshal(dto.ChannelSettings{
 		Proxy: "http://proxy.example:8080",
@@ -71,12 +69,11 @@ func TestExportBundleIncludesChannelMappingAndPrices(t *testing.T) {
 // （此前摘要里没有 model_mapping/prices，改映射会被静默报成"无变更"。）
 func TestImportRoundTripDiffStaysEmptyAndDetectsMappingChange(t *testing.T) {
 	setupImportTestDB(t)
-	priority := int64(1)
 	mapping := `{"model-1":"real-a"}`
 	channel := &model.Channel{
 		Name: "vendor-a", Type: 1, Key: "sk-x", Status: common.ChannelStatusEnabled,
 		Group: "default", Models: "model-1", BaseURL: strPtr("https://vendor.example/v1"),
-		ModelMapping: &mapping, Priority: &priority,
+		ModelMapping: &mapping,
 	}
 	require.NoError(t, model.DB.Create(channel).Error)
 

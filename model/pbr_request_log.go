@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -11,6 +12,14 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+// PBRChannelModelSeparator 是「渠道 × 模型」聚合维度的键分隔符。
+// group_key = <渠道名> + PBRChannelModelSeparator + <请求模型>。
+const PBRChannelModelSeparator = "␟"
+
+// pbrChannelModelBackfillOptionKey 是 channel_model 一次性回填的完成标记；
+// 标记存在即不再重放（design/breakdown W9）。
+const pbrChannelModelBackfillOptionKey = "PBRChannelModelStatsBackfilled"
 
 // PBR 请求日志（design-v1 §8，api-spec §5.5）。
 //
@@ -236,6 +245,10 @@ func upsertPBRHourlyStat(entry *PBRRequestLog) {
 		"key":     entry.TokenName,
 		"model":   entry.RequestModel,
 	}
+	// 「渠道 × 模型」维度要求两者都非空；任一为空则跳过（与其它维度的空值跳过口径一致）。
+	if strings.TrimSpace(entry.MemberChannelName) != "" && strings.TrimSpace(entry.RequestModel) != "" {
+		dimensions["channel_model"] = entry.MemberChannelName + PBRChannelModelSeparator + entry.RequestModel
+	}
 	for kind, key := range dimensions {
 		if strings.TrimSpace(key) == "" {
 			continue
@@ -441,7 +454,7 @@ func AggregatePBRStats(from, until int64, granularity, groupBy string) ([]PBRSta
 func AggregatePBRStatsFromHourly(from, until int64, granularity, groupBy string) ([]PBRStatBucket, error) {
 	groupKind := strings.ToLower(strings.TrimSpace(groupBy))
 	switch groupKind {
-	case "lane", "channel", "key", "model":
+	case "lane", "channel", "key", "model", "channel_model":
 	default:
 		groupKind = "lane"
 	}
@@ -476,4 +489,81 @@ func AggregatePBRStatsFromHourly(from, until int64, granularity, groupBy string)
 		rows = []PBRStatBucket{}
 	}
 	return rows, nil
+}
+
+// BackfillPBRChannelModelStats 一次性回填「渠道 × 模型」聚合桶（breakdown W9）。
+//
+// 背景：channel_model 是新增维度，升级前写入的明细从未聚合过该维度。本函数从
+// request_logs 明细按 (小时桶, 渠道, 模型) 重新聚合，只补写缺失的桶
+// （OnConflict DoNothing），全部写入成功后落 option 标记，避免每次启动重放。
+//
+// 与 migrateDB 的其它派生数据迁移一致：失败由调用方记日志、不阻塞启动；明细为空
+// 时直接跳过（此后新请求由 upsertPBRHourlyStat 实时写入，不需要回填）。
+func BackfillPBRChannelModelStats() error {
+	if DB == nil {
+		return nil
+	}
+
+	var marker Option
+	err := DB.Where(&Option{Key: pbrChannelModelBackfillOptionKey}).First(&marker).Error
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	var detailCount int64
+	if err := DB.Model(&PBRRequestLog{}).Count(&detailCount).Error; err != nil {
+		return err
+	}
+	if detailCount == 0 {
+		return nil
+	}
+
+	type channelModelRow struct {
+		BucketTs          int64
+		MemberChannelName string
+		RequestModel      string
+		Requests          int64
+		Successes         int64
+		PromptTokens      int64
+		CompletionTokens  int64
+		EstimatedCost     float64
+	}
+	var rows []channelModelRow
+	// 不做 SQL 字符串拼接：直接按 (桶, 渠道, 模型) 两列分组，兼容 SQLite/MySQL/PostgreSQL。
+	err = DB.Model(&PBRRequestLog{}).
+		Select("(ts / 3600) * 3600 AS bucket_ts, member_channel_name AS member_channel_name, " +
+			"request_model AS request_model, COUNT(*) AS requests, " +
+			"SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes, " +
+			"SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, " +
+			"SUM(estimated_cost) AS estimated_cost").
+		Where("TRIM(member_channel_name) <> '' AND TRIM(request_model) <> ''").
+		Group("(ts / 3600) * 3600, member_channel_name, request_model").
+		Scan(&rows).Error
+	if err != nil {
+		return err
+	}
+
+	for _, item := range rows {
+		row := PBRStatsHourly{
+			BucketTs:         item.BucketTs,
+			GroupKind:        "channel_model",
+			GroupKey:         item.MemberChannelName + PBRChannelModelSeparator + item.RequestModel,
+			Requests:         item.Requests,
+			Successes:        item.Successes,
+			PromptTokens:     item.PromptTokens,
+			CompletionTokens: item.CompletionTokens,
+			CostSum:          item.EstimatedCost,
+		}
+		// 实时写入已存在的桶不得叠加：缺失才补，已存在则原样保留。
+		if err := DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&row).Error; err != nil {
+			return err
+		}
+	}
+
+	// 只有全部桶成功落库后才写标记；失败则本次不写，下次启动重试。
+	return DB.Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&Option{Key: pbrChannelModelBackfillOptionKey, Value: "true"}).Error
 }

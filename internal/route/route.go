@@ -7,14 +7,13 @@
 // 语义依据：docs/routing-spec-v1.md §2（选择算法）、§3（尝试循环）、§4（错误分类）、
 // §5（熔断）、§6（冷却与亲和）。
 //
-// 四种模式（failover / manual / weighted / round_robin）共用同一套可用性判断
+// 两种模式（failover / manual）共用同一套可用性判断
 // （冷却 + 熔断，见 runtime.go）与同一套尝试预算，仅"选谁"这一步不同。
 package route
 
 import (
 	"context"
 	"errors"
-	"math/rand/v2"
 	"net/http"
 	"strings"
 	"sync"
@@ -375,10 +374,6 @@ func (s *State) pickLocked() (*model.RouteMember, bool) {
 	switch s.Route.Mode {
 	case model.LaneModeManual:
 		return s.pickManualLocked()
-	case model.LaneModeWeighted:
-		return s.pickWeightedLocked()
-	case model.LaneModeRoundRobin:
-		return s.pickRoundRobinLocked()
 	default:
 		return s.pickFailoverLocked()
 	}
@@ -478,53 +473,10 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 	return &s.Route.Members[idx], true
 }
 
-// pickWeightedLocked 在可用成员中按 Weight 加权随机；权重全为 0 时退化为等概率（§2.3）。
-func (s *State) pickWeightedLocked() (*model.RouteMember, bool) {
-	candidates := s.availableCandidatesLocked()
-	if len(candidates) == 0 {
-		return nil, false
-	}
-	total := 0
-	for _, c := range candidates {
-		if c.weight > 0 {
-			total += c.weight
-		}
-	}
-	chosen := candidates[0]
-	if total > 0 {
-		roll := rand.IntN(total)
-		for _, c := range candidates {
-			roll -= c.weight
-			if roll < 0 {
-				chosen = c
-				break
-			}
-		}
-	} else {
-		chosen = candidates[rand.IntN(len(candidates))]
-	}
-	return s.commitCandidateLocked(chosen)
-}
-
-// pickRoundRobinLocked 在可用成员中按 priority 顺序环形推进（§2.4）。
-func (s *State) pickRoundRobinLocked() (*model.RouteMember, bool) {
-	candidates := s.availableCandidatesLocked()
-	if len(candidates) == 0 {
-		return nil, false
-	}
-	start := 0
-	s.Runtime.withLock(func() {
-		start = s.Runtime.RoundRobin % len(candidates)
-		s.Runtime.RoundRobin = (start + 1) % len(candidates)
-	})
-	return s.commitCandidateLocked(candidates[start])
-}
-
 type memberCandidate struct {
-	idx    int
-	key    string
-	weight int
-	probe  bool
+	idx   int
+	key   string
+	probe bool
 }
 
 // availableCandidatesLocked 收集当前可用成员；无正常可用成员时回落到"到期可探测"的成员
@@ -544,9 +496,9 @@ func (s *State) availableCandidatesLocked() []memberCandidate {
 			case availSkip:
 				continue
 			case availProbeReady:
-				candidates = append(candidates, memberCandidate{idx: idx, key: key, weight: member.Weight, probe: true})
+				candidates = append(candidates, memberCandidate{idx: idx, key: key, probe: true})
 			default:
-				candidates = append(candidates, memberCandidate{idx: idx, key: key, weight: member.Weight})
+				candidates = append(candidates, memberCandidate{idx: idx, key: key})
 			}
 		}
 	})
@@ -591,7 +543,7 @@ func (s *State) firstHealthyCandidateLocked() (memberCandidate, bool) {
 			}
 			key := memberKeyOf(&s.Route.Members[idx])
 			if s.Runtime.availabilityOf(key, s.cooldownSeconds, CurrentCircuitSettings()) == availOK {
-				candidate = memberCandidate{idx: idx, key: key, weight: s.Route.Members[idx].Weight}
+				candidate = memberCandidate{idx: idx, key: key}
 				found = true
 				return
 			}

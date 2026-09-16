@@ -21,7 +21,7 @@
 | 2 | AI 运维需拷库改 options、抓 SPA 反汇编接口 | **管理面按"AI 可调用"重设计**，并给出完整契约与示例（api-spec-v1.md） | 用户要求"开放 API 给 AI 调用，不再改文件" |
 | 3 | 逐文件手删 100+ 计费/前端文件 | **三段式减脂**：先逻辑停用（不注册路由、计费惰性化）→ 测试全绿 → 最后物理清除 | 适配器接口 `Adaptor` 每个方法吃 `*RelayInfo`，而它内嵌计费字段；硬删会逼停适配器（§2.6） |
 | 4 | 以同名分叉仓库为移植源 | **更正上游**：线上路由层真实上游是 `bestruirui/octopus`；六键/冷却/亲和以它为准；熔断器等属**新增** | 镜像 label 记录了 source/revision；分叉仓库 schema 已分叉（§2.7） |
-| 5 | 车道模式来源存疑 | 实现 **failover（默认）/ manual / weighted / round_robin 四种**，后两者为新增 | 用户确认需要 |
+| 5 | 车道模式来源存疑 | 实现 **failover（默认）/ manual 两种**；`weighted` / `round_robin` 属新增后**已删除**（单用户自用网关不需要随机/轮询负载均衡，见 §7.2） | 用户确认：车道按顺序故障切换即可 |
 | 6 | 未明确 UI 去留 | **保留 UI 控制台**，以线上路由层前端为蓝本迁移功能原理（个人自用仍要能人看） | 应用户纠正：只砍计费，不砍功能；并指定 UI 蓝本 |
 | 6b | 控制台以**线上路由层前端**（octopus）为蓝本 | **改为以 new-api 前端为蓝本整体搬迁**（`web/` 直接取自上游源码），只删多用户/计费页面 | 应用户二次纠正：new-api 的渠道管理/模型管理与其后端接口天然配套（PBR 已保留 93 个基座路由，路径一致），而 octopus 蓝本需大量改造；直接在 new-api 前端上做减法风险与工作量都更低 |
 | 7 | 未明确"开放 API 如何被调用" | 新增 api-spec 的 **AI 调用手册**：发现、认证、典型工作流 curl 示例 | 应用户要求写实 |
@@ -145,12 +145,12 @@
 ### 3.2 结构示意（占位符为示意，非真实数据）
 
 ```
-渠道/vendor-a（priority 20）—— model-1, model-2, model-3
-渠道/vendor-b（priority 10）—— model-1, model-2, model-3
+渠道/channel-a（提供 model-1, model-2, model-3）
+渠道/channel-b（提供 model-1, model-2, model-3）
 
-固化后（POST /lanes/seed 或逐条 PUT /lanes/{model}）：
-下游请求 model-1  →  vendor-a 的 model-1  →（失败）→  vendor-b 的 model-1
-下游请求 model-2  →  vendor-a 的 model-2  →（失败）→  vendor-b 的 model-2
+固化后（POST /lanes/seed 或逐条 PUT /lanes/{model}，顺序由人工在界面上排定）：
+下游请求 model-1  →  channel-a 的 model-1  →（失败）→  channel-b 的 model-1
+下游请求 model-2  →  channel-a 的 model-2  →（失败）→  channel-b 的 model-2
 （model-3 亦然；未固化的模型名不可调用，一律 503）
 ```
 
@@ -180,12 +180,11 @@
 ### 3.4 数据模型（SQLite，GORM）
 
 ```go
-type Channel struct {                 // 厂商渠道
+type Channel struct {                 // 上游渠道
     ID        int
     Name      string   // 唯一
     Type      string   // 协议族：openai|anthropic|gemini|ollama|...（映射 40 家适配器）
     BaseURL   string   // 只存到版本根（如 https://host/v1），路径拼接交给适配器
-    Priority  int      // 仅用于"一键固化"生成车道成员的初始顺序，数字大者优先
     Models    []string // 本渠道提供哪些路由键（候选）；声明只是候选，必须固化成车道才可调用（ADR 0005）
     ModelMapping map[string]string // 路由键 → 上游真名；上游命名不一致时在渠道上配置一次（ADR 0005）
     Key       string   // 只写不读：响应脱敏；不打印进日志
@@ -198,9 +197,9 @@ type Channel struct {                 // 厂商渠道
 type Lane struct { // 车道 = 唯一路由入口；没有同名启用车道 ⇒ 503（ADR 0005）
     ID      int
     Name    string   // 可路由的模型名（唯一）
-    Mode    string   // failover(默认) | manual | weighted | round_robin
+    Mode    string   // failover(默认) | manual
     Config  LaneRelayConfig        // 六键，见 §7.3
-    Members []LaneMember           // 有序
+    Members []LaneMember           // 有序：数组顺序即故障切换顺序
     Enabled bool
 }
 
@@ -210,8 +209,7 @@ type LaneMember struct {
     ChannelID     int
     UpstreamModel string  // 可选：成员级显式改名（非空且 ≠ 路由键）；留空则用渠道 ModelMapping，再退回路由键
     PublicAlias   string  // 可选：客户端可点名该成员的名字（空 = 不可点名）
-    Priority      int     // 数字大者优先（与渠道优先级语义一致）
-    Weight        int     // weighted 模式使用
+    Priority      int     // 车道内顺序，数字大者优先；界面以"上/下移"维护，写库即该值
     // 成员级覆盖（nil = 继承车道）
     MaxAttempts                     *int
     RetryIntervalSeconds            *int
@@ -302,20 +300,18 @@ AI 侧的全部运维动作——建渠道、建/改车道、调成员顺序、�
 
 ### 7.1 车道与成员
 
-- **路由键 = 模型名**（[routing-spec-v1.md](routing-spec-v1.md) §1.1）：渠道声明 `Models` + `Priority` 用于生成车道成员的初始顺序；**没有车道就不能调用**。
-- 成员：`(渠道, 上游真名, 优先级)`，支持 `PublicAlias` 点名。上游真名解析：成员级 `UpstreamModel`（覆盖）> `Channel.ModelMapping[路由键]` > 路由键。
+- **路由键 = 模型名**（[routing-spec-v1.md](routing-spec-v1.md) §1.1）：渠道声明 `Models` 只是候选来源；**没有车道就不能调用**。
+- 成员：`(渠道, 上游真名, 顺序)`，支持 `PublicAlias` 点名。上游真名解析：成员级 `UpstreamModel`（覆盖）> `Channel.ModelMapping[路由键]` > 路由键。
 - 「模型名写错」「没建车道」「上游全挂」对下游同形：`503 No available channel for model <X>`。
 
-### 7.2 选择模式（四种）
+### 7.2 选择模式（两种）
 
 | 模式 | 语义 |
 |---|---|
-| `failover`（默认） | 按 priority 降序选；失败按预算尝试后冷却并逃逸到下一成员 |
+| `failover`（默认） | 按成员顺序选；失败按预算尝试后冷却并逃逸到下一成员 |
 | `manual` | 只用手工选中的成员（沿用现行路由层语义） |
-| `weighted` | 按成员 `Weight` 加权随机；失败同样走尝试预算与冷却 |
-| `round_robin` | 在可用成员间轮询 |
 
-四种模式必须复用同一套冷却/熔断/日志基础设施，不许为某模式另起一套。
+> **已删除 `weighted` / `round_robin`**：本项目是单用户自用网关，"这次为什么走了另一个上游"没有任何收益，只增加排障成本。需要打散负载时，正确做法是拆车道或调成员顺序，而不是引入随机/轮询模式。两种模式必须复用同一套冷却/熔断/日志基础设施。
 
 ### 7.3 车道六键
 
@@ -363,9 +359,9 @@ type LaneRelayConfig struct {
 
 用户的操作心智只有三步：**渠道里填上游与模型（上游命名不一致时配渠道映射）→ 模型管理里为每个模型定"优先打谁、再打谁" → 令牌里允许这个模型**。
 
-- 模型管理页对每个模型展示：渠道声明的候选成员（按渠道 priority 的建议顺序）、已固化的成员链（若有）。
-- **未固化的模型不可调用**（503）；用户保存顺序即固化成 PBR 的 `Lane`（模式默认 `failover`），或 `POST /api/lanes/seed` 批量固化。
-- "车道"是**唯一路由入口**；四种模式、六键、成员级覆盖/别名仍是可选的高级能力，`/api/lanes/**` 契约不变，模型管理页是它的友好视图。
+- 模型管理页对每个模型展示：已固化的成员链（若有）与**可添加的候选渠道**。
+- **未固化的模型不可调用**（503）；用户保存顺序即固化成 PBR 的 `Lane`（模式默认 `failover`），或 `POST /api/lanes/seed` 批量固化（按渠道 id 升序生成初始顺序）。
+- "车道"是**唯一路由入口**；两种模式、六键、成员级覆盖/别名仍是可选的高级能力，`/api/lanes/**` 契约不变，模型管理页是它的友好视图。
 
 **验收**：在模型管理页为"模型1"设定"上游1 → 上游2"后，`GET /api/routes/模型1` 的成员顺序与之一致；把上游1 打成故障后，请求自动逃逸到上游2（fault_injection 覆盖）。
 
@@ -434,9 +430,10 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 #### 10.2.1 W7 执行口径（已定，按此实施）
 
 **范围红线**：只裁 §1.3 的计费/支付与多用户/账号安全两类，**基座其余管理面一律保留**（渠道运维
-`/api/channel/**`、模型元数据 `/api/models/**`、厂商 `/api/vendors/**`、部署 `/api/deployments/**`、
+`/api/channel/**`、模型元数据 `/api/models/**`、
 任务插件 `/api/plugin/task/**`、系统任务、性能、预填组、管理员日志 `/api/log`、`/api/option`、
-静态内容页）。
+静态内容页；**后续增补**：厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` 已按
+"本项目不需要"物理删除，见 §16 的收敛记录）。
 
 **物理删除（连路由、handler、model/service/middleware/setting 文件与其测试）**
 
@@ -575,8 +572,8 @@ vendor new-api 转发管道与适配层；Go module `pbr`；先让它原样转�
 - 渠道不声明、也没有同名车道的模型名，请求返回 `503 No available channel for model <X>`。
 
 ### W2 容错
-六键、冷却、亲和、failover；熔断三态（软硬分离、成员粒度）；关键词机制；weighted / round_robin。
-**验收**：唯一成员指向必然 500 的假端点 → 熔断打开、错误快抛；修好端点 → 半开窗口内**自动复通**（时间戳证据）；probe 返回逐成员结果；429 不误判硬故障；四模式各跑通一条链路。
+六键、冷却、亲和、failover；熔断三态（软硬分离、成员粒度）；关键词机制；manual 模式。
+**验收**：唯一成员指向必然 500 的假端点 → 熔断打开、错误快抛；修好端点 → 半开窗口内**自动复通**（时间戳证据）；probe 返回逐成员结果；429 不误判硬故障；failover 与 manual 各跑通一条链路。
 
 ### W3 访问与 AI 管理面完备
 api-spec 全部端点 + OpenAPI + 错误码 + 审计 + 导出/导入 + dry-run。
@@ -728,14 +725,16 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | 3 | 车道粘滞 | 车道级共享当前成员（照搬线上）；每个模型一条车道，模型之间互不影响 |
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
 | 5 | Playground | **保留**（控制台内，排障用）。模型面只认客户端密钥，因此试打台由使用者填入客户端密钥，直连 `/v1/chat/completions`（不新增管理面转发端点） |
-| 6 | `round_robin` 游标 | 每车道一个全局游标（与车道级粘滞一致） |
-| 7 | 上游单价与成本折算 | **两层单价**：①**渠道级上游单价**（渠道 `setting.pbr_prices`，人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`），在渠道编辑页配置；②**全局默认单价表**（`options` 表的 `PBRModelPrices`），在"系统设置 → 模型 → 单价表"配置。折算优先级：渠道价 > 全局默认 > 不折算。只用于日志 `estimated_cost` 与看板成本统计，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
+| 6 | 车道模式收敛 | **只保留 `failover`（默认）与 `manual`**；`weighted` / `round_robin` 与其成员 `weight` 已删（单用户网关不需要随机/轮询）。需要打散负载时拆车道或调顺序 |
+| 7 | 上游单价与成本折算 | **两层单价**：①**渠道级上游单价**（渠道 `setting.pbr_prices`，人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`），在渠道编辑页配置；②**全局默认单价表**（`options` 表的 `PBRModelPrices`），在"系统设置 → 模型 → 上游单价表"配置。折算优先级：渠道价 > 全局默认 > 不折算。只用于日志 `estimated_cost` 与看板成本统计（含"渠道 × 模型"维度），**不参与准入、不扣额度、与下游计费无关**（本项目无计费）。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
 | 8 | 旧库日志 | **不迁移**；旧库整体归档保留，不额外导出 |
 | 9 | 请求头兼容 | 管理面仅收 `Authorization`；模型面 `Authorization` 与 `X-Api-Key` 都收（兼容存量客户端） |
 | 10 | 渠道模型清单来源 | 手工录入 + 可选"从上游拉取"（`POST /channels/{name}/sync-models`，即原蓝本的模型同步，收敛为渠道上的一个动作）。**保护性约束**：上游返回空清单默认拒绝清空（`?force=1` 覆盖）；要移除的模型仍被显式车道成员引用时返回 409（同样 `?force=1` 覆盖），避免一次上游抖动摘掉在用成员 |
 | 11 | 开工基座 | **以 new-api 源码迁入为基座**，非净室重写；前端**同样直接搬迁上游 `web/`**（见 §2.8 / §10.5） |
 | 12 | 亲和默认值 | 默认 `member_affinity_seconds=0`（**与现网一致，避免故障切换后长时间粘在备用成员**），可配 |
 | 13 | 前端包管理与适配范围 | 前端直接搬迁 new-api 上游 `web/`（Rsbuild + Bun 锁文件；环境不便时可用 pnpm）；保留除多用户/计费外全部页面；唯一实质改造 = **模型管理页内联成员链（故障切换）**，并把认证接到 PBR 口令会话（见 §7.7） |
+| 14 | 控制台与路由面收敛 | **渠道不再有 `priority`/`weight`**（彻底删除，含 DB 列）：渠道只声明"提供哪些模型 + 上游真名映射"，路由顺序一律在车道上人工排定。**车道只留 `failover`/`manual`**。**删除厂商（Vendors）与 io.net 部署（Deployments）前后端**、删除模型页的"广场展示"（本项目无模型广场）。**定价口径**统一为"上游成本单价"：模型详情只保留上游单价，不出现倍率/计费表达式/分组定价等下游计费编辑器。**上游模型清单改为自动探测**：填好 base_url/key 即自动拉取 `/models` 并提示合并，手动"重新拉取"仅作刷新。**看板新增"渠道 × 模型"维度**，直接回答"哪个渠道、哪个模型花了多少钱、用了多少 token" |
+| 15 | 模型页结构 | 模型页是**单一平面列表 + 行内操作**（不再是多 Tab 分区）；「路由与故障切换」不再作为独立侧边栏入口，而是模型行内的操作抽屉 |
 
 ---
 

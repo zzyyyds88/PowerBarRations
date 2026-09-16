@@ -158,10 +158,9 @@ type Runtime struct {
 	AffinityUntil int64
 	AffinityArmed bool
 
-	Cooldowns  map[string]int64
-	Circuits   map[string]*Circuit
-	RoundRobin int
-	Events     []Event
+	Cooldowns map[string]int64
+	Circuits  map[string]*Circuit
+	Events    []Event
 }
 
 func newRuntime() *Runtime {

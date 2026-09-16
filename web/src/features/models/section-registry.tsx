@@ -27,22 +27,6 @@ const MODELS_SECTIONS = [
     titleKey: 'Models',
     build: () => null, // Content is rendered directly in the page component
   },
-  {
-    // PBR 增补：为每个模型配置成员顺序（故障切换）。
-    id: 'routing',
-    titleKey: 'Routing & Failover',
-    build: () => null,
-  },
-  {
-    id: 'vendors',
-    titleKey: 'Vendors',
-    build: () => null,
-  },
-  {
-    id: 'deployments',
-    titleKey: 'Deployments',
-    build: () => null, // Content is rendered directly in the page component
-  },
 ] as const
 
 export type ModelsSectionId = (typeof MODELS_SECTIONS)[number]['id']

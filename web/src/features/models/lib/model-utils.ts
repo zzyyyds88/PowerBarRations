@@ -209,15 +209,14 @@ export function getModelChannelState(model: Model) {
     }
     return {
       label: 'Metadata only',
-      description:
-        'No channel is configured. This model will not appear in the model square.',
+      description: 'No channel is configured. This model will not be listed.',
     }
   }
   if (available === 0) {
     return {
       label: 'No available channels',
       description:
-        'No channel is currently available. This model will not appear in the model square.',
+        'No channel is currently available. This model will not be listed.',
     }
   }
   return {

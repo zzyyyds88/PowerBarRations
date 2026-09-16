@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// PerfMetric stores aggregated relay performance metrics for the model square.
+// PerfMetric stores aggregated relay performance metrics for the model catalog.
 type PerfMetric struct {
 	Id             int    `json:"id" gorm:"primaryKey"`
 	ModelName      string `json:"model_name" gorm:"size:128;uniqueIndex:idx_perf_model_group_bucket,priority:1"`

@@ -22,7 +22,6 @@ type laneMemberPayload struct {
 	UpstreamModel string          `json:"upstream_model"`
 	PublicAlias   string          `json:"public_alias"`
 	Priority      int             `json:"priority"`
-	Weight        int             `json:"weight"`
 	Overrides     json.RawMessage `json:"overrides"`
 }
 
@@ -48,7 +47,6 @@ func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 			"upstream_model": m.UpstreamModel,
 			"public_alias":   m.PublicAlias,
 			"priority":       m.Priority,
-			"weight":         m.Weight,
 		}
 		if overrides := jsonObject(m.Overrides); overrides != nil {
 			item["overrides"] = overrides
@@ -160,7 +158,7 @@ func PutLane(c *gin.Context) {
 }
 
 // SeedLanes POST /api/v1/lanes/seed：为所有"渠道已声明但无车道"的模型生成
-// failover 车道（按渠道 priority，成员 upstream_model 留空 → 用渠道映射）。
+// failover 车道（初始顺序按渠道 id 升序，成员 upstream_model 留空 → 用渠道映射）。
 // 幂等；`?dry_run=true` 只返回将创建的车道名（ADR 0005）。
 func SeedLanes(c *gin.Context) {
 	dry := dryRun(c)
@@ -226,7 +224,7 @@ func buildLane(name string, payload *lanePayload) (*model.Lane, *laneBuildError)
 	}
 	if !model.ValidLaneMode(lane.Mode) {
 		return nil, &laneBuildError{status: http.StatusUnprocessableEntity, code: apierr.CodeInvalidMode,
-			message: "invalid lane mode '" + lane.Mode + "'", hint: "failover|manual|weighted|round_robin"}
+			message: "invalid lane mode '" + lane.Mode + "'", hint: "failover|manual"}
 	}
 
 	if len(payload.Config) > 0 && string(payload.Config) != "null" {
@@ -282,7 +280,6 @@ func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliase
 		UpstreamModel: upstream,
 		PublicAlias:   strings.TrimSpace(m.PublicAlias),
 		Priority:      m.Priority,
-		Weight:        m.Weight,
 	}
 	if len(m.Overrides) > 0 && string(m.Overrides) != "null" {
 		if !json.Valid(m.Overrides) {

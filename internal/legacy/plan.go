@@ -111,10 +111,9 @@ func mapLaneMode(mode string) (string, bool) {
 		return "failover", true
 	case "manual":
 		return "manual", true
-	case "weighted":
-		return "weighted", true
-	case "round_robin":
-		return "round_robin", true
+	case "weighted", "round_robin":
+		// 这两种负载均衡模式已删除：迁移时降级为 failover 并上报。
+		return "failover", false
 	default:
 		return "failover", false
 	}

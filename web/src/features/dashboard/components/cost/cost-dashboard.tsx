@@ -34,6 +34,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import {
   getPBRStats,
+  PBR_CHANNEL_MODEL_SEPARATOR,
   type PBRStatBucket,
   type PBRStatsGroupBy,
 } from '../../pbr-stats-api'
@@ -52,6 +53,7 @@ const GROUP_OPTIONS: { value: PBRStatsGroupBy; label: string }[] = [
   { value: 'model', label: '按模型' },
   { value: 'lane', label: '按车道' },
   { value: 'key', label: '按密钥' },
+  { value: 'channel_model', label: '渠道 × 模型' },
 ]
 
 const EMPTY_BUCKETS: PBRStatBucket[] = []
@@ -101,7 +103,13 @@ export function PbrAnalyticsDashboard(props: {
   const [groupBy, setGroupBy] = useState<PBRStatsGroupBy>(
     props.defaultGroupBy ?? 'channel'
   )
-  const allowedGroups = props.groupOptions ?? ['channel', 'model', 'lane', 'key']
+  const allowedGroups = props.groupOptions ?? [
+    'channel',
+    'model',
+    'lane',
+    'key',
+    'channel_model',
+  ]
   const visibleGroupOptions = GROUP_OPTIONS.filter((option) =>
     allowedGroups.includes(option.value)
   )
@@ -175,6 +183,22 @@ export function PbrAnalyticsDashboard(props: {
       .sort((a, b) => b.cost - a.cost)
   }, [items])
 
+  // 「渠道 × 模型」模式把 group 拆成渠道与模型两列；distribution 已按成本倒序。
+  const channelModelRows = useMemo(() => {
+    if (groupBy !== 'channel_model') return []
+    return distribution.map((row) => {
+      const [channel, model] = row.key.split(PBR_CHANNEL_MODEL_SEPARATOR)
+      return {
+        key: row.key,
+        channel: channel || '(未记录)',
+        model: model ?? '',
+        cost: row.cost,
+        requests: row.requests,
+        tokens: row.tokens,
+      }
+    })
+  }, [distribution, groupBy])
+
   const successRate =
     totals.requests > 0 ? (totals.successes / totals.requests) * 100 : 0
 
@@ -243,43 +267,80 @@ export function PbrAnalyticsDashboard(props: {
         </div>
 
         <div className='bg-card/60 overflow-x-auto rounded-lg border'>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='text-muted-foreground border-b text-left'>
-                <th className='px-4 py-2 font-medium'>
-                  {t(
-                    visibleGroupOptions.find((o) => o.value === groupBy)?.label ??
-                      'Group'
-                  )}
-                </th>
-                <th className='px-4 py-2 text-right font-medium'>
-                  {t('Upstream spend')}
-                </th>
-                <th className='px-4 py-2 text-right font-medium'>
-                  {t('Requests')}
-                </th>
-                <th className='px-4 py-2 text-right font-medium'>
-                  {t('Token count')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {distribution.map((row) => (
-                <tr key={row.key} className='border-b last:border-0'>
-                  <td className='px-4 py-2 font-mono'>{row.key}</td>
-                  <td className='px-4 py-2 text-right font-mono tabular-nums'>
-                    {formatCost(row.cost)}
-                  </td>
-                  <td className='px-4 py-2 text-right font-mono tabular-nums'>
-                    {formatNumber(row.requests)}
-                  </td>
-                  <td className='px-4 py-2 text-right font-mono tabular-nums'>
-                    {formatNumber(row.tokens)}
-                  </td>
+          {groupBy === 'channel_model' ? (
+            <table className='w-full text-sm'>
+              <thead>
+                <tr className='text-muted-foreground border-b text-left'>
+                  <th className='px-4 py-2 font-medium'>{t('Channel')}</th>
+                  <th className='px-4 py-2 font-medium'>{t('Model')}</th>
+                  <th className='px-4 py-2 text-right font-medium'>
+                    {t('Requests')}
+                  </th>
+                  <th className='px-4 py-2 text-right font-medium'>
+                    {t('Token count')}
+                  </th>
+                  <th className='px-4 py-2 text-right font-medium'>
+                    {t('Upstream spend')}
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {channelModelRows.map((row) => (
+                  <tr key={row.key} className='border-b last:border-0'>
+                    <td className='px-4 py-2 font-mono'>{row.channel}</td>
+                    <td className='px-4 py-2 font-mono'>{row.model}</td>
+                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                      {formatNumber(row.requests)}
+                    </td>
+                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                      {formatNumber(row.tokens)}
+                    </td>
+                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                      {formatCost(row.cost)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className='w-full text-sm'>
+              <thead>
+                <tr className='text-muted-foreground border-b text-left'>
+                  <th className='px-4 py-2 font-medium'>
+                    {t(
+                      visibleGroupOptions.find((o) => o.value === groupBy)
+                        ?.label ?? 'Group'
+                    )}
+                  </th>
+                  <th className='px-4 py-2 text-right font-medium'>
+                    {t('Upstream spend')}
+                  </th>
+                  <th className='px-4 py-2 text-right font-medium'>
+                    {t('Requests')}
+                  </th>
+                  <th className='px-4 py-2 text-right font-medium'>
+                    {t('Token count')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {distribution.map((row) => (
+                  <tr key={row.key} className='border-b last:border-0'>
+                    <td className='px-4 py-2 font-mono'>{row.key}</td>
+                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                      {formatCost(row.cost)}
+                    </td>
+                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                      {formatNumber(row.requests)}
+                    </td>
+                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                      {formatNumber(row.tokens)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </>
     )

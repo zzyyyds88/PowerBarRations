@@ -18,15 +18,6 @@ const (
 	NameRuleSuffix
 )
 
-type ModelSquareState string
-
-const (
-	ModelSquareVisible     ModelSquareState = "visible"
-	ModelSquareUnavailable ModelSquareState = "unavailable"
-	ModelSquareHidden      ModelSquareState = "hidden"
-	ModelSquarePartial     ModelSquareState = "partial"
-)
-
 type BoundChannel struct {
 	Name string `json:"name"`
 	Type int    `json:"type"`
@@ -38,7 +29,6 @@ type Model struct {
 	Description        string         `json:"description,omitempty" gorm:"type:text"`
 	Icon               string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
 	Tags               string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
-	VendorID           int            `json:"vendor_id,omitempty" gorm:"index"`
 	Endpoints          string         `json:"endpoints,omitempty" gorm:"type:text"`
 	SupportedEndpoints []string       `json:"supported_endpoints,omitempty" gorm:"-"`
 	Status             int            `json:"status" gorm:"default:1"`
@@ -55,9 +45,8 @@ type Model struct {
 	MatchedModels []string `json:"matched_models,omitempty" gorm:"-"`
 	MatchedCount  int      `json:"matched_count,omitempty" gorm:"-"`
 
-	HasMetadata            bool             `json:"has_metadata" gorm:"-"`
-	ConfiguredChannelCount int              `json:"configured_channel_count" gorm:"-"`
-	SquareState            ModelSquareState `json:"square_state" gorm:"-"`
+	HasMetadata            bool `json:"has_metadata" gorm:"-"`
+	ConfiguredChannelCount int  `json:"configured_channel_count" gorm:"-"`
 }
 
 // MatchesName applies a metadata rule to a concrete channel model name.
@@ -99,79 +88,6 @@ func resolveModelMetadata(records []Model, names []string) map[string]*Model {
 	return resolved
 }
 
-// FillModelSquareStates applies the same metadata policy as the public catalog
-// to live routes, then aggregates concrete models for metadata rule rows.
-func FillModelSquareStates(rows []*Model, configured map[string][]int, connections []ModelConnection) error {
-	var metadata []Model
-	if err := DB.Find(&metadata).Error; err != nil {
-		return err
-	}
-	nameSet := make(map[string]struct{}, len(configured))
-	for name := range configured {
-		nameSet[name] = struct{}{}
-	}
-	for _, row := range rows {
-		if row != nil && row.NameRule == NameRuleExact {
-			nameSet[row.ModelName] = struct{}{}
-		}
-	}
-	names := make([]string, 0, len(nameSet))
-	for name := range nameSet {
-		names = append(names, name)
-	}
-	resolved := resolveModelMetadata(metadata, names)
-	available := make(map[string]bool)
-	for _, connection := range connections {
-		available[connection.Model] = true
-	}
-	states := make(map[string]ModelSquareState, len(names))
-	for _, name := range names {
-		state := ModelSquareUnavailable
-		if policy := resolved[name]; policy != nil && policy.Status != 1 {
-			state = ModelSquareHidden
-		} else if available[name] {
-			state = ModelSquareVisible
-		}
-		states[name] = state
-	}
-	for _, row := range rows {
-		if row == nil {
-			continue
-		}
-		if row.NameRule == NameRuleExact {
-			row.SquareState = states[row.ModelName]
-			continue
-		}
-		total, visible, hidden := 0, 0, 0
-		for name := range configured {
-			if !row.MatchesName(name) {
-				continue
-			}
-			total++
-			switch states[name] {
-			case ModelSquareVisible:
-				visible++
-			case ModelSquareHidden:
-				hidden++
-			}
-		}
-		row.SquareState = ModelSquareUnavailable
-		switch {
-		case total == 0:
-			if row.Status != 1 {
-				row.SquareState = ModelSquareHidden
-			}
-		case hidden == total:
-			row.SquareState = ModelSquareHidden
-		case visible == total:
-			row.SquareState = ModelSquareVisible
-		case visible > 0:
-			row.SquareState = ModelSquarePartial
-		}
-	}
-	return nil
-}
-
 // GetConfiguredModelChannels includes disabled channels and reads no credentials.
 func GetConfiguredModelChannels() (map[string][]int, error) {
 	var channels []Channel
@@ -189,14 +105,14 @@ func GetConfiguredModelChannels() (map[string][]int, error) {
 
 // SearchModelsWithChannels augments metadata with concrete configured names.
 // Synthetic rows never persist and never affect the public pricing catalog.
-func SearchModelsWithChannels(keyword, vendor, status, syncOfficial string, offset, limit int) ([]*Model, int64, error) {
-	records, _, err := SearchModels(keyword, vendor, status, syncOfficial, 0, -1)
+func SearchModelsWithChannels(keyword, status, syncOfficial string, offset, limit int) ([]*Model, int64, error) {
+	records, _, err := SearchModels(keyword, status, syncOfficial, 0, -1)
 	if err != nil {
 		return nil, 0, err
 	}
 	_, filterStatus := parseModelStatusFilter(status)
 	_, filterSync := parseModelSyncFilter(syncOfficial)
-	if !filterStatus && !filterSync && (vendor == "" || vendor == "0") {
+	if !filterStatus && !filterSync {
 		configured, err := GetConfiguredModelChannels()
 		if err != nil {
 			return nil, 0, err
@@ -235,9 +151,6 @@ func SearchModelsWithChannels(keyword, vendor, status, syncOfficial string, offs
 
 func (mi *Model) Insert() error {
 	return metadataTransaction(func(tx *gorm.DB) error {
-		if err := validateModelVendor(tx, mi.VendorID); err != nil {
-			return err
-		}
 		now := common.GetTimestamp()
 		mi.CreatedTime, mi.UpdatedTime = now, now
 		status, syncOfficial := mi.Status, mi.SyncOfficial
@@ -260,12 +173,9 @@ func IsModelNameDuplicated(id int, name string) (bool, error) {
 
 func (mi *Model) Update() error {
 	return metadataTransaction(func(tx *gorm.DB) error {
-		if err := validateModelVendor(tx, mi.VendorID); err != nil {
-			return err
-		}
 		mi.UpdatedTime = common.GetTimestamp()
 		return tx.Model(&Model{}).Where("id = ?", mi.Id).
-			Select("model_name", "description", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
+			Select("model_name", "description", "icon", "tags", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
 	})
 }
 
@@ -318,7 +228,7 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 			var channels []Channel
 			// Read only routing fields. Lock channels in a consistent order, then
 			// update models and abilities in the same transaction as metadata.
-			if err := lockForUpdate(tx).Select("id", "models", "status", "group", "priority", "weight", "tag").Order("id").Find(&channels).Error; err != nil {
+			if err := lockForUpdate(tx).Select("id", "models", "status", "group", "tag").Order("id").Find(&channels).Error; err != nil {
 				return err
 			}
 			for _, channel := range channels {
@@ -382,26 +292,8 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 	return result, nil
 }
 
-func GetVendorModelCounts() (map[int64]int64, error) {
-	var stats []struct {
-		VendorID int64
-		Count    int64
-	}
-	if err := DB.Model(&Model{}).
-		Select("vendor_id as vendor_id, count(*) as count").
-		Group("vendor_id").
-		Scan(&stats).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[int64]int64, len(stats))
-	for _, s := range stats {
-		m[s.VendorID] = s.Count
-	}
-	return m, nil
-}
-
 func GetAllModels(offset int, limit int) ([]*Model, error) {
-	models, _, err := SearchModels("", "", "", "", offset, limit)
+	models, _, err := SearchModels("", "", "", offset, limit)
 	return models, err
 }
 
@@ -478,19 +370,12 @@ func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (m
 	return result, nil
 }
 
-func SearchModels(keyword string, vendor string, status string, syncOfficial string, offset int, limit int) ([]*Model, int64, error) {
+func SearchModels(keyword string, status string, syncOfficial string, offset int, limit int) ([]*Model, int64, error) {
 	var models []*Model
 	db := DB.Model(&Model{})
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where("model_name LIKE ? OR description LIKE ? OR tags LIKE ?", like, like, like)
-	}
-	if vendor != "" {
-		if vid, err := strconv.Atoi(vendor); err == nil {
-			db = db.Where("models.vendor_id = ?", vid)
-		} else {
-			db = db.Joins("JOIN vendors ON vendors.id = models.vendor_id").Where("vendors.name LIKE ?", "%"+vendor+"%")
-		}
 	}
 	if statusValue, ok := parseModelStatusFilter(status); ok {
 		db = db.Where("models.status = ?", statusValue)

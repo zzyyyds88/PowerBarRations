@@ -90,7 +90,7 @@ func GetLog(c *gin.Context) {
 
 // GetStats GET /api/v1/stats
 //
-// granularity=hour|day，from/to 为 Unix 秒，group_by=lane|channel|key|model。
+// granularity=hour|day，from/to 为 Unix 秒，group_by=lane|channel|key|model|channel_model。
 func GetStats(c *gin.Context) {
 	granularity := strings.ToLower(strings.TrimSpace(c.DefaultQuery("granularity", "hour")))
 	if granularity != "hour" && granularity != "day" {
@@ -99,9 +99,9 @@ func GetStats(c *gin.Context) {
 	}
 	groupBy := strings.ToLower(strings.TrimSpace(c.DefaultQuery("group_by", "lane")))
 	switch groupBy {
-	case "lane", "channel", "key", "model":
+	case "lane", "channel", "key", "model", "channel_model":
 	default:
-		apierr.Validation(c, "group_by must be lane, channel, key or model")
+		apierr.Validation(c, "group_by must be lane, channel, key, model or channel_model")
 		return
 	}
 	from, err := parseTimeQuery(c.Query("from"))
