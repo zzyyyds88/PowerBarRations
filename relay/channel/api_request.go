@@ -535,6 +535,10 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	resp, err := relayClient.Do(req)
 	if err != nil {
 		attemptTimeout.close()
+		// 等待响应头阶段的超时也是"真实失败"：上游接受连接但迟迟不发响应头时，
+		// Do() 直接返回，错误链里是 context.Canceled，与"客户端断开"同形。
+		// 必须在这里也翻译成超时，否则挂起型上游不会换人、不冷却（routing-spec §8）。
+		err = attemptTimeout.wrap(err)
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
@@ -641,6 +645,27 @@ func startPBRAttemptTimeout(c *gin.Context, req *http.Request, isStream bool) (*
 	return req.WithContext(ctx), timeout
 }
 
+// wrap 把我方计时器触发的取消翻译成超时错误。
+//
+// 计时器是 context.WithCancel（不是 WithTimeout），所以底层错误永远是
+// context.Canceled；客户端断开也是同一个错误。唯一可靠的区分依据就是 fired。
+// 这个翻译必须在**两个位置**都做（routing-spec §8）：
+//   - 等待响应头阶段：Do() 失败的返回路径；
+//   - 读取响应体阶段：pbrTimeoutBody.Read。
+//
+// 漏掉前者会让"上游卡住不发响应头"——最典型的上游故障——不触发任何故障转移。
+func (t *pbrAttemptTimeout) wrap(err error) error {
+	if err == nil || t == nil || !t.fired.Load() {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	// 双 %w：既让上层按超时分类（Classify 优先判 DeadlineExceeded），
+	// 又保留底层原因供日志/attempts 链排障。
+	return fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, err)
+}
+
 func (t *pbrAttemptTimeout) firstByte() {
 	if t == nil || !t.stopOnFirstRead || t.stopped {
 		return
@@ -674,9 +699,9 @@ func (b *pbrTimeoutBody) Read(p []byte) (int, error) {
 	if n > 0 {
 		b.timeout.firstByte()
 	}
-	if err != nil && b.timeout != nil && b.timeout.fired.Load() {
-		// 读失败是我们自己的超时造成的：按真实失败上报（routing-spec §8）
-		return n, fmt.Errorf("%w: pbr attempt timeout", context.DeadlineExceeded)
+	if err != nil {
+		// 读失败可能是我方超时造成的：统一走 wrap 翻译（routing-spec §8）
+		err = b.timeout.wrap(err)
 	}
 	return n, err
 }

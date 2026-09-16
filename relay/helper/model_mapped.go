@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	rootcommon "pbr/common"
+	"pbr/constant"
 	relaycommon "pbr/relay/common"
 	"pbr/relaykit/dto"
 	hostreasoning "pbr/setting/reasoning"
@@ -14,6 +15,22 @@ import (
 func ModelMappedHelper(c *gin.Context, info *relaycommon.RelayInfo, request dto.Request) error {
 	if info.ChannelMeta == nil {
 		info.ChannelMeta = &relaycommon.ChannelMeta{}
+	}
+
+	// PBR 路由已经在选路阶段按"成员级 upstream_model（非空且 ≠ 路由键）> 渠道
+	// model_mapping > 路由键"解析出上游真名并注入上下文（routing-spec §1.2）。
+	// 此时**不得**再用渠道 model_mapping 二次改写：那是以 OriginModelName 为起点
+	// 重新查一遍映射，会把成员级显式改名反向覆盖成渠道映射值。
+	// 非 PBR 链路（任务插件、显式渠道 pin、未走 PBR 的迁移期请求）没有这个上下文键，行为不变。
+	if pbrUpstream := rootcommon.GetContextKeyString(c, constant.ContextKeyPBRUpstreamModel); pbrUpstream != "" {
+		if info.UpstreamModelName == "" {
+			info.UpstreamModelName = pbrUpstream
+		}
+		info.IsModelMapped = info.UpstreamModelName != info.OriginModelName
+		if request != nil {
+			request.SetModelName(info.UpstreamModelName)
+		}
+		return nil
 	}
 
 	// map model name

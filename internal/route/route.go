@@ -60,12 +60,15 @@ func Classify(err *types.NewAPIError) ErrorKind {
 	if err == nil {
 		return ""
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		// DeadlineExceeded 是我们自己设的超时，属真实失败；Canceled 是客户端断开。
-		if errors.Is(err, context.Canceled) {
-			return KindCanceled
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		// 顺序很重要：我方每成员超时是把 context.Canceled 翻译成 DeadlineExceeded
+		// 的错误链（两种都 errors.Is 命中）。必须先判 DeadlineExceeded，否则自己的
+		// 超时会被当成"客户端断开"——不重试、不换人、不冷却（routing-spec §8）。
+		if errors.Is(err, context.DeadlineExceeded) {
+			// 超时是我们自己设的 deadline（含等待响应头阶段的翻译），属真实失败。
+			return KindSoftTransient
 		}
-		return KindSoftTransient
+		return KindCanceled
 	}
 	// 关键词优先于状态码（欠费类以 400 到达）。
 	if quotaKeywordMatcher != nil && quotaKeywordMatcher(err.Error()) {
@@ -157,6 +160,12 @@ type State struct {
 	// （routing-spec §9 / api-spec §4.4）。此前该字段声明了却从不赋值，
 	// 带 omitempty 导致响应里根本不出现，排障时无法定位"哪个成员慢"。
 	attemptStartedAt time.Time
+	// claimedProbe 本次请求真正占用的探测槽所属成员键（空 = 未占）。
+	//
+	// 探测槽是**车道级单槽**，但只有占槽者可以归还它：一个从未探测的并发请求
+	// 若也去清 ProbeMember，就会把别人的槽释放掉，"单探测"在并发下失效
+	// （routing-spec §2.2/§6）。因此归属必须记在请求态上。
+	claimedProbe string
 	// skipRecorded 已记过"被跳过"的成员键，避免同一请求多轮重试时
 	// 把同一个冷却中的成员重复写进尝试链。
 	skipRecorded map[string]bool
@@ -284,6 +293,9 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 		s.Runtime.withLock(func() {
 			s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, CurrentCircuitSettings())
 			s.Runtime.releaseProbe(key)
+			if s.claimedProbe == key {
+				s.claimedProbe = ""
+			}
 		})
 	}
 
@@ -415,6 +427,7 @@ func (s *State) chooseFailoverLocked() (int, bool) {
 					s.recordSkipLocked(key, memberLabel(&s.Route.Members[idx]))
 					continue
 				}
+				s.claimedProbe = key
 				s.Runtime.recordProbeStart(key, s.Runtime.circuitOpen(key))
 				chosen, probe = idx, true
 				return
@@ -452,6 +465,7 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 			if !s.Runtime.takeProbe(key) {
 				return
 			}
+			s.claimedProbe = key
 			s.Runtime.recordProbeStart(key, s.Runtime.circuitState(key) == CircuitOpen)
 		}
 		ok = true
@@ -546,6 +560,7 @@ func (s *State) claimProbe(c memberCandidate) bool {
 		if !s.Runtime.takeProbe(c.key) {
 			return
 		}
+		s.claimedProbe = c.key
 		s.Runtime.recordProbeStart(c.key, s.Runtime.circuitOpen(c.key))
 		claimed = true
 	})
@@ -640,6 +655,9 @@ func (s *State) OnSuccess() {
 	affinitySeconds := s.configFor(s.current).MemberAffinitySeconds
 	s.Runtime.withLock(func() {
 		s.Runtime.recordSuccess(key, affinitySeconds)
+		if s.claimedProbe == key {
+			s.claimedProbe = ""
+		}
 	})
 }
 
@@ -690,12 +708,24 @@ func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string
 //
 // 调用方必须在这些路径上调用，否则探测槽会被永久占住、该成员此后永远取不到探测机会：
 // 候选成员自身不可用被跳过、错误不换人（client_error/canceled）、请求收尾。
+//
+// **只归还自己占的那个**（s.claimedProbe）：调用方可能是从未探测过的并发请求
+// （收尾 defer 对每个 PBR 请求都会走一遍），若无条件清 ProbeMember，就会把别的
+// 在途探测者的槽释放掉，使"每车道同时只放行一个探测"在并发下失效
+// （routing-spec §2.2/§6）。
 func (s *State) ReleaseProbe() {
 	if s == nil || s.Runtime == nil {
 		return
 	}
+	s.mu.Lock()
+	key := s.claimedProbe
+	s.claimedProbe = ""
+	s.mu.Unlock()
+	if key == "" {
+		return
+	}
 	s.Runtime.withLock(func() {
-		s.Runtime.releaseProbe(s.Runtime.ProbeMember)
+		s.Runtime.releaseProbe(key)
 	})
 }
 

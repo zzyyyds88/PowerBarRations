@@ -59,9 +59,8 @@ func SetRelayRouter(router *gin.Engine) {
 		})
 	}
 
-	// `/pg/chat/completions` 是基座的"登录用户试玩"入口（UserAuth + 合成令牌）。
-	// W7 删除多用户面后不再注册——PBR 控制台的 Playground 直接用客户端密钥打
-	// `/v1/chat/completions`（ui-spec §6.10）。
+	// 基座的 `/pg/chat/completions`（登录用户试玩）随多用户面一起删除且不注册；
+	// 控制台试打台改用客户端密钥直连下面的 `/v1/chat/completions`（ui-spec §6.8）。
 	relayV1Router := router.Group("/v1")
 	relayV1Router.Use(middleware.RouteTag("relay"))
 	relayV1Router.Use(middleware.SystemPerformanceCheck())

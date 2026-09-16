@@ -6,12 +6,13 @@
 client_error 不冷却不换人、欠费 400 由关键词捕获）；成员耗尽快抛 503 不轮询等待；
 熔断三态 + 半开 + 指数退避；亲和默认 0。
 
-验收门四条：
+验收门五条：
 
 1. 指向必然 500 的假端点 → 熔断打开、错误快抛；
 2. 修好 → 半开窗口内自动复通（留时间戳证据）；
 3. probe 逐成员；
-4. 四模式各跑通一条。
+4. 四模式各跑通一条；
+5. **上游挂起（不发响应头）→ 按真实超时换人**，不得被判成"客户端取消"（审查 F1 回归门）。
 
 ## 做了什么
 
@@ -20,7 +21,7 @@ client_error 不冷却不换人、欠费 400 由关键词捕获）；成员耗�
 | 运行态 | `internal/route/runtime.go` | 按路由键分车道的进程内运行态：冷却、熔断三态（含半开与 `open_seconds × 2^k` 指数退避）、亲和、单探测槽、带时间戳事件 |
 | 选择算法 | `internal/route/route.go` | 四模式共用可用性判断（`可选 = 不在冷却 && 熔断 != open`）；failover 按 priority 降序、manual 只用 `active_member`、weighted 加权随机、round_robin 环形推进 |
 | 错误分类 | `internal/route/route.go`、`middleware/pbr_wiring.go` | 欠费关键词**优先于状态码**（条目属部署数据，接基座 `AutomaticDisableKeywords` 表）；client_error 不冷却不换人不记分；429 计分权重仅 0.2 |
-| 超时 | `relay/channel/api_request.go` | 非流式整响应超时、流式首事件超时（首字节到达即解除，提交后不设总超时）；取值车道默认叠加成员级覆盖 |
+| 超时 | `relay/channel/api_request.go` | 非流式整响应超时、流式首事件超时（首字节到达即解除，提交后不设总超时）；取值车道默认叠加成员级覆盖。**等待响应头阶段的超时也翻译成 deadline**（否则与客户端取消同形，见门 5） |
 | 观测与管理面 | `internal/api/route_health.go`、`internal/api/system_options.go`、`router/pbr-router.go` | `GET /lanes/{n}/health`、`POST /lanes/{n}/probe`、`POST /lanes/{n}/circuits/reset`、`POST /channels/{n}/test`、`GET/PUT /system/options` |
 | 测试基础设施 | `internal/testutil/fakeupstream` | 新增 `POST /__control` 运行时故障注入与"修好" |
 
@@ -37,7 +38,7 @@ go test ./internal/route/ -count=1
 收紧熔断参数（阈值 1、打开 2s、退避上限 10s）→ 建两渠道 → 建各模式车道 →
 按验收门逐项实测。
 
-## 结果（run-20260914-134334.log，PASS=31 FAIL=0）
+## 结果（run-20260914-134334.log，PASS=31 FAIL=0；门 5 见下方"审查整改"）
 
 | 验收门 | 命令 | 结论 | 证据 |
 |---|---|---|---|
@@ -49,6 +50,21 @@ go test ./internal/route/ -count=1
 | client_error 不冷却不换人 | 注入 400（无关键词） | 原样返回 **400**（不是 503）；该成员 `cooldown_until=0`、`failure_score=0` | 日志第 73–76 行 |
 | 欠费关键词 | 注入 400 + `Your credit balance is too low` | 归类 `hard_quota`，进冷却；单成员车道返回固定 503 | 日志第 78–80 行 |
 | 清除熔断/冷却 | `POST /lanes/solo-model/circuits/reset` | `{"reset":<清除的熔断器条目数>}`（api-spec §6.6） | 日志第 84 行 |
+
+### 审查整改（代码审查 F1，2026-09-16）
+
+- 缺陷：`startPBRAttemptTimeout` 用 `context.WithCancel`，`fired` 只在**读响应体**阶段翻译成
+  `DeadlineExceeded`。上游接受连接但迟迟不发响应头时 `Do()` 直接失败，错误链是 `context.Canceled`，
+  被 `Classify` 判成 `canceled` ⇒ **不重试、不换人、不冷却**——最典型的挂起型上游反而没有故障转移。
+- 修复：`pbrAttemptTimeout.wrap()` 统一两处翻译，`Do` 失败路径也走它；`Classify` 优先判
+  `DeadlineExceeded`（我方翻译后的错误链两者都命中）。
+- 回归证据（run-20260916-051012.log，PASS=37 FAIL=0）：门 5 让 channel-a 的上游模型
+  `hang-a` 4s 不发响应头（车道流式首事件超时 1s）→ 请求最终 `X-Served-By: channel=2:channel-b`，
+  响应体不是错误包，`hang-model` 健康快照里 `channel-a/hang-a` 为
+  `last_error_kind=soft_transient` 且 `cooldown_until>0`（修复前会是 `canceled` + 无冷却 + 直接把
+  `do_request_failed` 500 透给下游）。
+- 单测：`internal/route/probe_ownership_test.go::TestClassifyPrefersDeadlineOverCanceled`、
+  `relay/channel/pbr_attempt_timeout_test.go`。
 
 回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包）；
 `bash verify/w1/smoke.sh` 仍 PASS=22 FAIL=0（W2 未破坏 W1 的门）。
