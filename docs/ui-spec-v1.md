@@ -22,7 +22,7 @@
 
 **目录结构**（照上游）：`web/src/{assets,components,config,context,features,hooks,i18n,lib,routes,stores,styles}`，业务模块在 `features/<module>/`。
 
-**关键约定**：`features/<module>/api.ts` 只封装对 [`api-spec-v1.md`](api-spec-v1.md) 端点的调用；缺端点先补契约，禁止模块内直连或自造接口。
+**关键约定**：`features/<module>/api.ts` 只封装对 [`api-spec-v1.md`](api-spec-v1.md) 端点（或 §6.4 说明的基座运维面 `/api/channel/**`、`/api/console/**`）的调用；缺端点先补契约，禁止模块内直连第三方或自造接口。
 
 ---
 
@@ -125,6 +125,7 @@
 - 列出**全部路由键**（`GET /api/models`）：模型名、状态（`explicit` 已配车道可调用 / `unconfigured` 未配车道**不可调用**）、成员数、当前顺序摘要。
 - 点开某模型显示**成员链**（`GET /api/routes/{model}`）：渠道 + 顺序 + 优先级 + **解析后的上游真名**；未配车道时展示"建议成员链"（按渠道 priority）并标红不可调用。
 - **故障切换编辑**：把成员链固化为显式顺序（拖拽或填 priority），保存即写入 PBR 车道（名称 = 模型名，模式默认 `failover`）；`PUT /api/lanes/{model}`，成员 `{channel, upstream_model, priority}`（`upstream_model` 留空即用渠道映射）。
+  - 保存时的 `config` 必须取 **`GET /api/system/options` 的 `lane_defaults`**，不得在前端写死六键——否则用界面改一次成员顺序就会把该车道自定义过的超时/冷却/亲和静默重置为前端硬编码值。
 - **一键固化**：提供"为所有未配车道的模型生成车道"按钮（`POST /api/lanes/seed`，先 dry-run 预览）。
 - 保留上游模型元数据能力（来源 `/api/models/**`）：模型描述、标签、供应商等。
 - **验收**：为"模型1"设定"上游1 → 上游2"后，`GET /api/routes/模型1` 顺序一致；上游1 故障时请求逃逸到上游2；拖拽顺序与后端 priority 一致；**未配车道的模型请求返回 503**，配好后立即可用。
@@ -132,6 +133,7 @@
 ### 6.4 渠道管理 `/channels`、`/channels/$id`
 
 - 沿用上游 `channels`：卡片列表 + 表单（协议类型、**API 地址**、key（只写不读）、优先级、模型清单、**模型映射**、参数覆盖 JSON、代理、启用）+ 探活 + 批量操作 + 标签。
+- **数据面**：渠道页走基座 `/api/channel/**`（等价能力的运维面，PBRAuth 保护）；契约面 `GET/PUT /api/channels/{name}` 面向 AI/脚本。两侧读写同一张表，字段语义（`models` 数组 vs 逗号串、`status` vs `enabled`）由各自适配层转换。
 - **模型清单**：手工增删；另提供"从上游拉取"（`POST /api/channels/{name}/sync-models?dry_run=`，先看差异再确认）。
 - **模型映射**（`model_mapping`）：两列表格"路由键 → 上游真名"，用于上游命名与路由键不一致；车道成员默认用它解析上游名，成员级 `upstream_model` 可覆盖。
 - **验收**：列表与详情只显示 `key_prefix`；新增模型名后立即出现在模型管理页（未固化时标注不可调用）；配好映射后车道成员的上游真名随之变化；删除被车道引用的渠道返回 409 并给出引用清单。
@@ -145,8 +147,8 @@
 
 ### 6.6 请求日志 `/logs`、`/logs/$id`
 
-- 沿用上游 `usage-logs`：筛选（车道/渠道/令牌/模型/成功与否/时间）、虚拟滚动。
-- **详情**：attempts 逐尝试时间线（成员、状态、耗时、`error_kind`），区分 `cooldown`/`circuit_break`/`skipped` 状态色。
+- 沿用上游 `usage-logs` 的外壳：筛选（车道/渠道/令牌/模型/成功与否/时间）、虚拟滚动；**Common 分节的数据源是 PBR `GET /api/logs`**（基座 `/api/log/**` 只留给 Drawing / Task 两个分节）。
+- **详情**：`GET /api/logs/{id}` 的 `attempts` 逐尝试时间线（成员、状态、耗时、`error_kind`、`msg`），区分 `cooldown`/`circuit_break`/`skipped` 状态色；另展示 `lane`/`route_source`/`upstream_model`/`http_status`/`total_ms`/`estimated_cost`。
 - **验收**：一次含逃逸的请求能完整复现 `failed → success`；被跳过的成员有原因说明。
 
 ### 6.7 系统设置 `/settings`
@@ -155,21 +157,25 @@
 
 | 分节 | 内容 |
 |---|---|
-| 账户 | 修改登录口令（说明会改变管理密钥与会话） |
+| 账户 | 修改登录口令（说明会改变管理密钥与会话）；`PBR_ADMIN_KEY(S)` 生效时禁用该表单并说明原因（接口返回 409） |
 | API 密钥 | 管理密钥算法、当前前缀、"如何重算"说明与复制（供 AI） |
 | 外观 | 主题、语言（zh/zh-Hant/en） |
 | 备份 | 导出配置 / 导入（含 dry-run diff） |
 | 信息 | 版本、构建时间、运行时长、数据库路径（不含密钥） |
 | 单价 | 全局默认单价表（记账，非计费）；渠道级上游单价在渠道编辑页"上游单价"配置 |
 | 日志 | 日志保留天数、手动清理 |
-| 系统 | 自动禁用/自动恢复开关、失败阈值、半开周期、默认六键、自动禁用关键词表 |
+| 系统 | 自动禁用/自动恢复开关、失败阈值、半开周期、**默认六键（`GET/PUT /api/system/options.lane_defaults`）**、自动禁用关键词表 |
 
 - **删除**：支付设置、合规、OAuth/多用户相关子节。
-- **验收**：关键词增删回读一致；"自动恢复"默认开启且页面写明与旧系统相反。
+- **验收**：关键词增删回读一致；默认六键保存后回读一致，且新建/一键固化车道采用该值；"自动恢复"开关默认开启，页面必须写明：该开关只是允许写回 `enabled`，真正复通依赖"自动巡检"（默认关闭）或人工"测试全部渠道"。
 
 ### 6.8 试打台 `/playground`
 
 沿用上游 `playground`：模型选择 + 多轮消息 + 流式开关 + 思考参数（`enable_thinking`/`reasoning_effort` 成对）+ 温度/最大 token；展示流式输出、TTFT、用量与响应头 `X-Served-By`。
+
+- **数据面 = 模型面**：请求直连 `POST /v1/chat/completions`（流式/非流式同路径），鉴权用**使用者填入的客户端密钥**（`Authorization: Bearer pbr-...`），密钥存 `localStorage` 的 `pbr_playground_client_key`；**不得**用会话 Cookie 或合成 token 打模型面，也**不得**打已删除的 `/pg/chat/completions`。
+- 模型下拉的候选来自 `GET /api/models`；密钥缺失/无效时给出"填入或去令牌页创建"的引导（401/403 分别提示）。
+- **验收**：填入有效客户端密钥后能完成一次流式对话，页面显示 `X-Served-By` 与实际 TTFT/用量。
 
 ### 6.9 任务插件 `/task-plugins`
 
