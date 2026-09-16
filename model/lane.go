@@ -17,15 +17,20 @@ import (
 // 本文件实现 PowerBarRations 的路由核心：**请求里的模型名即路由键**。
 //
 // 解析顺序（见 docs/routing-spec-v1.md §1.1）：
-//  1. 同名显式车道（人工配置的成员链，支持改名/别名/池化）；
-//  2. 隐式车道：所有声明提供该模型的渠道，按渠道 priority 降序成链；
-//  3. 都没有 → 由调用方返回 503 No available channel for model <X>。
+//  1. 同名启用车道（人工配置的成员链，支持改名/别名/池化）；
+//  2. 否则没有可调用的路由 → 由调用方返回 503 No available channel for model <X>。
+//
+// 不存在"隐式车道"（ADR 0005）：渠道声明只是车道成员的候选来源，必须显式固化成
+// 车道后才可调用。上游真名解析：成员级覆盖 > 渠道 model_mapping > 路由键。
 //
 // 约定：priority 一律 **数字大者优先**（与上游渠道优先级语义一致）。
 
 const (
 	RouteSourceExplicit = "explicit"
+	// RouteSourceImplicit 已废弃（ADR 0005 删除隐式链），保留常量避免历史数据/调用方编译失败。
 	RouteSourceImplicit = "implicit"
+	// RouteSourceUnconfigured：渠道声明了该模型但没有对应启用车道 → 不可调用。
+	RouteSourceUnconfigured = "unconfigured"
 
 	LaneModeFailover   = "failover"
 	LaneModeManual     = "manual"
@@ -140,7 +145,7 @@ func ParseLaneRelayOverrides(raw string) LaneRelayOverrides {
 	return o
 }
 
-// Lane 显式车道：可选的覆盖层。
+// Lane 车道：唯一路由入口（ADR 0005）。
 type Lane struct {
 	Id   int    `json:"id" gorm:"primaryKey"`
 	Name string `json:"name" gorm:"unique;not null;index"`
@@ -209,6 +214,7 @@ func (r *ResolvedRoute) EffectiveConfig(member *RouteMember) LaneRelayConfig {
 type ModelSummary struct {
 	Model       string `json:"model"`
 	Source      string `json:"source"`
+	Routable    bool   `json:"routable"`
 	MemberCount int    `json:"member_count"`
 }
 
@@ -385,11 +391,6 @@ func ResolveRoute(modelName string) (*ResolvedRoute, error) {
 	}
 	// 命中归一化名后，路由键仍是请求原文（响应回填、日志、令牌判定都用原文）。
 	fallback.Model = modelName
-	for i := range fallback.Members {
-		if fallback.Source == RouteSourceImplicit {
-			fallback.Members[i].UpstreamModel = modelName
-		}
-	}
 	return fallback, nil
 }
 
@@ -397,7 +398,7 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	route := &ResolvedRoute{
 		Model:    modelName,
 		RouteKey: modelName,
-		Source:   RouteSourceImplicit,
+		Source:   RouteSourceUnconfigured,
 		Mode:     LaneModeFailover,
 		Config:   DefaultLaneRelayConfig(),
 		Members:  []RouteMember{},
@@ -406,7 +407,7 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 		return route, nil
 	}
 
-	// 1) 同名显式车道；否则按成员别名点名（PinnedMemberId 记录被点名成员）
+	// 唯一路由入口：同名启用车道；否则按成员别名点名（PinnedMemberId 记录被点名成员）。
 	lane, err := GetLaneByName(modelName)
 	var pinned *LaneMember
 	if err != nil {
@@ -418,39 +419,64 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 			return nil, err
 		}
 	}
-	// 显式车道被禁用时回落隐式链：显式层只是覆盖，关掉它就回到"渠道声明即可路由"的默认语义。
-	if lane != nil && lane.Enabled {
-		route.Source = RouteSourceExplicit
-		route.Mode = lane.Mode
-		route.RouteKey = lane.Name
-		route.Config = ParseLaneRelayConfig(lane.Config)
-		route.ActiveMember = lane.ActiveMember
-		if pinned != nil {
-			route.PinnedMemberId = pinned.Id
-		}
-		for _, m := range lane.Members {
-			name := ""
-			if ch, err := GetChannelById(m.ChannelId, false); err == nil && ch != nil {
-				name = ch.Name
-			}
-			route.Members = append(route.Members, RouteMember{
-				ChannelId:     m.ChannelId,
-				Channel:       name,
-				UpstreamModel: m.UpstreamModel,
-				PublicAlias:   m.PublicAlias,
-				Priority:      m.Priority,
-				Weight:        m.Weight,
-				MemberId:      m.Id,
-				Overrides:     m.Overrides,
-			})
-		}
-		sort.SliceStable(route.Members, func(i, j int) bool {
-			return route.Members[i].Priority > route.Members[j].Priority
-		})
+	// 没建车道 / 车道被停用 → 不可调用（ADR 0005）。渠道声明不参与直连。
+	if lane == nil || !lane.Enabled {
 		return route, nil
 	}
 
-	// 2) 隐式车道：所有声明提供该模型的渠道，按 priority 降序（相同则按 id 升序保证确定性）
+	route.Source = RouteSourceExplicit
+	route.Mode = lane.Mode
+	route.RouteKey = lane.Name
+	route.Config = ParseLaneRelayConfig(lane.Config)
+	route.ActiveMember = lane.ActiveMember
+	if pinned != nil {
+		route.PinnedMemberId = pinned.Id
+	}
+	for _, m := range lane.Members {
+		var ch *Channel
+		name := ""
+		if got, err := GetChannelById(m.ChannelId, false); err == nil && got != nil {
+			ch = got
+			name = got.Name
+		}
+		route.Members = append(route.Members, RouteMember{
+			ChannelId:     m.ChannelId,
+			Channel:       name,
+			UpstreamModel: effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
+			PublicAlias:   m.PublicAlias,
+			Priority:      m.Priority,
+			Weight:        m.Weight,
+			MemberId:      m.Id,
+			Overrides:     m.Overrides,
+		})
+	}
+	sort.SliceStable(route.Members, func(i, j int) bool {
+		return route.Members[i].Priority > route.Members[j].Priority
+	})
+	return route, nil
+}
+
+// effectiveUpstreamModel 计算成员最终发给上游的模型名（ADR 0005）。
+// 优先级：成员级显式改名（非空且 ≠ 路由键）> 渠道 model_mapping > 路由键。
+func effectiveUpstreamModel(channel *Channel, routeKey, memberUpstream string) string {
+	memberUpstream = strings.TrimSpace(memberUpstream)
+	if memberUpstream != "" && memberUpstream != routeKey {
+		return memberUpstream
+	}
+	if channel != nil {
+		if mapped := strings.TrimSpace(channel.ModelMappingMap()[routeKey]); mapped != "" {
+			return mapped
+		}
+	}
+	if memberUpstream != "" {
+		return memberUpstream
+	}
+	return routeKey
+}
+
+// suggestedMembers 返回"渠道声明"的候选成员（按渠道 priority 降序）。
+// 仅用于模型管理页展示与 POST /api/lanes/seed 一键固化，不参与运行期路由（ADR 0005）。
+func suggestedMembers(modelName string) ([]RouteMember, error) {
 	channels, err := listEnabledChannels()
 	if err != nil {
 		return nil, err
@@ -468,19 +494,99 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 		}
 		return cands[i].Id < cands[j].Id
 	})
+	members := make([]RouteMember, 0, len(cands))
 	for _, c := range cands {
-		route.Members = append(route.Members, RouteMember{
+		members = append(members, RouteMember{
 			ChannelId:     c.Id,
 			Channel:       c.Name,
-			UpstreamModel: modelName,
+			UpstreamModel: effectiveUpstreamModel(c, modelName, ""),
 			Priority:      int(c.GetPriority()),
 			Weight:        c.GetWeight(),
 		})
 	}
-	return route, nil
+	return members, nil
 }
 
-// ListModelSummaries 汇总全部可路由模型（显式车道 + 渠道声明的模型）。
+// ResolveRouteForDisplay 供管理面展示：没有车道时返回"建议成员链"（渠道声明，
+// routable=false），而不是空链。运行期路由仍走 ResolveRoute（仅车道）。
+func ResolveRouteForDisplay(modelName string) (*ResolvedRoute, error) {
+	resolved, err := ResolveRoute(modelName)
+	if err != nil {
+		return nil, err
+	}
+	if resolved.Source == RouteSourceExplicit {
+		return resolved, nil
+	}
+	members, err := suggestedMembers(resolved.RouteKey)
+	if err != nil {
+		return nil, err
+	}
+	resolved.Members = members
+	return resolved, nil
+}
+
+// SeedLanes 为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
+// 幂等：已有同名车道的模型跳过。dryRun 只返回将创建的车道名，不落库。
+func SeedLanes(dryRun bool) (created []string, skipped []string, err error) {
+	channels, err := listEnabledChannels()
+	if err != nil {
+		return nil, nil, err
+	}
+	candidates := map[string]bool{}
+	for _, ch := range channels {
+		for _, m := range ch.GetModels() {
+			if m = strings.TrimSpace(m); m != "" {
+				candidates[m] = true
+			}
+		}
+	}
+	names := make([]string, 0, len(candidates))
+	for name := range candidates {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		existing, getErr := GetLaneByName(name)
+		if getErr == nil && existing != nil {
+			skipped = append(skipped, name)
+			continue
+		}
+		if getErr != nil && !errors.Is(getErr, gorm.ErrRecordNotFound) {
+			return created, skipped, getErr
+		}
+		members, memberErr := suggestedMembers(name)
+		if memberErr != nil {
+			return created, skipped, memberErr
+		}
+		if len(members) == 0 {
+			skipped = append(skipped, name)
+			continue
+		}
+		if dryRun {
+			created = append(created, name)
+			continue
+		}
+		lane := &Lane{Name: name, Enabled: true, Mode: LaneModeFailover}
+		raw, _ := json.Marshal(DefaultLaneRelayConfig())
+		lane.Config = string(raw)
+		for _, m := range members {
+			// 成员 upstream_model 留空 → 运行期用渠道 model_mapping 解析（ADR 0005）。
+			lane.Members = append(lane.Members, LaneMember{
+				ChannelId: m.ChannelId,
+				Priority:  m.Priority,
+			})
+		}
+		if err := UpsertLane(lane); err != nil {
+			return created, skipped, err
+		}
+		created = append(created, name)
+	}
+	return created, skipped, nil
+}
+
+// ListModelSummaries 汇总全部路由键：已配车道的（routable=true）与渠道声明但
+// 未配车道的（source=unconfigured，routable=false）。
 func ListModelSummaries() ([]ModelSummary, error) {
 	seen := map[string]*ModelSummary{}
 
@@ -494,7 +600,7 @@ func ListModelSummaries() ([]ModelSummary, error) {
 		}
 		s, ok := seen[lane.Name]
 		if !ok {
-			s = &ModelSummary{Model: lane.Name, Source: RouteSourceExplicit}
+			s = &ModelSummary{Model: lane.Name, Source: RouteSourceExplicit, Routable: true}
 			seen[lane.Name] = s
 		}
 		s.MemberCount = len(lane.Members)
@@ -511,13 +617,13 @@ func ListModelSummaries() ([]ModelSummary, error) {
 				continue
 			}
 			if s, ok := seen[m]; ok {
-				// 显式车道已覆盖该模型：成员链以显式为准，隐式渠道不计入计数
-				if s.Source == RouteSourceImplicit {
+				// 已配车道的模型以车道为准，候选渠道不计入计数
+				if s.Source != RouteSourceExplicit {
 					s.MemberCount++
 				}
 				continue
 			}
-			seen[m] = &ModelSummary{Model: m, Source: RouteSourceImplicit, MemberCount: 1}
+			seen[m] = &ModelSummary{Model: m, Source: RouteSourceUnconfigured, Routable: false, MemberCount: 1}
 		}
 	}
 

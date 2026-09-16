@@ -864,7 +864,10 @@ func openAPIPaths() gin.H {
 			"post": secured("post", "从上游拉取模型清单", append(pathParam("name"), dryRunParam))["post"],
 		},
 		"/lanes": gin.H{
-			"get": secured("get", "显式车道列表", nil)["get"],
+			"get": secured("get", "车道列表", nil)["get"],
+		},
+		"/lanes/seed": gin.H{
+			"post": secured("post", "为未配车道的模型按渠道 priority 一键生成 failover 车道（幂等）", []gin.H{dryRunParam})["post"],
 		},
 		"/lanes/{name}": gin.H{
 			"get":    secured("get", "车道详情", pathParam("name"))["get"],
