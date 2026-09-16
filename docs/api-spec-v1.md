@@ -648,12 +648,11 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 变更审计（控制台视图） | `/api/console/audit` |
 | 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
 | 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
-| 任务插件 | `/api/plugin/task/**` |
 | 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
-| 管理员日志 / 任务视图 | `/api/log/**`、`/api/task`、`/api/mj/` |
+| 管理员日志 | `/api/log/**`、`/api/mj/` |
 | 系统任务 / 系统信息 / 性能 | `/api/system-task/**`、`/api/system-info/**`、`/api/performance/**`、`/api/perf-metrics/**` |
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
-导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据、任务插件等"控制台运维面"
+导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据等"控制台运维面"
 以同一管理密钥在 `/api/console/**` 及上述基座路径可用。要把某一项提升为稳定契约，先在 §5 补端点再实现。
 

@@ -74,7 +74,7 @@
 | `system-info` | **保留** | 系统信息 |
 | `performance-metrics` | **保留** | 性能指标 |
 | `system-update` | **删除** | 上游版本更新检查（直连上游 releases）：自用部署不跟随上游发布，不出现「系统更新/最新版本/发布时间」入口与通告 |
-| `task-plugins` | **保留** | JS 任务插件 |
+| `task-plugins` | **删除** | JS 任务插件/异步生成任务（文生视频/音乐/图）：个人自用不接，整链路移除（管理页、渠道类型 61、插件绑定联动、任务日志 Task 分节、`/v1/tasks` 数据面） |
 | `model-pricing` | **保留（收窄）** | 上游单价表：只做成本折算，**不出现倍率/计费表达式/分组定价等下游计费编辑器**（本项目无计费） |
 | `about` / `legal` | **保留** | 关于/法律页（品牌替换）；关于页空态**不指向上游仓库**，错误页**无上游 issue 反馈链接** |
 | `errors` | **保留** | 错误页 |
@@ -82,7 +82,6 @@
 | `auth` | **重写** | 改为 PBR 口令登录/会话 |
 | `users` / `profile` / `security` / `rankings` | **删除** | 多用户/账号安全 |
 | `wallet` / `pricing` / `redemption-codes` / `subscriptions` | **删除** | 计费/支付/订阅/兑换 |
-| （上游无） | **新增** | 若上游缺"录像/视频任务"独立页，按需补；否则随 `task-plugins` 暴露 |
 
 **删除的执行口径**：连同其 `routes/` 条目、菜单项、i18n 键、以及对应的前端 API 调用一起删；后端对应路由已在 W7 物理删除，不会残留可点入口。
 
@@ -142,7 +141,7 @@
 ### 6.4 渠道管理 `/channels`、`/channels/$id`
 
 - 沿用上游 `channels`：卡片列表 + 表单（协议类型、**API 地址**、key（只写不读）、模型清单、**模型映射**、**上游单价**、参数覆盖 JSON、代理、启用）+ 探活 + 批量操作 + 标签。**渠道表单没有优先级与权重**（两字段已随路由收敛物理删除）。
-- **创建/编辑走居中弹窗**（`ChannelMutateDialog`）：打开即表单可编辑，**没有厂商市场选择器、没有两步向导**。协议类型在「基本信息」分区用**可搜索的类型下拉**选择（内置类型 + 任务插件项）；选中插件自动回填名称/模型/地址；创建模式下名称为空时自动填类型名。Escape/Cancel 直接关闭弹窗并丢弃未保存草稿。**弹窗只有一层滚动**（Tab 分区内容滚动、Tab 栏钉住），不出现双层滚动条。
+- **创建/编辑走居中弹窗**（`ChannelMutateDialog`）：打开即表单可编辑，**没有厂商市场选择器、没有两步向导**。协议类型在「基本信息」分区用**可搜索的类型下拉**选择（内置类型）；创建模式下名称为空时自动填类型名。Escape/Cancel 直接关闭弹窗并丢弃未保存草稿。**弹窗只有一层滚动**（Tab 分区内容滚动、Tab 栏钉住），不出现双层滚动条。
 - **模型清单的填充只靠上游自动探测**（见下）：模型区**没有预设分组、「Fill Related Models」等快捷填充**（`/api/prefill_groups` 前端不再调用），只保留「Copy All / Clear All」工具。
 - **上游单价的落点**：「连接与模型」分区**右栏、紧跟模型清单**——**表格跟随模型清单**：每个模型恰好一行、按模型清单顺序渲染，模型名只读不可编辑。只有 input/output/cache_read/cache_write 中至少填了一项的模型才写入 `pbr_prices`；全空模型不落库，避免全 0 条目命中后覆盖全局默认价。系统设置 → 模型 → 「上游单价表」只是**未配渠道价时的兜底默认**；折算优先级为 **渠道价 > 全局默认 > 不折算**。
 - **数据面**：渠道页走基座 `/api/channel/**`（等价能力的运维面，PBRAuth 保护）；契约面 `GET/PUT /api/channels/{name}` 面向 AI/脚本。两侧读写同一张表，字段语义（`models` 数组 vs 逗号串、`status` vs `enabled`）由各自适配层转换。
@@ -159,7 +158,7 @@
 
 ### 6.6 请求日志 `/logs`、`/logs/$id`
 
-- 保留上游 `usage-logs` 外壳：Common / Drawing / Task 三个基座分节不变（数据源仍是基座 `/api/log/**`），**另加一个 PBR 分节**（页签 "PBR Requests"）。
+- 保留上游 `usage-logs` 外壳：Common / Drawing 两个基座分节不变（数据源仍是基座 `/api/log/**`；Task 分节随任务插件子系统移除），**另加一个 PBR 分节**（页签 "PBR Requests"）。
 - **PBR 分节的数据源是 `GET /api/logs`**：筛选车道 / 渠道 / 令牌 / 请求模型 / 成功与否 + 游标翻页；列表展示时间、车道、渠道、上游真名、密钥名、结果、attempts 摘要、总耗时、折算成本。
 - **详情**：`GET /api/logs/{id}` 的 `attempts` 逐尝试时间线（成员、状态、`duration_ms`、`error_kind`、`msg`），区分 `cooldown`/`circuit_break`/`skipped` 状态色；另展示 `lane`/`route_source`/`upstream_model`/`http_status`/token 用量/`total_ms`/`estimated_cost`。
 - **验收**：一次含逃逸的请求能完整复现 `failed → success`；被跳过的成员有原因说明。
@@ -189,10 +188,6 @@
 - **数据面 = 模型面**：请求直连 `POST /v1/chat/completions`（流式/非流式同路径），鉴权用**使用者填入的客户端密钥**（`Authorization: Bearer pbr-...`），密钥存 `localStorage` 的 `pbr_playground_client_key`；**不得**用会话 Cookie 或合成 token 打模型面，也**不得**打已删除的 `/pg/chat/completions`。
 - 模型下拉的候选来自 `GET /api/models`；密钥缺失/无效时给出"填入或去令牌页创建"的引导（401/403 分别提示）。
 - **验收**：填入有效客户端密钥后能完成一次流式对话，页面显示 `X-Served-By` 与实际 TTFT/用量。
-
-### 6.9 任务插件 `/task-plugins`
-
-沿用上游 `task-plugins`：列出/管理 JS 任务插件；后端 `/api/plugin/task/**` 已保留。
 
 ---
 

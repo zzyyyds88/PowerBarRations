@@ -57,7 +57,7 @@
 
 ### 1.4 保留范围（**默认全部保留**，不因个人自用而裁剪）
 
-渠道、车道（新）、模型目录与厂商适配层、客户端密钥、请求日志、用量与记账统计、Dashboard、Playground、系统设置（relay 相关）、初始化向导、错误页、**图像/视频/音乐生成任务（路由与页面均保留并暴露）**、JS 任务插件、WebSocket 上游池。
+渠道、车道（新）、模型目录与厂商适配层、客户端密钥、请求日志、用量与记账统计、Dashboard、Playground、系统设置（relay 相关）、初始化向导、错误页、WebSocket 上游池。**任务插件/异步生成任务子系统（JS 插件、/v1/tasks、任务日志、任务插件管理页）已整体移除**（个人自用不接文生视频/音乐服务）。
 
 > 与"正确转发"无关的重型子系统**不物理删除**，也不在控制台隐藏；默认保持可用。
 > **部署形态**：仅 Docker（单容器）。不考虑桌面端，不 vendor electron。
@@ -111,7 +111,7 @@
 | **`setting/reasoning`** | ~60 | **思考后缀三态与 effort 解析**（即"思考参数沿用现状"的现成实现） |
 | `setting/model_setting` / `operation_setting` | 37 / 24 | 全局设置与 `SelfUseModeEnabled` |
 | `setting/ratio_setting` | ~40 | 单价/倍率（**成本折算可直接复用**） |
-| `logger` / `model` / `pkg/jsplugin` / `plugins` / `pkg/billingexpr` | 23 / 4 / 6 / 2 / 2 | 日志、任务与插件类型 |
+| `logger` / `model` / `pkg/billingexpr` | 23 / 4 / 2 | 日志与任务类型（任务插件子系统已移除） |
 
 同时 `relay/common/relay_info.go` 的 `RelayInfo` 内嵌 `BillingSettler`、订阅、预扣费、配额钳制、阶梯计费快照等字段。
 
@@ -127,10 +127,10 @@
 
 控制台**整体取自 new-api 上游 `web/`**（Rsbuild + React + TanStack Router + Base UI + Tailwind），在其上做减法与接线改造：删多用户/计费页面、把认证换成 PBR 口令会话、把"模型管理"接入 PBR 的成员链（故障切换）。
 
-**为什么直接搬**：PBR 已保留 new-api 的管理面后端（渠道 `/api/channel/**`、模型元数据 `/api/models/**`、厂商、部署、任务插件、系统任务、性能、日志、`/api/option`、系统信息等 **93 个路由**），路径与前端调用**一一对应**；而删除的多用户/计费接口，恰好是本项目明确不要的部分。反过来，octopus 蓝本只有少量页面与 PBR 对应，其余都要重写。因此**在前端源码上做减法**比"以另一上游为蓝本重做"风险与工作量都更低，也更符合用户"其他功能全都要"的要求。
+**为什么直接搬**：PBR 已保留 new-api 的管理面后端（渠道 `/api/channel/**`、模型元数据 `/api/models/**`、厂商、部署、系统任务、性能、日志、`/api/option`、系统信息等 **93 个路由**），路径与前端调用**一一对应**；而删除的多用户/计费接口，恰好是本项目明确不要的部分。反过来，octopus 蓝本只有少量页面与 PBR 对应，其余都要重写。因此**在前端源码上做减法**比"以另一上游为蓝本重做"风险与工作量都更低，也更符合用户"其他功能全都要"的要求。
 
 - **构建**：Rsbuild（上游默认），产物交 Go `embed`；包管理沿用上游 `bun.lock`（如环境不便可用 pnpm）。
-- **保留**：渠道、模型、令牌、日志、仪表盘（数据看板）、试打台、系统设置、任务插件、系统信息、性能指标、关于/法律页等**除多用户/计费外全部**。
+- **保留**：渠道、模型、令牌、日志、仪表盘（数据看板）、试打台、系统设置、系统信息、性能指标、关于/法律页等**除多用户/计费外全部**。
 - **删除**：用户/注册/登录（换 PBR 认证）、钱包、充值、订阅、兑换码、排名、定价同步、签到、个人中心、2FA/passkey 等。
 - **改造点**（唯一实质改造）：**模型管理页内嵌成员链（故障切换）**——见 §7.7。
 
@@ -289,7 +289,7 @@ AI 侧的全部运维动作——建渠道、建/改车道、调成员顺序、�
 
 - **蓝本 = new-api 上游前端**（Rsbuild + React + TanStack Router + Base UI + Tailwind）：**直接整体搬迁，做减法（删多用户/计费）+ 接线（认证、成员链）**，而非另起炉灶。
 - **认证极简**：无账号，只有登录口令；首启设置口令，之后登录换取 **HttpOnly 会话 Cookie**（浏览器不存管理密钥）。无注册/找回/OAuth/passkey/2FA。
-- **页面集合**（保留上游页面，删多用户/计费）：数据看板、渠道管理、模型管理（含成员链/故障切换）、令牌、请求日志、任务插件、系统信息、性能指标、系统设置、试打台、关于/法律页等。
+- **页面集合**（保留上游页面，删多用户/计费）：数据看板、渠道管理、模型管理（含成员链/故障切换）、令牌、请求日志、系统信息、性能指标、系统设置、试打台、关于/法律页等。
 - **实时机制**：车道运行态经 SSE 推送 + 30s 轮询兜底（PBR 自有 `/api/route-events`）。
 - **产物形态**：Rsbuild 构建产物 embed 进二进制，单进程同时服务 `/v1/*`、`/api/*` 与静态控制台。
 - **品牌**：全量替换为 PowerBarRations（见 §17）。
@@ -419,7 +419,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 - `relay/channel/**`：40 家厂商适配器**原样复用**。
 - `relay/` 转发管道：协议转换、SSE 流式、`relay/helper`（价格相关函数除外）、`relaykit/`、`dto/`、`constant/`、`common/`（必要部分）、`i18n/`。
 - `web/**`：**直接搬迁 new-api 上游前端**（见 §2.8 / ui-spec-v1.md），全量替换品牌；删除计费/多用户页面，其余保留。
-- 图像/视频/任务/插件/WS 池代码：保留，不删。
+- WS 池代码：保留，不删。任务插件/异步任务子系统与 JS 插件基座已整体移除；Midjourney（独立任务系统）保留。
 
 ### 10.2 三段式减脂
 
@@ -431,7 +431,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 **范围红线**：只裁 §1.3 的计费/支付与多用户/账号安全两类，**基座其余管理面一律保留**（渠道运维
 `/api/channel/**`、模型元数据 `/api/models/**`、
-任务插件 `/api/plugin/task/**`、系统任务、性能、预填组、管理员日志 `/api/log`、`/api/option`、
+系统任务、性能、预填组、管理员日志 `/api/log`、`/api/option`、
 静态内容页；**后续增补**：厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` 已按
 "本项目不需要"物理删除，见 §16 的收敛记录）。
 
@@ -470,8 +470,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
   （管理密钥）；实现形态是 `middleware/pbr_auth.go` 的 `PBRAuth`——基座的 `AdminAuth`/`RootAuth`
   依赖用户会话与角色，W7 随多用户面一并删除。`POST /api/channel/:id/key` 去掉已永远无法满足的
   2FA/passkey 安全证明（PBR 无用户体系，该证明只会让路由不可用），只保留 `PBRAuth`。
-- `service/authz` 的权限常量与 `middleware.RequirePermission` 保留——它们仍挂在保留的渠道/插件/
-  审计路由上；删除的只是"角色-用户授权"体系与 `/api/authz/catalog`。
+- `service/authz` 的权限常量与 `middleware.RequirePermission` 保留——它们仍挂在保留的渠道/审计路由上；删除的只是"角色-用户授权"体系与 `/api/authz/catalog`。
 - 成本折算改由 PBR 单价表承担（§16.9#7），`estimated_cost` 不再从基座 quota 反算。
 
 **验收**：`go build ./...`、`go vet ./...`、`go test ./...`、`cd web && pnpm build && pnpm lint`
@@ -721,7 +720,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | # | 项 | 决定 |
 |---|---|---|
 | 1 | SSE 鉴权 | 管理面 SSE 走会话 Cookie（`fetch` + `ReadableStream`，`credentials: same-origin`；**不用 `EventSource`**，以便统一错误处理与中断）；密钥不进 URL，也不放查询串 |
-| 2 | 图像/视频/任务路由 | **与 chat 同一套**：`model` 按 §1.1 解析到成员链，选成员走同一路由核心；任务适配器仍自行负责 action/轮询/结果解析，只是"打给谁"由路由核心决定 |
+| 2 | ~~图像/视频/任务路由~~ | **已随任务插件子系统移除**；Midjourney（独立 MJ 任务系统）不受影响 |
 | 3 | 车道粘滞 | 车道级共享当前成员（照搬线上）；每个模型一条车道，模型之间互不影响 |
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
 | 5 | Playground | **保留**（控制台内，排障用）。模型面只认客户端密钥，因此试打台由使用者填入客户端密钥，直连 `/v1/chat/completions`（不新增管理面转发端点） |
