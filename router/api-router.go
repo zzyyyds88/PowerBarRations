@@ -14,7 +14,7 @@ import (
 // 用户 CRUD 与登录、2FA/passkey/OAuth/邮箱绑定、签到、排行榜、用户分组、个人令牌、
 // 充值/订阅/兑换码/支付回调、定价与倍率同步、用户自助日志与用量统计等一律移除。
 //
-// 保留的运维面（渠道、模型元数据、厂商、部署、任务插件、系统任务、性能、预填组、
+// 保留的运维面（渠道、模型元数据、厂商、任务插件、系统任务、性能、预填组、
 // 管理员日志与审计、选项、静态内容）**全部改挂 PBR 管理密钥**（`PBRAuth`）：
 // 基座的 `AdminAuth`/`RootAuth` 依赖用户会话与角色，PBR 没有用户体系，挂它们等于
 // 这些路由永远 401。token-spec §2 规定管理密钥即全量权限，因此也不再挂按角色的
@@ -149,32 +149,6 @@ func SetApiRouter(router *gin.Engine) {
 			modelsRoute.POST("/", controller.CreateModelMeta)
 			modelsRoute.PUT("/", controller.UpdateModelMeta)
 			modelsRoute.DELETE("/:id", controller.DeleteModelMeta)
-		}
-
-		// Deployments (model deployment management)
-		deploymentsRoute := apiRouter.Group("/deployments")
-		deploymentsRoute.Use(middleware.PBRAuth())
-		{
-			deploymentsRoute.GET("/settings", controller.GetModelDeploymentSettings)
-			deploymentsRoute.POST("/settings/test-connection", controller.TestIoNetConnection)
-			deploymentsRoute.GET("/", controller.GetAllDeployments)
-			deploymentsRoute.GET("/search", controller.SearchDeployments)
-			deploymentsRoute.POST("/test-connection", controller.TestIoNetConnection)
-			deploymentsRoute.GET("/hardware-types", controller.GetHardwareTypes)
-			deploymentsRoute.GET("/locations", controller.GetLocations)
-			deploymentsRoute.GET("/available-replicas", controller.GetAvailableReplicas)
-			deploymentsRoute.POST("/price-estimation", controller.GetPriceEstimation)
-			deploymentsRoute.GET("/check-name", controller.CheckClusterNameAvailability)
-			deploymentsRoute.POST("/", controller.CreateDeployment)
-
-			deploymentsRoute.GET("/:id", controller.GetDeployment)
-			deploymentsRoute.GET("/:id/logs", controller.GetDeploymentLogs)
-			deploymentsRoute.GET("/:id/containers", controller.ListDeploymentContainers)
-			deploymentsRoute.GET("/:id/containers/:container_id", controller.GetContainerDetails)
-			deploymentsRoute.PUT("/:id", controller.UpdateDeployment)
-			deploymentsRoute.PUT("/:id/name", controller.UpdateDeploymentName)
-			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
-			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
 		}
 
 	}

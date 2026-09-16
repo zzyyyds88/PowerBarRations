@@ -25,7 +25,6 @@ const legacyOrigin = 'https://legacy-route.invalid'
 const legacyConsoleRoutes: Record<string, string> = {
   '/console': '/dashboard',
   '/console/models': '/models',
-  '/console/deployment': '/models/deployments',
   '/console/channel': '/channels',
   '/console/token': '/keys',
   '/console/playground': '/playground',
@@ -42,7 +41,6 @@ const legacySettingsTabs: Record<string, string> = {
   chats: '/system-settings/content/chat',
   drawing: '/system-settings/content/drawing',
   models: '/system-settings/models/global',
-  'model-deployment': '/system-settings/models/model-deployment',
   performance: '/system-settings/operations/performance',
   system: '/system-settings/site/system-info',
   other: '/system-settings/site/system-info',
