@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
@@ -40,7 +39,7 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { getNameRuleConfig } from '../constants'
 import { parseModelTags, formatEndpointsDisplay } from '../lib'
 import { getModelChannelState } from '../lib/model-utils'
-import type { Model, Vendor } from '../types'
+import type { Model } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
 import { ModelSquareStatus } from './model-square-status'
@@ -48,17 +47,12 @@ import { ModelUnitPriceCell } from './model-unit-price-cell'
 import { useModels } from './models-provider'
 
 export function useModelsColumns(
-  vendors: Vendor[] = [],
   _pricing?: ModelPricingConfig,
   pricingState?: 'loading' | 'error'
 ): ColumnDef<Model>[] {
   const { t } = useTranslation()
   const canPrice = useCanEditModelPricing()
   const { setCurrentRow, setOpen } = useModels()
-  const vendorMap = useMemo(
-    () => new Map(vendors.map((vendor) => [vendor.id, vendor])),
-    [vendors]
-  )
   const rules = getNameRuleConfig(t)
   return [
     {
@@ -93,8 +87,7 @@ export function useModelsColumns(
       meta: { mobileTitle: true },
       cell: ({ row }) => {
         const model = row.original
-        const vendor = vendorMap.get(model.vendor_id ?? 0)
-        const iconKey = model.icon || vendor?.icon || model.model_name[0]
+        const iconKey = model.icon || model.model_name[0]
         return (
           <div className='flex max-w-[320px] min-w-0 items-start gap-2.5 py-1'>
             <span className='mt-1 flex size-6 shrink-0 items-center justify-center'>
@@ -119,11 +112,9 @@ export function useModelsColumns(
                 />
               </div>
               <div className='text-muted-foreground mt-1 flex min-w-0 items-center gap-2 text-xs'>
-                <span className='truncate' title={vendor?.name}>
-                  {model.id > 0
-                    ? (vendor?.name ?? t('No vendor'))
-                    : t('Missing metadata')}
-                </span>
+                {model.id <= 0 && (
+                  <span className='truncate'>{t('Missing metadata')}</span>
+                )}
                 {model.name_rule !== 0 && (
                   <span className='shrink-0'>
                     {rules[model.name_rule as 0 | 1 | 2 | 3]?.label} ·{' '}
@@ -265,18 +256,6 @@ export function useModelsColumns(
       header: t('ID'),
       cell: ({ row }) => row.original.id || '—',
       size: 65,
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'vendor_id',
-      header: t('Vendor'),
-      size: 150,
-      enableSorting: false,
-      cell: ({ row }) => (
-        <TruncatedCell>
-          {vendorMap.get(row.original.vendor_id ?? 0)?.name ?? '—'}
-        </TruncatedCell>
-      ),
       meta: { mobileHidden: true },
     },
     {

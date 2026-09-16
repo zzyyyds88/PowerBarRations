@@ -915,7 +915,7 @@ func TestApiRouterDroppedBillingAndUserRoutes(t *testing.T) {
 		"/api/redemption/", "/api/subscription/plans", "/api/pricing",
 		"/api/ratio_config", "/api/ratio_sync/channels", "/api/group/",
 		"/api/data/", "/api/log/self", "/api/log/stat", "/api/usage/token/",
-		"/api/option/model_pricing", "/api/custom-oauth-provider/",
+		"/api/option/model_pricing", "/api/custom-oauth-provider/", "/api/vendors/",
 	} {
 		t.Run(path, func(t *testing.T) {
 			response := performPluginRequest(outer, http.MethodGet, path)
@@ -930,7 +930,7 @@ func TestApiRouterRetainedRoutesRequireAdminKey(t *testing.T) {
 
 	outer := gin.New()
 	SetApiRouter(outer)
-	for _, path := range []string{"/api/console/audit", "/api/channel/", "/api/console/models/", "/api/vendors/", "/api/option/"} {
+	for _, path := range []string{"/api/console/audit", "/api/channel/", "/api/console/models/", "/api/option/"} {
 		t.Run(path, func(t *testing.T) {
 			response := performPluginRequest(outer, http.MethodGet, path)
 			assert.Equal(t, http.StatusUnauthorized, response.Code)

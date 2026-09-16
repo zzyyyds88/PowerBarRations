@@ -225,13 +225,6 @@ it('requests channel models and distinguishes catalog policy from availability u
     ).not.toBeInTheDocument()
   )
   expect(trigger).toHaveFocus()
-  await user.click(screen.getByRole('button', { name: 'catalog-only' }))
-  await user.click(screen.getByRole('tab', { name: 'Channels and groups' }))
-  expect(
-    screen.getByText(
-      'No channel is configured. This model will not appear in the model square.'
-    )
-  ).toBeVisible()
 })
 
 it('keeps channel rows individually selectable and disables metadata mutations for mixed selection', async () => {
@@ -254,8 +247,6 @@ it('keeps channel rows individually selectable and disables metadata mutations f
   ).toBeChecked()
   const toolbar = screen.getByRole('toolbar', { name: /Bulk actions/ })
   for (const name of [
-    'Change vendor',
-    'Clear vendor',
     'Show selected models in model square',
     'Hide selected models from model square',
     'Delete selected models',

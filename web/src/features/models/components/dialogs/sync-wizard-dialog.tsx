@@ -54,7 +54,6 @@ const FIELD_LABELS: Record<MetadataSyncField, string> = {
   description: 'Description',
   icon: 'Icon',
   tags: 'Tags',
-  vendor: 'Vendor',
   endpoints: 'Custom endpoints',
   name_rule: 'Match Type',
   status: 'Model square visibility',
@@ -65,7 +64,6 @@ const REASON_LABELS = {
   unchanged: 'No changes',
   blocked: 'Metadata sync disabled',
   missing_upstream: 'Not found upstream',
-  missing_vendor: 'Upstream vendor missing',
 }
 const STEPS = [
   'Select models',
@@ -130,7 +128,7 @@ export function SyncWizardDialog(props: {
     },
     onSuccess: async () => {
       await Promise.all(
-        ['models', 'vendors', 'pricing'].map((key) =>
+        ['models', 'pricing'].map((key) =>
           queryClient.invalidateQueries({ queryKey: [key] })
         )
       )
@@ -214,18 +212,6 @@ export function SyncWizardDialog(props: {
           ? item.fields.map((field) => field.field)
           : selection[item.model_name],
     }))
-  const vendors = [
-    ...new Set(
-      selected
-        .filter(
-          (item) =>
-            item.kind === 'create' ||
-            selection[item.model_name].includes('vendor')
-        )
-        .map((item) => item.vendor_to_create)
-        .filter(Boolean)
-    ),
-  ]
   const busy = load.isPending || apply.isPending
   const chooseModels = (items: MetadataSyncCandidate[], checked: boolean) =>
     setSelection((previous) => {
@@ -433,9 +419,6 @@ export function SyncWizardDialog(props: {
                   {t('Models source')}: {preview.source.models_url}
                 </p>
                 <p>
-                  {t('Vendors source')}: {preview.source.vendors_url}
-                </p>
-                <p>
                   {t('Metadata language')}: {preview.source.locale}
                 </p>
               </div>
@@ -598,11 +581,6 @@ export function SyncWizardDialog(props: {
                     header: t('Planned action'),
                     cell: (item) => t(REASON_LABELS[item.kind]),
                   },
-                  {
-                    id: 'vendor',
-                    header: t('Vendor'),
-                    cell: (item) => item.upstream?.vendor || '—',
-                  },
                 ]}
               />
               <div className='flex items-center justify-end gap-3 text-sm'>
@@ -745,9 +723,6 @@ export function SyncWizardDialog(props: {
               },
             ]}
           />
-          <p className='text-sm'>
-            {t('New vendors')}: {vendors.join(', ') || t('None')}
-          </p>
           <p className='text-muted-foreground text-sm'>
             {t(
               'Importing metadata does not add channels, enable model access, or configure prices.'
@@ -781,14 +756,10 @@ export function SyncWizardDialog(props: {
         <div className='space-y-4' role='status'>
           <h3 className='font-semibold'>{t('Metadata sync completed')}</h3>
           <p>
-            {t(
-              '{{created}} models created, {{updated}} models updated, {{vendors}} vendors created.',
-              {
-                created: apply.data.created_models.length,
-                updated: apply.data.updated_models.length,
-                vendors: apply.data.created_vendors.length,
-              }
-            )}
+            {t('{{created}} models created, {{updated}} models updated.', {
+              created: apply.data.created_models.length,
+              updated: apply.data.updated_models.length,
+            })}
           </p>
           <StaticDataTable
             data={[
@@ -812,10 +783,6 @@ export function SyncWizardDialog(props: {
               },
             ]}
           />
-          <p className='text-sm'>
-            {t('New vendors')}:{' '}
-            {apply.data.created_vendors.join(', ') || t('None')}
-          </p>
         </div>
       )}
     </Dialog>

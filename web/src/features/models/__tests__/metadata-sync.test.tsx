@@ -30,7 +30,6 @@ const preview: MetadataSyncPreview = {
   source: {
     locale: 'en',
     models_url: 'https://example.test/models.json',
-    vendors_url: 'https://example.test/vendors.json',
     version: 'source-v1',
   },
   candidates: [
@@ -39,7 +38,6 @@ const preview: MetadataSyncPreview = {
       scope: 'site',
       kind: 'create',
       record_version: 'new-v1',
-      vendor_to_create: 'Example vendor',
       fields: [{ field: 'description', local: '', upstream: 'New metadata' }],
     },
     {
@@ -75,7 +73,6 @@ describe('metadata sync preview', () => {
           updated_models: [
             { model_name: 'existing-model', fields: ['description'] },
           ],
-          created_vendors: ['Example vendor'],
         },
       },
     })
@@ -126,7 +123,7 @@ describe('metadata sync preview', () => {
       screen.getByRole('button', { name: 'Review confirmation' })
     )
     expect(post).not.toHaveBeenCalled()
-    expect(screen.getByText(/Example vendor/)).toBeInTheDocument()
+    expect(screen.getByText('Create metadata')).toBeInTheDocument()
     await user.click(
       screen.getByRole('button', { name: 'Apply 2 model changes' })
     )
@@ -167,7 +164,6 @@ describe('metadata sync preview', () => {
       'missing_upstream',
       'unchanged',
       'blocked',
-      'missing_vendor',
     ].map((kind, index) => ({
       model_name: `a-skipped-${index}`,
       scope: 'site',
@@ -187,7 +183,6 @@ describe('metadata sync preview', () => {
         data: {
           created_models: syncable.map((item) => item.model_name),
           updated_models: [],
-          created_vendors: [],
         },
       },
     })
@@ -207,7 +202,7 @@ describe('metadata sync preview', () => {
       screen.getByRole('button', { name: 'Load metadata preview' })
     )
     expect(
-      await screen.findByText('25 models · 21 syncable · 4 skipped this time')
+      await screen.findByText('24 models · 21 syncable · 3 skipped this time')
     ).toBeVisible()
     expect(
       within(screen.getByRole('table')).getAllByRole('row')[1]
@@ -276,7 +271,6 @@ describe('metadata sync preview', () => {
       ...preview.candidates[0],
       model_name: 'catalog-only',
       scope: 'catalog',
-      vendor_to_create: undefined,
     }
     vi.spyOn(api, 'get').mockResolvedValue({
       data: {

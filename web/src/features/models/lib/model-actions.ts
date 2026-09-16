@@ -23,7 +23,7 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { updateModelStatus } from '../api'
-import { invalidateVendorData } from '../vendor-api'
+import { modelsQueryKeys } from './query-keys'
 
 // ============================================================================
 // Model Status Actions
@@ -41,7 +41,12 @@ export async function handleEnableModel(
     const response = await updateModelStatus(id, 1)
     if (response.success) {
       toast.success(i18next.t('Model shown in model square'))
-      if (queryClient) await invalidateVendorData(queryClient)
+      if (queryClient) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: ['pricing'] }),
+        ])
+      }
       onSuccess?.()
     } else {
       handleServerError(
@@ -66,7 +71,12 @@ export async function handleDisableModel(
     const response = await updateModelStatus(id, 0)
     if (response.success) {
       toast.success(i18next.t('Model hidden from model square'))
-      if (queryClient) await invalidateVendorData(queryClient)
+      if (queryClient) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: ['pricing'] }),
+        ])
+      }
       onSuccess?.()
     } else {
       handleServerError(
@@ -136,7 +146,12 @@ export async function handleBatchEnableModels(
           count: successCount,
         })
       )
-      if (queryClient) await invalidateVendorData(queryClient)
+      if (queryClient) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: ['pricing'] }),
+        ])
+      }
       onSuccess?.()
     }
 
@@ -184,7 +199,12 @@ export async function handleBatchDisableModels(
           count: successCount,
         })
       )
-      if (queryClient) await invalidateVendorData(queryClient)
+      if (queryClient) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() }),
+          queryClient.invalidateQueries({ queryKey: ['pricing'] }),
+        ])
+      }
       onSuccess?.()
     }
 

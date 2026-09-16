@@ -38,7 +38,6 @@ type Model struct {
 	Description        string         `json:"description,omitempty" gorm:"type:text"`
 	Icon               string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
 	Tags               string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
-	VendorID           int            `json:"vendor_id,omitempty" gorm:"index"`
 	Endpoints          string         `json:"endpoints,omitempty" gorm:"type:text"`
 	SupportedEndpoints []string       `json:"supported_endpoints,omitempty" gorm:"-"`
 	Status             int            `json:"status" gorm:"default:1"`
@@ -189,14 +188,14 @@ func GetConfiguredModelChannels() (map[string][]int, error) {
 
 // SearchModelsWithChannels augments metadata with concrete configured names.
 // Synthetic rows never persist and never affect the public pricing catalog.
-func SearchModelsWithChannels(keyword, vendor, status, syncOfficial string, offset, limit int) ([]*Model, int64, error) {
-	records, _, err := SearchModels(keyword, vendor, status, syncOfficial, 0, -1)
+func SearchModelsWithChannels(keyword, status, syncOfficial string, offset, limit int) ([]*Model, int64, error) {
+	records, _, err := SearchModels(keyword, status, syncOfficial, 0, -1)
 	if err != nil {
 		return nil, 0, err
 	}
 	_, filterStatus := parseModelStatusFilter(status)
 	_, filterSync := parseModelSyncFilter(syncOfficial)
-	if !filterStatus && !filterSync && (vendor == "" || vendor == "0") {
+	if !filterStatus && !filterSync {
 		configured, err := GetConfiguredModelChannels()
 		if err != nil {
 			return nil, 0, err
@@ -235,9 +234,6 @@ func SearchModelsWithChannels(keyword, vendor, status, syncOfficial string, offs
 
 func (mi *Model) Insert() error {
 	return metadataTransaction(func(tx *gorm.DB) error {
-		if err := validateModelVendor(tx, mi.VendorID); err != nil {
-			return err
-		}
 		now := common.GetTimestamp()
 		mi.CreatedTime, mi.UpdatedTime = now, now
 		status, syncOfficial := mi.Status, mi.SyncOfficial
@@ -260,12 +256,9 @@ func IsModelNameDuplicated(id int, name string) (bool, error) {
 
 func (mi *Model) Update() error {
 	return metadataTransaction(func(tx *gorm.DB) error {
-		if err := validateModelVendor(tx, mi.VendorID); err != nil {
-			return err
-		}
 		mi.UpdatedTime = common.GetTimestamp()
 		return tx.Model(&Model{}).Where("id = ?", mi.Id).
-			Select("model_name", "description", "icon", "tags", "vendor_id", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
+			Select("model_name", "description", "icon", "tags", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
 	})
 }
 
@@ -382,26 +375,8 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 	return result, nil
 }
 
-func GetVendorModelCounts() (map[int64]int64, error) {
-	var stats []struct {
-		VendorID int64
-		Count    int64
-	}
-	if err := DB.Model(&Model{}).
-		Select("vendor_id as vendor_id, count(*) as count").
-		Group("vendor_id").
-		Scan(&stats).Error; err != nil {
-		return nil, err
-	}
-	m := make(map[int64]int64, len(stats))
-	for _, s := range stats {
-		m[s.VendorID] = s.Count
-	}
-	return m, nil
-}
-
 func GetAllModels(offset int, limit int) ([]*Model, error) {
-	models, _, err := SearchModels("", "", "", "", offset, limit)
+	models, _, err := SearchModels("", "", "", offset, limit)
 	return models, err
 }
 
@@ -478,19 +453,12 @@ func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (m
 	return result, nil
 }
 
-func SearchModels(keyword string, vendor string, status string, syncOfficial string, offset int, limit int) ([]*Model, int64, error) {
+func SearchModels(keyword string, status string, syncOfficial string, offset int, limit int) ([]*Model, int64, error) {
 	var models []*Model
 	db := DB.Model(&Model{})
 	if keyword != "" {
 		like := "%" + keyword + "%"
 		db = db.Where("model_name LIKE ? OR description LIKE ? OR tags LIKE ?", like, like, like)
-	}
-	if vendor != "" {
-		if vid, err := strconv.Atoi(vendor); err == nil {
-			db = db.Where("models.vendor_id = ?", vid)
-		} else {
-			db = db.Joins("JOIN vendors ON vendors.id = models.vendor_id").Where("vendors.name LIKE ?", "%"+vendor+"%")
-		}
 	}
 	if statusValue, ok := parseModelStatusFilter(status); ok {
 		db = db.Where("models.status = ?", statusValue)

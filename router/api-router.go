@@ -122,20 +122,6 @@ func SetApiRouter(router *gin.Engine) {
 
 		taskRoute := apiRouter.Group("/task")
 		taskRoute.GET("", middleware.PBRAuth(), controller.GetAllTask)
-
-		vendorRoute := apiRouter.Group("/vendors")
-		vendorRoute.Use(middleware.PBRAuth())
-		{
-			vendorRoute.POST("/operations/preview", controller.PreviewVendorOperation)
-			vendorRoute.POST("/operations", controller.ApplyVendorOperation)
-			vendorRoute.GET("/", controller.GetAllVendors)
-			vendorRoute.GET("/search", controller.SearchVendors)
-			vendorRoute.GET("/:id", controller.GetVendorMeta)
-			vendorRoute.POST("/", controller.CreateVendorMeta)
-			vendorRoute.PUT("/", controller.UpdateVendorMeta)
-			vendorRoute.DELETE("/:id", controller.DeleteVendorMeta)
-		}
-
 		modelsRoute := apiRouter.Group("/console/models")
 		modelsRoute.Use(middleware.PBRAuth())
 		{

@@ -17,12 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import { Plus } from 'lucide-react'
 import { useCallback, useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
-import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { ModelsDialogs } from './components/models-dialogs'
@@ -30,7 +28,6 @@ import { ModelsPrimaryButtons } from './components/models-primary-buttons'
 import { ModelRoutingPanel } from './components/model-routing-panel'
 import { ModelsProvider, useModels } from './components/models-provider'
 import { ModelsTable } from './components/models-table'
-import { VendorsTable } from './components/vendors-table'
 import {
   type ModelsSectionId,
   MODELS_DEFAULT_SECTION,
@@ -48,13 +45,12 @@ const SECTION_META: Record<
     tabKey: 'Models',
   },
   routing: { titleKey: 'Routing & Failover', tabKey: 'Routing & Failover' },
-  vendors: { titleKey: 'Vendor management', tabKey: 'Vendors' },
 }
 
 function ModelsContent() {
   const { t } = useTranslation()
   const navigate = useNavigate({ from: '/models/$section' })
-  const { tabCategory, setTabCategory, setOpen, setCurrentVendor } = useModels()
+  const { tabCategory, setTabCategory } = useModels()
   const params = route.useParams()
   const activeSection = (params.section ??
     MODELS_DEFAULT_SECTION) as ModelsSectionId
@@ -81,21 +77,7 @@ function ModelsContent() {
 
   let actions: ReactNode = <ModelsPrimaryButtons />
   let content = <ModelsTable />
-  if (activeSection === 'vendors') {
-    actions = (
-      <Button
-        size='sm'
-        onClick={() => {
-          setCurrentVendor(null)
-          setOpen('create-vendor')
-        }}
-      >
-        <Plus className='size-4' />
-        {t('Add Vendor')}
-      </Button>
-    )
-    content = <VendorsTable />
-  } else if (activeSection === 'routing') {
+  if (activeSection === 'routing') {
     actions = null
     content = <ModelRoutingPanel />
   }

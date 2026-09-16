@@ -14,8 +14,8 @@ import (
 
 var metadataMutationMu sync.Mutex
 
-// metadataTransaction serializes changes to vendors and model ownership before
-// acquiring model/vendor row locks. The option anchor also covers empty tables.
+// metadataTransaction serializes changes to model metadata before acquiring
+// model row locks. The option anchor also covers empty tables.
 func metadataTransaction(change func(*gorm.DB) error) error {
 	metadataMutationMu.Lock()
 	defer metadataMutationMu.Unlock()
@@ -37,13 +37,12 @@ func lockMetadataMutation(tx *gorm.DB) error {
 
 var ErrMetadataSyncConflict = errors.New("metadata changed; preview again before applying")
 
-var MetadataSyncFields = []string{"description", "icon", "tags", "vendor", "endpoints", "name_rule", "status"}
+var MetadataSyncFields = []string{"description", "icon", "tags", "endpoints", "name_rule", "status"}
 
 type MetadataValues struct {
 	Description string `json:"description"`
 	Icon        string `json:"icon"`
 	Tags        string `json:"tags"`
-	Vendor      string `json:"vendor"`
 	Endpoints   string `json:"endpoints"`
 	NameRule    int    `json:"name_rule"`
 	Status      int    `json:"status"`
@@ -62,34 +61,25 @@ type MetadataSyncUpdate struct {
 }
 
 type MetadataSyncResult struct {
-	CreatedModels  []string                `json:"created_models"`
-	UpdatedModels  []MetadataSyncSelection `json:"updated_models"`
-	CreatedVendors []string                `json:"created_vendors"`
+	CreatedModels []string                `json:"created_models"`
+	UpdatedModels []MetadataSyncSelection `json:"updated_models"`
 }
 
-func MetadataRecordVersion(local *Model, localVendor, upstreamVendor *Vendor) string {
-	encoded, _ := common.Marshal([]any{local, localVendor, upstreamVendor})
+func MetadataRecordVersion(local *Model) string {
+	encoded, _ := common.Marshal([]any{local})
 	return fmt.Sprintf("%x", sha256.Sum256(encoded))
 }
 
-func GetMetadataSyncState(db *gorm.DB) (map[string]*Model, map[string]*Vendor, error) {
+func GetMetadataSyncState(db *gorm.DB) (map[string]*Model, error) {
 	var models []*Model
-	var vendors []*Vendor
 	if err := db.Session(&gorm.Session{}).Order("id").Find(&models).Error; err != nil {
-		return nil, nil, err
-	}
-	if err := db.Session(&gorm.Session{}).Order("id").Find(&vendors).Error; err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	modelMap := make(map[string]*Model, len(models))
-	vendorMap := make(map[string]*Vendor, len(vendors))
 	for _, item := range models {
 		modelMap[item.ModelName] = item
 	}
-	for _, item := range vendors {
-		vendorMap[item.Name] = item
-	}
-	return modelMap, vendorMap, nil
+	return modelMap, nil
 }
 
 func ValidateMetadataValues(values MetadataValues) error {
@@ -151,7 +141,7 @@ func ValidateModelEndpoints(raw string) error {
 	return nil
 }
 
-func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]Vendor) (*MetadataSyncResult, error) {
+func ApplyMetadataSync(updates []MetadataSyncUpdate) (*MetadataSyncResult, error) {
 	if len(updates) == 0 {
 		return nil, errors.New("select metadata changes before applying")
 	}
@@ -180,27 +170,19 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 			}
 		}
 	}
-	result := &MetadataSyncResult{CreatedModels: []string{}, UpdatedModels: []MetadataSyncSelection{}, CreatedVendors: []string{}}
+	result := &MetadataSyncResult{CreatedModels: []string{}, UpdatedModels: []MetadataSyncSelection{}}
 	err := metadataTransaction(func(tx *gorm.DB) error {
-		locals, vendors, err := GetMetadataSyncState(lockForUpdate(tx))
+		locals, err := GetMetadataSyncState(lockForUpdate(tx))
 		if err != nil {
 			return err
 		}
-		vendorByID := make(map[int]*Vendor)
-		for _, vendor := range vendors {
-			vendorByID[vendor.Id] = vendor
-		}
-		// Verify the entire selection before any write, including shared vendors.
+		// Verify the entire selection before any write.
 		for _, update := range updates {
 			local := locals[update.ModelName]
 			if local != nil && local.SyncOfficial == 0 {
 				return fmt.Errorf("metadata sync is disabled for %s", update.ModelName)
 			}
-			var localVendor *Vendor
-			if local != nil {
-				localVendor = vendorByID[local.VendorID]
-			}
-			if MetadataRecordVersion(local, localVendor, FindMetadataVendor(vendors, update.Values.Vendor)) != update.RecordVersion {
+			if MetadataRecordVersion(local) != update.RecordVersion {
 				return fmt.Errorf("%w: %s", ErrMetadataSyncConflict, update.ModelName)
 			}
 			if update.Create && local != nil || !update.Create && local == nil {
@@ -227,29 +209,6 @@ func ApplyMetadataSync(updates []MetadataSyncUpdate, upstreamVendors map[string]
 					fields[field] = update.Values.NameRule
 				case "status":
 					fields[field] = update.Values.Status
-				case "vendor":
-					vendorID := 0
-					name := update.Values.Vendor
-					if name != "" {
-						vendor := FindMetadataVendor(vendors, name)
-						if vendor == nil {
-							up, ok := upstreamVendors[name]
-							if !ok {
-								return fmt.Errorf("upstream vendor not found: %s", name)
-							}
-							vendor = &Vendor{Name: name, Description: up.Description, Icon: up.Icon, Status: 1, CreatedTime: common.GetTimestamp(), UpdatedTime: common.GetTimestamp()}
-							if err := validateVendorMetadata(tx, vendor); err != nil {
-								return err
-							}
-							if err := tx.Create(vendor).Error; err != nil {
-								return err
-							}
-							vendors[name] = vendor
-							result.CreatedVendors = append(result.CreatedVendors, name)
-						}
-						vendorID = vendor.Id
-					}
-					fields["vendor_id"] = vendorID
 				}
 			}
 			fields["updated_time"] = common.GetTimestamp()

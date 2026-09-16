@@ -33,11 +33,6 @@ const MODELS_SECTIONS = [
     titleKey: 'Routing & Failover',
     build: () => null,
   },
-  {
-    id: 'vendors',
-    titleKey: 'Vendors',
-    build: () => null,
-  },
 ] as const
 
 export type ModelsSectionId = (typeof MODELS_SECTIONS)[number]['id']

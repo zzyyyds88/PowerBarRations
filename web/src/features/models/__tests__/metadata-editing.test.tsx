@@ -35,7 +35,6 @@ const model = {
   status: 1,
   sync_official: 1,
   name_rule: 0,
-  vendor_id: 3,
   endpoints: '',
   supported_endpoints: ['openai'],
   created_time: 1,
@@ -130,19 +129,6 @@ describe('metadata editing', () => {
       if (url === '/api/console/models/7') {
         return { data: { success: true, data: model } }
       }
-      if (url === '/api/vendors/') {
-        return {
-          data: {
-            success: true,
-            data: {
-              items: [
-                { id: 3, name: 'Existing vendor', icon: 'Gemini.Color' },
-                { id: 4, name: 'Another vendor', icon: 'Gemini.Color' },
-              ],
-            },
-          },
-        }
-      }
       return { data: { success: false, message: 'Root only' } }
     })
     const put = vi
@@ -163,28 +149,11 @@ describe('metadata editing', () => {
     )
     const description = await screen.findByLabelText('Description')
     await waitFor(() => expect(description).toHaveValue('Original'))
-    expect(screen.getByRole('combobox', { name: 'Vendor' })).toHaveValue(
-      'Existing vendor'
-    )
     const user = userEvent.setup()
-    expect(screen.getByText('Gemini.Color')).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Custom model icon' }))
     const icon = screen.getByRole('combobox', { name: 'Icon' })
     await user.type(icon, 'Claude.Avatar')
     await user.keyboard('{Escape}')
     expect(screen.getByText('Claude.Avatar')).toBeVisible()
-    await user.click(
-      screen.getByRole('button', { name: 'Inherit vendor icon' })
-    )
-    expect(
-      screen.queryByRole('combobox', { name: 'Icon' })
-    ).not.toBeInTheDocument()
-    expect(screen.getByText('Gemini.Color')).toBeVisible()
-    const vendorInput = screen.getByRole('combobox', { name: 'Vendor' })
-    await user.click(vendorInput)
-    await user.type(vendorInput, 'Another')
-    await user.click(screen.getByRole('option', { name: 'Another vendor' }))
-    expect(vendorInput).toHaveValue('Another vendor')
     await user.clear(description)
     await user.type(description, 'Updated metadata')
     await user.click(
@@ -197,9 +166,8 @@ describe('metadata editing', () => {
     expect(put.mock.calls.every(([url]) => url === '/api/console/models/')).toBe(true)
     expect(put.mock.calls[0][1]).toMatchObject({
       description: 'Updated metadata',
-      icon: '',
+      icon: 'Claude.Avatar',
       model_name: 'example-model',
-      vendor_id: 4,
       endpoints: '',
     })
   })

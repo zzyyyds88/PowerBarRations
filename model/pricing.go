@@ -206,26 +206,15 @@ func updatePricing() {
 	}
 	metaMap := resolveModelMetadata(allMeta, names)
 
-	// 预加载供应商
-	var vendors []Vendor
-	_ = DB.Find(&vendors).Error
-	vendorMap := make(map[int]*Vendor)
-	for i := range vendors {
-		vendorMap[vendors[i].Id] = &vendors[i]
-	}
-
-	// 初始化默认供应商映射
-	initDefaultVendorMapping(metaMap, vendorMap, enableAbilities)
+	// 供应商展示信息为纯派生数据（Vendors 表已物理删除）：按模型名规则推断
+	// 默认品牌，仅用于定价页展示，不写库、不参与路由或计费。
+	vendorMap := make(map[int]PricingVendor)
+	modelVendorIDs := initDefaultVendorMapping(metaMap, vendorMap, enableAbilities)
 
 	// 构建对前端友好的供应商列表
 	vendorsList = make([]PricingVendor, 0, len(vendorMap))
 	for _, v := range vendorMap {
-		vendorsList = append(vendorsList, PricingVendor{
-			ID:          v.Id,
-			Name:        v.Name,
-			Description: v.Description,
-			Icon:        v.Icon,
-		})
+		vendorsList = append(vendorsList, v)
 	}
 
 	modelGroupsMap := make(map[string]*types.Set[string])
@@ -342,8 +331,8 @@ func updatePricing() {
 			pricing.Description = meta.Description
 			pricing.Icon = meta.Icon
 			pricing.Tags = meta.Tags
-			pricing.VendorID = meta.VendorID
 		}
+		pricing.VendorID = modelVendorIDs[model]
 		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
 		if findPrice {
 			pricing.ModelPrice = modelPrice

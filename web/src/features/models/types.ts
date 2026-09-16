@@ -44,7 +44,6 @@ export interface Model {
   description?: string
   icon?: string
   tags?: string
-  vendor_id?: number
   endpoints?: string
   supported_endpoints?: string[]
   status: number
@@ -58,21 +57,6 @@ export interface Model {
   quota_types?: number[]
   matched_models?: string[]
   matched_count?: number
-}
-
-/**
- * Vendor entity from API
- */
-export interface Vendor {
-  model_count?: number
-  version?: string
-  id: number
-  name: string
-  description?: string
-  icon?: string
-  status: number
-  created_time: number
-  updated_time: number
 }
 
 /**
@@ -98,7 +82,6 @@ export interface GetModelsParams {
   include_channel_models?: boolean
   p?: number
   page_size?: number
-  vendor?: string // vendor ID to filter by
   status?: string // filter by status
   sync_official?: string // filter by sync_official status
 }
@@ -110,7 +93,6 @@ export interface SearchModelsParams {
   square_state?: ModelSquareState
   include_channel_models?: boolean
   keyword?: string
-  vendor?: string // vendor ID to filter by
   status?: string // filter by status
   sync_official?: string // filter by sync_official status
   p?: number
@@ -128,7 +110,6 @@ export interface GetModelsResponse {
     total: number
     page: number
     page_size: number
-    vendor_counts?: Record<string, number>
   }
 }
 
@@ -142,36 +123,12 @@ export interface GetModelResponse {
 }
 
 /**
- * Get vendors response
- */
-export interface GetVendorsResponse {
-  success: boolean
-  message?: string
-  data?: {
-    items: Vendor[]
-    total: number
-    page: number
-    page_size: number
-  }
-}
-
-/**
- * Get vendor response
- */
-export interface GetVendorResponse {
-  success: boolean
-  message?: string
-  data?: Vendor
-}
-
-/**
  * Sync diff data
  */
 export type MetadataSyncField =
   | 'description'
   | 'icon'
   | 'tags'
-  | 'vendor'
   | 'endpoints'
   | 'name_rule'
   | 'status'
@@ -179,20 +136,13 @@ export type MetadataSyncValues = {
   description: string
   icon: string
   tags: string
-  vendor: string
   endpoints: string
   name_rule: number
   status: number
 }
 export type MetadataSyncCandidate = {
   model_name: string
-  kind:
-    | 'create'
-    | 'update'
-    | 'unchanged'
-    | 'blocked'
-    | 'missing_upstream'
-    | 'missing_vendor'
+  kind: 'create' | 'update' | 'unchanged' | 'blocked' | 'missing_upstream'
   scope: 'site' | 'catalog'
   record_version: string
   fields: Array<{
@@ -201,12 +151,10 @@ export type MetadataSyncCandidate = {
     upstream: string | number
   }>
   upstream?: MetadataSyncValues
-  vendor_to_create?: string
 }
 export type MetadataSyncSource = {
   locale: SyncLocale
   models_url: string
-  vendors_url: string
   version: string
 }
 export type MetadataSyncPreview = {
@@ -227,7 +175,6 @@ export type MetadataSyncRequest = {
 export type MetadataSyncResult = {
   created_models: string[]
   updated_models: MetadataSyncSelection[]
-  created_vendors: string[]
 }
 export interface SyncUpstreamResponse {
   success: boolean
@@ -271,7 +218,6 @@ export const modelFormSchema = z.object({
   description: z.string().default(''),
   icon: z.string().default(''),
   tags: z.array(z.string()).default([]),
-  vendor_id: z.number().optional(),
   endpoints: z.string().default(''),
   name_rule: z.number().min(0).max(3).default(0),
   status: z.boolean().default(true),
@@ -279,26 +225,6 @@ export const modelFormSchema = z.object({
 })
 
 export type ModelFormValues = z.infer<typeof modelFormSchema>
-
-/**
- * Vendor form schema
- */
-export const vendorFormSchema = z.object({
-  id: z.number().optional(),
-  name: z
-    .string()
-    .trim()
-    .min(1, 'Vendor name is required')
-    .max(128, 'Vendor name and icon must not exceed 128 characters.'),
-  description: z.string().default(''),
-  icon: z
-    .string()
-    .max(128, 'Vendor name and icon must not exceed 128 characters.')
-    .default(''),
-  version: z.string().optional(),
-})
-
-export type VendorFormValues = z.infer<typeof vendorFormSchema>
 
 /**
  * Prefill group form schema
@@ -349,4 +275,4 @@ export type SyncSource = 'official'
 /**
  * Model tab type
  */
-export type ModelTabCategory = 'metadata' | 'routing' | 'vendors'
+export type ModelTabCategory = 'metadata' | 'routing'

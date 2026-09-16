@@ -65,14 +65,13 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { ModelPricingPanel } from '@/features/model-pricing/model-pricing-panel'
 import {
-  requireServerSuccess,
   createServerError,
   getServerErrorMessage,
 } from '@/lib/server-error-message'
 
-import { createModel, updateModel, getModel, getVendors } from '../../api'
+import { createModel, updateModel, getModel } from '../../api'
 import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'
-import { modelsQueryKeys, vendorsQueryKeys } from '../../lib'
+import { modelsQueryKeys } from '../../lib'
 import {
   modelFormSchema,
   transformModelToFormDefaults,
@@ -80,7 +79,6 @@ import {
   type ModelFormValues,
 } from '../../lib/model-form'
 import type { Model } from '../../types'
-import { ModelConnections } from '../model-connections'
 
 export function ModelMutateDrawer(props: {
   open: boolean
@@ -122,16 +120,6 @@ export function ModelMutateDrawer(props: {
       name_rule: 0,
     } as Model),
   })
-  const vendorsQuery = useQuery({
-    queryKey: vendorsQueryKeys.list(),
-    queryFn: async () =>
-      requireServerSuccess(await getVendors({ page_size: 1000 })),
-    enabled: props.open,
-  })
-  const vendors = vendorsQuery.data?.data?.items ?? []
-  const selectedVendor = vendors.find(
-    (vendor) => vendor.id === form.watch('vendor_id')
-  )
   const modelQuery = useQuery({
     queryKey: modelsQueryKeys.detail(currentRow?.id ?? 0),
     queryFn: async () => {
@@ -218,7 +206,6 @@ export function ModelMutateDrawer(props: {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all }),
         queryClient.invalidateQueries({ queryKey: ['pricing'] }),
-        queryClient.invalidateQueries({ queryKey: vendorsQueryKeys.all }),
       ])
       toast.success(t('Model metadata saved'))
       if (!pricingDirty) props.onOpenChange(false)
@@ -272,7 +259,7 @@ export function ModelMutateDrawer(props: {
             }}
             className='shrink-0 px-4'
           >
-            <TabsList className='grid w-full grid-cols-3 group-data-horizontal/tabs:h-auto'>
+            <TabsList className='grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto'>
               <TabsTrigger
                 value='metadata'
                 className='h-auto min-w-0 whitespace-normal'
@@ -285,13 +272,6 @@ export function ModelMutateDrawer(props: {
                 className='h-auto min-w-0 whitespace-normal'
               >
                 {t('Pricing')}
-              </TabsTrigger>
-              <TabsTrigger
-                value='connections'
-                disabled={!hasModelName}
-                className='h-auto min-w-0 whitespace-normal'
-              >
-                {t('Channels and groups')}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -377,36 +357,6 @@ export function ModelMutateDrawer(props: {
                                 key={`${currentRow?.id ?? 'new'}-${props.open}`}
                                 value={field.value ?? ''}
                                 onChange={field.onChange}
-                                allowInheritance
-                                inheritedIcon={selectedVendor?.icon}
-                                inheritedName={selectedVendor?.name}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name='vendor_id'
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t('Vendor')}</FormLabel>
-                            <FormControl>
-                              <Combobox
-                                options={vendors.map((vendor) => ({
-                                  value: String(vendor.id),
-                                  label: vendor.name,
-                                }))}
-                                onValueChange={(value) =>
-                                  field.onChange(
-                                    value ? Number.parseInt(value) : undefined
-                                  )
-                                }
-                                value={field.value ? String(field.value) : null}
-                                className='w-full'
-                                placeholder={t('Select vendor')}
                               />
                             </FormControl>
                             <FormMessage />
@@ -678,9 +628,6 @@ export function ModelMutateDrawer(props: {
                 />
               )}
             </div>
-          )}
-          {props.open && section === 'connections' && savedModel && (
-            <ModelConnections model={savedModel} />
           )}
         </SheetContent>
       </Sheet>

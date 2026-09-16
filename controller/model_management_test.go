@@ -59,7 +59,7 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	require.NoError(t, model.InitDB())
 	database = model.DB
 	model.LOG_DB = database
-	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Vendor{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.User{}, &model.AuditLog{}))
+	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.User{}, &model.AuditLog{}))
 	for _, value := range restoreRatios {
 		require.NoError(t, value.restore("{}"))
 	}
@@ -251,7 +251,7 @@ export function parseTaskResult() { return {}; }
 						{"metadata_only", SearchModelsMeta, "?keyword=square-&square_state=visible", []string{"square-visible", "square-hidden-override", "square-contains"}},
 						{"keyword", SearchModelsMeta, "?include_channel_models=true&keyword=square-partial&square_state=hidden", []string{"square-partial-hidden"}},
 						{"policy", SearchModelsMeta, "?include_channel_models=true&keyword=square-&square_state=partial&status=disabled", []string{"square-hidden-"}},
-						{"vendor_and_sync", SearchModelsMeta, "?include_channel_models=true&keyword=square-&square_state=partial&vendor=0&sync_official=no", []string{"square-hidden-", "square-partial-"}},
+						{"sync_policy", SearchModelsMeta, "?include_channel_models=true&keyword=square-&square_state=partial&sync_official=no", []string{"square-hidden-", "square-partial-"}},
 						{"no_matches", SearchModelsMeta, "?include_channel_models=true&keyword=square-bare&square_state=hidden", []string{}},
 					} {
 						t.Run(test.name, func(t *testing.T) {
@@ -345,8 +345,6 @@ export function parseTaskResult() { return {}; }
 					{"&p=9&page_size=2", 6, []string{}},
 					{"&status=enabled", 3, []string{"listing-rule-", "listing-catalog", "listing-exact"}},
 					{"&sync_official=no", 2, []string{"listing-rule-", "listing-catalog"}},
-					{"&vendor=0", 6, []string{"listing-rule-", "listing-catalog", "listing-exact", "listing-disabled", "listing-new", "listing-rule-child"}},
-					{"&vendor=999", 0, []string{}},
 				} {
 					var page listingResponse
 					modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=listing-"+tc.query, nil, &page)
@@ -510,12 +508,12 @@ export function parseTaskResult() { return {}; }
 				}
 			})
 			t.Run("concurrent_import_creates_one_record", func(t *testing.T) {
-				update := model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: "matrix-concurrent-import", RecordVersion: model.MetadataRecordVersion(nil, nil, nil), Create: true}, Values: model.MetadataValues{Description: "Imported", Status: 1}}
+				update := model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: "matrix-concurrent-import", RecordVersion: model.MetadataRecordVersion(nil), Create: true}, Values: model.MetadataValues{Description: "Imported", Status: 1}}
 				var wg sync.WaitGroup
 				results := make(chan error, 2)
 				for range 2 {
 					wg.Go(func() {
-						_, err := model.ApplyMetadataSync([]model.MetadataSyncUpdate{update}, nil)
+						_, err := model.ApplyMetadataSync([]model.MetadataSyncUpdate{update})
 						results <- err
 					})
 				}
@@ -586,23 +584,13 @@ export function parseTaskResult() { return {}; }
 				require.NoError(t, blocked.Insert())
 				require.NoError(t, db.Create(&model.Ability{Model: "matrix-new", Group: "default", ChannelId: 1, Enabled: true}).Error)
 				var revision atomic.Int32
-				var failVendors atomic.Bool
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					assert.Contains(t, r.URL.Path, "/api/i18n/zh/newapi/")
-					var payload any
-					if strings.HasSuffix(r.URL.Path, "vendors.json") {
-						if failVendors.Load() {
-							w.WriteHeader(http.StatusServiceUnavailable)
-							return
-						}
-						payload = []upstreamVendor{{Name: "Matrix vendor", Status: 1}}
-					} else {
-						payload = []upstreamModel{
-							{ModelName: "matrix-existing", Description: fmt.Sprintf("Upstream %d", revision.Load()), VendorName: "Matrix vendor", Tags: "changed", Status: 0, Endpoints: []byte(`{"openai":{"path":"/v1/chat/completions","method":"POST"}}`)},
-							{ModelName: "matrix-new", Description: "New model", VendorName: "Matrix vendor", Status: 0, Endpoints: []byte(`{"openai":"/v1/chat/completions"}`)},
-							{ModelName: "matrix-blocked", Description: "Do not overwrite", Status: 1},
-							{ModelName: "matrix-catalog", Description: "Catalog only", Status: 1},
-						}
+					payload := []upstreamModel{
+						{ModelName: "matrix-existing", Description: fmt.Sprintf("Upstream %d", revision.Load()), Tags: "changed", Status: 0, Endpoints: []byte(`{"openai":{"path":"/v1/chat/completions","method":"POST"}}`)},
+						{ModelName: "matrix-new", Description: "New model", Status: 0, Endpoints: []byte(`{"openai":"/v1/chat/completions"}`)},
+						{ModelName: "matrix-blocked", Description: "Do not overwrite", Status: 1},
+						{ModelName: "matrix-catalog", Description: "Catalog only", Status: 1},
 					}
 					encoded, err := common.Marshal(payload)
 					require.NoError(t, err)
@@ -628,17 +616,13 @@ export function parseTaskResult() { return {}; }
 				assert.Equal(t, "site", byName["matrix-new"].Scope)
 				assert.Equal(t, "catalog", byName["matrix-catalog"].Scope)
 				assert.Equal(t, "blocked", byName["matrix-blocked"].Kind)
-				var count int64
-				require.NoError(t, db.Model(&model.Vendor{}).Count(&count).Error)
-				assert.Zero(t, count)
 				body := map[string]any{"locale": "zh", "source_version": preview.Data.Source.Version, "selections": []model.MetadataSyncSelection{
 					{ModelName: "matrix-existing", RecordVersion: byName["matrix-existing"].RecordVersion, Fields: []string{"description", "endpoints"}},
 					{ModelName: "matrix-new", RecordVersion: byName["matrix-new"].RecordVersion, Create: true},
 				}}
 				beforePricing, err := model.GetModelPricingSnapshot([]string{"matrix-priced"})
 				require.NoError(t, err)
-				// A failed model insert must also undo the earlier metadata update
-				// and the newly inserted supplier.
+				// A failed model insert must also undo the earlier metadata update.
 				require.NoError(t, db.Callback().Create().Before("gorm:create").Register("fail_metadata_matrix", func(tx *gorm.DB) {
 					if tx.Statement.Table == "models" {
 						tx.AddError(errors.New("injected metadata failure"))
@@ -650,8 +634,6 @@ export function parseTaskResult() { return {}; }
 				var persisted model.Model
 				require.NoError(t, db.First(&persisted, local.Id).Error)
 				assert.Equal(t, "Local description", persisted.Description)
-				require.NoError(t, db.Model(&model.Vendor{}).Count(&count).Error)
-				assert.Zero(t, count)
 				var result struct {
 					Success bool
 					Data    model.MetadataSyncResult
@@ -660,12 +642,10 @@ export function parseTaskResult() { return {}; }
 				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 				require.True(t, result.Success)
 				assert.Equal(t, []string{"matrix-new"}, result.Data.CreatedModels)
-				assert.Equal(t, []string{"Matrix vendor"}, result.Data.CreatedVendors)
 				require.NoError(t, db.First(&persisted, local.Id).Error)
 				assert.Equal(t, "Upstream 0", persisted.Description)
 				assert.Equal(t, "keep", persisted.Tags)
 				assert.Equal(t, 1, persisted.Status)
-				assert.Zero(t, persisted.VendorID)
 				assert.JSONEq(t, `{"openai":{"path":"/v1/chat/completions","method":"POST"}}`, persisted.Endpoints)
 				var created model.Model
 				require.NoError(t, db.Where("model_name = ?", "matrix-new").First(&created).Error)
@@ -684,9 +664,6 @@ export function parseTaskResult() { return {}; }
 				revision.Add(1)
 				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", body, nil)
 				assert.Equal(t, http.StatusConflict, response.Code)
-				failVendors.Store(true)
-				modelManagementRequest(t, SyncUpstreamPreview, "GET", "/api/models/sync_upstream/preview?locale=zh", nil, &preview)
-				assert.False(t, preview.Success)
 			})
 		})
 	}
@@ -707,7 +684,7 @@ func TestMetadataSyncLocaleAndEndpointValidation(t *testing.T) {
 	}
 }
 
-func TestVendorManagementDatabaseMatrix(t *testing.T) {
+func TestPricingDefaultBrands(t *testing.T) {
 	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
 		t.Run(dialect.kind, func(t *testing.T) {
 			if dialect.env != "" && os.Getenv(dialect.env) == "" {
@@ -715,7 +692,7 @@ func TestVendorManagementDatabaseMatrix(t *testing.T) {
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
 
-			t.Run("pricing_reads_keep_default_brands_without_writing_vendors", func(t *testing.T) {
+			t.Run("pricing_derives_default_brands_without_persisting", func(t *testing.T) {
 				channel := model.Channel{Name: "Vendor fixture", Type: 1, Status: common.ChannelStatusEnabled}
 				require.NoError(t, db.Create(&channel).Error)
 				require.NoError(t, db.Create(&model.Ability{Model: "gemini-vendor-fixture", Group: "default", ChannelId: channel.Id, Enabled: true}).Error)
@@ -726,194 +703,6 @@ func TestVendorManagementDatabaseMatrix(t *testing.T) {
 				assert.Equal(t, "Google", vendors[0].Name)
 				assert.Equal(t, "Gemini.Color", vendors[0].Icon)
 				assert.Negative(t, vendors[0].ID)
-				var count int64
-				require.NoError(t, db.Model(&model.Vendor{}).Count(&count).Error)
-				assert.Zero(t, count)
-				saved := model.Vendor{Name: "Google", Icon: "Gemini.Color"}
-				require.NoError(t, saved.Insert())
-				assert.Equal(t, saved.Id, model.GetVendors()[0].ID)
-				require.NoError(t, saved.Delete())
-				assert.Equal(t, vendors[0].ID, model.GetVendors()[0].ID)
-				require.NoError(t, db.Model(&model.Vendor{}).Count(&count).Error)
-				assert.Zero(t, count, "refresh must not recreate a deleted vendor")
-			})
-			t.Run("metadata_ownership_preview_merge_delete_and_rollback", func(t *testing.T) {
-				source := model.Vendor{Name: "  Vendor Source  ", Icon: "Gemini.Color"}
-				target := model.Vendor{Name: "Vendor Target", Description: "Keep target", Icon: "OpenAI"}
-				require.NoError(t, source.Insert())
-				require.NoError(t, target.Insert())
-				assert.Equal(t, "Vendor Source", source.Name)
-				assert.Error(t, (&model.Vendor{Name: "vendor source"}).Insert())
-				assert.Error(t, (&model.Vendor{Name: " "}).Insert())
-				require.NoError(t, db.Model(&model.Vendor{}).Where("id = ?", source.Id).Update("status", 0).Error)
-				loaded, err := model.GetVendorByID(source.Id)
-				require.NoError(t, err)
-				staleVersion := loaded.Version
-				edit := model.Vendor{Id: source.Id, Name: source.Name, Description: "Updated source", Icon: source.Icon, Version: loaded.Version}
-				require.NoError(t, edit.Update())
-				updated, err := model.GetVendorByID(source.Id)
-				require.NoError(t, err)
-				assert.Equal(t, loaded.CreatedTime, updated.CreatedTime)
-				assert.Zero(t, updated.Status)
-				edit.Version = staleVersion
-				assert.ErrorIs(t, edit.Update(), model.ErrVendorConflict)
-
-				one := model.Model{ModelName: "vendor-model-one", VendorID: source.Id, Icon: "Custom", Description: "Preserve description", Status: 0, SyncOfficial: 0}
-				rule := model.Model{ModelName: "vendor-rule-", VendorID: source.Id, NameRule: model.NameRulePrefix, Status: 1, SyncOfficial: 1}
-				require.NoError(t, one.Insert())
-				require.NoError(t, rule.Insert())
-				priceBefore, err := model.GetModelPricingSnapshot([]string{one.ModelName})
-				require.NoError(t, err)
-				require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: one.ModelName, ExpectedVersion: priceBefore.Entries[0].Version, Pricing: model.PricingValues{"ModelPrice": float64(0.25)}}}))
-				priceBefore, err = model.GetModelPricingSnapshot([]string{one.ModelName})
-				require.NoError(t, err)
-				channel := model.Channel{Name: "Unchanged vendor channel", Type: 1, Status: common.ChannelStatusEnabled}
-				require.NoError(t, db.Create(&channel).Error)
-				ability := model.Ability{Model: one.ModelName, Group: "default", ChannelId: channel.Id, Enabled: true}
-				require.NoError(t, db.Create(&ability).Error)
-				linked, total, err := model.SearchVendors("", 0, 20, "linked")
-				require.NoError(t, err)
-				require.Len(t, linked, 1)
-				assert.EqualValues(t, 1, total)
-				assert.EqualValues(t, 2, linked[0].ModelCount)
-				unlinked, _, err := model.SearchVendors("Vendor Target", 0, 20, "unlinked")
-				require.NoError(t, err)
-				require.Len(t, unlinked, 1)
-				var references *model.VendorReferenceError
-				err = model.DeleteVendors([]int{source.Id, target.Id})
-				require.ErrorAs(t, err, &references)
-				assert.EqualValues(t, 2, references.Counts[source.Id])
-				_, err = model.GetVendorByID(target.Id)
-				require.NoError(t, err, "bulk delete must not partially delete unreferenced vendors")
-				var response struct {
-					Success         bool
-					Code            string
-					ReferenceCounts map[int]int64 `json:"reference_counts"`
-				}
-				recorder := modelManagementRequest(t, PreviewVendorOperation, http.MethodPost, "/api/vendors/operations/preview", model.VendorOperation{Action: "delete", VendorIDs: []int{source.Id}}, &response)
-				assert.Equal(t, http.StatusConflict, recorder.Code)
-				assert.Equal(t, "VENDOR_REFERENCED", response.Code)
-				assert.EqualValues(t, 2, response.ReferenceCounts[source.Id])
-
-				disappearing := model.Vendor{Name: "Preview target"}
-				require.NoError(t, disappearing.Insert())
-				staleAssignment := model.VendorOperation{Action: "assign", ModelIDs: []int{one.Id}, TargetVendorID: disappearing.Id}
-				stalePreview, err := model.PreviewVendorOperation(staleAssignment)
-				require.NoError(t, err)
-				staleAssignment.ExpectedVersion = stalePreview.Version
-				require.NoError(t, disappearing.Delete())
-				recorder = modelManagementRequest(t, ApplyVendorOperation, http.MethodPost, "/api/vendors/operations", staleAssignment, &response)
-				assert.Equal(t, http.StatusConflict, recorder.Code)
-				assert.Equal(t, "VENDOR_CONFLICT", response.Code)
-
-				assign := model.VendorOperation{Action: "assign", ModelIDs: []int{one.Id}, TargetVendorID: target.Id}
-				preview, err := model.PreviewVendorOperation(assign)
-				require.NoError(t, err)
-				require.Len(t, preview.Models, 1)
-				assign.ExpectedVersion = preview.Version
-				one.Description = "Updated in the same timestamp"
-				require.NoError(t, db.Model(&model.Model{}).Where("id = ?", one.Id).Update("description", one.Description).Error)
-				_, err = model.ApplyVendorOperation(assign)
-				assert.ErrorIs(t, err, model.ErrVendorConflict)
-				preview, err = model.PreviewVendorOperation(assign)
-				require.NoError(t, err)
-				assign.ExpectedVersion = preview.Version
-				target.Description = "New target description"
-				require.NoError(t, target.Update())
-				_, err = model.ApplyVendorOperation(assign)
-				assert.ErrorIs(t, err, model.ErrVendorConflict)
-				preview, err = model.PreviewVendorOperation(assign)
-				require.NoError(t, err)
-				assign.ExpectedVersion = preview.Version
-				result, err := model.ApplyVendorOperation(assign)
-				require.NoError(t, err)
-				assert.Equal(t, []int{one.Id}, result.UpdatedModels)
-				var after model.Model
-				after = model.Model{}
-				require.NoError(t, db.First(&after, one.Id).Error)
-				assert.Equal(t, target.Id, after.VendorID)
-				assert.Equal(t, one.Description, after.Description)
-				assert.Equal(t, one.Icon, after.Icon)
-				assert.Equal(t, one.Status, after.Status)
-				after = model.Model{}
-				require.NoError(t, db.First(&after, rule.Id).Error)
-				assert.Equal(t, source.Id, after.VendorID)
-				assign.TargetVendorID = 0
-				preview, err = model.PreviewVendorOperation(assign)
-				require.NoError(t, err)
-				assign.ExpectedVersion = preview.Version
-				_, err = model.ApplyVendorOperation(assign)
-				require.NoError(t, err)
-				after = model.Model{}
-				require.NoError(t, db.First(&after, one.Id).Error)
-				assert.Zero(t, after.VendorID)
-				after.VendorID = -1001
-				assert.Error(t, after.Update(), "display-only vendors cannot become stored references")
-
-				merge := model.VendorOperation{Action: "merge", VendorIDs: []int{source.Id}, TargetVendorID: target.Id}
-				preview, err = model.PreviewVendorOperation(merge)
-				require.NoError(t, err)
-				merge.ExpectedVersion = preview.Version
-				require.NoError(t, db.Callback().Delete().Before("gorm:delete").Register("vendor_delete_failure", func(tx *gorm.DB) {
-					if tx.Statement.Table == "vendors" {
-						tx.AddError(errors.New("injected vendor delete failure"))
-					}
-				}))
-				_, err = model.ApplyVendorOperation(merge)
-				require.Error(t, err)
-				require.NoError(t, db.Callback().Delete().Remove("vendor_delete_failure"))
-				after = model.Model{}
-				require.NoError(t, db.First(&after, rule.Id).Error)
-				assert.Equal(t, source.Id, after.VendorID, "ownership updates roll back when deletion fails")
-				_, err = model.GetVendorByID(source.Id)
-				require.NoError(t, err)
-				_, err = model.ApplyVendorOperation(merge)
-				require.NoError(t, err)
-				_, err = model.GetVendorByID(source.Id)
-				assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
-				retained, err := model.GetVendorByID(target.Id)
-				require.NoError(t, err)
-				assert.Equal(t, target.Description, retained.Description)
-				assert.Equal(t, "OpenAI", retained.Icon)
-				assert.EqualValues(t, 1, retained.ModelCount)
-				after = one
-				after.VendorID = source.Id
-				assert.Error(t, after.Update(), "deleted vendors cannot acquire new references")
-				priceAfter, err := model.GetModelPricingSnapshot([]string{one.ModelName})
-				require.NoError(t, err)
-				assert.Equal(t, priceBefore.Entries[0], priceAfter.Entries[0], "assignment and merge preserve model pricing")
-				var retainedChannel model.Channel
-				require.NoError(t, db.First(&retainedChannel, channel.Id).Error)
-				assert.Equal(t, channel.Name, retainedChannel.Name)
-				assert.Equal(t, channel.Status, retainedChannel.Status)
-				var retainedAbility model.Ability
-				require.NoError(t, db.Where("model = ? AND channel_id = ?", one.ModelName, channel.Id).First(&retainedAbility).Error)
-				assert.Equal(t, ability.Group, retainedAbility.Group)
-				assert.Equal(t, ability.Enabled, retainedAbility.Enabled)
-			})
-			t.Run("concurrent_create_and_delete_never_orphan_model", func(t *testing.T) {
-				vendor := model.Vendor{Name: "Concurrent owner"}
-				require.NoError(t, vendor.Insert())
-				var createErr, deleteErr error
-				var wg sync.WaitGroup
-				wg.Add(2)
-				go func() {
-					defer wg.Done()
-					createErr = (&model.Model{ModelName: "concurrent-owned-model", VendorID: vendor.Id}).Insert()
-				}()
-				go func() { defer wg.Done(); deleteErr = vendor.Delete() }()
-				wg.Wait()
-				if createErr == nil {
-					require.Error(t, deleteErr)
-				} else {
-					require.NoError(t, deleteErr)
-				}
-				var models []model.Model
-				require.NoError(t, db.Where("model_name = ?", "concurrent-owned-model").Find(&models).Error)
-				if len(models) != 0 {
-					_, err := model.GetVendorByID(models[0].VendorID)
-					require.NoError(t, err)
-				}
 			})
 		})
 	}
