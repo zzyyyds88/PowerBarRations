@@ -288,7 +288,7 @@ it.each([200, 401])(
       })
       .catch(handleServerError)
     expect(open).toHaveBeenCalledTimes(1)
-    expect(open.mock.calls[0][1]).toBe('/api/user/auth/refresh')
+    expect(open.mock.calls[0][1]).toBe('/api/v1/auth/session')
     if (refreshStatus === 200) {
       expect(requests).toBe(2)
       expect(notify).not.toHaveBeenCalled()
