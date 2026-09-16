@@ -965,10 +965,8 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 		baseURLCol = `"base_url"`
 	}
 
-	order := "priority desc"
-	if idSort {
-		order = "id desc"
-	}
+	// 渠道 priority 列已删除（W1）：搜索结果统一按 id 降序，与渠道列表默认排序一致。
+	order := "id desc"
 
 	// 构造基础查询
 	baseQuery := DB.Model(&Channel{}).Omit("key")
@@ -1162,11 +1160,9 @@ func CountChannelTags(query *gorm.DB) (int64, error) {
 // Get channels of specified type with pagination
 func GetChannelsByType(startIdx int, num int, idSort bool, channelType int) ([]*Channel, error) {
 	var channels []*Channel
-	order := "priority desc"
-	if idSort {
-		order = "id desc"
-	}
-	err := DB.Where("type = ?", channelType).Order(order).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
+	// 渠道 priority 列已删除（W1）：统一按 id 降序（保留 idSort 形参以兼容调用方）。
+	_ = idSort
+	err := DB.Where("type = ?", channelType).Order("id desc").Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
 	return channels, err
 }
 
