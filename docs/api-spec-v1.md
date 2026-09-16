@@ -51,7 +51,7 @@ HTTP/1.1 401 Unauthorized
      "diff": { "lanes": { "add": ["lane-beta"], "update": [], "remove": [] } } }
    ```
 
-   **例外（不支持 dry-run，也不会写库）**：`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`（探活本身就是只读的真实请求）、`PUT /api/tls/certificate`、`POST /api/tls/self-signed`、`POST /api/auth/*`（认证与证书写入没有"预览"语义）。
+   **例外（不支持 dry-run，也不会写库）**：`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`（探活本身就是只读的真实请求）、`POST /api/auth/*`（认证没有"预览"语义）。
 4. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。**非法/损坏的 cursor 返回 400 `validation_failed`**（不得静默回退到第一页，否则调用方会陷入翻页死循环）。
 5. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
 6. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。

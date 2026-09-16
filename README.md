@@ -24,14 +24,14 @@
 export PBR_SESSION_SECRET="$(openssl rand -hex 32)"
 export PBR_CRYPTO_SECRET="$(openssl rand -hex 32)"
 docker compose up -d --build
-# 默认 HTTPS + 自签证书（首次启动自动生成到数据卷 /data/tls）；自签需 -k 或导入受信任证书
-curl -sk https://127.0.0.1:5700/api/v1/health
+# 本网关只提供 HTTP（明文），不提供 TLS/HTTPS
+curl -s http://127.0.0.1:5700/api/v1/health
 ```
 
 首次使用按顺序做四件事（**全部是 HTTP 调用，不需要改文件、不需要读库**）：
 
 ```bash
-BASE=https://127.0.0.1:5700        # 自签证书：下面所有 curl 请加 -k（或先导入受信任证书）
+BASE=http://127.0.0.1:5700         # 明文 HTTP；需要 HTTPS 请自行在前面加反向代理终结 TLS
 
 # 1) 设登录口令 → 签发浏览器会话 Cookie，并返回管理密钥（Base64(SHA256(口令))）
 curl -s -X POST $BASE/api/v1/setup -H 'Content-Type: application/json' \
@@ -184,8 +184,10 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 - 口令丢失：`PBR_ADMIN_KEY`（单把）或 `PBR_ADMIN_KEYS`（多把，逗号分隔）环境变量直接指定，
   或 `pbr auth reset --db <pbr.db> --yes` 清掉库内凭据回到未初始化状态（`--yes` 为破坏性动作确认）。
 - 口令变更即管理密钥变更，旧密钥立即失效。登录接口对连续失败做指数退避（上限 30s）。
-- Docker 默认 HTTPS（`TLS_ENABLED=true`）；裸机若关闭 TLS 则局域网内是明文 HTTP。
-  派生规则（单次 SHA256、无盐）抗离线爆破弱——**口令必须是长随机串**（建议 ≥32 字符）。
+- **本网关只跑明文 HTTP，不提供 TLS/HTTPS**（与上游 new-api 口径一致）。
+  安全边界：派生规则（单次 SHA256、无盐）抗离线爆破弱——**口令必须是长随机串**（建议 ≥32 字符）；
+  且服务默认监听 `0.0.0.0`，口令/密钥/渠道 key 会明文过网。跨机使用请加外部反向代理终结 TLS，
+  或把 `PBR_BIND` 收成 `127.0.0.1` 仅本机访问。
 
 ---
 
@@ -231,28 +233,26 @@ GET  /api/v1/openapi.json               # 完整契约
 - **升级**：`docker compose up -d --build`；数据库结构由启动时的迁移自动补齐。
 - **验收证据**：每一波的实测结论在 [`verify/`](verify/)（`w1`/`w2`/`w3`/`w5`/`deploy` 各有 README）。
 
-### 5.1 HTTPS（自签与导入证书）
+### 5.1 传输安全（本服务只提供 HTTP）
 
-默认（Docker）**开启 HTTPS**：`TLS_ENABLED=true`，首次启动若无证书会自动生成自签证书到
-`TLS_DIR`（容器内 `/data/tls`，随数据卷持久化）。裸机运行需显式开启：
+**本网关不提供 TLS/HTTPS 服务能力**（业主决定，与上游 new-api 口径一致）：不加载证书、不自签、
+不热加载，也没有 `/api/tls/*` 路由与 `TLS_*` 环境变量——启动即以明文 HTTP 监听。
 
-```bash
-# 方式一：自动生成自签证书（SAN 含本机名/回环/本机 IP）
-TLS_ENABLED=true TLS_DIR=./tls ./pbr
+需要 HTTPS 时，**在外部反向代理终结 TLS**（Nginx / Caddy / 云负载均衡），再代理到本服务的明文端口：
 
-# 方式二：指定已有证书（导入）
-TLS_ENABLED=true TLS_CERT_FILE=/path/fullchain.pem TLS_KEY_FILE=/path/privkey.pem ./pbr
-
-# 离线先生成自签证书 / 查看
-./pbr tls gen --out ./tls --host pbr.example.com,192.168.1.10 --days 825
-./pbr tls show --cert ./tls/cert.pem
+```nginx
+server {
+  listen 443 ssl;
+  server_name pbr.example.com;
+  ssl_certificate     /path/fullchain.pem;
+  ssl_certificate_key /path/privkey.pem;
+  location / { proxy_pass http://127.0.0.1:5700; proxy_set_header Host $host; }
+}
 ```
 
-- 自签证书浏览器/客户端会告警：把 `cert.pem` 导入系统信任，或客户端加 `-k`（curl）。控制台在 HTTPS 下会显示安全标记。
-- **运行期导入自有证书**（PEM，LE/商业证书均可）：`PUT /api/v1/tls/certificate`
-  body `{"cert_pem":"-----BEGIN CERTIFICATE-----...","key_pem":"-----BEGIN PRIVATE KEY-----..."}`；
-  写盘并在**下次握手立即生效，无需重启**。
-- 查看/重新自签：`GET /api/v1/tls`；`POST /api/v1/tls/self-signed` body `{"hosts":[...],"days":825}`。
+- 走代理时用 `SESSION_COOKIE_SECURE=true` 让会话 Cookie 带 `Secure`（网关自己不会自动加）。
+- **不要**把明文端口直接暴露到不可信网络：管理口令衍生弱（单次 SHA256、无盐），
+  且请求里含渠道 key 与客户端密钥。至少把 `PBR_BIND` 收成 `127.0.0.1`，或用上面的代理。
 
 ### 5.2 CLI 子命令
 
@@ -260,8 +260,6 @@ TLS_ENABLED=true TLS_CERT_FILE=/path/fullchain.pem TLS_KEY_FILE=/path/privkey.pe
 ./pbr                        # 启动网关
 ./pbr migrate --routing <octopus.db> --vendor <new-api.db> --target <pbr.db> \
               --report /tmp/report.json --keys octopus|newapi|both [--dry-run]
-./pbr tls gen --out ./tls --host <host>[,<ip>] [--days 825]
-./pbr tls show --cert ./tls/cert.pem
 ./pbr auth reset --db <pbr.db> --yes   # 清库内管理凭据→回到未初始化（破坏性，需 --yes）
 ./pbr plugin <子命令>                  # 任务插件维护
 ```

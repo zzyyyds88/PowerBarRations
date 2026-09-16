@@ -27,13 +27,8 @@ services:
       PORT: "5700"
       # 默认监听 0.0.0.0 对局域网开放；要收紧改成 127.0.0.1（api-spec §1）。
       PBR_BIND: "${PBR_BIND:-0.0.0.0}"
-      # HTTPS：默认开启；首次启动若无证书会自动生成自签证书到 /data/tls（随卷持久化）。
-      # 导入自有证书：把 PEM 放到卷内 /data/tls/{cert,key}.pem，或调 PUT /api/v1/tls/certificate。
-      TLS_ENABLED: "${PBR_TLS_ENABLED:-true}"
-      TLS_DIR: "/data/tls"
-      TLS_HOSTS: "${PBR_TLS_HOSTS:-}"
-      TLS_CERT_FILE: "${PBR_TLS_CERT_FILE:-}"
-      TLS_KEY_FILE: "${PBR_TLS_KEY_FILE:-}"
+      # 本服务只跑明文 HTTP，不提供 TLS。需要 HTTPS 请在外部反向代理终结 TLS
+      # 再转发到本端口（见 README §5.1）；代理场景可设 SESSION_COOKIE_SECURE=true。
       SQLITE_PATH: "/data/pbr.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate"
       SESSION_SECRET: "${PBR_SESSION_SECRET:?请先 export PBR_SESSION_SECRET=$(openssl rand -hex 32)}"
       CRYPTO_SECRET: "${PBR_CRYPTO_SECRET:?请先 export PBR_CRYPTO_SECRET=$(openssl rand -hex 32)}"
@@ -45,7 +40,7 @@ services:
     volumes:
       - pbr-data:/data
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "--no-check-certificate", "https://127.0.0.1:5700/api/v1/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5700/api/v1/health"]
       interval: 30s
       timeout: 5s
       retries: 3

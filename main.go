@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
@@ -23,7 +22,6 @@ import (
 	"pbr/i18n"
 	"pbr/internal/authutil"
 	"pbr/internal/legacy"
-	"pbr/internal/tlsutil"
 	"pbr/logger"
 	"pbr/middleware"
 	"pbr/model"
@@ -55,9 +53,6 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		os.Exit(legacy.RunCLI(os.Args[2:]))
-	}
-	if len(os.Args) > 1 && os.Args[1] == "tls" {
-		os.Exit(tlsutil.RunCLI(os.Args[2:]))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "auth" {
 		os.Exit(authutil.RunCLI(os.Args[2:]))
@@ -220,14 +215,8 @@ func main() {
 		bind = "0.0.0.0"
 	}
 
-	// HTTPS：TLS_ENABLED=true 时加载/自动生成证书（详见 internal/tlsutil）。
-	tlsManager, tlsErr := tlsutil.SetupFromEnv()
-	if tlsErr != nil {
-		common.FatalLog("failed to initialize TLS: " + tlsErr.Error())
-		return
-	}
-	tlsutil.Default = tlsManager
-
+	// 本网关只提供明文 HTTP（业主决定，见 docs/token-spec-v1.md §2.5）：
+	// 不加载证书、不自签、不热加载；需要 HTTPS 时由外部反向代理终结 TLS。
 	srv := &http.Server{
 		Addr:    bind + ":" + port,
 		Handler: server,
@@ -237,20 +226,12 @@ func main() {
 		common.FatalLog("failed to listen on " + srv.Addr + ": " + listenErr.Error())
 		return
 	}
-	scheme := "http"
-	if tlsManager.Enabled() {
-		scheme = "https"
-		listener = tls.NewListener(listener, &tls.Config{
-			GetCertificate: tlsManager.GetCertificate,
-			MinVersion:     tls.VersionTLS12,
-		})
-	}
 	go func() {
 		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			common.FatalLog("failed to start " + scheme + " server: " + err.Error())
+			common.FatalLog("failed to start http server: " + err.Error())
 		}
 	}()
-	common.SysLog(fmt.Sprintf("%s listening on %s:%s (tls=%v, source=%s)", scheme, bind, port, tlsManager.Enabled(), tlsManager.Source()))
+	common.SysLog(fmt.Sprintf("http listening on %s:%s", bind, port))
 
 	time.Sleep(100 * time.Millisecond)
 

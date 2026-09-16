@@ -14,7 +14,7 @@
   ```bash
   AK=$(printf '%s' '<登录口令>' | openssl dgst -sha256 -binary | openssl base64 -A)
   A=(-H "Authorization: Bearer $AK" -H 'Content-Type: application/json')
-  BASE=https://127.0.0.1:5700        # 自签证书加 -k
+  BASE=http://127.0.0.1:5700         # 明文 HTTP；需要 HTTPS 请自加反向代理终结 TLS
   ```
 
   **只要知道登录口令就能自己算，不需要人工复制密钥。** 口令变更后旧密钥立即失效。
@@ -43,7 +43,6 @@
   `GET /api/stats`（`group_by=lane|channel|key|model|channel_model`）、`GET /api/route-events`（SSE）
 - 系统：`GET|PUT /api/system/options`
 - 配置生命周期：`GET /api/export`、`POST /api/import?dry_run=true`
-- HTTPS：`GET /api/tls`、`PUT /api/tls/certificate`、`POST /api/tls/self-signed`
 - 审计：`GET /api/audit`
 - 认证：`POST /api/setup`、`POST /api/auth/login`、`POST /api/auth/logout`、
   `GET /api/auth/session`、`POST /api/auth/password`
@@ -53,16 +52,16 @@
 ### 4.1 建渠道 → 建车道 → 发密钥 → 端到端验证
 
 ```bash
-curl -sk "${A[@]}" -X PUT "$BASE/api/channels/ch-a" -d '{
+curl -s "${A[@]}" -X PUT "$BASE/api/channels/ch-a" -d '{
   "type":"openai","base_url":"https://vendor.example/v1","key":"sk-...",
   "models":["model-1"],"enabled":true}'
 
 # 可选：先探测上游模型清单，看差异后再落库
-curl -sk "${A[@]}" -X POST "$BASE/api/channels/ch-a/sync-models?dry_run=true"
+curl -s "${A[@]}" -X POST "$BASE/api/channels/ch-a/sync-models?dry_run=true"
 
 # 车道是唯一路由入口：不建车道该模型不可调用（503）。
 # members 数组顺序即故障切换顺序，priority 由控制台按位置生成（首位最大）。
-curl -sk "${A[@]}" -X PUT "$BASE/api/lanes/lane-a" -d '{
+curl -s "${A[@]}" -X PUT "$BASE/api/lanes/lane-a" -d '{
   "enabled":true,"mode":"failover",
   "config":{"member_max_attempts":2,"member_retry_interval_seconds":3,
             "member_non_stream_response_timeout_seconds":120,
@@ -70,10 +69,10 @@ curl -sk "${A[@]}" -X PUT "$BASE/api/lanes/lane-a" -d '{
             "member_cooldown_seconds":60,"member_affinity_seconds":0},
   "members":[{"channel":"ch-a","upstream_model":"model-1","priority":10}]}'
 
-KEY=$(curl -sk "${A[@]}" -X POST "$BASE/api/keys" \
+KEY=$(curl -s "${A[@]}" -X POST "$BASE/api/keys" \
   -d '{"name":"my-key","allowed_models":["model-1"]}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["key"])')
 
-curl -sk -H "Authorization: Bearer $KEY" "$BASE/v1/chat/completions" \
+curl -s -H "Authorization: Bearer $KEY" "$BASE/v1/chat/completions" \
   -d '{"model":"model-1","messages":[{"role":"user","content":"ping"}]}'
 ```
 

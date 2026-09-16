@@ -122,11 +122,11 @@ func ClearAdminSession(c *gin.Context) {
 	session.ClearCookie(c.Writer, SessionCookieSecure())
 }
 
-// SessionCookieSecure 会话 Cookie 是否带 Secure：TLS 开启或显式配置时为 true。
+// SessionCookieSecure 会话 Cookie 是否带 Secure。
+//
+// 本网关只跑明文 HTTP，不再从 TLS 配置推导；仅当显式设置 SESSION_COOKIE_SECURE
+// 时为 true——典型场景是前置反向代理已终结 TLS（见 README §5.1）。
 func SessionCookieSecure() bool {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TLS_ENABLED")), "true") {
-		return true
-	}
 	return sessionCookieSecureFn()
 }
 
