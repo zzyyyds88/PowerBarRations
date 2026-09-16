@@ -77,6 +77,7 @@ HTTP/1.1 401 Unauthorized
 | 401 | `unauthorized` | 密钥缺失或错误 |
 | 403 | `forbidden_scope` | 客户端密钥访问了被 deny 的车道（仅模型面） |
 | 404 | `lane_not_found` / `channel_not_found` / `key_not_found` / `log_not_found` | 对象不存在 |
+| 404 | `webhook_target_not_found` | `POST /api/webhooks/test` 的 name 不在配置里（§5.8） |
 | 409 | `conflict` | 唯一名冲突 / 乐观锁冲突 / 车道名与成员别名冲突 / **环境变量管理密钥生效时变更口令**（`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 优先，口令变更不生效） |
 | 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/setup`） |
 | 422 | `lane_has_no_members` | 启用车道但无成员 |

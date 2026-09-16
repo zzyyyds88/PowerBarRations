@@ -202,17 +202,24 @@ func PruneLogs(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	// webhook_deliveries 随明细日志同一保留期清理（design-v1 §16.10）。
+	webhookCount, err := model.CountWebhookDeliveriesBefore(before)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
 	if dryRun(c) {
 		// 干跑也留审计痕迹（api-spec §2.6 的 dry_run 字段）
 		writeAudit(c, "prune", "logs", "logs")
 		c.JSON(http.StatusOK, gin.H{
-			"dry_run":        true,
-			"valid":          true,
-			"before":         rfc3339(before),
-			"retention_days": retentionDays,
-			"deleted":        0,
-			"would_delete":   count,
-			"diff":           gin.H{"logs": gin.H{"remove": count}},
+			"dry_run":                         true,
+			"valid":                           true,
+			"before":                          rfc3339(before),
+			"retention_days":                  retentionDays,
+			"deleted":                         0,
+			"would_delete":                    count,
+			"would_delete_webhook_deliveries": webhookCount,
+			"diff":                            gin.H{"logs": gin.H{"remove": count}},
 		})
 		return
 	}
@@ -222,10 +229,17 @@ func PruneLogs(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	webhookDeleted, err := model.PruneWebhookDeliveriesBefore(before)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
 	writeAudit(c, "prune", "logs", "logs")
 	c.JSON(http.StatusOK, gin.H{
 		"deleted":        deleted,
 		"before":         rfc3339(before),
 		"retention_days": retentionDays,
+		// 投递日志清理条数（additive；design-v1 §16.10）
+		"webhook_deliveries_deleted": webhookDeleted,
 	})
 }

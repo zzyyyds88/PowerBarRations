@@ -86,6 +86,12 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.GET("/system/options", api.GetSystemOptions)
 		authed.PUT("/system/options", api.PutSystemOptions)
 
+		// Webhook 事件通知（design-v1 §16.10：配置 / 测试投递 / 投递日志）
+		authed.GET("/webhooks", api.ListWebhooks)
+		authed.PUT("/webhooks", api.PutWebhooks)
+		authed.POST("/webhooks/test", api.TestWebhook)
+		authed.GET("/webhooks/deliveries", api.ListWebhookDeliveries)
+
 		// 客户端密钥
 		authed.GET("/keys", api.ListKeys)
 		authed.POST("/keys", api.CreateKey)
