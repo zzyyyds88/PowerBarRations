@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EmptyState } from '@/components/empty-state'
@@ -32,10 +32,14 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { getPBRStats, type PBRStatsGroupBy } from '../../pbr-stats-api'
+import {
+  getPBRStats,
+  type PBRStatBucket,
+  type PBRStatsGroupBy,
+} from '../../pbr-stats-api'
 
-// 成本统计（上游花费）。上游单价在渠道里配置（渠道级 > 全局默认），
-// 这里只读 GET /api/stats 的聚合结果。
+// 模型/成本分析（PBR 口径）。请求数、token、成功率与上游花费全部来自
+// GET /api/stats 的聚合；上游单价在渠道里配置（渠道价 > 全局默认 > 不折算）。
 
 const RANGE_OPTIONS = [
   { value: '24h', label: '最近 24 小时', seconds: 24 * 3600, granularity: 'hour' },
@@ -50,10 +54,12 @@ const GROUP_OPTIONS: { value: PBRStatsGroupBy; label: string }[] = [
   { value: 'key', label: '按密钥' },
 ]
 
+const EMPTY_BUCKETS: PBRStatBucket[] = []
+
 function formatCost(value: number): string {
   if (!Number.isFinite(value) || value === 0) return '¥0'
-  if (Math.abs(value) < 0.01) return '¥' + value.toFixed(4)
-  return '¥' + value.toFixed(2)
+  if (Math.abs(value) < 0.01) return `¥${value.toFixed(4)}`
+  return `¥${value.toFixed(2)}`
 }
 
 function formatNumber(value: number): string {
@@ -74,15 +80,38 @@ function formatBucket(ts: number, granularity: 'hour' | 'day'): string {
   })
 }
 
-export function CostDashboard() {
+function statCard(label: string, value: string) {
+  return (
+    <div className='bg-card/60 rounded-lg border px-4 py-3'>
+      <div className='text-muted-foreground text-xs'>{label}</div>
+      <div className='mt-1 font-mono text-lg font-semibold tabular-nums'>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+export function PbrAnalyticsDashboard(props: {
+  defaultGroupBy?: PBRStatsGroupBy
+  groupOptions?: PBRStatsGroupBy[]
+}) {
   const { t } = useTranslation()
-  const [rangeKey, setRangeKey] = useState<(typeof RANGE_OPTIONS)[number]['value']>('7d')
-  const [groupBy, setGroupBy] = useState<PBRStatsGroupBy>('channel')
-  const range = RANGE_OPTIONS.find((item) => item.value === rangeKey) ?? RANGE_OPTIONS[1]
+  const [rangeKey, setRangeKey] =
+    useState<(typeof RANGE_OPTIONS)[number]['value']>('7d')
+  const [groupBy, setGroupBy] = useState<PBRStatsGroupBy>(
+    props.defaultGroupBy ?? 'channel'
+  )
+  const allowedGroups = props.groupOptions ?? ['channel', 'model', 'lane', 'key']
+  const visibleGroupOptions = GROUP_OPTIONS.filter((option) =>
+    allowedGroups.includes(option.value)
+  )
+  const range =
+    RANGE_OPTIONS.find((item) => item.value === rangeKey) ?? RANGE_OPTIONS[1]
 
   const query = useQuery({
-    queryKey: ['pbr-cost-stats', rangeKey, groupBy],
+    queryKey: ['pbr-analytics-stats', rangeKey, groupBy],
     queryFn: () => {
+      // eslint-disable-next-line react/purity -- query functions run outside render
       const to = Math.floor(Date.now() / 1000)
       const from = to - range.seconds
       return getPBRStats({
@@ -95,22 +124,23 @@ export function CostDashboard() {
     refetchOnWindowFocus: false,
   })
 
-  const items = query.data?.items ?? []
+  const items = query.data?.items ?? EMPTY_BUCKETS
 
-  const totals = useMemo(() => {
-    return items.reduce(
-      (acc, item) => {
-        acc.cost += item.estimated_cost || 0
-        acc.requests += item.requests || 0
-        acc.successes += item.successes || 0
-        acc.tokens += (item.prompt_tokens || 0) + (item.completion_tokens || 0)
-        return acc
-      },
-      { cost: 0, requests: 0, successes: 0, tokens: 0 }
-    )
-  }, [items])
-
-  const successRate = totals.requests > 0 ? totals.successes / totals.requests : 0
+  const totals = useMemo(
+    () =>
+      items.reduce(
+        (acc, item) => {
+          acc.cost += item.estimated_cost || 0
+          acc.requests += item.requests || 0
+          acc.successes += item.successes || 0
+          acc.tokens +=
+            (item.prompt_tokens || 0) + (item.completion_tokens || 0)
+          return acc
+        },
+        { cost: 0, requests: 0, successes: 0, tokens: 0 }
+      ),
+    [items]
+  )
 
   const timeline = useMemo(() => {
     const byBucket = new Map<number, number>()
@@ -128,7 +158,10 @@ export function CostDashboard() {
   const maxBucketCost = timeline.reduce((max, item) => Math.max(max, item.cost), 0)
 
   const distribution = useMemo(() => {
-    const byGroup = new Map<string, { cost: number; requests: number; tokens: number }>()
+    const byGroup = new Map<
+      string,
+      { cost: number; requests: number; tokens: number }
+    >()
     for (const item of items) {
       const key = item.group || '(未记录)'
       const current = byGroup.get(key) ?? { cost: 0, requests: 0, tokens: 0 }
@@ -142,17 +175,123 @@ export function CostDashboard() {
       .sort((a, b) => b.cost - a.cost)
   }, [items])
 
-  const statCard = (label: string, value: string) => (
-    <div className='bg-card/60 rounded-lg border px-4 py-3'>
-      <div className='text-muted-foreground text-xs'>{label}</div>
-      <div className='mt-1 font-mono text-lg font-semibold tabular-nums'>{value}</div>
-    </div>
-  )
+  const successRate =
+    totals.requests > 0 ? (totals.successes / totals.requests) * 100 : 0
+
+  let body: ReactNode
+  if (query.isLoading) {
+    body = <LoadingState />
+  } else if (query.isError) {
+    body = (
+      <ErrorState
+        title={t('Failed to load statistics')}
+        description={
+          query.error instanceof Error ? query.error.message : undefined
+        }
+      />
+    )
+  } else if (items.length === 0) {
+    body = (
+      <EmptyState
+        title={t('No cost data yet')}
+        description={t(
+          'Configure upstream unit prices in the channel to see cost accounting here.'
+        )}
+      />
+    )
+  } else {
+    body = (
+      <>
+        <div className='bg-card/60 rounded-lg border p-4'>
+          <div className='text-muted-foreground mb-3 text-xs'>
+            {t('Cost over time')}
+          </div>
+          <div className='flex h-40 items-end gap-1'>
+            {timeline.map((item) => (
+              <div
+                key={item.ts}
+                className='group relative flex flex-1 flex-col items-center justify-end'
+                title={`${formatBucket(item.ts, range.granularity)} · ${formatCost(item.cost)}`}
+              >
+                <div
+                  className='bg-sky-500/70 w-full rounded-sm'
+                  style={{
+                    height:
+                      maxBucketCost > 0
+                        ? `${Math.max(2, (item.cost / maxBucketCost) * 100)}%`
+                        : '2px',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className='text-muted-foreground mt-2 flex justify-between text-[10px]'>
+            <span>
+              {timeline.length > 0
+                ? formatBucket(timeline[0].ts, range.granularity)
+                : ''}
+            </span>
+            <span>
+              {timeline.length > 0
+                ? formatBucket(
+                    timeline.at(-1)?.ts ?? 0,
+                    range.granularity
+                  )
+                : ''}
+            </span>
+          </div>
+        </div>
+
+        <div className='bg-card/60 overflow-x-auto rounded-lg border'>
+          <table className='w-full text-sm'>
+            <thead>
+              <tr className='text-muted-foreground border-b text-left'>
+                <th className='px-4 py-2 font-medium'>
+                  {t(
+                    visibleGroupOptions.find((o) => o.value === groupBy)?.label ??
+                      'Group'
+                  )}
+                </th>
+                <th className='px-4 py-2 text-right font-medium'>
+                  {t('Upstream spend')}
+                </th>
+                <th className='px-4 py-2 text-right font-medium'>
+                  {t('Requests')}
+                </th>
+                <th className='px-4 py-2 text-right font-medium'>
+                  {t('Token count')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {distribution.map((row) => (
+                <tr key={row.key} className='border-b last:border-0'>
+                  <td className='px-4 py-2 font-mono'>{row.key}</td>
+                  <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                    {formatCost(row.cost)}
+                  </td>
+                  <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                    {formatNumber(row.requests)}
+                  </td>
+                  <td className='px-4 py-2 text-right font-mono tabular-nums'>
+                    {formatNumber(row.tokens)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    )
+  }
 
   return (
     <div className='space-y-4'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
-        <Tabs value={rangeKey} onValueChange={(value) => setRangeKey(value as typeof rangeKey)}>
+        <Tabs
+          value={rangeKey}
+          onValueChange={(value) => setRangeKey(value as typeof rangeKey)}
+        >
           <TabsList>
             {RANGE_OPTIONS.map((option) => (
               <TabsTrigger key={option.value} value={option.value}>
@@ -161,12 +300,15 @@ export function CostDashboard() {
             ))}
           </TabsList>
         </Tabs>
-        <Select value={groupBy} onValueChange={(value) => setGroupBy(value as PBRStatsGroupBy)}>
+        <Select
+          value={groupBy}
+          onValueChange={(value) => setGroupBy(value as PBRStatsGroupBy)}
+        >
           <SelectTrigger className='w-[140px]'>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {GROUP_OPTIONS.map((option) => (
+            {visibleGroupOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {t(option.label)}
               </SelectItem>
@@ -178,93 +320,26 @@ export function CostDashboard() {
       <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
         {statCard('上游花费', formatCost(totals.cost))}
         {statCard('请求数', formatNumber(totals.requests))}
-        {statCard('成功率', (successRate * 100).toFixed(1) + '%')}
+        {statCard('成功率', `${successRate.toFixed(1)}%`)}
         {statCard('Token 数', formatNumber(totals.tokens))}
       </div>
 
-      {query.isLoading ? (
-        <LoadingState />
-      ) : query.isError ? (
-        <ErrorState
-          title={t('Failed to load statistics')}
-          description={
-            query.error instanceof Error ? query.error.message : undefined
-          }
-        />
-      ) : items.length === 0 ? (
-        <EmptyState
-          title={t('No cost data yet')}
-          description={t(
-            'Configure upstream unit prices in the channel to see cost accounting here.'
-          )}
-        />
-      ) : (
-        <>
-          <div className='bg-card/60 rounded-lg border p-4'>
-            <div className='text-muted-foreground mb-3 text-xs'>
-              {t('Cost over time')}
-            </div>
-            <div className='flex h-40 items-end gap-1'>
-              {timeline.map((item) => (
-                <div
-                  key={item.ts}
-                  className='group relative flex flex-1 flex-col items-center justify-end'
-                  title={formatBucket(item.ts, range.granularity) + ' · ' + formatCost(item.cost)}
-                >
-                  <div
-                    className='bg-sky-500/70 w-full rounded-sm'
-                    style={{
-                      height:
-                        maxBucketCost > 0
-                          ? Math.max(2, (item.cost / maxBucketCost) * 100) + '%'
-                          : '2px',
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className='text-muted-foreground mt-2 flex justify-between text-[10px]'>
-              <span>{timeline.length > 0 ? formatBucket(timeline[0].ts, range.granularity) : ''}</span>
-              <span>
-                {timeline.length > 0
-                  ? formatBucket(timeline[timeline.length - 1].ts, range.granularity)
-                  : ''}
-              </span>
-            </div>
-          </div>
-
-          <div className='bg-card/60 overflow-x-auto rounded-lg border'>
-            <table className='w-full text-sm'>
-              <thead>
-                <tr className='text-muted-foreground border-b text-left'>
-                  <th className='px-4 py-2 font-medium'>
-                    {t(GROUP_OPTIONS.find((o) => o.value === groupBy)?.label ?? 'Group')}
-                  </th>
-                  <th className='px-4 py-2 text-right font-medium'>{t('Upstream spend')}</th>
-                  <th className='px-4 py-2 text-right font-medium'>{t('Requests')}</th>
-                  <th className='px-4 py-2 text-right font-medium'>{t('Token count')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {distribution.map((row) => (
-                  <tr key={row.key} className='border-b last:border-0'>
-                    <td className='px-4 py-2 font-mono'>{row.key}</td>
-                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
-                      {formatCost(row.cost)}
-                    </td>
-                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
-                      {formatNumber(row.requests)}
-                    </td>
-                    <td className='px-4 py-2 text-right font-mono tabular-nums'>
-                      {formatNumber(row.tokens)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
+      {body}
     </div>
+  )
+}
+
+// 成本统计分节：默认按渠道看上游花费。
+export function CostDashboard() {
+  return <PbrAnalyticsDashboard />
+}
+
+// 模型分析分节：按模型看请求/token/花费。
+export function ModelAnalytics() {
+  return (
+    <PbrAnalyticsDashboard
+      defaultGroupBy='model'
+      groupOptions={['model', 'channel', 'lane']}
+    />
   )
 }

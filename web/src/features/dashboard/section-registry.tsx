@@ -21,7 +21,11 @@ import type { TFunction } from 'i18next'
 import { createSectionRegistry } from '@/features/system-settings/utils/section-registry'
 
 /**
- * Dashboard page section definitions
+ * Dashboard page section definitions.
+ *
+ * PBR 是单用户网关：users（用户分析）随多用户面删除；flow（用户→分组→令牌→
+ * 模型的桑基图）依赖已删的 /api/data/flow，同样移除。模型与成本分析统一读
+ * GET /api/stats。
  */
 const DASHBOARD_SECTIONS = [
   {
@@ -39,22 +43,9 @@ const DASHBOARD_SECTIONS = [
     titleKey: 'Cost analytics',
     build: () => null,
   },
-  {
-    id: 'flow',
-    titleKey: 'Flow',
-    build: () => null,
-  },
-  {
-    id: 'users',
-    titleKey: 'User Analytics',
-    adminOnly: true,
-    build: () => null,
-  },
 ] as const
 
 export type DashboardSectionId = (typeof DASHBOARD_SECTIONS)[number]['id']
-
-const ADMIN_ONLY_SECTIONS = new Set<string>(['users'])
 
 const dashboardRegistry = createSectionRegistry<
   DashboardSectionId,
@@ -70,13 +61,6 @@ const dashboardRegistry = createSectionRegistry<
 export const DASHBOARD_SECTION_IDS = dashboardRegistry.sectionIds
 export const DASHBOARD_DEFAULT_SECTION = dashboardRegistry.defaultSection
 
-export function getDashboardSectionNavItems(
-  t: TFunction,
-  options?: { isAdmin?: boolean }
-) {
-  const all = dashboardRegistry.getSectionNavItems(t)
-  if (options?.isAdmin) return all
-  return all.filter(
-    (_, idx) => !ADMIN_ONLY_SECTIONS.has(DASHBOARD_SECTIONS[idx].id)
-  )
+export function getDashboardSectionNavItems(t: TFunction) {
+  return dashboardRegistry.getSectionNavItems(t)
 }

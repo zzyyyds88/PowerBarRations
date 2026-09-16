@@ -389,7 +389,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 **明确不许有**：`quota` 扣减、余额变更、请求/响应正文、任何"余额不足拒服务"逻辑。
 
-**成本折算**是可选能力：按请求模型先取**渠道级上游单价**（渠道 `setting.pbr_prices`，同一模型在不同上游可配不同采购价），没有再看**全局默认单价表**（`system/options` 的 `PBRModelPrices`）；两者都没有则不折算。**这是记账不是计费**——不参与准入、不扣余额；单价属部署数据。
+**成本折算**是可选能力：按请求模型先取**渠道级上游单价**（渠道 `setting.pbr_prices`，同一模型在不同上游可配不同采购价），没有再看**全局默认单价表**（`system/options` 的 `PBRModelPrices`）；两者都没有则不折算。**这是记账不是计费**——不参与准入、不扣余额；单价属部署数据。看板（概览/模型分析/成本统计）统一读 `GET /api/stats` 的聚合（`requests`/`successes`/`token`/`estimated_cost`）。
 
 ---
 
