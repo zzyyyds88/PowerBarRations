@@ -1,6 +1,6 @@
 # ADR 0001：路由键就是模型名，显式车道降级为可选覆盖层
 
-- 状态：已采纳（W1 实现并验收）
+- 状态：部分取代——"隐式链零配置可路由"与"model_mapping 整层删除"两点由 [ADR 0005](0005-lane-required-and-channel-model-mapping.md) 取代；"路由键 = 模型名""同形 503"仍然有效
 - 依据：`docs/design-v1.md` §0 第 8 条、§3.1；`docs/routing-spec-v1.md` §1.1
 
 ## 背景

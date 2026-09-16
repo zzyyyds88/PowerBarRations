@@ -170,7 +170,7 @@ def main():
 
         s, route0 = req(base, "GET", "/api/v1/routes/t4-model", key=admin_key)
         implicit_order = [x.get("channel") for x in route0.get("members", [])]
-        check("初始为隐式链且 live 在前", route0.get("source") in ("implicit", None) and implicit_order[:1] == ["channel-live"],
+        check("初始未配车道（建议链 live 在前）", route0.get("source") == "unconfigured" and route0.get("routable") is False and implicit_order[:1] == ["channel-live"],
               route0)
 
         s, keyb = req(base, "POST", "/api/v1/keys", {"name": "t4-client", "enabled": True}, key=admin_key)

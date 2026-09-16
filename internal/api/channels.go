@@ -67,6 +67,8 @@ type channelPayload struct {
 	Weight        *int                     `json:"weight"`
 	Key           string                   `json:"key"`
 	Prices        *[]dto.ChannelModelPrice `json:"prices"`
+	// ModelMapping 路由键 → 上游真名（ADR 0005）；省略则保持原值。
+	ModelMapping *map[string]string `json:"model_mapping"`
 }
 
 func channelResponse(ch *model.Channel) gin.H {
@@ -99,6 +101,7 @@ func channelResponse(ch *model.Channel) gin.H {
 		"enabled":        ch.Status == common.ChannelStatusEnabled,
 		"proxy":          ch.GetSetting().Proxy,
 		"prices":         prices,
+		"model_mapping":  ch.ModelMappingMap(),
 		"key_set":        strings.TrimSpace(key) != "",
 		"key_prefix":     prefix,
 		"created_at":     rfc3339(ch.CreatedTime),
@@ -407,6 +410,28 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 		}
 		encoded := string(raw)
 		channel.Setting = &encoded
+	}
+
+	if payload.ModelMapping != nil {
+		// 渠道模型映射（路由键 → 上游真名）：两边都不得为空，值去空。
+		cleaned := map[string]string{}
+		for routeKey, upstream := range *payload.ModelMapping {
+			routeKey = strings.TrimSpace(routeKey)
+			upstream = strings.TrimSpace(upstream)
+			if routeKey == "" {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: "model_mapping: route key must not be empty"}
+			}
+			if upstream == "" {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: "model_mapping: upstream model for '" + routeKey + "' must not be empty"}
+			}
+			cleaned[routeKey] = upstream
+		}
+		raw, err := json.Marshal(cleaned)
+		if err != nil {
+			return nil, &apiError{code: apierr.CodeValidationFailed, message: "invalid model_mapping"}
+		}
+		encoded := string(raw)
+		channel.ModelMapping = &encoded
 	}
 
 	// key 只写不读：省略则保留原值（新建时为空）。

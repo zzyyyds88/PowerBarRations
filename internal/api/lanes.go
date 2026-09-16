@@ -159,6 +159,32 @@ func PutLane(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// SeedLanes POST /api/v1/lanes/seed：为所有"渠道已声明但无车道"的模型生成
+// failover 车道（按渠道 priority，成员 upstream_model 留空 → 用渠道映射）。
+// 幂等；`?dry_run=true` 只返回将创建的车道名（ADR 0005）。
+func SeedLanes(c *gin.Context) {
+	dry := dryRun(c)
+	created, skipped, err := model.SeedLanes(dry)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	if created == nil {
+		created = []string{}
+	}
+	if skipped == nil {
+		skipped = []string{}
+	}
+	if dry {
+		c.JSON(http.StatusOK, gin.H{"dry_run": true, "created": created, "skipped": skipped})
+		return
+	}
+	if len(created) > 0 {
+		writeAudit(c, "seed", "lane", "", gin.H{"created": created})
+	}
+	c.JSON(http.StatusOK, gin.H{"created": created, "skipped": skipped})
+}
+
 // DeleteLane DELETE /api/v1/lanes/{name}
 func DeleteLane(c *gin.Context) {
 	name := c.Param("name")
@@ -249,11 +275,8 @@ func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliase
 		return nil, &laneBuildError{status: http.StatusUnprocessableEntity, code: apierr.CodeMemberChannelMissing,
 			message: "member channel '" + channelName + "' not found", hint: "PUT /api/v1/channels/" + channelName}
 	}
-	// 成员不写 upstream_model 时默认按路由键同名发给上游。
+	// 成员 upstream_model 是可选覆盖：留空 → 运行期用渠道 model_mapping，再退回路由键（ADR 0005）。
 	upstream := strings.TrimSpace(m.UpstreamModel)
-	if upstream == "" {
-		upstream = laneName
-	}
 	member := &model.LaneMember{
 		ChannelId:     channel.Id,
 		UpstreamModel: upstream,

@@ -558,6 +558,28 @@ func (channel *Channel) GetModelMapping() string {
 	return *channel.ModelMapping
 }
 
+// ModelMappingMap 解析渠道 model_mapping（路由键 → 上游真名）。
+// 空串 / "{}" / 非法 JSON 一律返回空表（调用方回落到路由键）。
+func (channel *Channel) ModelMappingMap() map[string]string {
+	out := map[string]string{}
+	raw := strings.TrimSpace(channel.GetModelMapping())
+	if raw == "" || raw == "{}" {
+		return out
+	}
+	parsed := map[string]string{}
+	if err := common.UnmarshalJsonStr(raw, &parsed); err != nil {
+		return map[string]string{}
+	}
+	for key, value := range parsed {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key != "" && value != "" {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 func (channel *Channel) GetStatusCodeMapping() string {
 	if channel.StatusCodeMapping == nil {
 		return ""

@@ -28,11 +28,12 @@ func ListModels(c *gin.Context) {
 
 // GetRoute GET /api/v1/routes/{model}
 //
-// 未声明该模型的渠道 → members 为空数组；模型面请求此时返回
+// 已配车道 → 返回真实成员链；未配车道 → 返回"渠道声明"的建议成员链并标
+// `routable=false`（ADR 0005）。模型面请求此时返回
 // `503 No available channel for model <X>`（与"全挂"同形）。
 func GetRoute(c *gin.Context) {
 	modelName := strings.TrimPrefix(c.Param("model"), "/")
-	resolved, err := model.ResolveRoute(modelName)
+	resolved, err := model.ResolveRouteForDisplay(modelName)
 	if err != nil {
 		writeAPIError(c, err)
 		return
@@ -45,16 +46,20 @@ func GetRoute(c *gin.Context) {
 			"priority":       m.Priority,
 			"weight":         m.Weight,
 		}
+		if m.UpstreamOverride != "" && m.UpstreamOverride != m.UpstreamModel {
+			item["upstream_override"] = m.UpstreamOverride
+		}
 		if m.PublicAlias != "" {
 			item["public_alias"] = m.PublicAlias
 		}
 		members = append(members, item)
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"model":   resolved.Model,
-		"source":  resolved.Source,
-		"mode":    resolved.Mode,
-		"config":  resolved.Config,
-		"members": members,
+		"model":    resolved.Model,
+		"source":   resolved.Source,
+		"routable": resolved.Source == model.RouteSourceExplicit,
+		"mode":     resolved.Mode,
+		"config":   resolved.Config,
+		"members":  members,
 	})
 }

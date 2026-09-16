@@ -1,16 +1,19 @@
 /*
 PowerBarRations —— PBR 路由（成员链/故障切换）管理 API（api-spec §5.7）
 
-用户心智：渠道管理填上游与模型 → 模型管理里定"这个模型优先打谁、再打谁" → 令牌允许该模型。
-本模块封装 PBR 的 /api/v1/models 与 /api/v1/routes/{model}，以及把成员链固化为
-显式顺序的 PUT /api/v1/lanes/{model}。
+用户心智：渠道管理填上游与模型（命名不一致时配渠道映射）→ 模型管理里为每个模型定
+"这个模型优先打谁、再打谁" → 令牌允许该模型。车道是唯一路由入口（ADR 0005）：
+没有车道 = 模型不可调用（503）。本模块封装 /api/v1/models、/api/v1/routes/{model}、
+把成员链固化为车道的 PUT /api/v1/lanes/{model}，以及一键固化 POST /api/v1/lanes/seed。
 */
 import { api } from '@/lib/api'
 
 /** GET /api/v1/models 的元素。 */
 export interface PBRModelSummary {
   model: string
-  source: 'implicit' | 'explicit'
+  /** explicit=已配车道可调用；unconfigured=渠道声明但没配车道，不可调用。 */
+  source: 'explicit' | 'unconfigured' | string
+  routable: boolean
   member_count: number
 }
 
@@ -18,7 +21,10 @@ export interface PBRModelSummary {
 export interface PBRRouteMember {
   channel_id: number
   channel: string
+  /** 解析后的上游真名（渠道映射/成员覆盖/路由键之一）。 */
   upstream_model: string
+  /** 成员级显式改名原值；为空表示"用渠道映射"。 */
+  upstream_override?: string
   public_alias?: string
   priority: number
   weight: number
@@ -28,6 +34,7 @@ export interface PBRRouteMember {
 export interface PBRRouteDetail {
   model: string
   source: string
+  routable?: boolean
   mode?: string
   route_key?: string
   active_member?: string
@@ -38,13 +45,13 @@ interface ListResponse<T> {
   items: T[]
 }
 
-/** 全部可路由模型（含来源与成员数）。 */
+/** 全部路由键（含是否可调用与成员数）。 */
 export async function listPBRModels(): Promise<PBRModelSummary[]> {
   const res = await api.get<ListResponse<PBRModelSummary>>('/api/v1/models')
   return res.data.items ?? []
 }
 
-/** 解析某模型的成员链（当前按什么顺序、打哪些上游）。 */
+/** 解析某模型的成员链（已配车道返回真实链；未配返回建议链，routable=false）。 */
 export async function getPBRRoute(model: string): Promise<PBRRouteDetail> {
   const res = await api.get<PBRRouteDetail>(
     `/api/v1/routes/${encodeURIComponent(model)}`
@@ -52,16 +59,16 @@ export async function getPBRRoute(model: string): Promise<PBRRouteDetail> {
   return res.data
 }
 
-/** 成员链编辑提交项。 */
+/** 成员链编辑提交项。upstream_model 留空 = 用渠道映射。 */
 export interface PBRMemberInput {
   channel: string
-  upstream_model: string
+  upstream_model?: string
   priority: number
   weight?: number
 }
 
 /**
- * 把某模型的成员链固化为显式顺序（故障切换）。
+ * 把某模型的成员链固化为顺序（故障切换）。
  *
  * 车道名 = 模型名，模式固定 failover：请求先打 priority 最高的成员，
  * 失败后按 routing-spec 的冷却/熔断逃逸到下一个。
@@ -86,7 +93,23 @@ export async function savePBRFailover(
   })
 }
 
-/** 删除该模型的显式成员链，回到"渠道声明即自动成链"的隐式语义。 */
+/** 删除该模型的车道：删除后该模型不可调用（直到重新配置）。 */
 export async function deletePBRFailover(model: string): Promise<void> {
   await api.delete(`/api/v1/lanes/${encodeURIComponent(model)}`)
+}
+
+export interface PBRSeedResult {
+  created: string[]
+  skipped: string[]
+}
+
+/**
+ * 一键为所有"渠道已声明但无车道"的模型生成 failover 车道（按渠道 priority）。
+ * `dryRun` 只返回将创建的车道名，不落库。
+ */
+export async function seedPBRLanes(dryRun = false): Promise<PBRSeedResult> {
+  const res = await api.post<PBRSeedResult>(
+    `/api/v1/lanes/seed${dryRun ? '?dry_run=true' : ''}`
+  )
+  return res.data
 }

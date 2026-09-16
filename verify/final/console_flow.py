@@ -622,6 +622,19 @@ def main() -> int:
                 break
             time.sleep(0.5)
         record("建立渠道 flow-channel", ch_ok)
+        # ADR 0005：车道是唯一路由入口，建了渠道还必须把模型固化成车道才可调用。
+        lane_ok = False
+        for _ in range(20):
+            st, _b = http_request(base + "/api/v1/lanes/flow-model", method="PUT", token=admin_key,
+                                  body=json.dumps({
+                                      "enabled": True, "mode": "failover",
+                                      "members": [{"channel": "flow-channel", "priority": 10}],
+                                  }).encode())
+            if st in (200, 201):
+                lane_ok = True
+                break
+            time.sleep(0.5)
+        record("建立车道 flow-model（车道是唯一路由入口）", lane_ok)
         key_plain = ""
         for _ in range(20):
             st, text = http_request(base + "/api/v1/keys", method="POST", token=admin_key,

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// W1 路由核心验收：模型名即路由键（docs/routing-spec-v1.md §1.1）。
+// 路由核心验收：模型名即路由键、车道是唯一入口（ADR 0005、docs/routing-spec-v1.md §1）。
 
 func setupLaneTest(t *testing.T) {
 	t.Helper()
@@ -49,46 +50,46 @@ func memberChannels(route *ResolvedRoute) []string {
 	return out
 }
 
-// 渠道声明同一模型名 → 按渠道 priority 降序自动成链；未声明的模型为空链。
-func TestImplicitChainOrdersByPriorityDesc(t *testing.T) {
+// 没有车道的模型不可调用：运行期空链（503），展示面给出"渠道声明"的建议链（ADR 0005）。
+func TestLaneRequiredWithoutLane(t *testing.T) {
 	setupLaneTest(t)
 	newTestChannel(t, "channel-a", 10, "model-1")
 	newTestChannel(t, "channel-b", 20, "model-1", "model-2")
 
 	route, err := ResolveRoute("model-1")
 	require.NoError(t, err)
-	assert.Equal(t, RouteSourceImplicit, route.Source)
-	assert.Equal(t, []string{"channel-b", "channel-a"}, memberChannels(route))
-	// 隐式成员的 upstream_model 就是路由键本身（未改名）。
-	for _, m := range route.Members {
+	assert.Equal(t, RouteSourceUnconfigured, route.Source)
+	assert.Empty(t, route.Members)
+
+	// 展示面：建议链按渠道 priority 降序。
+	display, err := ResolveRouteForDisplay("model-1")
+	require.NoError(t, err)
+	assert.Equal(t, RouteSourceUnconfigured, display.Source)
+	assert.Equal(t, []string{"channel-b", "channel-a"}, memberChannels(display))
+	for _, m := range display.Members {
 		assert.Equal(t, "model-1", m.UpstreamModel)
 	}
 
-	route2, err := ResolveRoute("model-2")
+	// 未声明的模型：建议链也是空。
+	unknown, err := ResolveRouteForDisplay("model-unknown")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"channel-b"}, memberChannels(route2))
-
-	// 没有任何渠道声明该模型 → 空链（与"全挂"同形，由调用方返回 503）。
-	route3, err := ResolveRoute("model-unknown")
-	require.NoError(t, err)
-	assert.Empty(t, route3.Members)
-	assert.Equal(t, RouteSourceImplicit, route3.Source)
+	assert.Empty(t, unknown.Members)
 }
 
-// 相同 priority 时按渠道 id 升序，保证顺序确定（不随查询计划抖动）。
-func TestImplicitChainTieBreaksById(t *testing.T) {
+// 建议链相同 priority 时按渠道 id 升序，保证顺序确定（不随查询计划抖动）。
+func TestSuggestedMembersTieBreaksById(t *testing.T) {
 	setupLaneTest(t)
 	first := newTestChannel(t, "channel-first", 5, "model-1")
 	newTestChannel(t, "channel-second", 5, "model-1")
 
-	route, err := ResolveRoute("model-1")
+	display, err := ResolveRouteForDisplay("model-1")
 	require.NoError(t, err)
-	require.Len(t, route.Members, 2)
-	assert.Equal(t, first.Id, route.Members[0].ChannelId)
+	require.Len(t, display.Members, 2)
+	assert.Equal(t, first.Id, display.Members[0].ChannelId)
 }
 
-// 显式车道同名时覆盖隐式链，并支持成员改名与成员级覆盖。
-func TestExplicitLaneOverridesImplicitChain(t *testing.T) {
+// 车道成员支持改名与成员级覆盖。
+func TestExplicitLaneOverridesMembers(t *testing.T) {
 	setupLaneTest(t)
 	channelA := newTestChannel(t, "channel-a", 10, "model-1")
 	newTestChannel(t, "channel-b", 20, "model-1")
@@ -115,19 +116,19 @@ func TestExplicitLaneOverridesImplicitChain(t *testing.T) {
 	assert.Equal(t, 1, route.Members[0].Priority)
 }
 
-// 停用显式车道 → 回落隐式链（显式层只是覆盖层，关掉即回到默认语义）。
-func TestDisabledExplicitLaneFallsBackToImplicit(t *testing.T) {
+// 停用车道的模型不可调用（不再回落隐式链，ADR 0005）。
+func TestDisabledLaneIsNotRoutable(t *testing.T) {
 	setupLaneTest(t)
 	newTestChannel(t, "channel-a", 10, "model-1")
 	require.NoError(t, UpsertLane(&Lane{Name: "model-1", Enabled: false, Mode: LaneModeFailover}))
 
 	route, err := ResolveRoute("model-1")
 	require.NoError(t, err)
-	assert.Equal(t, RouteSourceImplicit, route.Source)
-	assert.Equal(t, []string{"channel-a"}, memberChannels(route))
+	assert.Equal(t, RouteSourceUnconfigured, route.Source)
+	assert.Empty(t, route.Members)
 }
 
-// 成员别名点名：解析到所属显式车道，并记录被点名成员。
+// 成员别名点名：解析到所属车道，并记录被点名成员。
 func TestResolveByPublicAliasPinsMember(t *testing.T) {
 	setupLaneTest(t)
 	channelA := newTestChannel(t, "channel-a", 10)
@@ -155,7 +156,87 @@ func TestResolveByPublicAliasPinsMember(t *testing.T) {
 	}
 }
 
-// 显式车道六键：未写的走默认，写了 0 的按默认补齐（Normalize 语义）。
+// 渠道 model_mapping：成员 upstream 留空时用映射；成员级显式改名优先。
+func TestChannelModelMappingResolvesUpstream(t *testing.T) {
+	setupLaneTest(t)
+	mapping, _ := json.Marshal(map[string]string{"model-1": "vendor-a/real-1"})
+	mappingJSON := string(mapping)
+	priority64 := int64(10)
+	channel := &Channel{
+		Name:         "channel-a",
+		Models:       "model-1",
+		Priority:     &priority64,
+		Status:       common.ChannelStatusEnabled,
+		Group:        "default",
+		Key:          "sk-test",
+		ModelMapping: &mappingJSON,
+	}
+	require.NoError(t, DB.Create(channel).Error)
+
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "model-1",
+		Enabled: true,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: channel.Id, Priority: 10}},
+	}))
+	route, err := ResolveRoute("model-1")
+	require.NoError(t, err)
+	require.Len(t, route.Members, 1)
+	assert.Equal(t, "vendor-a/real-1", route.Members[0].UpstreamModel)
+
+	// 成员级显式改名覆盖渠道映射。
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "model-1",
+		Enabled: true,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: channel.Id, UpstreamModel: "member-override", Priority: 10}},
+	}))
+	route, err = ResolveRoute("model-1")
+	require.NoError(t, err)
+	assert.Equal(t, "member-override", route.Members[0].UpstreamModel)
+}
+
+// SeedLanes：为渠道声明但无车道的模型生成 failover 车道；幂等。
+func TestSeedLanesCreatesMissingLanes(t *testing.T) {
+	setupLaneTest(t)
+	channelA := newTestChannel(t, "channel-a", 10, "model-1", "model-2")
+	newTestChannel(t, "channel-b", 20, "model-1")
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "model-1",
+		Enabled: true,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: channelA.Id, Priority: 10}},
+	}))
+
+	created, skipped, err := SeedLanes(false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"model-2"}, created)
+	assert.Equal(t, []string{"model-1"}, skipped)
+
+	lane, err := GetLaneByName("model-2")
+	require.NoError(t, err)
+	require.Len(t, lane.Members, 1)
+	assert.Equal(t, channelA.Id, lane.Members[0].ChannelId)
+	assert.Empty(t, lane.Members[0].UpstreamModel)
+
+	created2, _, err := SeedLanes(false)
+	require.NoError(t, err)
+	assert.Empty(t, created2)
+}
+
+func TestSeedLanesDryRun(t *testing.T) {
+	setupLaneTest(t)
+	newTestChannel(t, "channel-a", 10, "model-1")
+
+	created, _, err := SeedLanes(true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"model-1"}, created)
+	if _, err := GetLaneByName("model-1"); err == nil {
+		t.Fatal("dry run must not persist lanes")
+	}
+}
+
+// 车道六键：未写的走默认，写了 0 的按默认补齐（Normalize 语义）。
 func TestLaneConfigDefaultsAndOverrides(t *testing.T) {
 	setupLaneTest(t)
 
@@ -183,16 +264,23 @@ func TestResolveFallsBackToNormalizedModelName(t *testing.T) {
 	if normalized == "" || normalized == requested {
 		t.Skipf("当前配置下 %q 不会被归一化，跳过", requested)
 	}
-	newTestChannel(t, "channel-a", 10, normalized)
+	channelA := newTestChannel(t, "channel-a", 10, normalized)
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    normalized,
+		Enabled: true,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: channelA.Id, Priority: 10}},
+	}))
 
 	route, err := ResolveRoute(requested)
 	require.NoError(t, err)
 	require.Len(t, route.Members, 1)
 	assert.Equal(t, requested, route.Model)
-	assert.Equal(t, requested, route.Members[0].UpstreamModel)
+	// 成员 upstream 留空 → 上游名回落到车道名（归一化后的模型名）。
+	assert.Equal(t, normalized, route.Members[0].UpstreamModel)
 }
 
-// 可路由模型清单同时包含隐式（渠道声明）与显式（车道）两类。
+// 路由键清单：已配车道 routable=true，渠道声明但未配车道 unconfigured/false。
 func TestListModelSummaries(t *testing.T) {
 	setupLaneTest(t)
 	channelA := newTestChannel(t, "channel-a", 10, "model-1", "model-2")
@@ -203,6 +291,12 @@ func TestListModelSummaries(t *testing.T) {
 		Mode:    LaneModeFailover,
 		Members: []LaneMember{{ChannelId: channelA.Id, UpstreamModel: "vendor-x"}},
 	}))
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "model-1",
+		Enabled: true,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: channelA.Id, Priority: 10}},
+	}))
 
 	summaries, err := ListModelSummaries()
 	require.NoError(t, err)
@@ -210,8 +304,12 @@ func TestListModelSummaries(t *testing.T) {
 	for _, s := range summaries {
 		byName[s.Model] = s
 	}
-	assert.Equal(t, RouteSourceImplicit, byName["model-1"].Source)
-	assert.Equal(t, 2, byName["model-1"].MemberCount)
-	assert.Equal(t, RouteSourceImplicit, byName["model-2"].Source)
+	assert.Equal(t, RouteSourceExplicit, byName["model-1"].Source)
+	assert.True(t, byName["model-1"].Routable)
+	assert.Equal(t, 1, byName["model-1"].MemberCount)
+	assert.Equal(t, RouteSourceUnconfigured, byName["model-2"].Source)
+	assert.False(t, byName["model-2"].Routable)
+	assert.Equal(t, 1, byName["model-2"].MemberCount)
 	assert.Equal(t, RouteSourceExplicit, byName["lane-pool"].Source)
+	assert.True(t, byName["lane-pool"].Routable)
 }

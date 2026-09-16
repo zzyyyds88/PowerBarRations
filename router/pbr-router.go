@@ -71,10 +71,11 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.POST("/channels/:name/test", api.TestChannel)
 		authed.POST("/channels/:name/sync-models", api.SyncChannelModels)
 
-		// 显式车道（可选覆盖层）
+		// 车道：唯一路由入口（ADR 0005）
 		authed.GET("/lanes", api.ListLanes)
 		authed.GET("/lanes/:name", api.GetLane)
 		authed.PUT("/lanes/:name", api.PutLane)
+		authed.POST("/lanes/seed", api.SeedLanes)
 		authed.DELETE("/lanes/:name", api.DeleteLane)
 		authed.GET("/lanes/:name/health", api.GetLaneHealth)
 		authed.POST("/lanes/:name/probe", api.ProbeLane)

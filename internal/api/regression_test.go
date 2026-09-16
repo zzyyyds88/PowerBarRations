@@ -77,16 +77,25 @@ func TestBuildChannelRejectsNonObjectParamOverride(t *testing.T) {
 	assert.Contains(t, err.message, "param_override must be a json object")
 }
 
-// 隐式的"模型名即路由键"也必须能解析运行态，否则最常用的路由没有任何健康/探活入口。
-func TestResolveRuntimeRouteAcceptsImplicitModel(t *testing.T) {
+// 车道是唯一入口：没有车道的模型没有运行态入口；固化成车道后才能解析（ADR 0005）。
+func TestResolveRuntimeRouteRequiresLane(t *testing.T) {
 	db := setupAPITestDB(t)
-	channel := &model.Channel{Name: "implicit-ch", Type: 1, Key: "sk-x", Status: common.ChannelStatusEnabled, Group: "default", Models: "implicit-model"}
+	channel := &model.Channel{Name: "lane-only-ch", Type: 1, Key: "sk-x", Status: common.ChannelStatusEnabled, Group: "default", Models: "lane-only-model"}
 	require.NoError(t, db.Create(channel).Error)
 	require.NoError(t, channel.AddAbilities(nil))
 
-	resolved, key, err := resolveRuntimeRoute("implicit-model")
+	resolvedNoLane, _, err := resolveRuntimeRoute("lane-only-model")
 	require.NoError(t, err)
-	require.NotNil(t, resolved, "隐式模型应能解析出运行态")
-	assert.Equal(t, "implicit-model", key)
+	assert.Nil(t, resolvedNoLane, "没有车道的模型不应有运行态")
+
+	require.NoError(t, model.UpsertLane(&model.Lane{
+		Name: "lane-only-model", Enabled: true, Mode: model.LaneModeFailover,
+		Members: []model.LaneMember{{ChannelId: channel.Id, Priority: 10}},
+	}))
+
+	resolved, key, err := resolveRuntimeRoute("lane-only-model")
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	assert.Equal(t, "lane-only-model", key)
 	require.Len(t, resolved.Members, 1)
 }

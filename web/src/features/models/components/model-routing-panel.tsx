@@ -6,7 +6,7 @@ PowerBarRations —— 模型成员链（故障切换）面板
 显式 failover 车道（PUT /api/v1/lanes/{model}）。
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Loader2, Save, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Loader2, Save, Trash2, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -24,6 +24,7 @@ import {
   getPBRRoute,
   listPBRModels,
   savePBRFailover,
+  seedPBRLanes,
   type PBRModelSummary,
 } from '../pbr-routing-api'
 
@@ -38,6 +39,20 @@ export function ModelRoutingPanel() {
   const modelsQuery = useQuery({ queryKey: modelsKey, queryFn: listPBRModels })
   const models: PBRModelSummary[] = modelsQuery.data ?? []
   const active = selected || models[0]?.model || ''
+
+  // 一键固化：为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
+  const seed = useMutation({
+    mutationFn: () => seedPBRLanes(false),
+    onSuccess: async (result) => {
+      toast.success(
+        t('Generated {{count}} lanes', { count: result.created.length })
+      )
+      await queryClient.invalidateQueries({ queryKey: modelsKey })
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : String(error))
+    },
+  })
 
   let listContent
   if (modelsQuery.isLoading) {
@@ -70,9 +85,7 @@ export function ModelRoutingPanel() {
             >
               <span className='block truncate'>{m.model}</span>
               <span className='text-muted-foreground text-xs'>
-                {m.source === 'explicit'
-                  ? t('Explicit chain')
-                  : t('Implicit chain')}{' '}
+                {m.routable ? t('Lane configured') : t('No lane · not callable')}{' '}
                 · {t('{{count}} members', { count: m.member_count })}
               </span>
             </button>
@@ -85,10 +98,19 @@ export function ModelRoutingPanel() {
   return (
     <div className='grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]'>
       <Card className='min-h-0 overflow-hidden'>
-        <CardHeader className='py-3'>
+        <CardHeader className='flex-row items-center justify-between gap-2 py-3'>
           <CardTitle className='text-sm'>
             {t('Routable models')} ({models.length})
           </CardTitle>
+          <Button
+            size='sm'
+            variant='outline'
+            disabled={seed.isPending}
+            onClick={() => seed.mutate()}
+          >
+            <Wand2 className='size-4' />
+            {t('Generate missing lanes')}
+          </Button>
         </CardHeader>
         <Separator />
         <CardContent className='min-h-0 overflow-auto p-2'>
@@ -121,7 +143,10 @@ export function ModelRoutingPanel() {
 
 interface EditableMember {
   channel: string
+  /** 解析后的上游真名（仅展示）。 */
   upstream_model: string
+  /** 成员级显式改名原值；为空 = 用渠道映射。 */
+  upstream_override: string
   priority: number
 }
 
@@ -144,6 +169,7 @@ function RouteEditor({
     (m) => ({
       channel: m.channel,
       upstream_model: m.upstream_model,
+      upstream_override: m.upstream_override ?? '',
       priority: m.priority,
     })
   )
@@ -171,7 +197,15 @@ function RouteEditor({
   }
 
   const save = useMutation({
-    mutationFn: () => savePBRFailover(model, members),
+    mutationFn: () =>
+      savePBRFailover(
+        model,
+        members.map((m) => ({
+          channel: m.channel,
+          upstream_model: m.upstream_override,
+          priority: m.priority,
+        }))
+      ),
     onSuccess: async () => {
       toast.success(t('Failover order saved'))
       setDraft(null)
@@ -185,7 +219,9 @@ function RouteEditor({
   const clear = useMutation({
     mutationFn: () => deletePBRFailover(model),
     onSuccess: async () => {
-      toast.success(t('Explicit chain removed; back to implicit routing'))
+      toast.success(
+        t('Lane removed; configure this model again to make it callable')
+      )
       setDraft(null)
       await onSaved()
     },
@@ -215,6 +251,13 @@ function RouteEditor({
   } else {
     body = (
       <div className='space-y-2'>
+        {routeQuery.data?.routable === false && (
+          <p className='rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400'>
+            {t(
+              'No lane configured yet — this model is not callable until you save the order below.'
+            )}
+          </p>
+        )}
         <p className='text-muted-foreground text-xs'>
           {t(
             'Requests try members top-down by priority; on failure the router escapes to the next one.'
@@ -274,9 +317,9 @@ function RouteEditor({
         <CardTitle className='text-sm'>
           {t('Failover order for')} <code className='font-mono'>{model}</code>
           <span className='text-muted-foreground ml-2 text-xs font-normal'>
-            {routeQuery.data?.source === 'explicit'
-              ? t('Explicit chain')
-              : t('Implicit chain')}
+            {routeQuery.data?.routable === false
+              ? t('No lane · not callable')
+              : t('Lane configured')}
           </span>
         </CardTitle>
         <div className='flex items-center gap-2'>
@@ -287,7 +330,7 @@ function RouteEditor({
             onClick={() => clear.mutate()}
           >
             <Trash2 className='size-4' />
-            {t('Reset to implicit')}
+            {t('Remove lane')}
           </Button>
           <Button
             size='sm'

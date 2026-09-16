@@ -104,6 +104,7 @@ HTTP/1.1 401 Unauthorized
   "prices": [
     { "model": "model-1", "input": 10, "output": 20, "cache_read": 1, "cache_write": 2 }
   ],
+  "model_mapping": { "model-1": "vendor-a/model-1" },
   "key_set": true,
   "key_prefix": "sk-abcd",
   "created_at": "2026-09-14T12:00:00Z",
@@ -116,6 +117,7 @@ HTTP/1.1 401 Unauthorized
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。折算优先级：渠道价 > 全局默认单价表（`system/options.model_prices`）> 不折算。省略该字段时保持原值。
+- `model_mapping`：**渠道模型映射**（JSON dict，路由键 → 上游真名），用于上游命名与路由键不一致的情况。车道成员解析上游名时：成员级 `upstream_model`（非空且≠路由键）> 本映射 > 路由键。省略该字段时保持原值。
 
 ### 4.2 Lane
 
@@ -229,6 +231,7 @@ HTTP/1.1 401 Unauthorized
 | GET | `/api/lanes` | 列表（cursor） |
 | GET | `/api/lanes/{name}` | 详情（含成员） |
 | PUT | `/api/lanes/{name}` | 全量 upsert（含成员，按数组顺序即优先级） |
+| POST | `/api/lanes/seed` | **一键固化**：为所有"渠道已声明但无车道"的模型按渠道 priority 生成 failover 车道（幂等；`?dry_run=true` 只返回将创建的车道名） |
 | DELETE | `/api/lanes/{name}` | 删除 |
 | PUT | `/api/lanes/{name}/members` | 仅替换成员列表（有序全量） |
 | POST | `/api/lanes/{name}/probe` | 逐成员探活 |
@@ -241,7 +244,7 @@ HTTP/1.1 401 Unauthorized
 |---|---|---|
 | GET | `/api/channels` | 列表 |
 | GET | `/api/channels/{name}` | 详情 |
-| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读） |
+| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict |
 | DELETE | `/api/channels/{name}` | 删除（被车道引用时 409） |
 | POST | `/api/channels/{name}/test` | 单渠道探活 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；被显式车道成员点名的模型仍在引用时返回 409（同样需 `?force=1` 覆盖） |
@@ -275,13 +278,14 @@ HTTP/1.1 401 Unauthorized
 | GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希） |
 | POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff |
 
-### 5.7 模型路由（隐式车道）
+### 5.7 模型路由（车道）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/models` | 全部可路由模型名：`{model, source: implicit\|explicit, member_count}` |
-| GET | `/api/routes/{model}` | 解析该模型的**成员链**（含来源与优先级），用于排障与 UI 展示 |
-| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为显式顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
+| GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured, routable: bool, member_count}`。`unconfigured` = 渠道声明了但没有车道，**当前不可调用** |
+| GET | `/api/routes/{model}` | 该模型的成员链（含来源、优先级与解析后的上游真名）。无车道时返回**建议成员链**（按渠道 priority）并标 `source: unconfigured`、`routable: false` |
+| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
+| POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 priority 生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射） |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型 → 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。未固化时保持隐式链（渠道声明即自动成链）。
 
@@ -343,6 +347,7 @@ curl -s -X PUT $PBR/api/channels/channel-a \
 { "name": "channel-a", "type": "openai", "base_url": "https://vendor.example/v1",
   "enabled": true, "key_set": true, "key_prefix": "__IN", "param_override": {},
   "prices": [{ "model": "model-1", "input": 10, "output": 20 }],
+  "model_mapping": { "model-1": "vendor-a/model-1" },
   "created_at": "2026-09-14T12:00:00Z", "updated_at": "2026-09-14T12:00:00Z" }
 ```
 
