@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { logout } from '@/features/auth/api'
+import { pbrLogout } from '@/lib/pbr-auth'
 import { clearAuthenticatedClientState } from '@/lib/auth-session'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -41,12 +41,7 @@ export function SignOutDialog({ open, onOpenChange }: SignOutDialogProps) {
   const handleSignOut = async () => {
     setIsSigningOut(true)
     try {
-      const response = await logout()
-      if (!response.success) {
-        handleServerError(response, t('Failed to sign out session'))
-        return
-      }
-
+      await pbrLogout()
       clearAuthenticatedClientState(queryClient)
       toast.success(t('Signed out'))
       void navigate({ to: '/sign-in', replace: true })

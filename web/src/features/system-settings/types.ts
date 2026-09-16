@@ -21,8 +21,6 @@ export type SystemOption = {
   value: string
 }
 
-export type SystemOptionKey = string
-
 export type SystemOptionsResponse = {
   success: boolean
   message: string
@@ -37,43 +35,6 @@ export type UpdateOptionRequest = {
 export type UpdateOptionResponse = {
   success: boolean
   message: string
-}
-
-export interface PasskeyDomainChange {
-  rp_id: string
-  legacy_rp_ids: string
-  origins: string
-  previous_rp_id: string
-  effective_rp_id: string
-  removed_rp_ids: string[]
-  affected_credentials: number
-  unknown_credentials: number
-  confirmation_required: boolean
-  removal_confirmation: string
-}
-
-export interface UpdatePasskeyDomainsRequest {
-  rp_id: string
-  legacy_rp_ids: string
-  origins: string
-  preview: boolean
-  removal_confirmation?: string
-}
-
-export interface UpdatePasskeyDomainsResponse extends UpdateOptionResponse {
-  code?: string
-  data: PasskeyDomainChange
-}
-
-export type ConfirmPaymentComplianceResponse = {
-  success: boolean
-  message: string
-  data?: {
-    confirmed: boolean
-    terms_version: string
-    confirmed_at: number
-    confirmed_by: number
-  }
 }
 
 export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
@@ -145,55 +106,6 @@ export type SiteSettings = {
   'legal.privacy_policy': string
   HeaderNavModules: string
   SidebarModulesAdmin: string
-}
-
-export type AuthSettings = {
-  PasswordLoginEnabled: boolean
-  PasswordRegisterEnabled: boolean
-  EmailVerificationEnabled: boolean
-  RegisterEnabled: boolean
-  EmailDomainRestrictionEnabled: boolean
-  EmailAliasRestrictionEnabled: boolean
-  EmailDomainWhitelist: string
-  ServerAddress: string
-  GitHubOAuthEnabled: boolean
-  GitHubClientId: string
-  GitHubClientSecret: string
-  'discord.enabled': boolean
-  'discord.client_id': string
-  'discord.client_secret': string
-  'oidc.enabled': boolean
-  'oidc.display_name': string
-  'oidc.client_id': string
-  'oidc.client_secret': string
-  'oidc.well_known': string
-  'oidc.authorization_endpoint': string
-  'oidc.token_endpoint': string
-  'oidc.user_info_endpoint': string
-  TelegramOAuthEnabled: boolean
-  'telegram.client_id': string
-  'telegram.client_secret': string
-  TelegramBotToken: string
-  TelegramBotName: string
-  LinuxDOOAuthEnabled: boolean
-  LinuxDOClientId: string
-  LinuxDOClientSecret: string
-  LinuxDOMinimumTrustLevel: string
-  WeChatAuthEnabled: boolean
-  WeChatServerAddress: string
-  WeChatServerToken: string
-  WeChatAccountQRCodeImageURL: string
-  TurnstileCheckEnabled: boolean
-  TurnstileSiteKey: string
-  TurnstileSecretKey: string
-  'passkey.enabled': boolean
-  'passkey.rp_display_name': string
-  'passkey.rp_id': string
-  'passkey.legacy_rp_ids': string
-  'passkey.origins': string
-  'passkey.allow_insecure_origin': boolean
-  'passkey.user_verification': 'required' | 'preferred' | 'discouraged'
-  'passkey.attachment_preference': '' | 'platform' | 'cross-platform'
 }
 
 export type ContentSettings = {
@@ -281,93 +193,6 @@ export type ModelSettings = {
   'model_deployment.ionet.enabled': boolean
 }
 
-export type BillingSettings = {
-  QuotaForNewUser: number
-  PreConsumedQuota: number
-  QuotaForInviter: number
-  QuotaForInvitee: number
-  TopUpLink: string
-  'general_setting.docs_link': string
-  'quota_setting.enable_free_model_pre_consume': boolean
-  QuotaPerUnit: number
-  USDExchangeRate: number
-  'general_setting.quota_display_type': string
-  'general_setting.custom_currency_symbol': string
-  'general_setting.custom_currency_exchange_rate': number
-  DisplayInCurrencyEnabled: boolean
-  DisplayTokenStatEnabled: boolean
-  ModelPrice: string
-  ModelRatio: string
-  CacheRatio: string
-  CreateCacheRatio: string
-  CompletionRatio: string
-  ImageRatio: string
-  AudioRatio: string
-  AudioCompletionRatio: string
-  ExposeRatioEnabled: boolean
-  'billing_setting.billing_mode': string
-  'billing_setting.billing_expr': string
-  'billing_setting.plugin_billing_expr': string
-  'tool_price_setting.prices': string
-  TopupGroupRatio: string
-  GroupRatio: string
-  UserUsableGroups: string
-  GroupGroupRatio: string
-  AutoGroups: string
-  MaxTokenAutoGroups: number
-  DefaultUseAutoGroup: boolean
-  'group_ratio_setting.group_special_usable_group': string
-  PayAddress: string
-  EpayId: string
-  EpayKey: string
-  Price: number
-  MinTopUp: number
-  CustomCallbackAddress: string
-  PayMethods: string
-  'payment_setting.amount_options': string
-  'payment_setting.amount_discount': string
-  'payment_setting.compliance_confirmed': boolean
-  'payment_setting.compliance_terms_version': string
-  'payment_setting.compliance_confirmed_at': number
-  'payment_setting.compliance_confirmed_by': number
-  'payment_setting.compliance_confirmed_ip': string
-  StripeApiSecret: string
-  StripeWebhookSecret: string
-  StripePriceId: string
-  StripeUnitPrice: number
-  StripeMinTopUp: number
-  StripePromotionCodesEnabled: boolean
-  CreemApiKey: string
-  CreemWebhookSecret: string
-  CreemTestMode: boolean
-  CreemProducts: string
-  WaffoEnabled: boolean
-  WaffoApiKey: string
-  WaffoPrivateKey: string
-  WaffoPublicCert: string
-  WaffoSandboxPublicCert: string
-  WaffoSandboxApiKey: string
-  WaffoSandboxPrivateKey: string
-  WaffoSandbox: boolean
-  WaffoMerchantId: string
-  WaffoCurrency: string
-  WaffoUnitPrice: number
-  WaffoMinTopUp: number
-  WaffoNotifyUrl: string
-  WaffoReturnUrl: string
-  WaffoPayMethods: string
-  WaffoPancakeMerchantID: string
-  WaffoPancakePrivateKey: string
-  WaffoPancakeReturnURL: string
-  // Bound by the operator through the catalog flow in the admin Pancake
-  // section (saved via /api/option/waffo-pancake/save).
-  WaffoPancakeStoreID: string
-  WaffoPancakeProductID: string
-  'checkin_setting.enabled': boolean
-  'checkin_setting.min_quota': number
-  'checkin_setting.max_quota': number
-}
-
 export type OperationsSettings = {
   DefaultCollapseSidebar: boolean
   DemoSiteEnabled: boolean
@@ -398,26 +223,6 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
-}
-
-export type SecuritySettings = {
-  ModelRequestRateLimitEnabled: boolean
-  ModelRequestRateLimitCount: number
-  ModelRequestRateLimitSuccessCount: number
-  ModelRequestRateLimitDurationMinutes: number
-  ModelRequestRateLimitGroup: string
-  CheckSensitiveEnabled: boolean
-  CheckSensitiveOnPromptEnabled: boolean
-  SensitiveWords: string
-  'fetch_setting.enable_ssrf_protection': boolean
-  'fetch_setting.allow_private_ip': boolean
-  'fetch_setting.domain_filter_mode': boolean
-  'fetch_setting.ip_filter_mode': boolean
-  'fetch_setting.domain_list': string[]
-  'fetch_setting.ip_list': string[]
-  'fetch_setting.allowed_ports': number[]
-  'fetch_setting.apply_ip_filter_for_domain': boolean
-  'token_setting.max_user_tokens': number
 }
 
 export type UpstreamChannel = {
