@@ -24,6 +24,7 @@ import { ClaudeSettingsCard } from './claude-settings-card'
 import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
+import { LaneDefaultsSection } from './lane-defaults-section'
 import { ModelPricesSection } from './model-prices-section'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
@@ -91,6 +92,11 @@ const MODELS_SECTIONS = [
         }}
       />
     ),
+  },
+  {
+    id: 'lane-defaults',
+    titleKey: 'Lane Defaults',
+    build: () => <LaneDefaultsSection />,
   },
   {
     id: 'gemini',

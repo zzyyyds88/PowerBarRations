@@ -58,9 +58,15 @@ type LaneRelayOverrides struct {
 	MemberAffinitySeconds                 *int `json:"member_affinity_seconds,omitempty"`
 }
 
-// DefaultLaneRelayConfig 默认取上游路由层 DefaultGroupRelayConfig，但亲和改为 0
-// （2/3/120/30/60/0；design-v1 §7.3 明确不做粘滞，避免掩盖 priority 语义）。
-func DefaultLaneRelayConfig() LaneRelayConfig {
+// OptionLaneDefaults 是 system/options 里"默认六键"的键名（JSON 形态的 LaneRelayConfig）。
+const OptionLaneDefaults = "PBRLaneDefaults"
+
+// BuiltinLaneRelayConfig 内置默认六键（2/3/120/30/60/0）。
+//
+// 与 DefaultLaneRelayConfig 的区别：前者是**编译期兜底**，后者是**当前生效值**
+// （可能被 `PUT /api/system/options.lane_defaults` 改过）。需要"不可变基线"的地方
+// （解析配置时补零）必须用这个函数，否则会把自己的输出再喂回自己。
+func BuiltinLaneRelayConfig() LaneRelayConfig {
 	return LaneRelayConfig{
 		MemberMaxAttempts:                     2,
 		MemberRetryIntervalSeconds:            3,
@@ -70,6 +76,27 @@ func DefaultLaneRelayConfig() LaneRelayConfig {
 		// 亲和默认 0：不做粘滞，避免掩盖 priority 语义（design-v1 §7.3）。
 		MemberAffinitySeconds: 0,
 	}
+}
+
+// laneDefaultsProvider 由外部注入"默认六键"的当前值（接 system/options）。
+// 放在 model 外部注入是为了避免 model 反向依赖 common.OptionMap 的装配顺序。
+var laneDefaultsProvider func() LaneRelayConfig
+
+// SetLaneDefaultsProvider 注入默认六键来源；未注入时用内置默认。
+func SetLaneDefaultsProvider(provider func() LaneRelayConfig) {
+	laneDefaultsProvider = provider
+}
+
+// DefaultLaneRelayConfig 返回当前生效的默认六键：默认取上游路由层
+// DefaultGroupRelayConfig，但亲和改为 0（2/3/120/30/60/0；design-v1 §7.3 明确
+// 不做粘滞，避免掩盖 priority 语义），可经 system/options 覆盖。
+//
+// 它是"新建/一键固化车道写入的初值"与"车道未显式配置时的回落值"。
+func DefaultLaneRelayConfig() LaneRelayConfig {
+	if laneDefaultsProvider == nil {
+		return BuiltinLaneRelayConfig()
+	}
+	return laneDefaultsProvider()
 }
 
 // Normalize 用默认值补齐零值字段，保证下游拿到的是可直接使用的配置。

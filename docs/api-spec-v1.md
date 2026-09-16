@@ -465,15 +465,26 @@ curl -s -X PUT $PBR/api/system/options \
     "probe_concurrency": 4,
     "model_prices": [
       {"model": "model-1", "input": 2.5, "output": 10, "cache_read": 1.25, "cache_write": 3}
-    ]
+    ],
+    "lane_defaults": {
+      "member_max_attempts": 2,
+      "member_retry_interval_seconds": 3,
+      "member_non_stream_response_timeout_seconds": 120,
+      "member_stream_first_event_timeout_seconds": 30,
+      "member_cooldown_seconds": 60,
+      "member_affinity_seconds": 0
+    }
   }'
 ```
 
 - 字段名以本表为准（`automatic_disable_keywords`，不是 `auto_disable_keywords`）。
 - **未在 body 中出现的键保持不变**（字段级补丁，不是全量替换）：只想改熔断阈值时
   不会把关键词表清空。
-- 车道六键（`member_max_attempts` 等）是**车道级**配置，在
-  `PUT /api/lanes/{name}` 的 `config` 里设置，不属于全局选项。
+- 车道六键（`member_max_attempts` 等）默认是**车道级**配置，在
+  `PUT /api/lanes/{name}` 的 `config` 里设置。`lane_defaults` 是它们的**全局默认值**
+  （选项键 `PBRLaneDefaults`，内置于 2/3/120/30/60/0）：作用于新建与一键固化的车道，
+  以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
+  校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
 - `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
 - `probe_concurrency`（默认 4）限制 `POST /lanes/{name}/probe` 对上游的并发压力。
 - `model_prices`（design-v1 §16.9#7）是**单价表**，单位**人民币 / 百万 token**，

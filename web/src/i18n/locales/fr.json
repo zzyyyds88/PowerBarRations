@@ -4,6 +4,18 @@
     "1000": "1000",
     "10000": "10000",
     "_copy": "_copie",
+    "Applies to newly created or seeded lanes, and to lanes that do not configure these keys themselves. Existing explicit lane config still wins.": "Applies to newly created or seeded lanes, and to lanes that do not configure these keys themselves. Existing explicit lane config still wins.",
+    "Lane Defaults": "Lane Defaults",
+    "Member affinity (seconds)": "Member affinity (seconds)",
+    "Member cooldown (seconds)": "Member cooldown (seconds)",
+    "Member max attempts": "Member max attempts",
+    "Member retry interval (seconds)": "Member retry interval (seconds)",
+    "Must be a non-negative integer": "Must be a non-negative integer",
+    "Must be a positive integer": "Must be a positive integer",
+    "Non-stream response timeout (seconds)": "Non-stream response timeout (seconds)",
+    "Saved": "Saved",
+    "See the routing spec for the timeout arithmetic before lowering attempts.": "See the routing spec for the timeout arithmetic before lowering attempts.",
+    "Stream first event timeout (seconds)": "Stream first event timeout (seconds)",
     "，": ", ",
     ", and": ", et",
     "，and ": " et ",
@@ -6465,6 +6477,5 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
   }
 }
