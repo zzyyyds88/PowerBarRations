@@ -1,9 +1,10 @@
 # PowerBarRations
 
 单用户、自用的 LLM 聚合网关：**一个二进制、一个 SQLite、一条管道**。
-请求里的 `model` 就是路由键——渠道声明自己提供哪些模型，网关对每个模型名自动按渠道
-优先级排成故障链（上游1的模型1 → 上游2的模型1），零配置即可路由；显式车道只是可选的
-覆盖层（自定义顺序、成员改名、把不同上游的不同模型名池化到一个名字下）。
+请求里的 `model` 就是路由键：渠道只声明它提供哪些模型（以及上游真名映射），**车道是唯一
+路由入口**——把成员链固化成车道后（一条命令 `POST /api/lanes/seed`，或逐条 `PUT /api/lanes/{model}`），
+网关按车道顺序做故障转移（上游1的模型1 → 上游2的模型1）。没有车道的模型一律 `503`，
+与"上游全挂"同形；车道支持自定义顺序、成员改名、池化不同上游的不同模型名与四种模式。
 
 对下游协议零破坏：存量车道名与 `/v1/*` 协议、错误语义一律不变，下游只改 `base_url`。
 
@@ -27,7 +28,7 @@ docker compose up -d --build
 curl -sk https://127.0.0.1:5700/api/v1/health
 ```
 
-首次使用按顺序做三件事（**全部是 HTTP 调用，不需要改文件、不需要读库**）：
+首次使用按顺序做四件事（**全部是 HTTP 调用，不需要改文件、不需要读库**）：
 
 ```bash
 BASE=https://127.0.0.1:5700        # 自签证书：下面所有 curl 请加 -k（或先导入受信任证书）
@@ -38,19 +39,25 @@ curl -s -X POST $BASE/api/v1/setup -H 'Content-Type: application/json' \
 # AI/脚本用管理密钥（也可由口令自行计算，见下方"访问与密钥"）：
 export ADMIN_KEY='<上一步返回的 admin_key>'
 
-# 2) 建渠道：声明它提供哪些模型，声明即可路由
+# 2) 建渠道：声明它提供哪些模型（以及需要时的上游真名映射）
 curl -s -X PUT $BASE/api/v1/channels/vendor-a \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{"type":"openai","base_url":"https://vendor.example/v1",
        "key":"__INJECT_BY_OPERATOR__","priority":20,
        "models":["model-1","model-2"],"enabled":true}'
 
-# 3) 建客户端密钥（明文只回显一次）
+# 3) 固化车道：渠道声明只是候选，必须把成员链固化成车道才可调用
+curl -s -X POST "$BASE/api/v1/lanes/seed?dry_run=true" -H "Authorization: Bearer $ADMIN_KEY"  # 先预览
+curl -s -X POST $BASE/api/v1/lanes/seed -H "Authorization: Bearer $ADMIN_KEY"                # 再落库
+# 也可只固化一个模型：PUT $BASE/api/v1/lanes/model-1  body {"enabled":true,"mode":"failover",
+#   "members":[{"channel":"vendor-a","priority":20}]}
+
+# 4) 建客户端密钥（明文只回显一次）
 curl -s -X POST $BASE/api/v1/keys -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' -d '{"name":"client-a"}'
 ```
 
-下游把 `base_url` 指到 `$BASE/v1` 即可。
+下游把 `base_url` 指到 `$BASE/v1` 即可；**没固化车道的模型名一律 503**（与"上游全挂"同形）。
 
 ### 不用 Docker（手动 docker run / 裸机）
 
@@ -78,25 +85,32 @@ docker run -d --name pbr -p 5700:5700 \
 
 ## 2. 车道与路由
 
-### 2.1 路由键 = 模型名
+### 2.1 路由键 = 模型名，且**必须先固化车道**
 
 ```
 渠道/vendor-a（priority 20）—— model-1, model-2
 渠道/vendor-b（priority 10）—— model-1, model-2
 
+固化后（POST /api/v1/lanes/seed 或逐条 PUT /api/v1/lanes/{model}）：
 请求 model-1  →  vendor-a 的 model-1  →（失败）→  vendor-b 的 model-1
 ```
 
-- 渠道声明 `models` 后，这些模型名**立刻可用**，不需要先建任何对象。
-- 排序依据是渠道 `priority`，**数字大者优先**；相同则按渠道 id 定序。
-- 没有任何渠道声明该模型 → `503 No available channel for model <X>`，
+- **车道是唯一路由入口**（[ADR 0005](docs/adr/0005-lane-required-and-channel-model-mapping.md)）：
+  渠道声明 `models` 只是"候选成员来源"，**不等于可调用**；没有同名启用车道时请求该模型
+  一律 `503 No available channel for model <X>`。
+- 一步固化：`POST /api/v1/lanes/seed`（按渠道 `priority` 生成 failover 车道，幂等；
+  `?dry_run=true` 先看将创建哪些），或按 §2.2 手工建/改。
+- 排序依据是渠道 `priority`，**数字大者优先**；相同则按渠道 id 定序（仅用于 seed 生成的初始顺序）。
+- 上游命名与路由键不一致时，在**渠道**上配 `model_mapping`（路由键 → 上游真名），
+  配置一次即对该渠道的所有车道成员生效；成员级 `upstream_model` 可再覆盖它。
+- 没有任何渠道声明该模型 → 同样是 `503 No available channel for model <X>`，
   与"上游全挂"**同形**，下游无需分支。
 - 请求名带思考后缀（如 `model-1-thinking`）时，原文未命中会按基座既有规则归一化再匹配一次，
   响应里的 `model` 仍是请求原文。
 
-### 2.2 显式车道（可选覆盖层）
+### 2.2 车道（唯一入口：顺序 / 改名 / 池化 / 四种模式）
 
-需要自定义顺序、成员改名、或池化不同上游的不同模型名时才建：
+需要自定义顺序、成员改名、或池化不同上游的不同模型名时就写车道：
 
 ```bash
 curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
@@ -123,8 +137,12 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 | `member_cooldown_seconds` | 60 | 成员耗尽尝试后被跳过的秒数 |
 | `member_affinity_seconds` | **0** | 切换成功后保持当前成员的秒数（默认不粘滞） |
 
+默认六键可经 `PUT /api/v1/system/options` 的 `lane_defaults` 调整（只影响新建/一键固化
+的车道与未显式配置的车道；已配置的车道以其自身六键为准）。
+
 **超时算术（排障必用）**：最坏判定耗时 = 成员数 × attempts ×（超时 + 重试间隔）；
 端到端 = 客户端重试次数 × 该数。嫌慢时正确旋钮是 response timeout，而不是砍 attempts。
+超时（含"上游一直不返回响应头"）一律按真实失败处理：计入尝试、冷却并换下一个成员。
 
 ### 2.4 冷却、熔断与亲和
 
@@ -135,10 +153,12 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 - **错误分类**：欠费关键词优先于状态码；`client_error`（请求本身不合法）不冷却、不换人、
   不记熔断分——否则一个坏请求会把健康成员打冷。
 - **亲和**：默认 0 = 不做粘滞，高优先级成员恢复后立刻切回；需要压抖动时按车道显式配置。
-- **自动恢复默认开启**：`AutomaticEnableChannelEnabled` 默认为 `true`，**与旧系统相反**
-  （旧系统默认关闭）。原因：关闭时"自动禁用"是单向操作——渠道被自动禁用后没有任何
-  路径能改回 `enabled`，而成员链只取 `enabled` 渠道，该成员会从车道上静默消失。
-  开关名保留旧口径以便现网对照，可在设置页或 `PUT /api/v1/system/options` 关闭。
+- **自动恢复**：`AutomaticEnableChannelEnabled` 默认 `true`（**与旧系统相反**，旧系统默认关闭）。
+  它只是"允许把自动禁用的渠道写回 `enabled`"的许可；**真正执行复通的是渠道巡检任务**：
+  `monitor_setting.auto_test_channel_enabled` **默认 `false`**（控制台"系统设置 → 系统"里打开），
+  或人工点"测试全部渠道"。默认部署下自动禁用也不会发生（`AutomaticDisableChannelEnabled` 默认
+  `false`），一旦你打开了自动禁用，请同时打开巡检或记住这条人工恢复路径——否则被自动禁用的渠道
+  只会静默地从成员链上消失。
 - **全部成员耗尽 → 立即 503 快抛**，不轮询等待、不静默兜底、不跨车道逃逸。
   503 只代表"没有可用渠道"：基座继承的**本机资源过载守卫默认关闭**（`PERFORMANCE_MONITOR_ENABLED=false`），
   避免把"网关所在机器忙"误判成"路由全挂"；需要时可用该环境变量打开并配 `PERFORMANCE_*_THRESHOLD`。
@@ -173,8 +193,9 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 
 | 项 | 旧（两代网关） | PowerBarRations |
 |---|---|---|
-| 层数 | 路由层 + 厂商层两层 | 一层：模型名即路由键 |
-| 模型映射 | 厂商层 `model_mapping` 表 | 成员级 `upstream_model`，映射表消失 |
+| 层数 | 路由层 + 厂商层两层 | 一层：车道即路由键（模型名） |
+| 模型映射 | 厂商层 `model_mapping` 表 | 渠道级 `model_mapping`（路由键 → 上游真名），可由成员级 `upstream_model` 覆盖 |
+| 路由入口 | 分组名（没建分组就用不了） | 车道是唯一入口：没固化车道一律 503，`POST /api/lanes/seed` 一键固化 |
 | 限流误判 | 429 与 401 一视同仁 | 分类处理，429 不误伤 |
 | 全挂行为 | 轮询等待（请求悬挂） | 503 快抛（下游可分类） |
 | 自愈 | 只禁不通，无半开 | 熔断三态 + 半开自动复通 |

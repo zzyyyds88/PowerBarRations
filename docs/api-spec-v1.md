@@ -44,13 +44,15 @@ HTTP/1.1 401 Unauthorized
 
 1. **全量幂等写**：`PUT /api/{resource}/{name}`，body 为完整对象，upsert 语义；同名重复提交结果一致。
 2. **写后回读**：响应体是**落库后重新读取**的最终状态。实现必须在 handler 内 re-read 再返回。
-3. **dry-run**：任何 `PUT/POST/DELETE` 支持 `?dry_run=true`，返回将发生的 diff 而不落库：
+3. **dry-run**：配置类 `PUT/POST/DELETE` 支持 `?dry_run=true`，返回将发生的 diff 而不落库：
 
    ```json
    { "dry_run": true, "valid": true,
      "diff": { "lanes": { "add": ["lane-beta"], "update": [], "remove": [] } } }
    ```
-4. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。
+
+   **例外（不支持 dry-run，也不会写库）**：`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`（探活本身就是只读的真实请求）、`PUT /api/tls/certificate`、`POST /api/tls/self-signed`、`POST /api/auth/*`（认证与证书写入没有"预览"语义）。
+4. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。**非法/损坏的 cursor 返回 400 `validation_failed`**（不得静默回退到第一页，否则调用方会陷入翻页死循环）。
 5. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
 6. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。
 7. **幂等键（可选）**：请求头 `Idempotency-Key` 可用于重试去重。
@@ -75,7 +77,7 @@ HTTP/1.1 401 Unauthorized
 | 401 | `unauthorized` | 密钥缺失或错误 |
 | 403 | `forbidden_scope` | 客户端密钥访问了被 deny 的车道（仅模型面） |
 | 404 | `lane_not_found` / `channel_not_found` / `key_not_found` / `log_not_found` | 对象不存在 |
-| 409 | `conflict` | 唯一名冲突 / 乐观锁冲突 / 车道名与成员别名冲突 |
+| 409 | `conflict` | 唯一名冲突 / 乐观锁冲突 / 车道名与成员别名冲突 / **环境变量管理密钥生效时变更口令**（`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 优先，口令变更不生效） |
 | 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/setup`） |
 | 422 | `lane_has_no_members` | 启用车道但无成员 |
 | 422 | `member_channel_missing` | 成员引用的渠道不存在 |
@@ -112,8 +114,8 @@ HTTP/1.1 401 Unauthorized
 }
 ```
 
-- `models`：本渠道提供的**路由键**（模型名）。声明后这些模型名即刻可路由，无需再建对象（见 [routing-spec-v1.md](routing-spec-v1.md) §1.1）。
-- `priority`：隐式成员链的排序依据，数字大者优先。
+- `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。
+- `priority`：仅用于"一键固化"（`POST /api/lanes/seed`）生成车道成员的**初始顺序**，数字大者优先；已有车道以其自身成员顺序为准。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。折算优先级：渠道价 > 全局默认单价表（`system/options.model_prices`）> 不折算。省略该字段时保持原值。
@@ -145,7 +147,7 @@ HTTP/1.1 401 Unauthorized
 - 成员在请求/响应中用 `channel`（渠道名）引用，不暴露内部 ID。
 - **`priority` 数字大者优先**（与渠道 `priority` 一致），示例中的 1/2 仅为占位。
 - `overrides` 为成员级六键覆盖，省略字段表示继承车道。
-- **显式车道**才需要创建；绝大多数模型走**隐式车道**（渠道 `models` 声明自动成链），不在 `GET /lanes` 中列出，见 §5.7。
+- **每条车道都是显式对象**：`GET /lanes` 就是全部路由入口，不存在隐藏的自动链（ADR 0005）；没建车道的模型一律 `503`。
 
 ### 4.3 ClientKey
 
@@ -215,14 +217,14 @@ HTTP/1.1 401 Unauthorized
 | POST | `/api/setup` | 首次设置登录口令，**签发会话 Cookie** 并返回派生管理密钥（仅未初始化时可用） |
 | POST | `/api/auth/login` | 口令校验通过→**签发会话 Cookie**，并返回派生管理密钥 |
 | POST | `/api/auth/logout` | 清除会话 Cookie |
-| POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签） |
+| POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签）。**`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时返回 409 `conflict`**：环境变量管理密钥优先，口令变更不影响实际生效的密钥 |
 | GET | `/api/capabilities` | 适配器、模式、能力枚举 |
 | GET | `/api/openapi.json` | OpenAPI 3 文档（**免鉴权**） |
 | GET | `/doc` | 面向 AI 的管理 API 手册（`text/markdown`；浏览器 `Accept: text/html` 时返回说明页。**免鉴权**） |
 | GET | `/llms.txt` | 与 `/doc` 同源的纯文本手册（**免鉴权**） |
 | GET | `/doc/ui` | 交互式 OpenAPI 文档（复用 Scalar，指向 `/api/openapi.json`。**免鉴权**） |
 | GET | `/api/system/options` | 全局选项 |
-| PUT | `/api/system/options` | 更新全局选项（全量） |
+| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、`model_prices`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建/一键固化车道与未显式配置的车道） |
 
 ### 5.2 车道
 
@@ -266,8 +268,8 @@ HTTP/1.1 401 Unauthorized
 |---|---|---|
 | GET | `/api/logs` | 过滤：`lane` `channel` `key` `success` `since` `until` `cursor` `limit` |
 | GET | `/api/logs/{id}` | 单条（含 attempts 链） |
-| POST | `/api/logs/prune?before=&dry_run=` | 按需清理明细日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；只删明细，聚合表长期保留 |
-| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model` |
+| POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变** |
+| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响 |
 | GET | `/api/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
 | GET | `/api/audit` | 变更审计 |
 
@@ -275,8 +277,8 @@ HTTP/1.1 401 Unauthorized
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希） |
-| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff |
+| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`model_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`）与 `system_options`。 |
+| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。导出文件可跨实例还原配置，但**密钥明文不在文件里**（需另行注入） |
 
 ### 5.7 模型路由（车道）
 
@@ -287,7 +289,7 @@ HTTP/1.1 401 Unauthorized
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
 | POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 priority 生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射） |
 
-**UI 心智**（design-v1 §7.7）：渠道管理填上游与模型 → 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。未固化时保持隐式链（渠道声明即自动成链）。
+**UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
 
 ```bash
 curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
@@ -295,7 +297,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 ```json
 {
   "model": "model-1",
-  "source": "implicit",
+  "source": "explicit",
   "members": [
     { "channel": "channel-a", "upstream_model": "model-1", "priority": 1 },
     { "channel": "channel-b", "upstream_model": "model-1", "priority": 2 }

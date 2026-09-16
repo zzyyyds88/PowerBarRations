@@ -145,20 +145,21 @@
 ### 3.2 结构示意（占位符为示意，非真实数据）
 
 ```
-渠道/vendor-a（priority 1）—— model-1, model-2, model-3
-渠道/vendor-b（priority 2）—— model-1, model-2, model-3
+渠道/vendor-a（priority 20）—— model-1, model-2, model-3
+渠道/vendor-b（priority 10）—— model-1, model-2, model-3
 
+固化后（POST /lanes/seed 或逐条 PUT /lanes/{model}）：
 下游请求 model-1  →  vendor-a 的 model-1  →（失败）→  vendor-b 的 model-1
 下游请求 model-2  →  vendor-a 的 model-2  →（失败）→  vendor-b 的 model-2
-（model-3 亦然；任意模型名都按同一规则自动成链）
+（model-3 亦然；未固化的模型名不可调用，一律 503）
 ```
 
 ```
 客户端 --model=<模型名>--> PowerBarRations
-                              ├─ 隐式车道 "model-1"：成员 = 所有声明提供 model-1 的渠道，按渠道优先级排序
-                              ├─ 隐式车道 "model-2" / "model-3" / …（任意模型，无需配置）
-                              ├─ 显式车道（可选覆盖层）：自定义顺序 / 成员改名 / 池化
-                              └─ 渠道 Channel: 厂商 base_url + key + 模型清单 + param_override + 协议类型(40 家适配器原样复用)
+                              ├─ 车道 "model-1"（唯一入口）：成员 = 渠道A(model-1) → 渠道B(model-1)
+                              ├─ 车道 "model-2" / "model-3" / …（逐个固化；未固化 = 503）
+                              ├─ 车道可选高级能力：自定义顺序 / 成员改名 / 池化 / 四种模式 / 六键覆盖
+                              └─ 渠道 Channel: 厂商 base_url + key + 模型清单 + model_mapping + param_override + 协议类型(40 家适配器原样复用)
                                         ▲
                     管理面(API) ────────┘
                     控制台(UI) ─────────┘  同一个二进制，UI 产物 embed 进二进制
@@ -184,8 +185,9 @@ type Channel struct {                 // 厂商渠道
     Name      string   // 唯一
     Type      string   // 协议族：openai|anthropic|gemini|ollama|...（映射 40 家适配器）
     BaseURL   string   // 只存到版本根（如 https://host/v1），路径拼接交给适配器
-    Priority  int      // 隐式成员链排序依据，数字大者优先
-    Models    []string // 本渠道提供的模型名（路由键）；声明即可路由
+    Priority  int      // 仅用于"一键固化"生成车道成员的初始顺序，数字大者优先
+    Models    []string // 本渠道提供哪些路由键（候选）；声明只是候选，必须固化成车道才可调用（ADR 0005）
+    ModelMapping map[string]string // 路由键 → 上游真名；上游命名不一致时在渠道上配置一次（ADR 0005）
     Key       string   // 只写不读：响应脱敏；不打印进日志
     ParamOverride string          // JSON，统一各厂商思考参数差异的落点
     Enabled   bool
@@ -193,7 +195,7 @@ type Channel struct {                 // 厂商渠道
     CreatedAt, UpdatedAt time.Time
 }
 
-type Lane struct { // 显式车道 = 可选覆盖层；未显式定义的模型走隐式链
+type Lane struct { // 车道 = 唯一路由入口；没有同名启用车道 ⇒ 503（ADR 0005）
     ID      int
     Name    string   // 可路由的模型名（唯一）
     Mode    string   // failover(默认) | manual | weighted | round_robin
@@ -206,7 +208,7 @@ type LaneMember struct {
     ID            int
     LaneID        int
     ChannelID     int
-    UpstreamModel string  // 发给厂商的真实模型名 —— 映射在此终结
+    UpstreamModel string  // 可选：成员级显式改名（非空且 ≠ 路由键）；留空则用渠道 ModelMapping，再退回路由键
     PublicAlias   string  // 可选：客户端可点名该成员的名字（空 = 不可点名）
     Priority      int     // 数字大者优先（与渠道优先级语义一致）
     Weight        int     // weighted 模式使用
@@ -330,6 +332,8 @@ type LaneRelayConfig struct {
 
 默认值取 upstream `DefaultGroupRelayConfig`（2 / 3 / 120 / 30 / 60 / **0**）；**逐车道覆盖值属部署数据**。六键取代厂商层全局 `RetryTimes`：车道级可覆盖、成员级可再覆盖。
 
+**默认六键可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整**（option 键 `PBRLaneDefaults`）：它只决定"新建车道/一键固化时写入的初值"与"车道未显式配置时的回落值"；已存在的车道若自带六键则不受影响（车道六键仍是权威，成员级覆盖仍在最上层）。
+
 > **`member_affinity_seconds` 默认改为 0（相对上游的 300）**：上游的亲和是为"多用户共享车道时压低抖动"而设；本项目是单用户自用网关，亲和会让"高优先级成员恢复后仍被低优先级成员粘住"，直接掩盖 priority 的语义。默认 0 = 不做粘滞，每次请求都从优先级最高的可用成员开始；需要压抖动时按车道显式配置（六键本来就支持车道级覆盖）。
 
 **超时算术（文档必写）**：最坏判定耗时 = 成员数 × attempts ×（超时 + 重试间隔），端到端 = 客户端重试次数 × 该数。
@@ -342,11 +346,11 @@ type LaneRelayConfig struct {
 
 ### 7.5 熔断 + 半开自愈（新增）
 
-- 键为**成员粒度** `channelID:keyID:modelName`。
+- 键为**成员粒度**：车道内 `channel_id : upstream_model`（同一渠道的同一上游模型在一条车道里就是一个成员，与成员改名解耦）。
 - **软/硬故障分离**：`429`/限流类为软故障，不得与硬故障同罚。
 - 连续失败达阈值 → 打开；退避期到 → 半开放一个真实请求；成功即自动复通并写恢复事件日志。
 - 触发证据除关键词外，补"滚动窗口失败率"（定长环形缓冲：数据面非阻塞上报、控制面评估）。
-- **禁用语义 = "熔断中"**；保留开关名 `AutomaticEnableChannelEnabled` 兼容现网口径，**默认 true**（README 写明）。
+- **禁用语义 = "熔断中"**；保留开关名 `AutomaticEnableChannelEnabled` 兼容现网口径，**默认 true**（README 写明）。注意：该开关只是"允许写回 enabled"的许可，真正执行复通的是渠道巡检任务（`monitor_setting.auto_test_channel_enabled`，默认 **false**）或人工触发"测试全部渠道"；即默认部署下不会自动复通，README 必须如实写明。
 - 阈值/半开周期进 `system/options` 可配，经 API 修改。
 
 ### 7.6 自动禁用关键词（行为继承，条目属部署数据）
@@ -385,7 +389,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 `attempts` 元素：`attempt_num`、`member`、`status ∈ success|failed|cooldown|circuit_break|skipped`、`duration_ms`、`error_kind`、`msg`。另建每日/每小时聚合表供 `/stats` 与 UI 图表。
 
-> 路由为模型名键控：隐式路由时 `lane_name` 即等于 `request_model`；日志另记 `route_source ∈ implicit|explicit`，便于区分"走的是自动链还是显式覆盖层"。
+> 路由为模型名键控：配了车道时 `lane_name` 等于车道名（通常等于 `request_model`）；日志另记 `route_source ∈ explicit|unconfigured`，用于区分"已固化可调用"与"渠道声明但没建车道"。
 
 **明确不许有**：`quota` 扣减、余额变更、请求/响应正文、任何"余额不足拒服务"逻辑。
 
@@ -564,11 +568,11 @@ vendor new-api 转发管道与适配层；Go module `pbr`；先让它原样转�
 **验收**：`go build ./...` 通过；一条 curl 经 PBR 转发成功并回显上游响应。
 
 ### W1 单层化路由
-建 Channel/Lane/成员模型与 migration；**模型名解析为路由键**（显式车道 → 隐式链）；响应 `model` 回填请求名；`X-Served-By`；最小管理 API（`GET/PUT /channels`、`GET/PUT /lanes`、`GET /models`、`GET /routes/{model}`）。
+建 Channel/Lane/成员模型与 migration；**模型名解析为路由键**（仅同名启用车道，见 ADR 0005）；响应 `model` 回填请求名；`X-Served-By`；最小管理 API（`GET/PUT /channels`、`GET/PUT /lanes`、`GET /models`、`GET /routes/{model}`、`POST /lanes/seed`）。
 **验收**：
-- **隐式**：两个渠道各声明同一模型名（不同 priority）→ 直接请求该模型名 → 走 P1 渠道；把 P1 的 key 改成坏值 → 自动落到 P2；响应 `model` 始终等于请求名。
-- **显式**：建一条显式车道并加两个成员（不同上游模型名）→ 请求该名字 → 日志显示实际成员链。
-- 两个渠道都不声明某模型名时，请求该名字返回 `503 No available channel for model <X>`。
+- **零配置不再可路由**：两个渠道各声明同一模型名（不同 priority）但没建车道 → 请求该模型名 → `503`；`POST /lanes/seed` 固化后 → 走 P1 渠道；把 P1 的 key 改成坏值 → 自动落到 P2；响应 `model` 始终等于请求名。
+- **显式**：建一条车道并加两个成员（不同上游模型名）→ 请求该名字 → 日志显示实际成员链。
+- 渠道不声明、也没有同名车道的模型名，请求返回 `503 No available channel for model <X>`。
 
 ### W2 容错
 六键、冷却、亲和、failover；熔断三态（软硬分离、成员粒度）；关键词机制；weighted / round_robin。
@@ -687,7 +691,8 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 ### 16.5 日志保留
 
 - 不引入 cron。保留策略由 `system/options.log_retention_days` 配置（默认 30），并提供 `POST /api/logs/prune?before=<ts>&dry_run=` 由外部按需触发。
-- 聚合表长期保留（体积小）；明细表按上述策略清理。
+- 聚合表（`pbr_stats_hourly`）长期保留（体积小）；明细表按上述策略清理。
+- **`GET /api/stats` 必须读聚合表**（hour 直读、day 由小时桶上卷），不得读明细表——否则一次 prune 就把历史统计抹掉，与"聚合长期保留"自相矛盾。
 
 ### 16.6 并发与超时
 
@@ -718,11 +723,11 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 | # | 项 | 决定 |
 |---|---|---|
-| 1 | SSE 鉴权 | 前端用 `fetch` + `ReadableStream` 读 SSE，带 `Authorization` 头；**不用 `EventSource`**（无法带头），密钥不进 URL |
+| 1 | SSE 鉴权 | 管理面 SSE 走会话 Cookie（`fetch` + `ReadableStream`，`credentials: same-origin`；**不用 `EventSource`**，以便统一错误处理与中断）；密钥不进 URL，也不放查询串 |
 | 2 | 图像/视频/任务路由 | **与 chat 同一套**：`model` 按 §1.1 解析到成员链，选成员走同一路由核心；任务适配器仍自行负责 action/轮询/结果解析，只是"打给谁"由路由核心决定 |
-| 3 | 车道粘滞 | 车道级共享当前成员（照搬线上）；隐式车道即"按模型名各自粘滞"，模型之间互不影响 |
+| 3 | 车道粘滞 | 车道级共享当前成员（照搬线上）；每个模型一条车道，模型之间互不影响 |
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
-| 5 | Playground | **保留**（控制台内，排障用） |
+| 5 | Playground | **保留**（控制台内，排障用）。模型面只认客户端密钥，因此试打台由使用者填入客户端密钥，直连 `/v1/chat/completions`（不新增管理面转发端点） |
 | 6 | `round_robin` 游标 | 每车道一个全局游标（与车道级粘滞一致） |
 | 7 | 上游单价与成本折算 | **两层单价**：①**渠道级上游单价**（渠道 `setting.pbr_prices`，人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`），在渠道编辑页配置；②**全局默认单价表**（`options` 表的 `PBRModelPrices`），在"系统设置 → 模型 → 单价表"配置。折算优先级：渠道价 > 全局默认 > 不折算。只用于日志 `estimated_cost` 与看板成本统计，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
 | 8 | 旧库日志 | **不迁移**；旧库整体归档保留，不额外导出 |
