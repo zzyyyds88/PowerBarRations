@@ -18,19 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 export const DEFAULT_ENDPOINT = '/api/pricing'
 
-// ---------------------------------------------------------------------------
-// Built-in upstream ratio presets
-//
-// The backend (`controller/ratio_sync.go`) synthesizes two virtual channels and
-// returns them in the syncable channels response. The constants below mirror
-// the backend literals one-to-one; do NOT translate the *_NAME values because
-// they are wire-protocol identifiers, not user-facing labels.
-//
-// Identification on the frontend should rely on the stable negative ID alone.
-// `*_NAME` and `*_BASE_URL` are kept for diagnostics and custom channel
-// detection.
-// ---------------------------------------------------------------------------
-
 export const OFFICIAL_CHANNEL_ID = -100
 export const OFFICIAL_CHANNEL_NAME = '官方倍率预设'
 export const OFFICIAL_CHANNEL_BASE_URL = 'https://basellm.github.io'
