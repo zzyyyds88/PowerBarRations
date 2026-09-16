@@ -606,6 +606,13 @@ export const STATIC_I18N_KEYS = [
   'Error establishing connection',
   'Connection closed',
   'Generation was interrupted',
+  'Fill in a client key before sending a message',
+  // attempts 状态是动态文案（attempt.status 直接进 t()）
+  'success',
+  'failed',
+  'cooldown',
+  'circuit_break',
+  'skipped',
   'Note',
   'Tip',
   'Important',
