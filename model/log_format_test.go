@@ -35,11 +35,11 @@ func TestFormatUserLogsStripsQuotaSaturation(t *testing.T) {
 	require.Contains(t, parsed, "model_price")
 }
 
-func TestTaskPluginLogVisibilityIsRoleSeparated(t *testing.T) {
+func TestRelayAuditLogVisibilityIsRoleSeparated(t *testing.T) {
 	other := common.MapToJsonStr(map[string]any{
 		"model_price": 1.25,
 		"admin_info": map[string]any{
-			"task_plugin": map[string]any{
+			"relay_audit": map[string]any{
 				"key":     "document-parser",
 				"name":    "Document Parser",
 				"version": "1.2.3",
@@ -47,7 +47,7 @@ func TestTaskPluginLogVisibilityIsRoleSeparated(t *testing.T) {
 		},
 		"root_info": map[string]any{
 			"upstream_task_id": "upstream-private",
-			"task_plugin": map[string]any{
+			"relay_audit": map[string]any{
 				"generation": 42,
 			},
 		},

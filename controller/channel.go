@@ -14,7 +14,6 @@ import (
 	"pbr/constant"
 	"pbr/i18n"
 	"pbr/model"
-	"pbr/pkg/jsplugin"
 	relaychannel "pbr/relay/channel"
 	"pbr/relay/channel/ollama"
 	relaycommon "pbr/relay/common"
@@ -467,30 +466,6 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
-	if channel.Type == constant.ChannelTypeTaskPlugin {
-		pluginKey := strings.TrimSpace(channel.GetSetting().TaskPluginKey)
-		if pluginKey == "" {
-			return fmt.Errorf("task plugin key is required")
-		}
-		if len(pluginKey) > 30 {
-			return fmt.Errorf("task plugin key must not exceed 30 characters")
-		}
-		plugin, ok := jsplugin.DefaultRegistry.Get(pluginKey)
-		if !ok {
-			return fmt.Errorf("task plugin %q is not registered", pluginKey)
-		}
-		if channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "" {
-			// The plugin default is persisted onto the channel instead of being
-			// resolved per request, so the destination host stays an auditable
-			// channel property that only an administrator edit can change.
-			if plugin.Meta.BaseURL == "" {
-				return fmt.Errorf("base URL is required for task plugin channels")
-			}
-			defaultBaseURL := plugin.Meta.BaseURL
-			channel.BaseURL = &defaultBaseURL
-		}
-	}
-
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
 		return fmt.Errorf("New API channel base URL cannot be empty")
 	}
@@ -627,9 +602,6 @@ func AddChannel(c *gin.Context) {
 		return
 	}
 
-	baseURLFromPluginDefault := addChannelRequest.Channel != nil &&
-		addChannelRequest.Channel.Type == constant.ChannelTypeTaskPlugin &&
-		(addChannelRequest.Channel.BaseURL == nil || strings.TrimSpace(*addChannelRequest.Channel.BaseURL) == "")
 	// 使用统一的校验函数
 	if err := validateChannel(addChannelRequest.Channel, true); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -718,9 +690,6 @@ func AddChannel(c *gin.Context) {
 		"name":  addChannelRequest.Channel.Name,
 		"type":  addChannelRequest.Channel.Type,
 		"count": len(channels),
-	}
-	if baseURLFromPluginDefault {
-		createAudit["base_url_source"] = "plugin_default"
 	}
 	recordManageAudit(c, "channel.create", createAudit)
 	c.JSON(http.StatusOK, gin.H{
@@ -975,8 +944,6 @@ func UpdateChannel(c *gin.Context) {
 	}
 	clearChannelReadOnlyFields(&channel, requestData)
 
-	baseURLFromPluginDefault := channel.Type == constant.ChannelTypeTaskPlugin &&
-		(channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "")
 	// 使用统一的校验函数
 	if err := validateChannel(&channel.Channel, false); err != nil {
 		c.JSON(http.StatusOK, gin.H{
@@ -1120,9 +1087,6 @@ func UpdateChannel(c *gin.Context) {
 		"id":             channel.Id,
 		"name":           channel.Name,
 		"changed_fields": changedFields,
-	}
-	if baseURLFromPluginDefault {
-		updateAudit["base_url_source"] = "plugin_default"
 	}
 	recordManageAudit(c, "channel.update", updateAudit)
 	channel.Key = ""

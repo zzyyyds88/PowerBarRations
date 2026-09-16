@@ -8,8 +8,6 @@ import (
 
 	"gorm.io/gorm"
 	"pbr/common"
-	"pbr/constant"
-	"pbr/pkg/jsplugin"
 	"pbr/setting"
 	"pbr/setting/config"
 	"pbr/setting/operation_setting"
@@ -50,12 +48,6 @@ func InitOptionMap() {
 	common.OptionMap["DisplayInCurrencyEnabled"] = strconv.FormatBool(common.DisplayInCurrencyEnabled)
 	common.OptionMap["DisplayTokenStatEnabled"] = strconv.FormatBool(common.DisplayTokenStatEnabled)
 	common.OptionMap["DrawingEnabled"] = strconv.FormatBool(common.DrawingEnabled)
-	common.OptionMap["TaskEnabled"] = strconv.FormatBool(common.TaskEnabled)
-	common.OptionMap["TaskPluginEnabled"] = strconv.FormatBool(constant.TaskPluginEnabled)
-	jsplugin.DefaultRegistry.SetEnabled(constant.TaskPluginEnabled)
-	common.OptionMap[setting.TaskPluginMarketplaceSourcesKey] = setting.TaskPluginMarketplaceSources2JsonString()
-	common.OptionMap[setting.TaskPluginDisabledFactoryKeysKey] = "[]"
-	jsplugin.DefaultRegistry.SetDisabledFactoryKeys(nil)
 	common.OptionMap["DataExportEnabled"] = strconv.FormatBool(common.DataExportEnabled)
 	common.OptionMap["ChannelDisableThreshold"] = strconv.FormatFloat(common.ChannelDisableThreshold, 'f', -1, 64)
 	common.OptionMap["SMTPServer"] = ""
@@ -276,11 +268,6 @@ func updateOptionMap(key string, value string) (err error) {
 			common.DisplayTokenStatEnabled = boolValue
 		case "DrawingEnabled":
 			common.DrawingEnabled = boolValue
-		case "TaskEnabled":
-			common.TaskEnabled = boolValue
-		case "TaskPluginEnabled":
-			constant.TaskPluginEnabled = boolValue
-			jsplugin.DefaultRegistry.SetEnabled(boolValue)
 		case "DataExportEnabled":
 			common.DataExportEnabled = boolValue
 		case "DefaultCollapseSidebar":
@@ -320,9 +307,6 @@ func updateOptionMap(key string, value string) (err error) {
 		case "ExposeRatioEnabled":
 			ratio_setting.SetExposeRatioEnabled(boolValue)
 		}
-	}
-	if key == setting.TaskPluginDisabledFactoryKeysKey {
-		jsplugin.DefaultRegistry.SetDisabledFactoryKeys(setting.ParseTaskPluginDisabledFactoryKeys(value))
 	}
 	switch key {
 	case "SMTPServer":

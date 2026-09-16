@@ -283,8 +283,7 @@ func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel str
 func isProbeUnsupported(channelType int) bool {
 	switch channelType {
 	case constant.ChannelTypeMidjourney, constant.ChannelTypeMidjourneyPlus, constant.ChannelTypeSunoAPI,
-		constant.ChannelTypeKling, constant.ChannelTypeJimeng, constant.ChannelTypeDoubaoVideo,
-		constant.ChannelTypeVidu, constant.ChannelTypeTaskPlugin,
+		constant.ChannelTypeJimeng,
 		constant.ChannelTypeAnthropic, constant.ChannelTypeGemini, constant.ChannelTypeVertexAi,
 		constant.ChannelTypePaLM, constant.ChannelTypeAws, constant.ChannelTypeCohere:
 		return true

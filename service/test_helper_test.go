@@ -1,11 +1,9 @@
 package service
 
 import (
-	"encoding/json"
 	"os"
 	"sync"
 	"testing"
-	"time"
 
 	"pbr/common"
 	"pbr/model"
@@ -38,7 +36,6 @@ func TestMain(m *testing.M) {
 	common.LogConsumeEnabled = true
 
 	if err := db.AutoMigrate(
-		&model.Task{},
 		&model.User{},
 		&model.Log{},
 		&model.Channel{},
@@ -55,7 +52,6 @@ func TestMain(m *testing.M) {
 func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
-		model.DB.Exec("DELETE FROM tasks")
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
@@ -94,33 +90,6 @@ func seedChannel(t *testing.T, id int) {
 	require.NoError(t, model.DB.Create(ch).Error)
 }
 
-func makeTask(userId, channelId, quota, tokenId int, billingSource string, subscriptionId int) *model.Task {
-	return &model.Task{
-		TaskID:    "task_" + time.Now().Format("150405.000"),
-		UserId:    userId,
-		ChannelId: channelId,
-		Quota:     quota,
-		Status:    model.TaskStatus(model.TaskStatusInProgress),
-		Group:     "default",
-		Data:      json.RawMessage(`{}`),
-		CreatedAt: time.Now().Unix(),
-		UpdatedAt: time.Now().Unix(),
-		Properties: model.Properties{
-			OriginModelName: "test-model",
-		},
-		PrivateData: model.TaskPrivateData{
-			BillingSource:  billingSource,
-			SubscriptionId: subscriptionId,
-			TokenId:        tokenId,
-			BillingContext: &model.TaskBillingContext{
-				ModelPrice:      0.02,
-				GroupRatio:      1.0,
-				OriginModelName: "test-model",
-			},
-		},
-	}
-}
-
 func getUserQuota(t *testing.T, id int) int {
 	t.Helper()
 	var user model.User
@@ -153,13 +122,6 @@ func getTokenUsedQuota(t *testing.T, id int) int {
 	t.Helper()
 	_ = id
 	return 0
-}
-
-func getTaskQuota(t *testing.T, id int64) int {
-	t.Helper()
-	var task model.Task
-	require.NoError(t, model.DB.Select("quota").Where("id = ?", id).First(&task).Error)
-	return task.Quota
 }
 
 func getMidjourneyTask(t *testing.T, id int) model.Midjourney {

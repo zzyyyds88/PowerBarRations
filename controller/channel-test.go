@@ -78,11 +78,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		constant.ChannelTypeMidjourney,
 		constant.ChannelTypeMidjourneyPlus,
 		constant.ChannelTypeSunoAPI,
-		constant.ChannelTypeKling,
 		constant.ChannelTypeJimeng,
-		constant.ChannelTypeDoubaoVideo,
-		constant.ChannelTypeVidu,
-		constant.ChannelTypeTaskPlugin,
 	}
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)

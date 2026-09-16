@@ -2,43 +2,32 @@ package billing_setting
 
 import (
 	"fmt"
-	"maps"
 	"math"
 	"sort"
-	"strings"
 
-	"pbr/common"
 	"pbr/pkg/billingexpr"
-	"pbr/pkg/jsplugin"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
 	"pbr/setting/config"
 	"pbr/setting/ratio_setting"
 	"github.com/samber/lo"
 )
 
 const (
-	BillingModeRatio        = "ratio"
-	BillingModeTieredExpr   = "tiered_expr"
-	BillingModeField        = "billing_mode"
-	BillingExprField        = "billing_expr"
-	PluginBillingExprOption = "billing_setting.plugin_billing_expr"
-	maxTaskExprSmokeTests   = 64
+	BillingModeRatio      = "ratio"
+	BillingModeTieredExpr = "tiered_expr"
+	BillingModeField      = "billing_mode"
+	BillingExprField      = "billing_expr"
 )
 
 // BillingSetting is managed by config.GlobalConfig.Register.
-// DB keys: billing_setting.billing_mode, billing_setting.billing_expr,
-// billing_setting.plugin_billing_expr
+// DB keys: billing_setting.billing_mode, billing_setting.billing_expr
 type BillingSetting struct {
-	BillingMode       map[string]string `json:"billing_mode"`
-	BillingExpr       map[string]string `json:"billing_expr"`
-	PluginBillingExpr map[string]string `json:"plugin_billing_expr"`
+	BillingMode map[string]string `json:"billing_mode"`
+	BillingExpr map[string]string `json:"billing_expr"`
 }
 
 var billingSetting = BillingSetting{
-	BillingMode:       make(map[string]string),
-	BillingExpr:       make(map[string]string),
-	PluginBillingExpr: make(map[string]string),
+	BillingMode: make(map[string]string),
+	BillingExpr: make(map[string]string),
 }
 
 func init() {
@@ -81,67 +70,6 @@ func GetBillingExpr(model string) (string, bool) {
 func GetBuiltinBillingExpr(model string) (string, bool) {
 	expression, ok := builtinBillingExpr[model]
 	return expression, ok
-}
-
-func PluginBillingExprKey(pluginKey, model string) string {
-	return pluginKey + "::" + model
-}
-
-func SplitPluginBillingExprKey(key string) (plugin, model string, ok bool) {
-	plugin, model, ok = strings.Cut(key, "::")
-	if !ok || !jsplugin.ValidPluginKey(plugin) || strings.TrimSpace(model) == "" {
-		return "", "", false
-	}
-	return plugin, model, true
-}
-
-func GetPluginBillingExprCopy() map[string]string {
-	return maps.Clone(billingSetting.PluginBillingExpr)
-}
-
-func GetPluginBillingExpr(pluginKey, model string) (string, bool) {
-	expression, ok := billingSetting.PluginBillingExpr[PluginBillingExprKey(pluginKey, model)]
-	return expression, ok
-}
-
-// ResolveTaskBillingExpr selects the executing plugin's override before the
-// model expression, retaining the model alias fallback and explicit modes.
-func ResolveTaskBillingExpr(pluginKey, model, mappedModel string) (string, bool) {
-	if pluginKey != "" {
-		if expr, ok := GetPluginBillingExpr(pluginKey, model); ok {
-			return expr, true
-		}
-		if mappedModel != "" && mappedModel != model {
-			if expr, ok := GetPluginBillingExpr(pluginKey, mappedModel); ok {
-				return expr, true
-			}
-		}
-	}
-	if GetBillingMode(model) == BillingModeTieredExpr {
-		return GetBillingExpr(model)
-	}
-	if mappedModel != "" && mappedModel != model && GetBillingMode(mappedModel) == BillingModeTieredExpr {
-		expression, ok := GetBillingExpr(mappedModel)
-		return expression, ok && strings.TrimSpace(expression) != ""
-	}
-	return "", false
-}
-
-// TaskExprCompatible checks the schema contract even for usage references in
-// branches that the current request would not evaluate.
-func TaskExprCompatible(expression string, schema map[string]jsplugin.UsageFieldSchema) bool {
-	if strings.TrimSpace(expression) == "" {
-		return false
-	}
-	if _, err := billingexpr.CompileFromCache(expression); err != nil {
-		return false
-	}
-	for key := range billingexpr.UsedUsageKeys(expression) {
-		if _, exists := schema[key]; !exists {
-			return false
-		}
-	}
-	return !billingexpr.UsesFixedPricing(expression)
 }
 
 func GetBuiltinBillingExprCopy() map[string]string {
@@ -201,7 +129,7 @@ func smokeTestExpr(exprStr string) error {
 			sortedKeys = append(sortedKeys, key)
 		}
 		sort.Strings(sortedKeys)
-		return fmt.Errorf("expression references usage keys %v but the model has no task plugin usage schema", sortedKeys)
+		return fmt.Errorf("expression references usage keys %v but the model has no usage schema", sortedKeys)
 	}
 
 	vectors := []billingexpr.TokenParams{
@@ -226,132 +154,6 @@ func smokeTestExpr(exprStr string) error {
 		}
 	}
 	return nil
-}
-
-// SmokeTestTaskExpr validates a task usage expression against the usage facts
-// declared by its plugin. Literal u() keys must be declared; dynamic calls are
-// still exercised by the generated runtime vectors when possible.
-func SmokeTestTaskExpr(exprStr string, schema map[string]jsplugin.UsageFieldSchema) error {
-	if _, err := billingexpr.CompileFromCache(exprStr); err != nil {
-		return err
-	}
-	if billingexpr.UsesFixedPricing(exprStr) {
-		return fmt.Errorf("fixed pricing is not supported for task usage expressions")
-	}
-	for key := range billingexpr.UsedUsageKeys(exprStr) {
-		if _, declared := schema[key]; !declared {
-			return fmt.Errorf("usage key %q is not declared by the task plugin", key)
-		}
-	}
-
-	for _, usage := range taskUsageSmokeVectors(schema) {
-		for _, request := range billingExprSmokeRequests() {
-			request.Usage = usage
-			result, _, err := billingexpr.RunExprWithRequest(exprStr, billingexpr.TokenParams{}, request)
-			if err != nil {
-				return fmt.Errorf("usage vector %v: run failed: %w", usage, err)
-			}
-			if math.IsNaN(result) || math.IsInf(result, 0) || result < 0 {
-				return fmt.Errorf("usage vector %v: result must be finite and non-negative, got %f", usage, result)
-			}
-		}
-	}
-	return nil
-}
-
-type usageSmokeDimension struct {
-	name   string
-	values []any
-}
-
-func taskUsageSmokeVectors(schema map[string]jsplugin.UsageFieldSchema) []map[string]any {
-	names := make([]string, 0, len(schema))
-	for name := range schema {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	dimensions := make([]usageSmokeDimension, 0, len(names))
-	for _, name := range names {
-		field := schema[name]
-		if len(field.Enum) > 0 {
-			values := make([]any, len(field.Enum))
-			for index, value := range field.Enum {
-				values[index] = value
-			}
-			dimensions = append(dimensions, usageSmokeDimension{name: name, values: values})
-			continue
-		}
-		if field.Type == "boolean" {
-			dimensions = append(dimensions, usageSmokeDimension{name: name, values: []any{false, true}})
-			continue
-		}
-		limit := relaycommon.MaxTaskDurationSeconds
-		if field.Unit == "count" {
-			limit = dto.MaxImageN
-		}
-		if field.Unit == "token" || field.Unit == "credit" {
-			limit = common.MaxQuota
-		}
-		dimensions = append(dimensions, usageSmokeDimension{
-			name:   name,
-			values: []any{float64(0), float64(1), float64(limit)},
-		})
-	}
-
-	if usageSmokeCombinationCount(dimensions, maxTaskExprSmokeTests) > maxTaskExprSmokeTests {
-		for index := range dimensions {
-			field := schema[dimensions[index].name]
-			if len(field.Enum) <= 2 {
-				continue
-			}
-			dimensions[index].values = []any{field.Enum[0], field.Enum[len(field.Enum)-1]}
-		}
-	}
-
-	vectors := make([]map[string]any, 0, maxTaskExprSmokeTests)
-	var appendVectors func(int, map[string]any)
-	appendVectors = func(index int, current map[string]any) {
-		if len(vectors) >= maxTaskExprSmokeTests {
-			return
-		}
-		if index == len(dimensions) {
-			vector := make(map[string]any, len(current))
-			maps.Copy(vector, current)
-			vectors = append(vectors, vector)
-			return
-		}
-		for _, value := range dimensions[index].values {
-			current[dimensions[index].name] = value
-			appendVectors(index+1, current)
-		}
-		delete(current, dimensions[index].name)
-	}
-	appendVectors(0, make(map[string]any, len(dimensions)))
-
-	combinationCount := usageSmokeCombinationCount(dimensions, maxTaskExprSmokeTests)
-	if combinationCount > maxTaskExprSmokeTests && len(vectors) > 0 {
-		last := make(map[string]any, len(dimensions))
-		for _, dimension := range dimensions {
-			last[dimension.name] = dimension.values[len(dimension.values)-1]
-		}
-		vectors[len(vectors)-1] = last
-	}
-	return vectors
-}
-
-func usageSmokeCombinationCount(dimensions []usageSmokeDimension, stopAfter int) int {
-	count := 1
-	for _, dimension := range dimensions {
-		if len(dimension.values) == 0 {
-			return 0
-		}
-		if count > stopAfter/len(dimension.values) {
-			return stopAfter + 1
-		}
-		count *= len(dimension.values)
-	}
-	return count
 }
 
 func billingExprSmokeRequests() []billingexpr.RequestInput {

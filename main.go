@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"pbr/common"
-	"pbr/constant"
 	"pbr/controller"
 	"pbr/i18n"
 	"pbr/internal/authutil"
@@ -25,9 +24,7 @@ import (
 	"pbr/logger"
 	"pbr/middleware"
 	"pbr/model"
-	"pbr/pkg/jsplugin"
 	perfmetrics "pbr/pkg/perf_metrics"
-	"pbr/relay"
 	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"pbr/router"
 	"pbr/service"
@@ -48,9 +45,6 @@ var buildFS embed.FS
 var indexPage []byte
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "plugin" {
-		os.Exit(jsplugin.RunCLI(os.Args[2:], os.Stdout, os.Stderr))
-	}
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		os.Exit(legacy.RunCLI(os.Args[2:]))
 	}
@@ -118,7 +112,6 @@ func main() {
 
 	// 热更新配置
 	go model.SyncOptions(common.SyncFrequency)
-	go controller.SyncTaskPlugins()
 
 	// W7（design-v1 §10.2.1）：数据看板/额度聚合随计费与多用户面删除。
 
@@ -137,22 +130,11 @@ func main() {
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()
 
-	// Wire task polling adaptor factory (breaks service -> relay import cycle).
-	// Must run before the system task runner starts: the async_task_poll handler
-	// calls service.RunTaskPollingOnce, which needs this factory set.
-	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
-		a := relay.GetTaskAdaptor(platform)
-		if a == nil {
-			return nil
-		}
-		return a
-	}
-
-	// Register the periodic channel test, upstream model update, and async task
-	// polling (Midjourney / Suno / video) jobs as scheduled system tasks
-	// (DB-lease dedup across masters + run history), then start the runner that
-	// schedules and executes them. Master-only execution and the UpdateTask
-	// switch are enforced inside the runner and each handler's Enabled().
+	// Register the periodic channel test and upstream model update jobs as
+	// scheduled system tasks (DB-lease dedup across masters + run history),
+	// then start the runner that schedules and executes them. Master-only
+	// execution and the UpdateTask switch are enforced inside the runner and
+	// each handler's Enabled().
 	controller.RegisterScheduledSystemTasks()
 	service.StartSystemTaskRunner()
 

@@ -58,24 +58,6 @@ func SetApiRouter(router *gin.Engine) {
 			performanceRoute.GET("/logs", controller.GetLogFiles)
 			performanceRoute.DELETE("/logs", controller.CleanupLogFiles)
 		}
-		taskPluginRoute := apiRouter.Group("/plugin/task")
-		taskPluginRoute.Use(middleware.PBRAuth())
-		{
-			taskPluginRoute.GET("", controller.ListTaskPlugins)
-			taskPluginRoute.POST("", controller.UploadTaskPlugin)
-			taskPluginRoute.PUT("", controller.UploadTaskPlugin)
-			taskPluginRoute.GET("/runtime/status", controller.GetTaskPluginRuntime)
-			taskPluginRoute.GET("/marketplace/sources", controller.GetTaskPluginMarketplaceSources)
-			taskPluginRoute.PUT("/marketplace/sources", controller.UpdateTaskPluginMarketplaceSources)
-			taskPluginRoute.GET("/:key", controller.GetTaskPlugin)
-			taskPluginRoute.GET("/:key/icon", controller.GetTaskPluginIcon)
-			taskPluginRoute.GET("/:key/versions", controller.GetTaskPluginVersions)
-			taskPluginRoute.POST("/:key/activate", controller.ActivateTaskPlugin)
-			taskPluginRoute.POST("/:key/status", controller.SetTaskPluginStatus)
-			taskPluginRoute.POST("/:key/dryrun", controller.DryRunTaskPlugin)
-			taskPluginRoute.DELETE("/:key/versions/:version", controller.DeleteTaskPluginVersion)
-		}
-		apiRouter.GET("/task_plugin_options", middleware.PBRAuth(), controller.GetTaskPluginOptions)
 		registerChannelRoutes(apiRouter)
 		apiRouter.GET("/console/audit", middleware.PBRAuth(), controller.GetAuditLogs)
 
@@ -113,13 +95,10 @@ func SetApiRouter(router *gin.Engine) {
 			prefillGroupRoute.DELETE("/:id", controller.DeletePrefillGroup)
 		}
 
-		// 图像/任务的管理员视图保留；用户自助视图（/mj/self、/task/self、
-		// /task/:id/artifacts）随多用户删除。
+		// Midjourney 的管理员视图保留；用户自助视图（/mj/self）随多用户删除。
 		mjRoute := apiRouter.Group("/mj")
 		mjRoute.GET("/", middleware.PBRAuth(), controller.GetAllMidjourney)
 
-		taskRoute := apiRouter.Group("/task")
-		taskRoute.GET("", middleware.PBRAuth(), controller.GetAllTask)
 		modelsRoute := apiRouter.Group("/console/models")
 		modelsRoute.Use(middleware.PBRAuth())
 		{

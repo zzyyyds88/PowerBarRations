@@ -183,9 +183,6 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 
 	var channels []*Channel
 	if err := DB.Where("id IN ?", channelIds).Find(&channels).Error; err != nil {
-		if identityFilterRequiresKey(filters) {
-			return nil
-		}
 		return abilities
 	}
 
@@ -204,14 +201,6 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 	return filtered
 }
 
-func identityFilterRequiresKey(filters []dto.ChannelFilter) bool {
-	for _, filter := range filters {
-		if filter.Kind == dto.FilterTaskPluginIdentity && filter.TaskPluginKey != "" {
-			return true
-		}
-	}
-	return false
-}
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	// 与 UpdateAbilities 保持一致：用 GetModels() 的集合语义（去空白/丢空项/去重），

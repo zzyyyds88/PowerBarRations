@@ -470,7 +470,9 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 }
 
-type RecordTaskBillingLogParams struct {
+// MidjourneyBillingLogParams is the legacy Midjourney task billing log payload
+// (refunds and consume entries written outside the relay pipeline).
+type MidjourneyBillingLogParams struct {
 	UserId    int
 	LogType   int
 	Content   string
@@ -483,7 +485,7 @@ type RecordTaskBillingLogParams struct {
 	NodeName  string // 任务发起节点；为空时回退当前节点
 }
 
-func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
+func RecordMidjourneyBillingLog(params MidjourneyBillingLogParams) {
 	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
@@ -507,7 +509,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 	err := createLog(log)
 	if err != nil {
-		common.SysLog("failed to record task billing log: " + err.Error())
+		common.SysLog("failed to record Midjourney billing log: " + err.Error())
 	}
 }
 

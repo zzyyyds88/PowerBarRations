@@ -16,7 +16,6 @@ import (
 	"pbr/common"
 	"pbr/constant"
 	"pbr/model"
-	"pbr/pkg/jsplugin"
 	"pbr/relay/channel/advancedcustom"
 	"pbr/relay/channel/gemini"
 	"pbr/relay/channel/ollama"
@@ -360,13 +359,6 @@ func getFetchModelsResponseBody(method string, requestURL string, channel *model
 }
 
 func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
-	if channel.Type == constant.ChannelTypeTaskPlugin {
-		plugin, ok := jsplugin.DefaultRegistry.Get(channel.GetSetting().TaskPluginKey)
-		if !ok {
-			return nil, fmt.Errorf("task plugin %q is not registered", channel.GetSetting().TaskPluginKey)
-		}
-		return normalizeModelNames(plugin.Meta.Models), nil
-	}
 	baseURL := constant.GetChannelBaseURL(channel.Type)
 	if channel.GetBaseURL() != "" {
 		baseURL = channel.GetBaseURL()

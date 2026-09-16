@@ -107,7 +107,7 @@ func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason s
 	other := model.NewLogOther()
 	other.SetPublic("task_id", task.MjId)
 	other.SetPublic("reason", reason)
-	model.RecordTaskBillingLog(model.RecordTaskBillingLogParams{
+	model.RecordMidjourneyBillingLog(model.MidjourneyBillingLogParams{
 		UserId:    task.UserId,
 		LogType:   model.LogTypeRefund,
 		Content:   "",

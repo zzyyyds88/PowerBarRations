@@ -9,7 +9,6 @@ import (
 
 	"pbr/common"
 	"pbr/constant"
-	"pbr/pkg/jsplugin"
 	"pbr/setting/billing_setting"
 	"pbr/setting/operation_setting"
 	"pbr/setting/ratio_setting"
@@ -141,6 +140,28 @@ func ResolveCacheWriteMode(name string, configured PricingValues) CacheWriteMode
 	return CacheWriteNone
 }
 
+// followChannelModelMapping walks one channel's mapping the same way
+// ModelMappedHelper does: visited-set cycle detection, self-map stops at
+// the current hop, a non-self cycle is reported to the caller.
+func followChannelModelMapping(modelMap map[string]string, start string) (string, bool) {
+	current := start
+	visited := map[string]bool{current: true}
+	for {
+		mapped, exists := modelMap[current]
+		if !exists || mapped == "" {
+			return current, false
+		}
+		if visited[mapped] {
+			if mapped == current {
+				return current, false
+			}
+			return "", true
+		}
+		visited[mapped] = true
+		current = mapped
+	}
+}
+
 func PreviewModelPricingConversion(name string, draft PricingValues) (*ModelPricingConversion, error) {
 	if draft == nil {
 		return nil, errors.New("pricing draft is required")
@@ -172,14 +193,6 @@ func PreviewModelPricingConversion(name string, draft PricingValues) (*ModelPric
 		return &ModelPricingConversion{UnsupportedReason: "Gemini and OpenAI audio prices differ for this model. Use separate billing model names to convert them."}, nil
 	}
 
-	generation := jsplugin.DefaultRegistry.Generation()
-	if _, task := generation.GetByModel(name); task {
-		return &ModelPricingConversion{UnsupportedReason: "Task pricing must be converted manually using the task usage schema."}, nil
-	}
-	if _, task := ResolveTaskModelAlias(generation, name); task {
-		return &ModelPricingConversion{UnsupportedReason: "Task pricing must be converted manually using the task usage schema."}, nil
-	}
-
 	// Inspect non-secret routing metadata so aliases cannot disguise a special
 	// settlement path as an ordinary text model.
 	var channels []Channel
@@ -192,9 +205,6 @@ func PreviewModelPricingConversion(name string, draft PricingValues) (*ModelPric
 	for _, channel := range channels {
 		if !slices.Contains(channel.GetModels(), name) {
 			continue
-		}
-		if channel.Type == constant.ChannelTypeTaskPlugin {
-			return &ModelPricingConversion{UnsupportedReason: "Task pricing must be converted manually using the task usage schema."}, nil
 		}
 		if slices.Contains(common.GetEndpointTypesByChannelType(channel.Type, name), constant.EndpointTypeOpenAIVideo) {
 			return &ModelPricingConversion{UnsupportedReason: "Video pricing must be converted manually."}, nil

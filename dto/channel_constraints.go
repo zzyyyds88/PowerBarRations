@@ -3,13 +3,11 @@ package dto
 type ChannelPinSource string
 
 const (
-	PinSourceToken      ChannelPinSource = "token"       // Rank 0, highest
-	PinSourceOriginTask ChannelPinSource = "origin_task" // Rank 10
+	PinSourceToken ChannelPinSource = "token" // Rank 0, highest
 )
 
 const (
-	PinRankToken      = 0
-	PinRankOriginTask = 10
+	PinRankToken = 0
 )
 
 type PinRetryMode int
@@ -36,16 +34,12 @@ type ChannelPin struct {
 type ChannelFilterKind string
 
 const (
-	FilterRequestPath        ChannelFilterKind = "request_path"
-	FilterTaskPluginIdentity ChannelFilterKind = "task_plugin_identity"
+	FilterRequestPath ChannelFilterKind = "request_path"
 )
 
 type ChannelFilter struct {
-	Kind                   ChannelFilterKind
-	RequestPath            string
-	TaskPluginKey          string
-	TaskPluginKeys         []string
-	TaskPluginChannelTypes []int
+	Kind        ChannelFilterKind
+	RequestPath string
 }
 
 type ChannelConstraints struct {
