@@ -109,7 +109,9 @@ func GetStats(c *gin.Context) {
 		apierr.Validation(c, "to must be RFC3339 or unix seconds")
 		return
 	}
-	buckets, err := model.AggregatePBRStats(from, to, granularity, groupBy)
+	// 读**小时聚合表**：明细可被 prune 删除，聚合长期保留（design-v1 §16.5）。
+	// 读明细会让"清理过一次日志"的实例历史统计凭空消失。
+	buckets, err := model.AggregatePBRStatsFromHourly(from, to, granularity, groupBy)
 	if err != nil {
 		writeAPIError(c, err)
 		return

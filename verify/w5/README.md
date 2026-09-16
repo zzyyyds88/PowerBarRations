@@ -40,7 +40,7 @@ bash verify/w5/smoke.sh          # 独立端口 6795 + 独立 SQLite + 内置假
 | 用量与折算 | `prompt_tokens`/`completion_tokens`/`estimated_cost`/`total_ms` 均落库 | 日志第 38 行 |
 | 单条平均 < 2KB | 20 行载荷合计 2566 字节，**平均 128.3 字节** | 日志第 42 行 |
 | 只存元数据 | 表里没有 `quota`/`remain_quota`/`content`/`body` 列，`error_summary` 里 grep 不到请求正文 | 日志第 45–47 行 |
-| /stats 聚合 | 按车道聚合出 `w5-model`，成功数 ≤ 请求数；`success=false` 过滤有效 | 日志第 51–53 行 |
+| /stats 聚合 | 按车道聚合出 `w5-model`，成功数 ≤ 请求数；`success=false` 过滤有效；**prune 明细后聚合不变**（审查整改） | 日志第 51–53 行 + 审查整改节 |
 
 回归：`go build ./...`、`go vet ./...`、`go test ./... -count=1` 全绿（43 个包）；
 `verify/w1` PASS=22、`verify/w2` PASS=31、`verify/w3` PASS=44 均未回退。
@@ -54,6 +54,17 @@ bash verify/w5/smoke.sh          # 独立端口 6795 + 独立 SQLite + 内置假
   会覆盖流式，届时一并补上（记录在此以免被当成"已实现"）。
 - **`cache_read_tokens`/`cache_write_tokens`/`reasoning_tokens`**：基座 `RecordConsumeLog`
   当前只回传 prompt/completion 两项，其余三列先落 0；W8 需要时从 `usage` 明细补齐。
-- **小时聚合表的读取**：`/stats` 目前直接对 `pbr_request_logs` 按需聚合（结果与聚合表同源），
-  聚合表已在写入侧维护，读取侧切换留到 W8 长稳测试按实测性能决定。
+- **小时聚合表的读取**：**已修复**（代码审查 F5，2026-09-16）——`/stats` 过去直接对
+  `pbr_request_logs` 按需聚合，而 `POST /logs/prune` 删的正是它：跑一次保留策略清理，
+  看板与历史统计就凭空消失，聚合表只写不读成了死数据。现在 `/api/stats` 读
+  `pbr_stats_hourly`（hour 直读、day 上卷；时间窗按"桶与窗口相交"判定），
+  `model.AggregatePBRStats` 保留给明细/聚合对账。回归见下方"审查整改"。
 - **限流** `rate_limit_rpm` / `max_concurrency`：仍在 W3 遗留项中，未在本波接入。
+
+## 审查整改（代码审查 F5，2026-09-16）
+
+- 新增门：`POST /logs/prune?before=9999999999` 清空明细后，`/logs` 返回空，
+  而 `/stats?granularity=hour&group_by=lane` 仍能聚合出 `w5-model` 且数值与清理前一致
+  （run-20260916-051749.log，PASS=29 FAIL=0）。
+- 单测：`model/pbr_stats_hourly_test.go`（prune 后聚合不变、day 上卷、维度隔离、
+  时间窗相交、空表返回 `[]`）。

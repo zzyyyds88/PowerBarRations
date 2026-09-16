@@ -365,6 +365,10 @@ type PBRStatBucket struct {
 }
 
 // AggregatePBRStats 按时间粒度与维度聚合（group_by ∈ lane|channel|key|model）。
+//
+// ⚠️ 这里读的是**明细表**：`POST /logs/prune` 删掉明细后，历史统计会一起消失。
+// 对外 `/api/stats` 必须用 AggregatePBRStatsFromHourly 读聚合表；本函数只用于
+// 明细与聚合不一致时的对账/排障。
 func AggregatePBRStats(from, until int64, granularity, groupBy string) ([]PBRStatBucket, error) {
 	groupColumn := map[string]string{
 		"lane":    "lane_name",
@@ -422,4 +426,54 @@ func AggregatePBRStats(from, until int64, granularity, groupBy string) ([]PBRSta
 		})
 	}
 	return out, nil
+}
+
+// AggregatePBRStatsFromHourly 从**小时聚合表**汇总统计（`GET /api/stats` 的唯一数据源）。
+//
+// 为什么必须读聚合表：`POST /logs/prune` 会删除明细（design-v1 §16.5 要求明细按策略清理、
+// 聚合长期保留）。若 /stats 读明细，一次清理就会让看板与历史统计凭空消失——聚合表
+// 只写不读也会变成死数据。
+//
+// 粒度：`hour` 直读小时桶；`day` 由小时桶上卷（bucket_ts/86400*86400）。
+// 时间过滤按"**桶与 [from, until] 相交**"判定：一个桶代表 [bucket_ts, bucket_ts+窗长)
+// 区间，桶起点可能早于 from（例如 from 落在某小时中间），只比 bucket_ts 会把
+// "包含 from 的那个桶"整个丢掉。until 侧则按桶起点（起点晚于 until 的桶不含窗口内数据）。
+func AggregatePBRStatsFromHourly(from, until int64, granularity, groupBy string) ([]PBRStatBucket, error) {
+	groupKind := strings.ToLower(strings.TrimSpace(groupBy))
+	switch groupKind {
+	case "lane", "channel", "key", "model":
+	default:
+		groupKind = "lane"
+	}
+	bucketExpr := "bucket_ts"
+	windowSeconds := int64(3600)
+	if strings.EqualFold(granularity, "day") {
+		bucketExpr = "(bucket_ts / 86400) * 86400"
+		windowSeconds = 86400
+	}
+
+	var rows []PBRStatBucket
+	// 别名必须是 group_key（GORM 按字段名 group_key 扫描）；对外的 JSON 字段名
+	// 仍由 PBRStatBucket 的 json tag 决定为 "group"。
+	query := DB.Model(&PBRStatsHourly{}).
+		Select(bucketExpr+" AS bucket_ts, group_key AS group_key, "+
+			"SUM(requests) AS requests, SUM(successes) AS successes, "+
+			"SUM(prompt_tokens) AS prompt_tokens, SUM(completion_tokens) AS completion_tokens, "+
+			"SUM(cost_sum) AS estimated_cost").
+		Where("group_kind = ?", groupKind).
+		Group(bucketExpr + ", group_key").
+		Order("bucket_ts desc")
+	if from > 0 {
+		query = query.Where(bucketExpr+" + ? >= ?", windowSeconds, from)
+	}
+	if until > 0 {
+		query = query.Where("bucket_ts <= ?", until)
+	}
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []PBRStatBucket{}
+	}
+	return rows, nil
 }
