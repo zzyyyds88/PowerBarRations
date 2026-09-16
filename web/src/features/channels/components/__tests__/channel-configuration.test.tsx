@@ -1250,7 +1250,7 @@ test('a failed detail request blocks updating until retry loads the saved channe
 })
 
 test('restoring routing defaults clears the configured indicator for both the block and category', async () => {
-  editingChannel = { ...editingChannel, auto_ban: 0 }
+  editingChannel = { ...editingChannel, priority: 5 }
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -1266,7 +1266,9 @@ test('restoring routing defaults clears the configured indicator for both the bl
   const block = screen.getByRole('group', { name: 'Routing Strategy' })
   expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
   expect(block).toHaveClass('border-primary/35')
-  await user.click(screen.getByRole('switch', { name: 'Auto Ban' }))
+  fireEvent.change(screen.getByLabelText('Priority'), {
+    target: { value: '0' },
+  })
   expect(tab).not.toHaveAccessibleName(/Configured/)
   expect(
     within(block).queryByRole('img', { name: 'Configured' })
