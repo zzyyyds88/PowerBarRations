@@ -389,7 +389,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 **明确不许有**：`quota` 扣减、余额变更、请求/响应正文、任何"余额不足拒服务"逻辑。
 
-**成本折算**是可选能力：按 `system/options` 配置的单价把用量折算成金额展示。**这是记账不是计费**——不参与准入、不扣余额；单价属部署数据。
+**成本折算**是可选能力：按请求模型先取**渠道级上游单价**（渠道 `setting.pbr_prices`，同一模型在不同上游可配不同采购价），没有再看**全局默认单价表**（`system/options` 的 `PBRModelPrices`）；两者都没有则不折算。**这是记账不是计费**——不参与准入、不扣余额；单价属部署数据。
 
 ---
 
@@ -724,7 +724,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
 | 5 | Playground | **保留**（控制台内，排障用） |
 | 6 | `round_robin` 游标 | 每车道一个全局游标（与车道级粘滞一致） |
-| 7 | 单价表 | **PBR 自建一张单价表**（人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`，留空或 0 = 该口径不折算；模型不在表里 = 完全不折算），存 `options` 表的 `PBRModelPrices` 键，随 `GET/PUT /api/system/options` 读写并随 export/import 往返。只用于日志 `estimated_cost` 折算，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
+| 7 | 上游单价与成本折算 | **两层单价**：①**渠道级上游单价**（渠道 `setting.pbr_prices`，人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`），在渠道编辑页配置；②**全局默认单价表**（`options` 表的 `PBRModelPrices`），在"系统设置 → 模型 → 单价表"配置。折算优先级：渠道价 > 全局默认 > 不折算。只用于日志 `estimated_cost` 与看板成本统计，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
 | 8 | 旧库日志 | **不迁移**；旧库整体归档保留，不额外导出 |
 | 9 | 请求头兼容 | 管理面仅收 `Authorization`；模型面 `Authorization` 与 `X-Api-Key` 都收（兼容存量客户端） |
 | 10 | 渠道模型清单来源 | 手工录入 + 可选"从上游拉取"（`POST /channels/{name}/sync-models`，即原蓝本的模型同步，收敛为渠道上的一个动作）。**保护性约束**：上游返回空清单默认拒绝清空（`?force=1` 覆盖）；要移除的模型仍被显式车道成员引用时返回 409（同样 `?force=1` 覆盖），避免一次上游抖动摘掉在用成员 |

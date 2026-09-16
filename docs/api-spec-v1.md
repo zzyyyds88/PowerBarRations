@@ -101,6 +101,9 @@ HTTP/1.1 401 Unauthorized
   "param_override": {},
   "enabled": true,
   "proxy": "",
+  "prices": [
+    { "model": "model-1", "input": 10, "output": 20, "cache_read": 1, "cache_write": 2 }
+  ],
   "key_set": true,
   "key_prefix": "sk-abcd",
   "created_at": "2026-09-14T12:00:00Z",
@@ -112,6 +115,7 @@ HTTP/1.1 401 Unauthorized
 - `priority`：隐式成员链的排序依据，数字大者优先。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
+- `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。折算优先级：渠道价 > 全局默认单价表（`system/options.model_prices`）> 不折算。省略该字段时保持原值。
 
 ### 4.2 Lane
 
@@ -338,6 +342,7 @@ curl -s -X PUT $PBR/api/channels/channel-a \
 ```json
 { "name": "channel-a", "type": "openai", "base_url": "https://vendor.example/v1",
   "enabled": true, "key_set": true, "key_prefix": "__IN", "param_override": {},
+  "prices": [{ "model": "model-1", "input": 10, "output": 20 }],
   "created_at": "2026-09-14T12:00:00Z", "updated_at": "2026-09-14T12:00:00Z" }
 ```
 
