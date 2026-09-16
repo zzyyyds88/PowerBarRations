@@ -21,6 +21,7 @@ import (
 	"pbr/i18n"
 	"pbr/internal/authutil"
 	"pbr/internal/legacy"
+	"pbr/internal/webhook"
 	"pbr/logger"
 	"pbr/middleware"
 	"pbr/model"
@@ -324,6 +325,10 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
+
+	// Webhook 事件通知投递器（design-v1 §16.10）：挂在运行态事件出口上，
+	// 需在 options 就绪后启动（worker 读取 PBRWebhookTargets 配置）。
+	webhook.Start()
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()

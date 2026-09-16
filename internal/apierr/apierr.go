@@ -13,21 +13,22 @@ import (
 
 // 稳定错误码（api-spec §3 表）。
 const (
-	CodeInvalidRequest       = "invalid_request"
-	CodeValidationFailed     = "validation_failed"
-	CodeUnauthorized         = "unauthorized"
-	CodeForbiddenScope       = "forbidden_scope"
-	CodeLaneNotFound         = "lane_not_found"
-	CodeChannelNotFound      = "channel_not_found"
-	CodeKeyNotFound          = "key_not_found"
-	CodeLogNotFound          = "log_not_found"
-	CodeConflict             = "conflict"
-	CodeNotInitialized       = "not_initialized"
-	CodeLaneHasNoMembers     = "lane_has_no_members"
-	CodeMemberChannelMissing = "member_channel_missing"
-	CodeInvalidMode          = "invalid_mode"
-	CodeUpstreamError        = "upstream_error"
-	CodeNoAvailableMember    = "no_available_member"
+	CodeInvalidRequest        = "invalid_request"
+	CodeValidationFailed      = "validation_failed"
+	CodeUnauthorized          = "unauthorized"
+	CodeForbiddenScope        = "forbidden_scope"
+	CodeLaneNotFound          = "lane_not_found"
+	CodeChannelNotFound       = "channel_not_found"
+	CodeKeyNotFound           = "key_not_found"
+	CodeLogNotFound           = "log_not_found"
+	CodeConflict              = "conflict"
+	CodeNotInitialized        = "not_initialized"
+	CodeLaneHasNoMembers      = "lane_has_no_members"
+	CodeMemberChannelMissing  = "member_channel_missing"
+	CodeInvalidMode           = "invalid_mode"
+	CodeUpstreamError         = "upstream_error"
+	CodeNoAvailableMember     = "no_available_member"
+	CodeWebhookTargetNotFound = "webhook_target_not_found"
 )
 
 type body struct {

@@ -538,9 +538,12 @@ func TestAliasAndLaneShareRuntime(t *testing.T) {
 	laneRoute := testRoute("lane-shared", 1, 1)
 	aliasRoute := testRoute("lane-shared", 1, 1)
 	aliasRoute.Model = "some-alias" // 别名点名：Model 是别名，RouteKey 仍是车道名
+	// 生产解析器对显式车道（含别名点名）总是填 RouteKey = 车道名
+	// （model/lane.go ResolveRoute），这里对齐真实形态。
+	aliasRoute.RouteKey = "lane-shared"
 
-	assert.Equal(t, Default.For(laneRoute.Model), NewState(laneRoute).Runtime)
-	assert.Equal(t, Default.For(laneRoute.Model), NewState(aliasRoute).Runtime,
+	// 必须是**同一份**运行态（指针相同），而不是"恰好字段相等"的两份。
+	assert.Same(t, NewState(laneRoute).Runtime, NewState(aliasRoute).Runtime,
 		"别名点名必须落到同一份车道运行态")
 }
 

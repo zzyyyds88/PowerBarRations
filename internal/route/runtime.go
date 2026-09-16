@@ -138,9 +138,12 @@ func (c *Circuit) RollingSuccessRate() float64 {
 }
 
 // Event 运行态事件（带时间戳，作为验收与排障证据）。
+// Lane 为事件所属车道的路由键；Lane 为空表示历史事件或测试注入
+// （design-v1 §16.10：webhook 事件的 lane 字段来自这里）。
 type Event struct {
 	Ts     int64  `json:"ts"`
 	Type   string `json:"type"`
+	Lane   string `json:"lane,omitempty"`
 	Member string `json:"member"`
 	Detail string `json:"detail,omitempty"`
 }
@@ -148,6 +151,9 @@ type Event struct {
 // Runtime 一条车道（一个路由键）的运行态，全部请求共享。
 type Runtime struct {
 	mu sync.Mutex
+
+	// laneName 本车道键（由 Registry.For 建立时写入），事件透传给订阅方。
+	laneName string
 
 	CurrentMember string
 	HasCurrent    bool
@@ -245,6 +251,7 @@ func (r *Registry) For(lane string) *Runtime {
 		return rt
 	}
 	rt = newRuntime()
+	rt.laneName = lane
 	r.lanes[lane] = rt
 	return rt
 }
@@ -474,11 +481,35 @@ func (r *Runtime) recordSuccess(key string, affinitySeconds int) {
 	r.AffinityArmed = false
 }
 
+// eventSubscriber 进程级事件订阅钩子（design-v1 §16.10：webhook 推送经此
+// 旁路挂接，internal/route 不反向依赖上层包）。订阅者必须自行缓冲且**绝不
+// 阻塞**——appendEvent 持有 Runtime 锁且在请求路径上，订阅者只允许做
+// 非阻塞动作（如投入带缓冲的 channel，缓冲满则丢弃并计数）。
+var eventSubscriber struct {
+	mu sync.RWMutex
+	fn func(Event)
+}
+
+// SetEventSubscriber 注册运行态事件订阅者；传 nil 注销。
+// 同一进程只应有一个订阅者（webhook 投递器），后注册者覆盖先注册者。
+func SetEventSubscriber(fn func(Event)) {
+	eventSubscriber.mu.Lock()
+	defer eventSubscriber.mu.Unlock()
+	eventSubscriber.fn = fn
+}
+
 func (r *Runtime) appendEvent(eventType, member, detail string) {
-	event := Event{Ts: nowMs(), Type: eventType, Member: member, Detail: detail}
+	event := Event{Ts: nowMs(), Type: eventType, Lane: r.laneName, Member: member, Detail: detail}
 	r.Events = append(r.Events, event)
 	if len(r.Events) > 200 {
 		r.Events = r.Events[len(r.Events)-200:]
+	}
+	// 旁路转发给订阅者（非阻塞；订阅者自行缓冲，见 eventSubscriber 注释）。
+	eventSubscriber.mu.RLock()
+	fn := eventSubscriber.fn
+	eventSubscriber.mu.RUnlock()
+	if fn != nil {
+		fn(event)
 	}
 }
 

@@ -843,6 +843,19 @@ func openAPIPaths() gin.H {
 			"get": secured("get", "全局选项", nil)["get"],
 			"put": secured("put", "更新全局选项", nil)["put"],
 		},
+		"/webhooks": gin.H{
+			"get": secured("get", "Webhook 目标配置（secret 掩码回显）", nil)["get"],
+			"put": secured("put", "Webhook 目标配置全量 upsert（secret 留空 = 保留原值）",
+				[]gin.H{dryRunParam})["put"],
+		},
+		"/webhooks/test": gin.H{
+			"post": secured("post", "向指定目标同步发一条测试事件（同步等待含重试的最终结果）", nil)["post"],
+		},
+		"/webhooks/deliveries": gin.H{
+			"get": secured("get", "投递记录（cursor 分页，按时间倒序）",
+				[]gin.H{queryParam("cursor", "上一页返回的 next_cursor"),
+					queryParam("limit", "默认 50，上限 200")})["get"],
+		},
 		"/channels": gin.H{
 			"get": secured("get", "渠道列表", nil)["get"],
 		},
