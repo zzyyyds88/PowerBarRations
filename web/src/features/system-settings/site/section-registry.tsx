@@ -24,7 +24,6 @@ import {
   serializeSidebarModulesAdmin,
 } from '../maintenance/config'
 import { HeaderNavigationSection } from '../maintenance/header-navigation-section'
-import { NoticeSection } from '../maintenance/notice-section'
 import { SidebarModulesSection } from '../maintenance/sidebar-modules-section'
 import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
@@ -49,13 +48,6 @@ const SITE_SECTIONS = [
           },
         }}
       />
-    ),
-  },
-  {
-    id: 'notice',
-    titleKey: 'System Notice',
-    build: (settings: SiteSettings) => (
-      <NoticeSection defaultValue={settings.Notice ?? ''} />
     ),
   },
   {
