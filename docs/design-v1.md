@@ -389,6 +389,8 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 **明确不许有**：`quota` 扣减、余额变更、请求/响应正文、任何"余额不足拒服务"逻辑。
 
+**事件通知（Webhook）**：路由运行态的故障事件（熔断/冷却/恢复）可配置异步推送到外部 webhook 目标（本机通知中心等），投递语义与管理面见 §16.10 与 api-spec §5.8。
+
 **成本折算**是可选能力：按请求模型先取**渠道级上游单价**（渠道 `setting.pbr_prices`，同一模型在不同上游可配不同采购价），没有再看**全局默认单价表**（`system/options` 的 `PBRModelPrices`）；两者都没有则不折算。**这是记账不是计费**——不参与准入、不扣余额；单价属部署数据。看板（概览/模型分析/成本统计）统一读 `GET /api/stats` 的聚合（`requests`/`successes`/`token`/`estimated_cost`）。
 
 ---
@@ -734,6 +736,25 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | 13 | 前端包管理与适配范围 | 前端直接搬迁 new-api 上游 `web/`（Rsbuild + Bun 锁文件；环境不便时可用 pnpm）；保留除多用户/计费外全部页面；唯一实质改造 = **模型管理页内联成员链（故障切换）**，并把认证接到 PBR 口令会话（见 §7.7） |
 | 14 | 控制台与路由面收敛 | **渠道不再有 `priority`/`weight`**（彻底删除，含 DB 列）：渠道只声明"提供哪些模型 + 上游真名映射"，路由顺序一律在车道上人工排定。**车道只留 `failover`/`manual`**。**删除厂商（Vendors）与 io.net 部署（Deployments）前后端**、删除模型页的"广场展示"（本项目无模型广场）。**定价口径**统一为"上游成本单价"：模型详情只保留上游单价，不出现倍率/计费表达式/分组定价等下游计费编辑器。**上游模型清单改为自动探测**：填好 base_url/key 即自动拉取 `/models` 并提示合并，手动"重新拉取"仅作刷新。**看板新增"渠道 × 模型"维度**，直接回答"哪个渠道、哪个模型花了多少钱、用了多少 token" |
 | 15 | 模型页结构 | 模型页是**单一平面列表 + 行内操作**（不再是多 Tab 分区）；「路由与故障切换」不再作为独立侧边栏入口，而是模型行内的操作抽屉 |
+
+### 16.10 Webhook 事件通知（已定）
+
+**定位**：把路由运行态的故障事件推送给外部消费方（本机 Hermes 通知中心等），**只推事件、不承载指令**。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
+
+**事件源**：`internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown`）。经订阅钩子**异步旁路**投递，绝不阻塞请求路径。v1 不含探活启停事件。
+
+**配置**（system/options 键 `PBRWebhookTargets`，JSON 数组）：`[{name, url, secret, enabled, events[]}]`；`events` 为事件类型白名单（空 = 全部）。管理面读配置时 `secret` 只回显掩码。
+
+**投递语义**：
+- 请求体 JSON：`{"type":"pbr","text":"<人类可读摘要>","event":{ts,type,lane,member,detail}}`——带 `text` 字段使"只展示文本"的消费方（通知中心红色档）零改造接入。
+- 签名**对齐本机通知中心既有格式**：头 `X-Webhook-Timestamp`（Unix 秒）+ `X-Webhook-Signature-V2`（HMAC-SHA256(secret, "{ts}.{body}")，hex）。
+- 单次投递超时 8s；失败按 5s/30s/120s 退避重试 3 次，耗尽记入投递日志（`webhook_deliveries` 表：ts、target、event、status、http_status、error、attempt）。
+- **防风暴**：同一 (target, lane, member, event) 在 60s 窗口内只发一条（合并计数），避免抖动上游刷屏。
+- 投递日志随 `PBRLogRetentionDays` 由 prune 一并清理。
+
+**管理面**：`GET/PUT /api/v1/webhooks`、`POST /api/v1/webhooks/test`、`GET /api/v1/webhooks/deliveries`（契约见 api-spec §5.8）。
+
+**验收**：手动熔断一个成员 → 目标秒级收到签名正确的 JSON；目标不可达时重试与死信符合上表；投递日志可查；控制台可编辑并回读。
 
 ---
 

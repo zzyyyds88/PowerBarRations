@@ -310,6 +310,19 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 
 ---
 
+### 5.8 Webhook 通知
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/webhooks` | 读配置：targets 数组（`secret` 回显掩码 `****+末4位`） |
+| PUT | `/api/v1/webhooks` | 写配置（同形状；`secret` 留空 = 保留原值） |
+| POST | `/api/v1/webhooks/test` | 向指定 target 同步发一条测试事件，返回投递结果 |
+| GET | `/api/v1/webhooks/deliveries` | 投递记录（cursor 分页，按 ts 倒序） |
+
+事件请求体：`{"type":"pbr","text":"<人类可读摘要>","event":{"ts":…,"type":"circuit_open","lane":"…","member":"channel:model","detail":"…"}}`。
+签名头：`X-Webhook-Timestamp`（Unix 秒）+ `X-Webhook-Signature-V2`（`HMAC-SHA256(secret, "{ts}.{body}")` hex），与常见外部通知网关的既有校验格式一致。
+失败语义见 design-v1 §16.10（8s 超时、5s/30s/120s 三次退避、60s 防风暴合并、投递日志）。
+
 ## 6. 关键请求/响应示例
 
 ### 6.1 健康与能力
