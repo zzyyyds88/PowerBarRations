@@ -86,11 +86,6 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.GET("/system/options", api.GetSystemOptions)
 		authed.PUT("/system/options", api.PutSystemOptions)
 
-		// HTTPS 证书：状态 / 导入 / 自签
-		authed.GET("/tls", api.GetTLSStatus)
-		authed.PUT("/tls/certificate", api.PutTLSCertificate)
-		authed.POST("/tls/self-signed", api.PostTLSSelfSigned)
-
 		// 客户端密钥
 		authed.GET("/keys", api.ListKeys)
 		authed.POST("/keys", api.CreateKey)

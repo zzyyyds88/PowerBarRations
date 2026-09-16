@@ -843,15 +843,6 @@ func openAPIPaths() gin.H {
 			"get": secured("get", "全局选项", nil)["get"],
 			"put": secured("put", "更新全局选项", nil)["put"],
 		},
-		"/tls": gin.H{
-			"get": secured("get", "HTTPS 证书状态", nil)["get"],
-		},
-		"/tls/certificate": gin.H{
-			"put": secured("put", "导入证书与私钥（PEM）", nil)["put"],
-		},
-		"/tls/self-signed": gin.H{
-			"post": secured("post", "生成/重新生成自签证书", nil)["post"],
-		},
 		"/channels": gin.H{
 			"get": secured("get", "渠道列表", nil)["get"],
 		},

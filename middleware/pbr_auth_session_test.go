@@ -25,7 +25,6 @@ func TestPBRAuthAcceptsBearerAndSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(PBREnvAdminKey, "env-admin-key-value")
 	t.Setenv(PBREnvAdminKeys, "")
-	t.Setenv("TLS_ENABLED", "")
 
 	// 会话签名材料 = HashAdminKey(env key)。
 	material := model.HashAdminKey("env-admin-key-value")
@@ -75,7 +74,6 @@ func TestPBRAuthAcceptsBearerAndSession(t *testing.T) {
 func TestPBRAuthSessionInvalidatedByCredentialChange(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv(PBREnvAdminKeys, "")
-	t.Setenv("TLS_ENABLED", "")
 
 	// 用第一把密钥签发的会话。
 	t.Setenv(PBREnvAdminKey, "first-key")
