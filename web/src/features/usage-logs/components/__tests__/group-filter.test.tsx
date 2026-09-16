@@ -41,12 +41,16 @@ import { useAuthStore } from '@/stores/auth-store'
 import { CommonLogsFilterBar } from '../common-logs-filter-bar'
 import { UsageLogsProvider } from '../usage-logs-provider'
 
+// PBR 单用户网关没有"用户分组"概念（design-v1 §1.3），控制台的分组筛选只保留
+// 一个默认分组；这里保护"可用值、URL 往返、历史值可编辑"这几条稳定行为。
+
 const pointerCaptureDescriptor = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   'setPointerCapture'
 )
 
 function FilterFixture() {
+  // eslint-disable-next-line react/incompatible-library -- test fixture only
   const table = useReactTable({
     data: [],
     columns: [],
@@ -59,25 +63,11 @@ function FilterFixture() {
   )
 }
 
-async function renderFilter(
-  initialEntry = '/usage-logs/common',
-  groups: Record<string, { desc: string; ratio: number }> | null = {
-    default: { desc: '', ratio: 1 },
-    premium: { desc: '', ratio: 2 },
-  }
-) {
-  vi.spyOn(api, 'get').mockImplementation(async (url) => {
-    if (url === '/api/user/self/groups' || url === '/api/group/') {
-      if (groups === null) throw new Error('Group loading failed')
-      return {
-        data: {
-          success: true,
-          data: url === '/api/group/' ? Object.keys(groups) : groups,
-        },
-      }
-    }
-    return { data: { success: true, data: { quota: 0, rpm: 0, tpm: 0 } } }
-  })
+async function renderFilter(initialEntry = '/usage-logs/common') {
+  // 分组不再走网络；其余请求返回空统计，避免未预期的真实调用。
+  vi.spyOn(api, 'get').mockImplementation(async () => ({
+    data: { success: true, data: { quota: 0, rpm: 0, tpm: 0 } },
+  }))
   const root = createRootRoute()
   const auth = createRoute({ getParentRoute: () => root, id: '_authenticated' })
   const logs = createRoute({
@@ -122,119 +112,67 @@ afterEach(() => {
   }
 })
 
-it('loads personal groups and filters choices without submitting until Search', async () => {
-  const router = await renderFilter()
+it('offers only the default group without calling a groups endpoint', async () => {
+  await renderFilter()
   const input = screen.getByRole('combobox', { name: 'Group' })
   await userEvent.click(input)
   expect(await screen.findByRole('option', { name: 'default' })).toBeVisible()
-  await userEvent.type(input, 'prem')
-  expect(
-    screen.queryByRole('option', { name: 'default' })
-  ).not.toBeInTheDocument()
-  await userEvent.click(screen.getByRole('option', { name: 'premium' }))
-  expect(input).toHaveValue('premium')
+  expect(api.get).not.toHaveBeenCalledWith('/api/user/self/groups')
+  expect(api.get).not.toHaveBeenCalledWith('/api/group/')
+})
+
+it('submits the default group only after Search', async () => {
+  const router = await renderFilter()
+  const input = screen.getByRole('combobox', { name: 'Group' })
+  await userEvent.click(input)
+  await userEvent.click(await screen.findByRole('option', { name: 'default' }))
+  expect(input).toHaveValue('default')
   expect(router.state.location.search).not.toHaveProperty('group')
   await userEvent.click(screen.getByRole('button', { name: 'Search' }))
   await waitFor(() =>
     expect(router.state.location.search).toMatchObject({
-      group: 'premium',
+      group: 'default',
       page: 1,
     })
   )
-  expect(api.get).toHaveBeenCalledWith('/api/user/self/groups')
-  expect(api.get).not.toHaveBeenCalledWith('/api/group/')
 })
 
-it('loads all groups in the administrator view', async () => {
-  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 10 })
-  await renderFilter()
-  await userEvent.click(screen.getByRole('combobox', { name: 'Group' }))
-  expect(await screen.findByRole('option', { name: 'premium' })).toBeVisible()
-  expect(api.get).toHaveBeenCalledWith('/api/group/')
-  expect(api.get).not.toHaveBeenCalledWith('/api/user/self/groups')
-})
-
-it('confirms a keyboard choice before Enter submits the selected group', async () => {
-  const router = await renderFilter()
+it('restores a group from the URL and clears it on Reset', async () => {
+  const router = await renderFilter('/usage-logs/common?group=default')
   const input = screen.getByRole('combobox', { name: 'Group' })
-  await userEvent.click(input)
-  await screen.findByRole('option', { name: 'default' })
-  await userEvent.keyboard('{ArrowDown}{Enter}')
   expect(input).toHaveValue('default')
-  expect(input).toHaveAttribute('aria-expanded', 'false')
-  expect(router.state.location.search).not.toHaveProperty('group')
-  await userEvent.keyboard('{Enter}')
-  await waitFor(() =>
-    expect(router.state.location.search).toMatchObject({ group: 'default' })
-  )
-})
-
-it.each([{}, null])(
-  'preserves historical input and supports clearing when groups are unavailable (%s)',
-  async (groups) => {
-    const router = await renderFilter(
-      '/usage-logs/common?group=retired',
-      groups
-    )
-    const input = screen.getByRole('combobox', { name: 'Group' })
-    expect(input).toHaveValue('retired')
-    await userEvent.clear(input)
-    await userEvent.type(input, 'historical')
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }))
-    await waitFor(() =>
-      expect(router.state.location.search).toMatchObject({
-        group: 'historical',
-      })
-    )
-    await userEvent.clear(input)
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }))
-    await waitFor(() =>
-      expect(router.state.location.search).not.toHaveProperty('group')
-    )
-  }
-)
-
-it('resets the selected group and restores a group from URL navigation', async () => {
-  const router = await renderFilter('/usage-logs/common?group=premium')
-  const input = screen.getByRole('combobox', { name: 'Group' })
-  expect(input).toHaveValue('premium')
   await userEvent.click(screen.getByRole('button', { name: 'Reset' }))
   await waitFor(() => expect(input).toHaveValue(''))
   expect(router.state.location.search).not.toHaveProperty('group')
-  await router.history.push('/usage-logs/common?group=retired')
-  await waitFor(() => expect(input).toHaveValue('retired'))
 })
 
-it('keeps a selected group visible on focus and can clear it without choosing another option', async () => {
-  const router = await renderFilter('/usage-logs/common?group=premium')
+it('keeps a historical value editable and searchable when it is not a choice', async () => {
+  const router = await renderFilter('/usage-logs/common?group=retired')
   const input = screen.getByRole('combobox', { name: 'Group' })
-  await userEvent.click(input)
-  expect(input).toHaveValue('premium')
-  expect(await screen.findByRole('option', { name: 'default' })).toBeVisible()
+  expect(input).toHaveValue('retired')
   await userEvent.clear(input)
-  await userEvent.keyboard('{Enter}')
+  await userEvent.type(input, 'historical')
+  await userEvent.click(screen.getByRole('button', { name: 'Search' }))
   await waitFor(() =>
-    expect(router.state.location.search).not.toHaveProperty('group')
+    expect(router.state.location.search).toMatchObject({ group: 'historical' })
   )
 })
 
-it('keeps the compact input and masks the dropdown together with other sensitive filters', async () => {
+it('keeps the compact input and masks the dropdown with the sensitive filters', async () => {
   await renderFilter()
   const input = screen.getByRole('combobox', { name: 'Group' })
   expect(input).toHaveClass('h-8', 'text-sm', 'leading-5')
   await userEvent.click(screen.getByRole('button', { name: /^Hide$/ }))
   await userEvent.click(input)
-  const option = await screen.findByRole('option', { name: 'premium' })
+  const option = await screen.findByRole('option', { name: 'default' })
   const maskedField = input.closest('.\\[-webkit-text-security\\:disc\\]')
   expect(maskedField).not.toBeNull()
   expect(maskedField).toContainElement(option)
   await userEvent.keyboard('{Escape}')
   expect(input).toHaveAttribute('aria-expanded', 'false')
-  await userEvent.tab()
-  expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
 })
 
-it('lets mobile users select a long group name inside the filter drawer and submit it', async () => {
+it('lets mobile users pick the default group in the filter drawer', async () => {
   Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', {
     configurable: true,
     value: vi.fn(),
@@ -244,61 +182,14 @@ it('lets mobile users select a long group name inside the filter drawer and subm
     ...originalMatchMedia(query),
     matches: query === '(max-width: 640px)',
   }))
-  const longGroup = 'enterprise-team-with-a-long-group-name'
-  const router = await renderFilter('/usage-logs/common', {
-    [longGroup]: { desc: '', ratio: 1 },
-  })
+  const router = await renderFilter()
   const dialog = screen.getByRole('dialog')
   const input = within(dialog).getByRole('combobox', { name: 'Group' })
   await userEvent.click(input)
-  const option = await within(dialog).findByRole('option', { name: longGroup })
-  expect(option).toBeVisible()
-  await userEvent.click(option)
-  expect(input).toHaveValue(longGroup)
-  expect(dialog).toBeVisible()
+  await userEvent.click(await within(dialog).findByRole('option', { name: 'default' }))
+  expect(input).toHaveValue('default')
   await userEvent.click(within(dialog).getByRole('button', { name: 'Search' }))
   await waitFor(() =>
-    expect(router.state.location.search).toMatchObject({ group: longGroup })
-  )
-  await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  )
-})
-
-it.each([1, 10])(
-  'excludes only auto from group choices for role %s',
-  async (role) => {
-    useAuthStore.getState().auth.setUser({ id: 1, username: 'viewer', role })
-    const router = await renderFilter('/usage-logs/common', {
-      auto: { desc: '', ratio: 1 },
-      'auto-team': { desc: '', ratio: 1 },
-    })
-    const input = screen.getByRole('combobox', { name: 'Group' })
-    await userEvent.click(input)
-    const option = await screen.findByRole('option', { name: 'auto-team' })
-    expect(
-      screen.queryByRole('option', { name: 'auto' })
-    ).not.toBeInTheDocument()
-    await userEvent.click(option)
-    await userEvent.click(screen.getByRole('button', { name: 'Search' }))
-    await waitFor(() =>
-      expect(router.state.location.search).toMatchObject({ group: 'auto-team' })
-    )
-  }
-)
-
-it('keeps historical auto values editable when auto is the only available group', async () => {
-  const router = await renderFilter('/usage-logs/common?group=auto', {
-    auto: { desc: '', ratio: 1 },
-  })
-  const input = screen.getByRole('combobox', { name: 'Group' })
-  expect(input).toHaveValue('auto')
-  await userEvent.click(input)
-  expect(screen.queryByRole('option', { name: 'auto' })).not.toBeInTheDocument()
-  await userEvent.clear(input)
-  await userEvent.type(input, 'retired')
-  await userEvent.click(screen.getByRole('button', { name: 'Search' }))
-  await waitFor(() =>
-    expect(router.state.location.search).toMatchObject({ group: 'retired' })
+    expect(router.state.location.search).toMatchObject({ group: 'default' })
   )
 })

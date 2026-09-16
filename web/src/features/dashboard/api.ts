@@ -43,12 +43,11 @@ export async function getUserQuotaDates(
   },
   isAdmin = false
 ) {
-  const endpoint = isAdmin ? '/api/data' : '/api/data/self'
-  const res = await api.get<{ success: boolean; data: QuotaDataItem[] }>(
-    endpoint,
-    { params }
-  )
-  return res.data
+  // 基座 /api/data*（按用户/时间的配额曲线）已随计费面删除；PBR 的等价物是
+  // GET /api/stats（分组聚合）。这里暂返回空序列，待把看板改接 /api/stats。
+  void params
+  void isAdmin
+  return { success: true, data: [] as QuotaDataItem[] }
 }
 
 // ----------------------------------------------------------------------------
@@ -59,11 +58,9 @@ export async function getUserQuotaDataByUsers(params: {
   start_timestamp: number
   end_timestamp: number
 }) {
-  const res = await api.get<{ success: boolean; data: QuotaDataItem[] }>(
-    '/api/data/users',
-    { params }
-  )
-  return res.data
+  // 同上：PBR 是单用户网关，没有"按用户"维度。
+  void params
+  return { success: true, data: [] as QuotaDataItem[] }
 }
 
 export async function getFlowQuotaDates(
@@ -75,13 +72,11 @@ export async function getFlowQuotaDates(
   },
   isAdmin = false
 ) {
-  const endpoint = isAdmin ? '/api/data/flow' : '/api/data/flow/self'
-  const res = await api.get<{
-    success: boolean
-    data?: FlowQuotaDataItem[]
-    message?: string
-  }>(endpoint, { params })
-  return res.data
+  // 基座 /api/data/flow*（桑基流量图）已删除；PBR /api/stats 一次只按一个维度
+  // 聚合，暂不提供等价数据。
+  void params
+  void isAdmin
+  return { success: true, data: [] as FlowQuotaDataItem[] }
 }
 
 // Get uptime monitoring status for all services

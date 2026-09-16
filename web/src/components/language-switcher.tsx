@@ -31,26 +31,17 @@ import {
   INTERFACE_LANGUAGE_OPTIONS,
   normalizeInterfaceLanguage,
 } from '@/i18n/languages'
-import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth-store'
 
 export function LanguageSwitcher() {
   const { i18n, t } = useTranslation()
-  const user = useAuthStore((s) => s.auth.user)
   const currentLanguage = normalizeInterfaceLanguage(i18n.language)
   const handleChangeLanguage = useCallback(
     async (code: string) => {
+      // PBR 无账号体系，语言只存在本地（i18next 的 browser languagedetector）。
       await i18n.changeLanguage(code)
-      if (user) {
-        try {
-          await api.put('/api/user/self', { language: code })
-        } catch {
-          // Best-effort persistence; don't block the UI on failure
-        }
-      }
     },
-    [i18n, user]
+    [i18n]
   )
 
   return (

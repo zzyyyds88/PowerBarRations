@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { API_ENDPOINTS } from './constants'
 import type {
@@ -44,42 +43,21 @@ export async function sendChatCompletion(
 /**
  * Get user available models
  */
-export async function getUserModels(group: string): Promise<ModelOption[]> {
-  const res = await api.get(API_ENDPOINTS.USER_MODELS, {
-    params: { group },
-  })
-  const { data } = res
-  requireServerSuccess(data)
-
-  if (!data.success || !Array.isArray(data.data)) {
-    return []
-  }
-
-  return data.data.map((model: string) => ({
-    label: model,
-    value: model,
-  }))
+export async function getUserModels(): Promise<ModelOption[]> {
+  // PBR 无"用户模型"概念：可用模型即全部路由键（api-spec §5.7）。
+  const res = await api.get('/api/models')
+  const body = res.data as { items?: Array<{ model?: string }> }
+  const items = body.items ?? []
+  return items
+    .map((item) => item.model)
+    .filter((model): model is string => typeof model === 'string' && model.length > 0)
+    .map((model) => ({ label: model, value: model }))
 }
 
 /**
  * Get user groups
  */
 export async function getUserGroups(): Promise<GroupOption[]> {
-  const res = await api.get(API_ENDPOINTS.USER_GROUPS)
-  const { data } = res
-  requireServerSuccess(data)
-
-  if (!data.success || !data.data) {
-    return []
-  }
-
-  const groupData = data.data as Record<string, { desc: string; ratio: number }>
-
-  // label is for button display (name only); desc is for dropdown content
-  return Object.entries(groupData).map(([group, info]) => ({
-    label: group,
-    value: group,
-    ratio: info.ratio,
-    desc: info.desc,
-  }))
+  // PBR 单用户无分组；提供一个默认分组即可。
+  return [{ label: 'default', value: 'default', ratio: 1, desc: '' }]
 }

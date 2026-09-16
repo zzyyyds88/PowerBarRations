@@ -53,8 +53,13 @@ export async function getUserModels(): Promise<{
   message?: string
   data?: string[]
 }> {
-  const res = await api.get('/api/user/models')
-  return res.data
+  // PBR 无"用户模型"概念：可用模型即全部路由键（api-spec §5.7）。
+  const res = await api.get('/api/models')
+  const items = (res.data as { items?: Array<{ model?: string }> }).items ?? []
+  const names = items
+    .map((item) => item.model)
+    .filter((name): name is string => typeof name === 'string' && name.length > 0)
+  return { success: true, data: names }
 }
 
 export async function getUserGroups(): Promise<{
@@ -62,8 +67,8 @@ export async function getUserGroups(): Promise<{
   message?: string
   data?: Record<string, { desc: string; ratio: number | string }>
 }> {
-  const res = await api.get('/api/user/self/groups')
-  return res.data
+  // PBR 单用户无分组；控制台的分组选择器仍需要一个默认项。
+  return { success: true, data: { default: { desc: '', ratio: 1 } } }
 }
 
 // ============================================================================

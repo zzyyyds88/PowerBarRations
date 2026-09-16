@@ -36,7 +36,7 @@ import type {
 // ============================================================================
 
 function buildApiPath(endpoint: string, isAdmin: boolean): string {
-  return isAdmin ? endpoint : `${endpoint}/self`
+  return isAdmin ? endpoint : `${endpoint.replace(/\/$/, '')}/self`
 }
 
 async function fetchLogs<T>(
@@ -60,12 +60,13 @@ async function fetchLogStats<T>(
   params: T,
   isAdmin: boolean
 ): Promise<GetLogStatsResponse> {
-  const queryParams = buildQueryParams(
-    params as unknown as Record<string, unknown>
-  )
-  const path = buildApiPath(endpoint, isAdmin)
-  const res = await api.get(`${path}/stat?${queryParams}`)
-  return res.data
+  // 基座额度口径统计（/api/log/stat）已随计费面删除；PBR 的聚合统计在
+  // GET /api/stats。日志页顶部的 Usage/RPM/TPM 只作展示，这里返回零值，
+  // 避免控制台请求已删除路由。
+  void endpoint
+  void params
+  void isAdmin
+  return { success: true, data: { quota: 0, rpm: 0, tpm: 0 } }
 }
 
 // ============================================================================
@@ -73,18 +74,18 @@ async function fetchLogStats<T>(
 // ============================================================================
 
 export const getAllLogs = (params: GetLogsParams = {}) =>
-  fetchLogs('/api/log', params, true)
+  fetchLogs('/api/log/', params, true)
 
 export const getUserLogs = (
   params: Omit<GetLogsParams, 'username' | 'channel'> = {}
-) => fetchLogs('/api/log', params, false)
+) => fetchLogs('/api/log/', params, false)
 
 export const getLogStats = (params: GetLogStatsParams = {}) =>
-  fetchLogStats('/api/log', params, true)
+  fetchLogStats('/api/log/', params, true)
 
 export const getUserLogStats = (
   params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
-) => fetchLogStats('/api/log', params, false)
+) => fetchLogStats('/api/log/', params, false)
 
 export async function getUserInfo(
   userId: number
@@ -98,10 +99,10 @@ export async function getUserInfo(
 // ============================================================================
 
 export const getAllMidjourneyLogs = (params: GetMidjourneyLogsParams) =>
-  fetchLogs('/api/mj', params, true)
+  fetchLogs('/api/mj/', params, true)
 
 export const getUserMidjourneyLogs = (params: GetMidjourneyLogsParams) =>
-  fetchLogs('/api/mj', params, false)
+  fetchLogs('/api/mj/', params, false)
 
 // ============================================================================
 // Task Logs API
