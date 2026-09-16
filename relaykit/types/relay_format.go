@@ -15,6 +15,5 @@ const (
 	RelayFormatRerank                                = "rerank"
 	RelayFormatEmbedding                             = "embedding"
 
-	RelayFormatTask    = "task"
 	RelayFormatMjProxy = "mj_proxy"
 )

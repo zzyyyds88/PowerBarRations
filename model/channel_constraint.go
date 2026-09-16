@@ -1,20 +1,16 @@
 package model
 
 import (
-	"slices"
-
 	"pbr/constant"
 	"pbr/dto"
 )
 
 var filterEvalOrder = []dto.ChannelFilterKind{
 	dto.FilterRequestPath,
-	dto.FilterTaskPluginIdentity,
 }
 
 // ChannelSatisfiesFilters reports whether ch passes every filter.
-// On false, it returns the kind of the first violated filter (request_path
-// then task_plugin_identity) for error attribution.
+// On false, it returns the kind of the first violated filter for error attribution.
 func ChannelSatisfiesFilters(ch *Channel, modelName string, filters []dto.ChannelFilter) (bool, dto.ChannelFilterKind) {
 	if ch == nil {
 		return false, ""
@@ -34,8 +30,8 @@ func ChannelSatisfiesFilters(ch *Channel, modelName string, filters []dto.Channe
 
 // filterCandidateIDs applies filters to a cached candidate id list.
 // Caller must hold channelSyncLock (read lock). The input slice is never mutated.
-// A missing id in channelsIDM is kept for request_path (downstream consistency
-// error) and dropped for task_plugin_identity, matching the previous filters.
+// A missing id in channelsIDM is kept (downstream consistency error), matching
+// the previous filters.
 func filterCandidateIDs(ids []int, modelName string, filters []dto.ChannelFilter) (kept []int, emptiedBy dto.ChannelFilterKind) {
 	if len(ids) == 0 {
 		return ids, ""
@@ -97,12 +93,6 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		}
 		config := ch.GetOtherSettings().AdvancedCustom
 		return config != nil && config.SupportsPathForModel(filter.RequestPath, modelName)
-	case dto.FilterTaskPluginIdentity:
-		if ch.Type == constant.ChannelTypeTaskPlugin {
-			key := ch.GetSetting().TaskPluginKey
-			return filter.TaskPluginKey != "" && (key == filter.TaskPluginKey || slices.Contains(filter.TaskPluginKeys, key))
-		}
-		return filter.TaskPluginKey == "" || slices.Contains(filter.TaskPluginChannelTypes, ch.Type)
 	default:
 		return true
 	}

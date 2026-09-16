@@ -23,16 +23,6 @@ func TestJSONColumnValuersReturnString(t *testing.T) {
 			want:   `{"is_multi_key":true,"multi_key_size":2,"multi_key_status_list":null,"multi_key_polling_index":0,"multi_key_mode":""}`,
 		},
 		{
-			name:   "Properties",
-			valuer: Properties{Input: "hello"},
-			want:   `{"input":"hello"}`,
-		},
-		{
-			name:   "TaskPrivateData",
-			valuer: TaskPrivateData{Key: "k"},
-			want:   `{"key":"k"}`,
-		},
-		{
 			name:   "JSONValue",
 			valuer: JSONValue(`[{"k":"v"}]`),
 			want:   `[{"k":"v"}]`,
@@ -53,9 +43,7 @@ func TestJSONColumnValuersReturnString(t *testing.T) {
 // 空值仍返回 nil,保持列的 NULL 语义。
 func TestJSONColumnValuersZeroValueIsNil(t *testing.T) {
 	for name, valuer := range map[string]driver.Valuer{
-		"Properties":      Properties{},
-		"TaskPrivateData": TaskPrivateData{},
-		"JSONValue":       JSONValue(nil),
+		"JSONValue": JSONValue(nil),
 	} {
 		t.Run(name, func(t *testing.T) {
 			value, err := valuer.Value()
@@ -81,14 +69,6 @@ func TestJSONColumnScannersAcceptStringAndBytes(t *testing.T) {
 			require.NoError(t, info.Scan(toInput(kind, `{"is_multi_key":true,"multi_key_size":2}`)))
 			assert.True(t, info.IsMultiKey)
 			assert.Equal(t, 2, info.MultiKeySize)
-
-			var props Properties
-			require.NoError(t, props.Scan(toInput(kind, `{"input":"hello"}`)))
-			assert.Equal(t, "hello", props.Input)
-
-			var private TaskPrivateData
-			require.NoError(t, private.Scan(toInput(kind, `{"key":"k"}`)))
-			assert.Equal(t, "k", private.Key)
 		})
 	}
 }

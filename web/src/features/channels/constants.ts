@@ -23,8 +23,6 @@ For commercial licensing, please contact support@quantumnous.com
 
 export const CHANNEL_TYPE_NEW_API = 60
 
-export const CHANNEL_TYPE_TASK_PLUGIN = 61
-
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -83,7 +81,6 @@ export const CHANNEL_TYPES = {
   58: 'Advanced Custom',
   59: 'Sub2API',
   60: 'New API',
-  61: 'Task Plugin',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -164,12 +161,12 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
     descriptionKey: 'Connect to model services from another New API instance',
   },
 } satisfies Record<
-  Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
+  Exclude<keyof typeof CHANNEL_TYPES, 0>,
   ChannelProviderPresentation
 >
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
-  1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
+  1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 42, 34, 20,
   4, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 22, 21, 44,
   2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
 ]
@@ -192,17 +189,6 @@ export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
   }
   return ordered
 })()
-
-export function channelTypeOptionsForTaskPluginBind(
-  canBindTaskPlugin: boolean
-): { value: number; label: string }[] {
-  if (canBindTaskPlugin) {
-    return CHANNEL_TYPE_OPTIONS
-  }
-  return CHANNEL_TYPE_OPTIONS.filter(
-    (option) => option.value !== CHANNEL_TYPE_TASK_PLUGIN
-  )
-}
 
 // ============================================================================
 // Channel Status (label values are i18n keys; use t(config.label) in components)

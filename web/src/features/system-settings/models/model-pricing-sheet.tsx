@@ -64,7 +64,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   previewModelPricing,
   previewModelPricingConversion,
-  type ModelPricingPluginVariant,
 } from '@/features/model-pricing/api'
 import {
   getSitePricingCurrency,
@@ -78,14 +77,6 @@ import {
   type PricingConversionPreview,
 } from '@/features/model-pricing/pricing-conversion-dialog'
 import { PricingCurrencySelector } from '@/features/model-pricing/pricing-currency-selector'
-import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
-import { combineBillingExpr } from '@/features/pricing/lib/billing-expr'
-import { pluginExpressionsEqual } from '@/features/pricing/lib/plugin-pricing'
-import {
-  createDefaultTaskVisualConfig,
-  generateTaskExprFromConfig,
-} from '@/features/pricing/lib/task-expr'
-import type { BillingUsageSchema } from '@/features/pricing/types'
 import { useDebounce } from '@/hooks/use-debounce'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
@@ -109,8 +100,6 @@ import {
 } from './model-pricing-core'
 import { PriceInput, PriceLane } from './model-pricing-inputs'
 import { formatPricingNumber } from './pricing-format'
-import { TaskPluginPricingEditor } from './task-plugin-pricing-editor'
-import { TaskUsagePricingEditor } from './task-usage-pricing-editor'
 import { TieredPricingEditor } from './tiered-pricing-editor'
 
 export type { ModelRatioData } from './model-pricing-core'
@@ -121,8 +110,6 @@ type ModelPricingSheetProps = {
   editData?: ModelRatioData | null
   onSave?: () => void | Promise<void>
   isSaving?: boolean
-  usageSchema?: BillingUsageSchema
-  pluginVariants?: ModelPricingPluginVariant[]
   onDirtyChange?: (dirty: boolean) => void
 }
 
@@ -151,8 +138,6 @@ export const ModelPricingSheet = forwardRef<
     editData,
     onSave,
     isSaving,
-    usageSchema,
-    pluginVariants,
     onDirtyChange,
   },
   ref
@@ -174,8 +159,6 @@ export const ModelPricingSheet = forwardRef<
         <ModelPricingEditorPanel
           ref={ref}
           editData={editData}
-          usageSchema={usageSchema}
-          pluginVariants={pluginVariants}
           onDirtyChange={onDirtyChange}
           onSave={onSave}
           isSaving={isSaving}
@@ -195,8 +178,6 @@ export const ModelPricingEditorPanel = forwardRef<
     className,
     onSave,
     isSaving,
-    usageSchema,
-    pluginVariants,
     onDirtyChange,
     embedded = false,
     scrollHeader,
@@ -235,11 +216,7 @@ export const ModelPricingEditorPanel = forwardRef<
     meta: { errorToast: false },
   })
   const [requestRuleExpr, setRequestRuleExpr] = useState('')
-  const [pluginExpressions, setPluginExpressions] = useState<
-    Record<string, string>
-  >({})
   const [editorReloadToken, setEditorReloadToken] = useState(0)
-  const autoSwitchedForRef = useRef<string | null>(null)
   const isEditMode = !!editData
   const hasLegacyPricing =
     editData &&
@@ -260,7 +237,6 @@ export const ModelPricingEditorPanel = forwardRef<
   const initialBillingExpr =
     editData?.billingExpr ||
     (initialPricingMode === 'tiered_expr' ? DEFAULT_TOKEN_BILLING_EXPR : '')
-  const { models: pricingModels } = usePricingData()
 
   const form = useForm<ModelPricingFormValues>({
     resolver: zodResolver(createModelPricingSchema(t)),
@@ -304,53 +280,10 @@ export const ModelPricingEditorPanel = forwardRef<
   })
   const effectivePreview =
     previewRequest === debouncedPreviewRequest ? pricePreview.data : undefined
-  const usageSchemaByModel = useMemo(
-    () =>
-      new Map(
-        pricingModels.map((model) => [
-          model.model_name,
-          model.billing_usage_schema,
-        ])
-      ),
-    [pricingModels]
-  )
-  const usageExamplesByModel = useMemo(
-    () =>
-      new Map(
-        pricingModels.map((model) => [
-          model.model_name,
-          model.billing_usage_examples,
-        ])
-      ),
-    [pricingModels]
-  )
-  const taskUsageSchema =
-    usageSchema ??
-    pluginVariants?.find((variant) => !variant.stale)?.usage_schema ??
-    usageSchemaByModel.get(watchedValues.name.trim())
-  const taskUsageExamples =
-    usageExamplesByModel.get(watchedValues.name.trim()) ??
-    pluginVariants?.find((variant) => !variant.stale)?.usage_examples
-  const defaultTaskBillingExpr = useMemo(
-    () =>
-      taskUsageSchema
-        ? generateTaskExprFromConfig(
-            createDefaultTaskVisualConfig(taskUsageSchema),
-            taskUsageSchema
-          )
-        : '',
-    [taskUsageSchema]
-  )
-  const resolvedBillingExpr =
-    taskUsageSchema &&
-    (!billingExpr || billingExpr === DEFAULT_TOKEN_BILLING_EXPR)
-      ? defaultTaskBillingExpr
-      : billingExpr
 
   useEffect(() => {
     conversionGeneration.current += 1
     setConversionReason('')
-    setPluginExpressions(editData?.pluginBillingExpr ?? {})
     setWasConverted(false)
     setConversionPreview(null)
     const nextLaneState = createInitialLaneState(editData)
@@ -391,29 +324,14 @@ export const ModelPricingEditorPanel = forwardRef<
     setLanePrices(nextLaneState.prices)
     setLaneEnabled(nextLaneState.enabled)
     setEditorReloadToken((token) => token + 1)
-    autoSwitchedForRef.current = null
   }, [editData, form, initialPricingMode, initialBillingExpr])
-
-  useEffect(() => {
-    if (!editData) return
-    if (editData.billingMode === 'tiered_expr') return
-    if (editData.price || editData.ratio) return
-
-    const schema = taskUsageSchema
-    if (!schema || Object.keys(schema).length === 0) return
-    if (autoSwitchedForRef.current === editData.name) return
-
-    setPricingMode('tiered_expr')
-    autoSwitchedForRef.current = editData.name
-  }, [editData, taskUsageSchema])
 
   useEffect(() => {
     onDirtyChange?.(
       form.formState.isDirty ||
         pricingMode !== initialPricingMode ||
         billingExpr !== initialBillingExpr ||
-        requestRuleExpr !== (editData?.requestRuleExpr ?? '') ||
-        !pluginExpressionsEqual(pluginExpressions, editData?.pluginBillingExpr)
+        requestRuleExpr !== (editData?.requestRuleExpr ?? '')
     )
   }, [
     onDirtyChange,
@@ -424,7 +342,6 @@ export const ModelPricingEditorPanel = forwardRef<
     editData,
     initialPricingMode,
     initialBillingExpr,
-    pluginExpressions,
   ])
 
   const setFormValue = (field: keyof ModelPricingFormValues, value: string) => {
@@ -543,7 +460,7 @@ export const ModelPricingEditorPanel = forwardRef<
     const nextMode = value as PricingMode
     setPricingMode(nextMode)
     if (nextMode === 'tiered_expr' && !billingExpr) {
-      setBillingExpr(defaultTaskBillingExpr || DEFAULT_TOKEN_BILLING_EXPR)
+      setBillingExpr(DEFAULT_TOKEN_BILLING_EXPR)
     }
   }
 
@@ -561,7 +478,7 @@ export const ModelPricingEditorPanel = forwardRef<
     return buildPreviewRows(
       watchedValues,
       pricingMode,
-      resolvedBillingExpr,
+      billingExpr,
       requestRuleExpr,
       previewLanes.promptPrice,
       previewLanes.prices,
@@ -572,7 +489,7 @@ export const ModelPricingEditorPanel = forwardRef<
       effectivePreview?.billingDetails
     )
   }, [
-    resolvedBillingExpr,
+    billingExpr,
     laneEnabled,
     lanePrices,
     pricingMode,
@@ -679,11 +596,6 @@ export const ModelPricingEditorPanel = forwardRef<
     (values: ModelPricingFormValues) => {
       const data: ModelRatioData = {
         name: values.name.trim(),
-        ...(editData?.pluginBillingExpr ||
-        pluginVariants?.length ||
-        Object.keys(pluginExpressions).length
-          ? { pluginBillingExpr: pluginExpressions }
-          : {}),
         billingMode: pricingMode,
         price: values.price || '',
         ratio: values.ratio || '',
@@ -696,20 +608,13 @@ export const ModelPricingEditorPanel = forwardRef<
       }
 
       if (pricingMode === 'tiered_expr') {
-        data.billingExpr = resolvedBillingExpr
+        data.billingExpr = billingExpr
         data.requestRuleExpr = requestRuleExpr
       }
 
       return data
     },
-    [
-      pricingMode,
-      requestRuleExpr,
-      resolvedBillingExpr,
-      pluginExpressions,
-      editData,
-      pluginVariants,
-    ]
+    [pricingMode, requestRuleExpr, billingExpr]
   )
 
   const convertPricing = async () => {
@@ -806,18 +711,7 @@ export const ModelPricingEditorPanel = forwardRef<
     [form, validatePricingValues, buildSubmitData]
   )
 
-  const expressionEditor = taskUsageSchema ? (
-    <TaskUsagePricingEditor
-      currency={currency}
-      key={`${editorReloadToken}:${watchedValues.name}`}
-      billingExpr={resolvedBillingExpr}
-      requestRuleExpr={requestRuleExpr}
-      usageSchema={taskUsageSchema}
-      usageExamples={taskUsageExamples}
-      onBillingExprChange={setBillingExpr}
-      onRequestRuleExprChange={setRequestRuleExpr}
-    />
-  ) : (
+  const expressionEditor = (
     <TieredPricingEditor
       currency={currency}
       key={editorReloadToken}
@@ -909,26 +803,12 @@ export const ModelPricingEditorPanel = forwardRef<
 
                 <PricingCurrencySelector siteCurrency={siteCurrency} />
 
-                <TaskPluginPricingEditor
-                  key={`${editorReloadToken}:${watchedValues.name}`}
-                  variants={pluginVariants ?? []}
-                  expressions={pluginExpressions}
-                  onChange={setPluginExpressions}
-                  modelExpression={combineBillingExpr(
-                    resolvedBillingExpr,
-                    requestRuleExpr
-                  )}
-                  modelBillingMode={
-                    pricingMode === 'tiered_expr' ? 'tiered_expr' : 'ratio'
-                  }
-                  currency={currency}
+                <Tabs
+                  key={editorReloadToken}
+                  value={pricingMode}
+                  onValueChange={handleModeChange}
+                  className='gap-4'
                 >
-                  <Tabs
-                    key={editorReloadToken}
-                    value={pricingMode}
-                    onValueChange={handleModeChange}
-                    className='gap-4'
-                  >
                     <TabsList className='grid w-full grid-cols-3'>
                       <TabsTrigger value='tiered_expr'>
                         {t('Expression')}
@@ -988,32 +868,6 @@ export const ModelPricingEditorPanel = forwardRef<
                       value='per-token'
                       className='@container/pricing-fields min-w-0 pt-0'
                     >
-                      {taskUsageSchema &&
-                        Object.keys(taskUsageSchema).length > 0 && (
-                          <Alert className='mb-4'>
-                            <AlertDescription className='flex flex-col gap-3 text-xs'>
-                              <p>
-                                {t(
-                                  'This is a task model billed by usage (e.g. seconds, resolution). Prices entered here act as a per-call base rate, not per-token prices.'
-                                )}
-                              </p>
-                              <p>
-                                {t(
-                                  'Tip: after configuring one model, select others in the table and use bulk copy.'
-                                )}
-                              </p>
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='sm'
-                                className='w-fit'
-                                onClick={() => handleModeChange('tiered_expr')}
-                              >
-                                {t('Configure task pricing')}
-                              </Button>
-                            </AlertDescription>
-                          </Alert>
-                        )}
                       <p className='text-muted-foreground mb-3 text-xs'>
                         {embedded && (
                           <>
@@ -1140,8 +994,7 @@ export const ModelPricingEditorPanel = forwardRef<
                         {expressionEditor}
                       </FieldGroup>
                     </TabsContent>
-                  </Tabs>
-                </TaskPluginPricingEditor>
+                </Tabs>
               </FieldGroup>
 
               <aside

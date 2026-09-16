@@ -8,15 +8,12 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"pbr/common"
 	relaycommon "pbr/relay/common"
-	"pbr/service"
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -177,77 +174,6 @@ func TestApplyUpstreamBodyMetadataEmptyStorageRemainsReplayable(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, rc.Close())
 	assert.Empty(t, replay)
-}
-
-// stubTaskAdaptor implements just enough of TaskAdaptor for DoTaskApiRequest.
-type stubTaskAdaptor struct {
-	TaskAdaptor
-	baseURL     string
-	capturedReq *http.Request
-}
-
-func (s *stubTaskAdaptor) BuildRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	return s.baseURL + "/v1/video/generations", nil
-}
-
-func (s *stubTaskAdaptor) BuildRequestHeader(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) error {
-	s.capturedReq = req
-	return nil
-}
-
-// TestDoTaskApiRequest_KeepsReplayableGetBody guards against reintroducing the
-// hand-rolled GetBody override that wrapped the already consumed request
-// reader: any transport-level retry would then have silently replayed an empty
-// body. net/http derives a correct snapshot-based GetBody from the
-// *bytes.Reader bodies the task adaptors pass in, and it must be left intact.
-func TestDoTaskApiRequest_KeepsReplayableGetBody(t *testing.T) {
-	service.InitHttpClient()
-
-	payload := []byte(`{"model":"test-model","prompt":"hello"}`)
-
-	type receivedBody struct {
-		body []byte
-		err  error
-	}
-	receivedCh := make(chan receivedBody, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		receivedCh <- receivedBody{body: body, err: err}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	gin.SetMode(gin.TestMode)
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/video/generations", bytes.NewReader(payload))
-
-	info := &relaycommon.RelayInfo{
-		ChannelMeta: &relaycommon.ChannelMeta{},
-	}
-
-	adaptor := &stubTaskAdaptor{baseURL: server.URL}
-	resp, err := DoTaskApiRequest(adaptor, ctx, info, bytes.NewReader(payload))
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	received := <-receivedCh
-	require.NoError(t, received.err)
-	assert.Equal(t, payload, received.body)
-
-	req := adaptor.capturedReq
-	require.NotNil(t, req)
-	require.NotNil(t, req.GetBody)
-	// Even after the request body has been fully written, GetBody must still
-	// return the complete payload, repeatedly.
-	for i := range 2 {
-		rc, err := req.GetBody()
-		require.NoError(t, err)
-		replay, err := io.ReadAll(rc)
-		require.NoError(t, err)
-		require.NoError(t, rc.Close())
-		assert.Equal(t, payload, replay, "replay %d must equal the original payload", i+1)
-	}
 }
 
 type h2ServerResult struct {

@@ -47,7 +47,6 @@ func TestGetChannelDefaultBaseURLsUsesBuiltInDefaults(t *testing.T) {
 	assert.Equal(t, "https://api.openai.com", response.Data[constant.ChannelTypeOpenAI])
 	assert.NotContains(t, response.Data, constant.ChannelTypeAzure)
 	assert.NotContains(t, response.Data, constant.ChannelTypeNewAPI)
-	assert.NotContains(t, response.Data, constant.ChannelTypeTaskPlugin)
 }
 
 func TestValidateChannelProxy(t *testing.T) {

@@ -26,7 +26,6 @@ var channelSyncLock sync.RWMutex
 func InitChannelCache() {
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
-		rebuildTaskAliasView()
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
@@ -94,7 +93,6 @@ func InitChannelCache() {
 	// loadPricingAdvancedCustomConfigs. channelSyncLock MUST be released before
 	// invalidating the pricing cache, otherwise the reversed order deadlocks.
 	InvalidatePricingCache()
-	rebuildTaskAliasView()
 	common.SysLog("channels synced from database")
 }
 

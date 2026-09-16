@@ -89,7 +89,6 @@ export interface ChannelModelPrice {
 }
 
 export interface ChannelSettings {
-  task_plugin_key?: string
   force_format?: boolean
   thinking_to_content?: boolean
   proxy?: string
@@ -113,7 +112,6 @@ export interface ChannelOtherSettings {
   allow_inference_geo?: boolean
   allow_speed?: boolean
   claude_beta_query?: boolean
-  disable_task_polling_sleep?: boolean
   upstream_model_update_check_enabled?: boolean
   upstream_model_update_auto_sync_enabled?: boolean
   upstream_model_update_ignored_models?: string[]

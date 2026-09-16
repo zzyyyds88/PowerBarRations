@@ -49,8 +49,6 @@ import type {
   BillingSimulationContext,
   DiagnosticCode,
 } from '@/features/pricing/lib/billing-expression/types'
-import { taskPriceLabel } from '@/features/pricing/lib/task-price-display'
-import type { BillingUsageSchema } from '@/features/pricing/types'
 
 const DIAGNOSTIC_LABELS: Record<DiagnosticCode, string> = {
   syntax: 'Invalid expression syntax',
@@ -66,8 +64,6 @@ type RequestSimulationProps = {
   tokens?: BillingSimulationContext['tokens']
   usage?: BillingSimulationContext['usage']
   currency?: PricingCurrency
-  usageSchema?: BillingUsageSchema
-  mode: 'token' | 'task'
 }
 
 /** Explicitly opting in supplies an empty request; ordinary price displays never do. */
@@ -84,20 +80,7 @@ export function RequestSimulation(props: RequestSimulationProps) {
   )
   const usesImageCount =
     compiled.status === 'ready' && compiled.variables.has('image_count')
-  const booleanFields = Object.entries(props.usageSchema ?? {}).filter(
-    ([, field]) => field.type === 'boolean'
-  )
-  const [booleanInputs, setBooleanInputs] = useState<{
-    sample: BillingSimulationContext['usage']
-    values: Record<string, boolean>
-  }>({ sample: props.usage, values: {} })
-  const usage = useMemo(() => {
-    if (!props.usage) return undefined
-    return {
-      ...props.usage,
-      ...(booleanInputs.sample === props.usage ? booleanInputs.values : {}),
-    }
-  }, [props.usage, booleanInputs])
+  const usage = props.usage
   const [open, setOpen] = useState(false)
   const [body, setBody] = useState('{}')
   const [headers, setHeaders] = useState('{}')
@@ -164,11 +147,6 @@ export function RequestSimulation(props: RequestSimulationProps) {
         }
       }
     }
-    for (const [field, schema] of Object.entries(props.usageSchema ?? {})) {
-      if (schema.type === 'boolean' && typeof usage?.[field] !== 'boolean') {
-        return { inputError: 'Simulation context is missing.' }
-      }
-    }
     return evaluateBillingExpression(props.expression, {
       imageCount: Number(imageCount),
       tokens: props.tokens,
@@ -190,7 +168,6 @@ export function RequestSimulation(props: RequestSimulationProps) {
     props.expression,
     props.tokens,
     usage,
-    props.usageSchema,
   ])
 
   let error = ''
@@ -245,45 +222,6 @@ export function RequestSimulation(props: RequestSimulationProps) {
             'Simulate a request including request rules and excluding group multipliers. Empty objects represent an empty request.'
           )}
         </p>
-        {booleanFields.map(([field, schema]) => {
-          const label = taskPriceLabel(schema.description, field, i18n.language)
-          return (
-            <Field key={field}>
-              <FieldLabel>{label}</FieldLabel>
-              <Select
-                value={
-                  typeof usage?.[field] === 'boolean'
-                    ? String(usage[field])
-                    : null
-                }
-                onValueChange={(value) => {
-                  if (value === null) return
-                  setBooleanInputs({
-                    sample: props.usage,
-                    values: {
-                      ...(booleanInputs.sample === props.usage
-                        ? booleanInputs.values
-                        : {}),
-                      [field]: value === 'true',
-                    },
-                  })
-                }}
-                items={[
-                  { value: 'true', label: t('Yes') },
-                  { value: 'false', label: t('No') },
-                ]}
-              >
-                <SelectTrigger aria-label={label}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='true'>{t('Yes')}</SelectItem>
-                  <SelectItem value='false'>{t('No')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          )
-        })}
         <div className='grid gap-4 sm:grid-cols-2'>
           <Field>
             <FieldLabel htmlFor={bodyId}>
@@ -353,10 +291,7 @@ export function RequestSimulation(props: RequestSimulationProps) {
           >
             <p className='font-medium'>
               {t('Simulated request cost')}:{' '}
-              {formatPricingAmount(
-                success.cost / (props.mode === 'token' ? 1_000_000 : 1),
-                props.currency
-              )}
+              {formatPricingAmount(success.cost / 1_000_000, props.currency)}
               {success.billingUnit === 'request' && `/${t('request')}`}
             </p>
             {success.matchedTier && (

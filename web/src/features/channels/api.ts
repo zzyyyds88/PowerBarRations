@@ -49,27 +49,6 @@ const channelActionConfig = (
   skipErrorHandler: true,
 })
 
-export type TaskPluginOption = {
-  sortPriority?: number
-  website?: string
-  key: string
-  name: string
-  description?: Record<string, string> | null
-  icon?: string
-  hasIcon?: boolean
-  baseUrl?: string
-  models: string[]
-  channelTypes?: number[] | null
-}
-
-export async function getTaskPluginOptions(): Promise<TaskPluginOption[]> {
-  const response = await api.get<{
-    success: boolean
-    data: TaskPluginOption[]
-  }>('/api/task_plugin_options')
-  return requireServerSuccess(response.data).data
-}
-
 export type CodexUsageResponse = {
   success: boolean
   message?: string

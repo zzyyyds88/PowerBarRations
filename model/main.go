@@ -326,6 +326,11 @@ func migrateDB() error {
 		common.SysError("failed to drop legacy models.vendor_id column: " + err.Error())
 	}
 
+	// tasks / task_plugins 表随任务插件子系统物理删除：删表失败不阻塞启动。
+	if err := migrateDropTaskTables(DB); err != nil {
+		common.SysError("failed to drop legacy task tables: " + err.Error())
+	}
+
 	// W7（design-v1 §10.2.1）：计费/多用户相关表随多用户面物理删除，AutoMigrate
 	// 只保留 PBR 自有表与仍被保留管理面使用的基座表（User 仅作系统用户锚点）。
 	if err := DB.AutoMigrate(
@@ -343,8 +348,6 @@ func migrateDB() error {
 		&Ability{},
 		&Log{},
 		&Midjourney{},
-		&Task{},
-		&TaskPlugin{},
 		&Model{},
 		&PrefillGroup{},
 		&Setup{},

@@ -24,11 +24,6 @@ import {
 } from '@tanstack/react-query'
 import { t } from 'i18next'
 
-import { pluginExpressionsEqual } from '@/features/pricing/lib/plugin-pricing'
-import type {
-  BillingUsageSchema,
-  BillingUsageExample,
-} from '@/features/pricing/types'
 import { ROLE } from '@/lib/roles'
 import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
@@ -49,24 +44,10 @@ export type ModelPricingDescription = {
   cache_write_mode?: CacheWriteMode
 }
 
-export type ModelPricingPluginVariant = {
-  plugin_key: string
-  plugin_name: string
-  icon?: string
-  usage_schema: BillingUsageSchema
-  usage_examples?: BillingUsageExample[]
-  configured: string
-  effective: string
-  compatible: boolean
-  stale?: boolean
-}
-
 export type ModelPricingEntry = ModelPricingDescription & {
-  plugin_variants?: ModelPricingPluginVariant[]
   model_name: string
   version: string
   configured: PricingValues
-  usage_schema?: BillingUsageSchema
 }
 
 export type ModelPricingConfig = {
@@ -182,10 +163,8 @@ export function buildPricingChanges(
   for (const name of new Set([...previous.keys(), ...next.keys()])) {
     const oldValues = previous.get(name) ?? {}
     const newValues = next.get(name) ?? {}
-    const dirty = PRICING_KEYS.filter((key) =>
-      key === 'billing_setting.plugin_billing_expr'
-        ? !pluginExpressionsEqual(oldValues[key], newValues[key])
-        : oldValues[key] !== newValues[key]
+    const dirty = PRICING_KEYS.filter(
+      (key) => oldValues[key] !== newValues[key]
     )
     if (!dirty.length) continue
     const entry = entries.get(name)

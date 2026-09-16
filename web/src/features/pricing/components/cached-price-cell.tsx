@@ -26,7 +26,6 @@ import { useBillingTime } from '../hooks/use-billing-time'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
-  isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, stripTrailingZeros } from '../lib/price'
@@ -116,10 +115,6 @@ export function CachedPriceCell(props: {
         </div>
       </div>
     )
-  }
-
-  if (isUnconfiguredTaskUsageModel(model)) {
-    return <span className='text-muted-foreground/30 text-xs'>—</span>
   }
 
   const isTokenBased = isTokenBasedModel(model)

@@ -10,7 +10,6 @@ import (
 
 	"pbr/common"
 	"pbr/model"
-	"pbr/service"
 	"pbr/setting"
 	"pbr/setting/billing_setting"
 	"pbr/setting/console_setting"
@@ -159,12 +158,6 @@ func UpdateOption(c *gin.Context) {
 	default:
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
-	if option.Key == "TaskPublicAddress" && option.Value.(string) != "" {
-		if err := service.ValidateTaskArtifactBaseURL(option.Value.(string)); err != nil {
-			common.ApiErrorMsg(c, err.Error())
-			return
-		}
-	}
 	switch option.Key {
 	case "theme.frontend":
 		if option.Value != "default" {
@@ -284,39 +277,12 @@ func UpdateOption(c *gin.Context) {
 			models = append(models, modelName)
 		}
 		sort.Strings(models)
-		storedVariants := billing_setting.GetPluginBillingExprCopy()
 		for _, modelName := range models {
-			variants := make(map[string]any)
-			for key, expression := range storedVariants {
-				if plugin, name, ok := billing_setting.SplitPluginBillingExprKey(key); ok && name == modelName {
-					variants[plugin] = expression
-				}
-			}
 			err = model.ValidateModelPricing(modelName, model.PricingValues{
-				"billing_setting.billing_expr":          expressions[modelName],
-				billing_setting.PluginBillingExprOption: variants,
+				"billing_setting.billing_expr": expressions[modelName],
 			})
 			if err != nil {
 				common.ApiErrorMsg(c, fmt.Sprintf("模型 %s 的计费表达式无效: %v", modelName, err))
-				return
-			}
-		}
-	case billing_setting.PluginBillingExprOption:
-		var expressions map[string]string
-		if err = common.UnmarshalJsonStr(option.Value.(string), &expressions); err != nil || expressions == nil {
-			common.ApiErrorMsg(c, "plugin billing expressions must be a JSON object")
-			return
-		}
-		for key, expression := range expressions {
-			plugin, name, valid := billing_setting.SplitPluginBillingExprKey(key)
-			if !valid {
-				common.ApiErrorMsg(c, "invalid plugin billing expression key: "+key)
-				return
-			}
-			if err = model.ValidateModelPricing(name, model.PricingValues{
-				billing_setting.PluginBillingExprOption: map[string]any{plugin: expression},
-			}); err != nil {
-				common.ApiErrorMsg(c, err.Error())
 				return
 			}
 		}

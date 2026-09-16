@@ -310,6 +310,42 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 
 ---
 
+### 5.8 Webhook 通知
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/webhooks` | 读配置：targets 数组（`secret` 回显掩码 `****+末4位`） |
+| PUT | `/api/webhooks` | 写配置（同形状；`secret` 留空 = 保留原值） |
+| POST | `/api/webhooks/test` | 向指定 target 同步发一条测试事件，返回投递结果 |
+| GET | `/api/webhooks/deliveries` | 投递记录（cursor 分页，按 ts 倒序） |
+
+**这是通用推送接口，PBR 只定义契约并投递；接收方的验签、路由、呈现由消费方自行实现**（PBR 不内置针对特定接收端的集成）。
+
+事件请求体（`Content-Type: application/json`）：
+
+```json
+{
+  "type": "pbr",
+  "text": "[PBR] lane-a/ch-a:model-1 熔断打开（60s）：连续失败 hard_auth",
+  "event": {
+    "ts": 1789600000000,
+    "type": "circuit_open",
+    "lane": "model-1",
+    "member": "ch-a:model-1",
+    "detail": "open_seconds=60 score=2"
+  }
+}
+```
+
+- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`。
+
+**验签（消费方必做）**：
+1. 读头 `X-Webhook-Timestamp`（Unix 秒）与 `X-Webhook-Signature-V2`；
+2. 对**原始请求体字节**计算 `HMAC-SHA256(secret, "{ts}.{body}")` 的 hex，与其比较（常数时间比较）；
+3. `ts` 与本地时间偏差超过 ±300s 拒收（防重放）。
+
+失败语义见 design-v1 §16.10（8s 超时、5s/30s/120s 三次退避、60s 防风暴合并、投递日志随日志保留期清理）。`2xx` 视为送达；其他状态码/超时进入重试。
+
 ## 6. 关键请求/响应示例
 
 ### 6.1 健康与能力
@@ -648,12 +684,11 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 变更审计（控制台视图） | `/api/console/audit` |
 | 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
 | 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
-| 任务插件 | `/api/plugin/task/**` |
 | 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
-| 管理员日志 / 任务视图 | `/api/log/**`、`/api/task`、`/api/mj/` |
+| 管理员日志 | `/api/log/**`、`/api/mj/` |
 | 系统任务 / 系统信息 / 性能 | `/api/system-task/**`、`/api/system-info/**`、`/api/performance/**`、`/api/perf-metrics/**` |
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
-导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据、任务插件等"控制台运维面"
+导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据等"控制台运维面"
 以同一管理密钥在 `/api/console/**` 及上述基座路径可用。要把某一项提升为稳定契约，先在 §5 补端点再实现。
 

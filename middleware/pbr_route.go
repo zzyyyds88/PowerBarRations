@@ -24,16 +24,13 @@ import (
 //   - 首次选路：middleware.Distribute() 顶部的 PBRServe()；
 //   - 重试选路：controller/relay.go 的 getChannel() → PBRNextChannel()。
 //
-// 不适用 PBR 的请求（任务插件、显式渠道 pin、非模型面）返回 false，交回迁移前的旧链路，
+// 不适用 PBR 的请求（显式渠道 pin、非模型面）返回 false，交回迁移前的旧链路，
 // 保证"只裁计费与多用户、其余功能保留"（design-v1 §1.4）。
 
 // PBRServe 尝试用 PBR 路由接管本次请求的渠道选择。
 //
 // 返回 true 表示已处理完毕（成功注入渠道，或已写出 503）；false 表示不适用，调用方应走旧链路。
 func PBRServe(c *gin.Context) bool {
-	if c.GetString("expected_task_plugin_key") != "" {
-		return false
-	}
 	if _, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found {
 		// 显式渠道 pin（如 sk-<key>-<channelId>）语义是"就要这个渠道"，不走模型名键控。
 		return false

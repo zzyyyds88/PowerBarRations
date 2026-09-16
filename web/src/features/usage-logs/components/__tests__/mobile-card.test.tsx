@@ -213,25 +213,6 @@ it('retains the user avatar and model badge in the mobile summary', () => {
   expect(modelButton.querySelector('[data-slot="status-badge"]')).not.toBeNull()
 })
 
-it('omits unused token and throughput placeholders for async jobs', () => {
-  renderLogs({
-    logs: [
-      {
-        ...log,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        other: JSON.stringify({ is_task: true }),
-      },
-    ],
-  })
-  expect(screen.getByText('Async')).toBeVisible()
-  expect(screen.queryByText('Input')).not.toBeInTheDocument()
-  const timing = screen
-    .getByRole('button', { name: /^Time:/ })
-    .closest('[data-slot="log-time-and-timing"]')
-  expect(within(timing as HTMLElement).queryByText('—')).not.toBeInTheDocument()
-})
-
 it('shows mapped model names in full when inspecting a mobile model badge', async () => {
   const user = userEvent.setup()
   renderLogs({

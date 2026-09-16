@@ -47,19 +47,15 @@ const (
 	ChannelTypeXinference     = 47
 	ChannelTypeXai            = 48
 	ChannelTypeCoze           = 49
-	ChannelTypeKling          = 50
 	ChannelTypeJimeng         = 51
-	ChannelTypeVidu           = 52
 	ChannelTypeSubmodel       = 53
-	ChannelTypeDoubaoVideo    = 54
-	ChannelTypeSora           = 55
 	ChannelTypeReplicate      = 56
 	ChannelTypeCodex          = 57
 	ChannelTypeAdvancedCustom = 58
 	ChannelTypeSub2API        = 59
 	ChannelTypeNewAPI         = 60
-	ChannelTypeTaskPlugin     = 61
-	ChannelTypeDummy          // this one is only for count, do not add any channel after this
+	// ChannelTypeDummy 与历史最大类型号保持一致（曾是 Task Plugin 的 61），仅作计数上界。
+	ChannelTypeDummy = 61
 
 )
 
@@ -184,18 +180,13 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeXinference:     "Xinference",
 	ChannelTypeXai:            "xAI",
 	ChannelTypeCoze:           "Coze",
-	ChannelTypeKling:          "Kling",
 	ChannelTypeJimeng:         "Jimeng",
-	ChannelTypeVidu:           "Vidu",
 	ChannelTypeSubmodel:       "Submodel",
-	ChannelTypeDoubaoVideo:    "DoubaoVideo",
-	ChannelTypeSora:           "Sora",
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "ChatGPT Subscription (Codex)",
 	ChannelTypeAdvancedCustom: "Advanced Custom",
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
-	ChannelTypeTaskPlugin:     "Task Plugin",
 }
 
 func GetChannelTypeName(channelType int) string {

@@ -71,12 +71,7 @@ const CONFIGURATION_BLOCKS = {
   },
   extraSettings: {
     section: 'other',
-    fields: [
-      'proxy',
-      'http_protocol',
-      'http2_connection_shards',
-      'disable_task_polling_sleep',
-    ],
+    fields: ['proxy', 'http_protocol', 'http2_connection_shards'],
   },
   upstreamModelDetection: {
     section: 'other',
@@ -158,8 +153,7 @@ export function getChannelConfigurationState(
     extraSettings: Boolean(
       values.proxy?.trim() ||
       (values.http_protocol && values.http_protocol !== 'auto') ||
-      (values.http2_connection_shards ?? 1) > 1 ||
-      values.disable_task_polling_sleep
+      (values.http2_connection_shards ?? 1) > 1
     ),
     upstreamModelDetection:
       MODEL_FETCHABLE_TYPES.has(values.type) &&

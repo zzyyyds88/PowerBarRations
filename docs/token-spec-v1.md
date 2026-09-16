@@ -190,7 +190,7 @@ type LanePolicy struct {
 |---|---|---|
 | `GET /mj/image/:id`、`GET /:mode/mj/image/:id` | 返回给客户端的图片 URL 要能直接放进 `<img src>`，浏览器无法附带 `Authorization`；图片本身是 Midjourney 任务产物 | 需已知 task id；只代理该任务已记录的 `ImageUrl`；出站抓取走 SSRF 防护（拒绝私网/非法端口，除非渠道代理另行配置）；**仅限局域网自用前提**。若部署到不可信网络，应改用带 HMAC 签名的图片 URL（尚未实现） |
 
-除上表外，`/v1/**` 全部入口都必须先过 `PBRTokenAuth`（含任务、视频、Gemini 兼容路径）。
+除上表外，`/v1/**` 全部入口都必须先过 `PBRTokenAuth`（含 Gemini 兼容路径；任务/视频入口已随任务插件子系统移除）。
 
 ### 3.6 生命周期与管理
 

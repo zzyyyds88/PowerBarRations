@@ -7,6 +7,6 @@ import (
 )
 
 func TestGetChannelBaseURLIsBoundsSafe(t *testing.T) {
-	assert.Empty(t, GetChannelBaseURL(ChannelTypeTaskPlugin))
+	assert.Empty(t, GetChannelBaseURL(ChannelTypeDummy))
 	assert.Empty(t, GetChannelBaseURL(9999))
 }
