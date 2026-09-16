@@ -74,21 +74,20 @@ function sidebarFor(admin?: object, user?: object, canConfigure = true) {
 }
 
 describe('security sidebar visibility', () => {
-  it('old configurations show Security & Access immediately after Profile and keep API Keys', () => {
+  it('legacy personal configurations do not resurrect deleted wallet/security entries and keep API Keys', () => {
     const { result } = sidebarFor(
       { personal: { enabled: true, personal: true, topup: true } },
       { personal: { enabled: true, personal: true } }
     )
     expect(
-      result.current
-        .find((group) => group.id === 'personal')
-        ?.items.map((item) => item.title)
-    ).toEqual(['Wallet', 'Profile', 'Security & Access'])
-    expect(
-      result.current
-        .flatMap((group) => group.items)
-        .some((item) => item.title === 'API Keys')
-    ).toBe(true)
+      result.current.find((group) => group.id === 'personal')
+    ).toBeUndefined()
+    const titles = result.current
+      .flatMap((group) => group.items)
+      .map((item) => item.title)
+    expect(titles).not.toContain('Wallet')
+    expect(titles).not.toContain('Security & Access')
+    expect(titles).toContain('API Keys')
   })
   it.each([
     [{ personal: { enabled: true, security: false } }, undefined],
@@ -109,14 +108,15 @@ describe('security sidebar visibility', () => {
   it('users without sidebar configuration permission retain the admin view', () => {
     const { result } = sidebarFor(
       undefined,
-      { personal: { security: false } },
+      { console: { enabled: false } },
       false
     )
-    expect(
-      result.current
-        .flatMap((group) => group.items)
-        .some((item) => item.title === 'Security & Access')
-    ).toBe(true)
+    const titles = result.current
+      .flatMap((group) => group.items)
+      .map((item) => item.title)
+    expect(titles).toContain('Overview')
+    expect(titles).toContain('API Keys')
+    expect(titles).toContain('Channels')
   })
 })
 

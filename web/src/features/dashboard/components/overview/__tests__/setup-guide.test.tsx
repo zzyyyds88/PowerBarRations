@@ -216,7 +216,7 @@ describe('overview setup guide', () => {
     await user.click(
       await screen.findByRole('button', { name: 'Hide setup guide' })
     )
-    expect(screen.getByText('Setup progress: 1/3')).toBeVisible()
+    expect(screen.getByText('Setup progress: 1/2')).toBeVisible()
     expect(
       screen.getByText('Setup guide is collapsed. Expand it anytime.')
     ).toBeVisible()
@@ -239,7 +239,7 @@ describe('overview setup guide', () => {
     })
     window.localStorage.setItem(storageKey, 'collapsed')
     await renderOverview()
-    expect(await screen.findByText('Setup progress: 2/3')).toBeVisible()
+    expect(await screen.findByText('Setup progress: 1/2')).toBeVisible()
 
     act(() => {
       useAuthStore.getState().auth.setUser({
