@@ -48,7 +48,7 @@ import type {
 export async function getModels(
   params: GetModelsParams = {}
 ): Promise<GetModelsResponse> {
-  const res = await api.get('/api/models/', { params })
+  const res = await api.get('/api/console/models/', { params })
   return res.data
 }
 
@@ -58,7 +58,7 @@ export async function getModels(
 export async function searchModels(
   params: SearchModelsParams
 ): Promise<GetModelsResponse> {
-  const res = await api.get('/api/models/search', { params })
+  const res = await api.get('/api/console/models/search', { params })
   return res.data
 }
 
@@ -66,7 +66,7 @@ export async function searchModels(
  * Get single model by ID
  */
 export async function getModel(id: number): Promise<GetModelResponse> {
-  const res = await api.get(`/api/models/${id}`)
+  const res = await api.get(`/api/console/models/${id}`)
   return res.data
 }
 
@@ -76,7 +76,7 @@ export async function getModel(id: number): Promise<GetModelResponse> {
 export async function createModel(
   data: Partial<Model>
 ): Promise<{ success: boolean; message?: string; data?: Model }> {
-  const res = await api.post('/api/models/', data, {
+  const res = await api.post('/api/console/models/', data, {
     skipBusinessError: true,
     skipErrorHandler: true,
   })
@@ -89,7 +89,7 @@ export async function createModel(
 export async function updateModel(
   data: Partial<Model> & { id: number }
 ): Promise<{ success: boolean; message?: string; data?: Model }> {
-  const res = await api.put('/api/models/', data, {
+  const res = await api.put('/api/console/models/', data, {
     skipBusinessError: true,
     skipErrorHandler: true,
   })
@@ -103,7 +103,7 @@ export async function updateModelStatus(
   id: number,
   status: number
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await api.put('/api/models/?status_only=true', { id, status })
+  const res = await api.put('/api/console/models/?status_only=true', { id, status })
   return res.data
 }
 
@@ -115,7 +115,7 @@ export async function deleteModel(
   removeFromChannels = false,
   removePricing = false
 ): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
-  const res = await api.delete(`/api/models/${id}`, {
+  const res = await api.delete(`/api/console/models/${id}`, {
     params: {
       remove_from_channels: removeFromChannels,
       remove_pricing: removePricing,
@@ -202,7 +202,7 @@ export async function deleteVendor(
 export async function syncUpstream(
   params: MetadataSyncRequest
 ): Promise<SyncUpstreamResponse> {
-  const res = await api.post('/api/models/sync_upstream', params)
+  const res = await api.post('/api/console/models/sync_upstream', params)
   return res.data
 }
 
@@ -222,8 +222,8 @@ export async function previewUpstreamDiff(params?: {
   }
   const queryString = searchParams.toString()
   const url = queryString
-    ? `/api/models/sync_upstream/preview?${queryString}`
-    : '/api/models/sync_upstream/preview'
+    ? `/api/console/models/sync_upstream/preview?${queryString}`
+    : '/api/console/models/sync_upstream/preview'
   const res = await api.get(url)
   return res.data
 }
@@ -236,7 +236,7 @@ export async function previewUpstreamDiff(params?: {
  * Get missing models (used but not configured)
  */
 export async function getMissingModels(): Promise<MissingModelsResponse> {
-  const res = await api.get('/api/models/missing')
+  const res = await api.get('/api/console/models/missing')
   return res.data
 }
 
@@ -643,7 +643,7 @@ export async function deleteModels(
   removeFromChannels = false,
   removePricing = false
 ): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
-  const res = await api.post('/api/models/delete', {
+  const res = await api.post('/api/console/models/delete', {
     model_ids: modelIds,
     remove_from_channels: removeFromChannels,
     remove_pricing: removePricing,

@@ -127,7 +127,7 @@ async function renderList(
 ) {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
-    if (url === '/api/models/' || url === '/api/models/search') {
+    if (url === '/api/console/models/' || url === '/api/console/models/search') {
       return {
         data: {
           success: true,
@@ -135,7 +135,7 @@ async function renderList(
         },
       }
     }
-    if (url === '/api/models/7') {
+    if (url === '/api/console/models/7') {
       return { data: { success: true, data: metadata } }
     }
     if (url === '/api/option/model_pricing') {
@@ -211,7 +211,7 @@ afterEach(async () => {
 
 it('requests channel models and distinguishes catalog policy from availability using compact labels', async () => {
   const { get } = await renderList()
-  expect(get).toHaveBeenCalledWith('/api/models/', {
+  expect(get).toHaveBeenCalledWith('/api/console/models/', {
     params: expect.objectContaining({ include_channel_models: true }),
   })
   expect(screen.getAllByText('Unavailable')).toHaveLength(3)
@@ -340,7 +340,7 @@ it('prefills and creates metadata only when the user explicitly saves it', async
   await user.click(screen.getByRole('button', { name: 'Save metadata' }))
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith(
-      '/api/models/',
+      '/api/console/models/',
       expect.objectContaining({ model_name: 'channel-only' }),
       expect.anything()
     )
@@ -747,7 +747,7 @@ it('filters actual visibility independently of policy and restores filters throu
   )
   await user.click(screen.getByRole('option', { name: 'Partly shown' }))
   await waitFor(() =>
-    expect(get).toHaveBeenCalledWith('/api/models/search', {
+    expect(get).toHaveBeenCalledWith('/api/console/models/search', {
       params: expect.objectContaining({
         status: 'enabled',
         square_state: 'partial',
@@ -814,7 +814,7 @@ it('keeps an active visibility filter when its server result is empty', async ()
   expect(
     screen.getByRole('button', { name: /Model square visibility.*Unavailable/ })
   ).toBeVisible()
-  expect(get).toHaveBeenCalledWith('/api/models/search', {
+  expect(get).toHaveBeenCalledWith('/api/console/models/search', {
     params: expect.objectContaining({ square_state: 'unavailable', p: 1 }),
   })
 })

@@ -1,0 +1,92 @@
+# PowerBarRations 管理 API 手册（给 AI / 脚本）
+
+基址：`http(s)://<host>/api`（兼容旧前缀 `/api/v1`）。
+模型面（OpenAI 兼容推理）：`/v1`，用**客户端密钥**。
+控制台内部接口：`/api/console/*`，只给控制台前端用，**不是**本手册的契约。
+
+## 1. 认证：人机分离，两条通道等价
+
+- **人**：浏览器打开控制台 → 输入登录口令 → 服务端下发 HttpOnly 会话 Cookie。
+- **AI / 脚本（你）**：用登录口令自行计算管理密钥，放在 `Authorization: Bearer`：
+
+  管理密钥 = Base64( SHA256( UTF-8( 登录口令 ) ) )（标准 Base64，带 `=` 填充，44 字符）
+
+  ```bash
+  AK=$(printf '%s' '<登录口令>' | openssl dgst -sha256 -binary | openssl base64 -A)
+  A=(-H "Authorization: Bearer $AK" -H 'Content-Type: application/json')
+  BASE=https://127.0.0.1:5700        # 自签证书加 -k
+  ```
+
+  **只要知道登录口令就能自己算，不需要人工复制密钥。** 口令变更后旧密钥立即失效。
+
+## 2. 先发现，再控制
+
+| 目的 | 调用 |
+|---|---|
+| 存活/依赖/版本（免鉴权） | `GET /api/health`、`GET /api/version` |
+| 是否已初始化（免鉴权） | `GET /api/setup/status` |
+| 适配器/模式/熔断枚举 | `GET /api/capabilities` |
+| 完整机器可读契约 | `GET /api/openapi.json`（免鉴权） |
+
+## 3. 端点总表
+
+- 渠道：`GET /api/channels`、`GET|PUT|DELETE /api/channels/{name}`、
+  `POST /api/channels/{name}/test`、`POST /api/channels/{name}/sync-models`
+- 车道（显式覆盖层）：`GET /api/lanes`、`GET|PUT|DELETE /api/lanes/{name}`、
+  `PUT /api/lanes/{name}/members`、`GET /api/lanes/{name}/health`、
+  `POST /api/lanes/{name}/probe`、`POST /api/lanes/{name}/circuits/reset`
+- 模型路由：`GET /api/models`（全部路由键）、`GET /api/routes/{model}`（成员链）
+- 客户端密钥：`GET|POST /api/keys`、`GET|PUT|DELETE /api/keys/{name}`、
+  `POST /api/keys/{name}/rotate`
+- 观测：`GET /api/logs`、`GET /api/logs/{id}`、`POST /api/logs/prune`、
+  `GET /api/stats`、`GET /api/route-events`（SSE）
+- 系统：`GET|PUT /api/system/options`
+- 配置生命周期：`GET /api/export`、`POST /api/import?dry_run=true`
+- HTTPS：`GET /api/tls`、`PUT /api/tls/certificate`、`POST /api/tls/self-signed`
+- 审计：`GET /api/audit`
+- 认证：`POST /api/setup`、`POST /api/auth/login`、`POST /api/auth/logout`、
+  `GET /api/auth/session`、`POST /api/auth/password`
+
+## 4. 典型工作流
+
+### 4.1 建渠道 → 建车道 → 发密钥 → 端到端验证
+
+```bash
+curl -sk "${A[@]}" -X PUT "$BASE/api/channels/ch-a" -d '{
+  "type":"openai","base_url":"https://vendor.example/v1","key":"sk-...",
+  "priority":10,"models":["model-1"],"enabled":true}'
+
+# 显式车道（可选；不建则靠"渠道声明 models"的隐式链）
+curl -sk "${A[@]}" -X PUT "$BASE/api/lanes/lane-a" -d '{
+  "enabled":true,"mode":"failover",
+  "config":{"member_max_attempts":2,"member_retry_interval_seconds":3,
+            "member_non_stream_response_timeout_seconds":120,
+            "member_stream_first_event_timeout_seconds":30,
+            "member_cooldown_seconds":60,"member_affinity_seconds":0},
+  "members":[{"channel":"ch-a","upstream_model":"model-1","priority":10}]}'
+
+KEY=$(curl -sk "${A[@]}" -X POST "$BASE/api/keys" \
+  -d '{"name":"my-key","allowed_models":["model-1"]}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["key"])')
+
+curl -sk -H "Authorization: Bearer $KEY" "$BASE/v1/chat/completions" \
+  -d '{"model":"model-1","messages":[{"role":"user","content":"ping"}]}'
+```
+
+### 4.2 排障：某模型为什么失败
+
+1. `GET /api/routes/{model}` 看成员链与来源（implicit / explicit）。
+2. `GET /api/lanes/{name}/health` 看 `circuit` / `cooldown_until` / `last_error_kind`。
+3. `GET /api/logs?success=false&model={model}` 看 `attempts` 链。
+4. `POST /api/lanes/{name}/probe` 逐成员真实探活；必要时 `POST .../circuits/reset`。
+
+## 5. 错误模型与硬规则
+
+- 错误体：`{"error":{"code":"...","message":"...","hint":"..."}}`；**按 `code` 分支**，不要解析 message。
+- 模型面 `503` = `No available channel for model <X>`（没有可用渠道）；
+  本机繁忙是 `529`，两者不要混。
+- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `members: []`。
+- `sync-models` 上游返回空清单默认 `409`（需 `?force=1`）；被显式车道引用的模型移除也 `409`。
+- 渠道删除被显式车道引用时 `409`，message 给出车道名。
+- 写操作响应前服务端已回读，但跨请求仍应 `GET` 校验最终状态。
+- `/api/export` 不含密钥明文/哈希；备份恢复直接备份 `pbr.db`（含 `-wal`/`-shm`）或 `POST /api/import`。
+- 运行态（冷却/熔断/亲和）是进程内的，重启即清空。

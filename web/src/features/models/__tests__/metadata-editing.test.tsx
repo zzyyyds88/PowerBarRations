@@ -137,7 +137,7 @@ describe('model pricing entry', () => {
         'Channel availability and group access are derived from enabled channels. Importing metadata does not create a callable channel.'
       )
     ).toBeVisible()
-    expect(get).not.toHaveBeenCalledWith('/api/models/0')
+    expect(get).not.toHaveBeenCalledWith('/api/console/models/0')
     expect(post).not.toHaveBeenCalled()
     client.clear()
   })
@@ -150,7 +150,7 @@ describe('model pricing entry', () => {
       }
     )
     vi.spyOn(api, 'get').mockImplementation(async (url) => {
-      if (url === '/api/models/7') return detail
+      if (url === '/api/console/models/7') return detail
       if (url === '/api/option/model_pricing') {
         return {
           data: {
@@ -235,7 +235,7 @@ describe('model pricing entry', () => {
       matched_models: ['example-concrete'],
     }
     const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
-      if (url === '/api/models/7') {
+      if (url === '/api/console/models/7') {
         return { data: { success: true, data: matchedModel } }
       }
       if (url === '/api/option/model_pricing') {
@@ -350,7 +350,7 @@ describe('metadata editing', () => {
       await waitFor(() => expect(close).toHaveBeenCalledWith(false))
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       expect(post).toHaveBeenLastCalledWith(
-        '/api/models/',
+        '/api/console/models/',
         expect.objectContaining({
           model_name: 'unique-model',
           description: 'Keep this draft',
@@ -364,7 +364,7 @@ describe('metadata editing', () => {
   it('allows an administrator to save metadata without loading or changing system pricing', async () => {
     useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
     const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
-      if (url === '/api/models/7') {
+      if (url === '/api/console/models/7') {
         return { data: { success: true, data: model } }
       }
       if (url === '/api/vendors/') {
@@ -431,7 +431,7 @@ describe('metadata editing', () => {
     expect(
       get.mock.calls.some(([url]) => String(url).startsWith('/api/option'))
     ).toBe(false)
-    expect(put.mock.calls.every(([url]) => url === '/api/models/')).toBe(true)
+    expect(put.mock.calls.every(([url]) => url === '/api/console/models/')).toBe(true)
     expect(put.mock.calls[0][1]).toMatchObject({
       description: 'Updated metadata',
       icon: '',
@@ -445,7 +445,7 @@ describe('metadata editing', () => {
     let version = 'v1'
     let storedPrice = 1.5
     const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
-      if (url === '/api/models/7') {
+      if (url === '/api/console/models/7') {
         return { data: { success: true, data: model } }
       }
       if (url === '/api/vendors/') {

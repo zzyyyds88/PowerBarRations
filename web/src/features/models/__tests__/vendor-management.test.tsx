@@ -250,7 +250,7 @@ describe('vendor management', () => {
       'example'
     )
     await waitFor(() =>
-      expect(get).toHaveBeenLastCalledWith('/api/models/search', {
+      expect(get).toHaveBeenLastCalledWith('/api/console/models/search', {
         params: { vendor: '3', keyword: 'example', p: 1, page_size: 10 },
       })
     )
@@ -288,7 +288,7 @@ describe('vendor management', () => {
       .setup()
       .click(screen.getByRole('button', { name: 'Go to next page' }))
     await waitFor(() =>
-      expect(get).toHaveBeenCalledWith('/api/models/search', {
+      expect(get).toHaveBeenCalledWith('/api/console/models/search', {
         params: { vendor: '3', keyword: '', p: 2, page_size: 10 },
       })
     )
