@@ -35,7 +35,15 @@ export type ChannelModelDiscoveryRequest =
 type ChannelModelDiscoveryProps = {
   enabled: boolean
   request: ChannelModelDiscoveryRequest
+  /**
+   * Fetch automatically once the connection fields pass validation. The
+   * request is held for CHANNEL_MODEL_DISCOVERY_DEBOUNCE_MS so typing is
+   * coalesced into a single discovery call.
+   */
+  autoFetch?: boolean
 }
+
+export const CHANNEL_MODEL_DISCOVERY_DEBOUNCE_MS = 800
 
 export function useChannelModelDiscovery(props: ChannelModelDiscoveryProps) {
   const [state, setState] = useState<DiscoveryState>({
@@ -46,6 +54,7 @@ export function useChannelModelDiscovery(props: ChannelModelDiscoveryProps) {
 
   useEffect(() => {
     sequence.current += 1
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setState((previous) => {
       if (previous.status === 'idle') return previous
       if (!props.enabled) return { status: 'idle', models: [] }
@@ -79,6 +88,14 @@ export function useChannelModelDiscovery(props: ChannelModelDiscoveryProps) {
       }))
     }
   }, [props.enabled, props.request])
+
+  useEffect(() => {
+    if (!props.enabled || !props.autoFetch) return
+    const timer = window.setTimeout(() => {
+      void fetch()
+    }, CHANNEL_MODEL_DISCOVERY_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [fetch, props.enabled, props.autoFetch])
 
   return { ...state, fetch }
 }
