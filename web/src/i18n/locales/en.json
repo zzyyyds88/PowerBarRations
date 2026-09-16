@@ -1524,6 +1524,7 @@
     "Credentials": "Credentials",
     "Credentials verification failed": "Credentials verification failed",
     "Credentials verification failed — double-check Merchant ID and API private key.": "Credentials verification failed — double-check Merchant ID and API private key.",
+    "Credentials changed. Please sign in again.": "Credentials changed. Please sign in again.",
     "credit": "credit",
     "Credit remaining": "Credit remaining",
     "Creem API key (leave blank unless updating)": "Creem API key (leave blank unless updating)",

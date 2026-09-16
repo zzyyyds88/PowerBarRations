@@ -36,6 +36,9 @@ export type RefreshOutcome =
   | { kind: 'anonymous' }
   | { kind: 'transient_error'; error: unknown }
   | { kind: 'out_of_sync'; code?: string }
+  // 服务端明确判定"带了会话 Cookie 但已失效"（口令变更等，token-spec §2.5.1）。
+  // 与 anonymous 分开，是为了让上层能给出"凭据已变更，请重新登录"这种可操作提示。
+  | { kind: 'stale' }
 
 export interface AuthRefreshHTTPResponse {
   status: number
@@ -251,6 +254,16 @@ export function createRefreshRunner(
       return { kind: 'out_of_sync', code }
     }
 
+    // 服务端标记为"带了 Cookie 但已失效"：清态并单独归类，供上层提示"凭据已变更"。
+    if (
+      response.status === 200 &&
+      isRecord(responseData) &&
+      responseData.stale === true
+    ) {
+      runtime.clear(true)
+      return { kind: 'stale' }
+    }
+
     if (response.status === 401) {
       runtime.clear(true)
       return { kind: 'anonymous' }
@@ -290,10 +303,12 @@ async function requestRefresh(
         data: { success: true, data: buildPBRBundle() },
       }
     }
-    // 带了 Cookie 但已失效（口令变更等，token-spec §2.5.1）：先让浏览器丢弃它，
-    // 再按"未登录"处理，避免旧 Cookie 在后续登录流程里继续制造 401。
+    // 带了 Cookie 但已失效（口令变更等，token-spec §2.5.1）。服务端已在这次响应里
+    // 下发清除 Cookie；这里再兜底登出一次，确保浏览器一定丢弃旧值（Path=/ 会污染
+    // 后续所有请求）。用 200+stale 标记，让上层区分"凭据变更"与"从未登录"。
     if (body?.stale) {
       await discardPBRSession()
+      return { status: 200, data: { stale: true } }
     }
     return { status: 401, data: response.data }
   } catch (error: unknown) {

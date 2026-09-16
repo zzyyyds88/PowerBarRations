@@ -111,10 +111,19 @@ api.interceptors.response.use(
           return api.request(config)
         }
 
-        if (outcome.kind === 'anonymous' || outcome.kind === 'out_of_sync') {
+        // stale：服务端判定浏览器持有失效会话（口令变更等）。本地态已清，这里
+        // 只需把用户送回登录页；服务端同时也已下发清除该 Cookie。
+        if (
+          outcome.kind === 'anonymous' ||
+          outcome.kind === 'out_of_sync' ||
+          outcome.kind === 'stale'
+        ) {
           if (!skipErrorHandler) {
             handleServerError({
-              message: t('Session expired!'),
+              message:
+                outcome.kind === 'stale'
+                  ? t('Credentials changed. Please sign in again.')
+                  : t('Session expired!'),
               [safeServerErrorMessage]: true,
               cause: error,
             })

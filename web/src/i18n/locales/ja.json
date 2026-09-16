@@ -1524,6 +1524,7 @@
     "Credentials": "認証情報",
     "Credentials verification failed": "認証情報の検証に失敗しました",
     "Credentials verification failed — double-check Merchant ID and API private key.": "認証情報の検証に失敗しました。Merchant ID と API 秘密鍵を再確認してください。",
+    "Credentials changed. Please sign in again.": "認証情報が変更されました。もう一度サインインしてください。",
     "credit": "credit",
     "Credit remaining": "残りクレジット",
     "Creem API key (leave blank unless updating)": "Creem API キー (更新しない限り空白のまま)",

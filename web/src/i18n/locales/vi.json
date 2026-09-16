@@ -1524,6 +1524,7 @@
     "Credentials": "Thông tin xác thực",
     "Credentials verification failed": "Xác minh thông tin xác thực thất bại",
     "Credentials verification failed — double-check Merchant ID and API private key.": "Xác minh thông tin xác thực thất bại — hãy kiểm tra lại Merchant ID và khóa riêng API.",
+    "Credentials changed. Please sign in again.": "Thông tin xác thực đã thay đổi. Vui lòng đăng nhập lại.",
     "credit": "credit",
     "Credit remaining": "Tín dụng còn lại",
     "Creem API key (leave blank unless updating)": "Khóa API Creem (để trống trừ khi cập nhật)",

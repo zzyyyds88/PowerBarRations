@@ -134,3 +134,57 @@ func TestSessionStatusDistinguishesStaleCookie(t *testing.T) {
 	assert.Equal(t, true, valid["authenticated"])
 	assert.Equal(t, false, valid["stale"], "有效会话不得报 stale")
 }
+
+// token-spec §2.5.1：服务端必须在判定 stale 时**自己清除**失效 Cookie，
+// 而不是把清理责任推给用户（对齐上游 new-api 的 RefreshAuth 失败即清 Cookie）。
+func TestSessionStatusClearsStaleCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAPITestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.PBRAdminCredential{}))
+
+	firstKey, err := model.SetPBRAdminPassword("Clear-First-2026")
+	require.NoError(t, err)
+	staleCookie, err := session.Issue(model.HashAdminKey(firstKey), time.Hour, time.Now())
+	require.NoError(t, err)
+
+	// 改口令 → 旧 Cookie 失效。
+	_, err = model.SetPBRAdminPassword("Clear-Second-2026")
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	c.Request.AddCookie(&http.Cookie{Name: session.CookieName, Value: staleCookie})
+	SessionStatus(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"stale":true`)
+
+	// 关键断言：响应必须下发清除该 Cookie 的 Set-Cookie。
+	cookies := recorder.Result().Cookies()
+	require.Len(t, cookies, 1, "判定 stale 时必须下发清除 Cookie")
+	assert.Equal(t, session.CookieName, cookies[0].Name)
+	assert.Empty(t, cookies[0].Value, "清除 Cookie 的值必须为空")
+	assert.Equal(t, -1, cookies[0].MaxAge, "清除 Cookie 的 MaxAge 必须为 -1")
+}
+
+// 有效会话不得被误清（否则用户每次刷新都掉线）。
+func TestSessionStatusKeepsValidCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAPITestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.PBRAdminCredential{}))
+	key, err := model.SetPBRAdminPassword("Keep-Valid-2026")
+	require.NoError(t, err)
+	valid, err := session.Issue(model.HashAdminKey(key), time.Hour, time.Now())
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
+	c.Request.AddCookie(&http.Cookie{Name: session.CookieName, Value: valid})
+	SessionStatus(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), `"authenticated":true`)
+	assert.Empty(t, recorder.Result().Cookies(), "有效会话不得下发清除 Cookie")
+}
