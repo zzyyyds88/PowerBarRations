@@ -21,7 +21,7 @@ import axios from 'axios'
 import { t } from 'i18next'
 
 import { publishAuthSessionEvent } from '@/lib/auth-session-sync'
-import { buildPBRBundle } from '@/lib/pbr-auth'
+import { buildPBRBundle, discardPBRSession } from '@/lib/pbr-auth'
 import { hasSessionHint } from '@/lib/session-hint'
 import {
   useAuthStore,
@@ -281,14 +281,19 @@ async function requestRefresh(
 ): Promise<AuthRefreshHTTPResponse> {
   try {
     const response = await authClient.get("/api/v1/auth/session")
-    const authenticated = Boolean(
-      (response.data as { authenticated?: boolean } | undefined)?.authenticated
-    )
-    if (authenticated) {
+    const body = response.data as
+      | { authenticated?: boolean; stale?: boolean }
+      | undefined
+    if (body?.authenticated) {
       return {
         status: response.status,
         data: { success: true, data: buildPBRBundle() },
       }
+    }
+    // 带了 Cookie 但已失效（口令变更等，token-spec §2.5.1）：先让浏览器丢弃它，
+    // 再按"未登录"处理，避免旧 Cookie 在后续登录流程里继续制造 401。
+    if (body?.stale) {
+      await discardPBRSession()
     }
     return { status: 401, data: response.data }
   } catch (error: unknown) {

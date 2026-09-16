@@ -149,12 +149,18 @@ func Logout(c *gin.Context) {
 //
 // 控制台用它做启动时的"是否已登录"判定：
 //   - 200 + {authenticated:true}：Cookie 有效，前端可直接进入
-//   - 200 + {authenticated:false}：无/无效会话，前端跳登录页
+//   - 200 + {authenticated:false, stale:false}：从未登录 / 无 Cookie，前端跳登录页
+//   - 200 + {authenticated:false, stale:true}：**带了 Cookie 但已失效**（口令变更等），
+//     前端必须清除本地会话态、提示"凭据已变更，请重新登录"，并让浏览器丢弃该 Cookie
 //
 // 刻意不用 401：这是"查询状态"而非"受保护资源"，用 200 承载布尔值，
-// 免得前端把正常未登录误报成错误 toast。
+// 免得前端把正常未登录误报成错误 toast。stale 的契约见 token-spec §2.5.1。
 func SessionStatus(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"authenticated": middleware.HasAdminSession(c)})
+	state := middleware.AdminSessionCookieState(c)
+	c.JSON(http.StatusOK, gin.H{
+		"authenticated": state.Valid,
+		"stale":         state.Stale(),
+	})
 }
 
 type passwordChangeRequest struct {
