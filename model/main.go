@@ -328,7 +328,7 @@ func migrateDB() error {
 
 	// W7（design-v1 §10.2.1）：计费/多用户相关表随多用户面物理删除，AutoMigrate
 	// 只保留 PBR 自有表与仍被保留管理面使用的基座表（User 仅作系统用户锚点）。
-	return DB.AutoMigrate(
+	if err := DB.AutoMigrate(
 		&Channel{},
 		&Lane{},
 		&LaneMember{},
@@ -352,7 +352,15 @@ func migrateDB() error {
 		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
-	)
+	); err != nil {
+		return err
+	}
+
+	// W9：channel_model 聚合桶一次性回填（派生数据，失败不阻塞启动）。
+	if err := BackfillPBRChannelModelStats(); err != nil {
+		common.SysError("failed to backfill channel_model stats: " + err.Error())
+	}
+	return nil
 }
 
 func migrateLOGDB() error {

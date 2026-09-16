@@ -53,6 +53,7 @@ func TestMain(m *testing.M) {
 		&PBRAuditLog{},
 		&PBRRequestLog{},
 		&PBRStatsHourly{},
+		&Option{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
 	}

@@ -39,7 +39,7 @@
 - 客户端密钥：`GET|POST /api/keys`、`GET|PUT|DELETE /api/keys/{name}`、
   `POST /api/keys/{name}/rotate`
 - 观测：`GET /api/logs`、`GET /api/logs/{id}`、`POST /api/logs/prune`、
-  `GET /api/stats`、`GET /api/route-events`（SSE）
+  `GET /api/stats`（`group_by=lane|channel|key|model|channel_model`）、`GET /api/route-events`（SSE）
 - 系统：`GET|PUT /api/system/options`
 - 配置生命周期：`GET /api/export`、`POST /api/import?dry_run=true`
 - HTTPS：`GET /api/tls`、`PUT /api/tls/certificate`、`POST /api/tls/self-signed`
