@@ -27,7 +27,6 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
 	{
 		apiRouter.GET("/status", controller.GetStatus)
-		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		// 控制台内部接口统一收进 /api/console/*，把 /api/* 让给 PBR 管理面（api-spec §2）。
 		apiRouter.GET("/console/models", middleware.PBRAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.PBRAuth(), controller.TestStatus)

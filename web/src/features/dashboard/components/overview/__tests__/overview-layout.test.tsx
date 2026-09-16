@@ -73,7 +73,6 @@ beforeEach(() => {
           data: {
             data: {
               api_info_enabled: false,
-              uptime_kuma_enabled: false,
             },
           },
         }

@@ -74,8 +74,7 @@ func GetStatus(c *gin.Context) {
 		"price":             operation_setting.Price,
 
 		// 面板启用开关
-		"api_info_enabled":    cs.ApiInfoEnabled,
-		"uptime_kuma_enabled": cs.UptimeKumaEnabled,
+		"api_info_enabled": cs.ApiInfoEnabled,
 
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
