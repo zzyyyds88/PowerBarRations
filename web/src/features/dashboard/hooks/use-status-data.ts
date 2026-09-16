@@ -50,6 +50,5 @@ export function useDashboardContentVisibility() {
 
   return {
     apiInfo: hasStatus && status?.api_info_enabled !== false,
-    uptimeKuma: hasStatus && status?.uptime_kuma_enabled !== false,
   }
 }

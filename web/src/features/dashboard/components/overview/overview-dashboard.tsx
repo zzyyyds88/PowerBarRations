@@ -56,7 +56,6 @@ import {
 import { ApiInfoPanel } from './api-info-panel'
 import { PerformanceHealthPanel } from './performance-health-panel'
 import { SummaryCards } from './summary-cards'
-import { UptimePanel } from './uptime-panel'
 
 interface RequestExample {
   endpoint: string
@@ -263,10 +262,7 @@ export function OverviewDashboard() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const { items: apiInfoItems } = useApiInfo()
-  const {
-    apiInfo: showApiInfoPanel,
-    uptimeKuma: showUptimePanel,
-  } = useDashboardContentVisibility()
+  const { apiInfo: showApiInfoPanel } = useDashboardContentVisibility()
 
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
 
@@ -347,8 +343,7 @@ export function OverviewDashboard() {
           <CardStaggerContainer
             className={cn(
               'grid grid-cols-1 gap-4',
-              (showLeftContentPanels || showUptimePanel) &&
-                'xl:grid-cols-[minmax(0,1fr)_22rem]'
+              showLeftContentPanels && 'xl:grid-cols-[minmax(0,1fr)_22rem]'
             )}
           >
             {showLeftContentPanels && (
@@ -376,11 +371,6 @@ export function OverviewDashboard() {
               <CardStaggerItem>
                 <RequestPreview example={requestExample} signals={heroSignals} />
               </CardStaggerItem>
-              {showUptimePanel && (
-                <CardStaggerItem>
-                  <UptimePanel />
-                </CardStaggerItem>
-              )}
             </div>
           </CardStaggerContainer>
         </div>

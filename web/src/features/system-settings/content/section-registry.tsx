@@ -21,7 +21,6 @@ import { createSectionRegistry } from '../utils/section-registry'
 import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
 import { DashboardSection } from './dashboard-section'
-import { UptimeKumaSection } from './uptime-kuma-section'
 
 /**
  * Validate and coerce DataExportDefaultTime to a safe value
@@ -57,16 +56,6 @@ const CONTENT_SECTIONS = [
       <ApiInfoSection
         enabled={settings['console_setting.api_info_enabled']}
         data={settings['console_setting.api_info']}
-      />
-    ),
-  },
-  {
-    id: 'uptime-kuma',
-    titleKey: 'Uptime Kuma',
-    build: (settings: ContentSettings) => (
-      <UptimeKumaSection
-        enabled={settings['console_setting.uptime_kuma_enabled']}
-        data={settings['console_setting.uptime_kuma_groups']}
       />
     ),
   },

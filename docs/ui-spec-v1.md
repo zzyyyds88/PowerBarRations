@@ -104,7 +104,7 @@
 
 | 分节 | 内容 |
 |---|---|
-| `/dashboard/overview` | 用量速览（上游花费 / 请求数 / 成功率 / Token，24h）+「首个 API 请求」预览卡（curl 示例 + 服务信号）+ 健康面板/API 信息/服务状态。**没有起步向导、推荐操作卡、公告、FAQ、顶部通知铃铛**（个人自用；侧边栏已可直达各页，重复入口一律移除；后端 `/api/notice` 与 `console_setting.announcements/faq` 一并移除） |
+| `/dashboard/overview` | 用量速览（上游花费 / 请求数 / 成功率 / Token，24h）+「首个 API 请求」预览卡（curl 示例 + 服务信号）+ 健康面板/API 信息。**没有起步向导、推荐操作卡、公告、FAQ、顶部通知铃铛、Uptime Kuma 面板**（个人自用；侧边栏已可直达各页，重复入口一律移除；后端 `/api/notice`、`/api/uptime/status` 与 `console_setting.announcements/faq/uptime_kuma` 一并移除） |
 | `/dashboard/models` | 模型分析：按模型的请求/token/花费汇总、花费趋势与分布 |
 | `/dashboard/cost` | 成本统计：按渠道/模型/车道/密钥的上游花费 |
 
