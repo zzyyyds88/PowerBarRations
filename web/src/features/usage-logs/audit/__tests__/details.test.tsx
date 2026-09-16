@@ -476,7 +476,12 @@ it.each([
     { method: 'password' },
     'Logged in successfully via Password',
   ],
-  ['security', 'user.2fa_enable', {}, 'Enabled two-factor authentication'],
+  [
+    'settings',
+    'option.update',
+    { key: 'RetryTimes' },
+    'Updated system setting RetryTimes',
+  ],
   ['access_token', 'access_token.request', {}, 'Access Token'],
 ])(
   'shows summary and result for %s records',

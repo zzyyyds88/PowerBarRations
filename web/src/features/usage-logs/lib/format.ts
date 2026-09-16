@@ -455,50 +455,14 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'token.key_view_batch': 'API token batch key access',
   'access_token.generate': 'Generated a system access token',
   'access_token.revoke': 'Revoked the system access token',
-  'user.2fa_setup': 'Started two-factor authentication setup',
-  'user.2fa_enable': 'Enabled two-factor authentication',
-  'user.2fa_disable_self': 'Disabled two-factor authentication',
-  'user.2fa_backup_codes': 'Regenerated two-factor backup codes',
-  'user.security_verify': 'Completed security verification',
-  'user.password_change': 'Account password change',
-  'user.binding_start': 'Account binding request',
-  'user.binding_bind': 'Account binding',
-  'user.binding_unbind': 'Account unlinking',
-  'user.email_binding_resend': 'Email confirmation code resend',
-
   login: 'Logged in successfully via {{method}}',
-  // User management
-  'user.create': 'Created user {{username}} (role {{role}})',
-  'user.update': 'Updated user {{username}} (ID: {{id}})',
-  'user.delete': 'Deleted user {{username}} (ID: {{id}})',
-  'user.account_delete': 'Account deletion',
-  'user.manage': 'Performed {{action}} on user {{username}} (ID: {{id}})',
+  // 多用户额度调整历史日志的展示（后端已无此动作，仅用于可读旧日志）
   'user.quota_add': 'Increased user quota by {{quota}}',
   'user.quota_subtract': 'Decreased user quota by {{quota}}',
   'user.quota_override': 'Overrode user quota from {{from}} to {{to}}',
-  'user.binding_clear': 'Cleared {{bindingType}} binding for user {{username}}',
-  'user.2fa_disable': 'Force-disabled two-factor authentication for the user',
-  'user.passkey_register': 'Registered a passkey',
-  'user.passkey_delete': 'Deleted a passkey',
-  'user.topup_complete': 'Completed top-up order for the user',
-  'user.reset_passkey': 'Reset the user passkey',
-  'user.oauth_unbind': 'Removed an OAuth binding for the user',
   // System settings
   'option.update': 'Updated system setting {{key}}',
-  'option.passkey_domains':
-    'Updated Passkey domains: removed {{domains}}; affected {{known}}; unknown {{unknown}}',
-  'option.passkey_domains_confirmed':
-    'Confirmed removal of Passkey domains: {{domains}}; affected {{known}}; unknown {{unknown}}',
-  'option.passkey_domains_blocked':
-    'Passkey domain change blocked: {{domains}}; affected {{known}}; unknown {{unknown}}',
-  'option.passkey_domains_failed': 'Passkey domain update failed',
-  'option.payment_compliance': 'Confirmed payment compliance',
-  'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
-  // Custom OAuth
-  'custom_oauth.create': 'Created a custom OAuth provider',
-  'custom_oauth.update': 'Updated a custom OAuth provider',
-  'custom_oauth.delete': 'Deleted a custom OAuth provider',
   // Performance / cache
   'performance.clear_disk_cache': 'Cleared disk cache',
   'performance.gc': 'Triggered garbage collection',
