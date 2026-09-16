@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -32,6 +33,9 @@ type systemOptions struct {
 	AutomaticDisableChannel  bool                         `json:"automatic_disable_channel_enabled"`
 	AutomaticDisableKeywords []string                     `json:"automatic_disable_keywords"`
 	ModelPrices              []pricing_setting.ModelPrice `json:"model_prices"`
+	// LaneDefaults 默认六键：新建/一键固化车道写入的初值，也是车道未显式配置时的回落值。
+	// 指针用于区分"配置文件里没有这个字段"（保持原值）与"显式给了值"。
+	LaneDefaults *model.LaneRelayConfig `json:"lane_defaults,omitempty"`
 }
 
 type systemOptionsPatch struct {
@@ -44,6 +48,44 @@ type systemOptionsPatch struct {
 	AutomaticDisableChannel  *bool                         `json:"automatic_disable_channel_enabled"`
 	AutomaticDisableKeywords *[]string                     `json:"automatic_disable_keywords"`
 	ModelPrices              *[]pricing_setting.ModelPrice `json:"model_prices"`
+	LaneDefaults             *model.LaneRelayConfig        `json:"lane_defaults"`
+}
+
+// validateLaneDefaults 校验默认六键：四个"必须为正"的时长/预算、两个允许为 0 的间隔。
+func validateLaneDefaults(cfg *model.LaneRelayConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	switch {
+	case cfg.MemberMaxAttempts <= 0:
+		return errors.New("lane_defaults.member_max_attempts must be > 0")
+	case cfg.MemberRetryIntervalSeconds < 0:
+		return errors.New("lane_defaults.member_retry_interval_seconds must be >= 0")
+	case cfg.MemberNonStreamResponseTimeoutSeconds <= 0:
+		return errors.New("lane_defaults.member_non_stream_response_timeout_seconds must be > 0")
+	case cfg.MemberStreamFirstEventTimeoutSeconds <= 0:
+		return errors.New("lane_defaults.member_stream_first_event_timeout_seconds must be > 0")
+	case cfg.MemberCooldownSeconds <= 0:
+		return errors.New("lane_defaults.member_cooldown_seconds must be > 0")
+	case cfg.MemberAffinitySeconds < 0:
+		return errors.New("lane_defaults.member_affinity_seconds must be >= 0")
+	}
+	return nil
+}
+
+// encodeLaneDefaults 序列化默认六键（写入 option 表）。
+func encodeLaneDefaults(cfg *model.LaneRelayConfig) (string, error) {
+	if cfg == nil {
+		return "", errors.New("lane_defaults is required")
+	}
+	if err := validateLaneDefaults(cfg); err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(cfg.Normalize())
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }
 
 // currentSystemOptions 汇总当前生效的选项（导出与回读共用）。
@@ -64,6 +106,7 @@ func currentSystemOptions() systemOptions {
 			keywords = append(keywords, keyword)
 		}
 	}
+	laneDefaults := model.DefaultLaneRelayConfig()
 	return systemOptions{
 		CircuitFailureThreshold:  settings.FailureThreshold,
 		CircuitOpenSeconds:       settings.OpenSeconds,
@@ -74,6 +117,7 @@ func currentSystemOptions() systemOptions {
 		AutomaticDisableChannel:  common.AutomaticDisableChannelEnabled,
 		AutomaticDisableKeywords: keywords,
 		ModelPrices:              pricing_setting.List(),
+		LaneDefaults:             &laneDefaults,
 	}
 }
 
@@ -106,6 +150,13 @@ func applySystemOptions(options systemOptions) error {
 	}
 	if options.ProbeConcurrency > 0 {
 		updates[route.OptionProbeConcurrency] = strconv.Itoa(options.ProbeConcurrency)
+	}
+	if options.LaneDefaults != nil {
+		encoded, err := encodeLaneDefaults(options.LaneDefaults)
+		if err != nil {
+			return err
+		}
+		updates[model.OptionLaneDefaults] = encoded
 	}
 	keywords := make([]string, 0, len(options.AutomaticDisableKeywords))
 	for _, keyword := range options.AutomaticDisableKeywords {
@@ -209,6 +260,14 @@ func PutSystemOptions(c *gin.Context) {
 			return
 		}
 		updates[pricing_setting.OptionKeyModelPrices] = string(encoded)
+	}
+	if patch.LaneDefaults != nil {
+		encoded, err := encodeLaneDefaults(patch.LaneDefaults)
+		if err != nil {
+			apierr.Validation(c, err.Error())
+			return
+		}
+		updates[model.OptionLaneDefaults] = encoded
 	}
 	if len(updates) == 0 {
 		apierr.Validation(c, "no updatable field provided")

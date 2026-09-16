@@ -1,11 +1,14 @@
 package middleware
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 
 	"pbr/common"
 	"pbr/internal/route"
+	"pbr/model"
 	"pbr/service"
 	"pbr/setting/operation_setting"
 )
@@ -58,4 +61,76 @@ func init() {
 		}
 		return settings
 	})
+
+	model.SetLaneDefaultsProvider(configuredLaneDefaults)
+}
+
+// laneDefaultsCache 缓存解析结果：DefaultLaneRelayConfig 在每次请求的
+// Normalize/EffectiveConfig 里都会被调用，不能每次都做 JSON 解析。
+var laneDefaultsCache struct {
+	mu  sync.Mutex
+	raw string
+	cfg model.LaneRelayConfig
+}
+
+// configuredLaneDefaults 读取 system/options 的默认六键（option 键 PBRLaneDefaults）。
+//
+// 逐字段判"是否存在"而不是"是否为零"：retry_interval 与 affinity 合法取 0，
+// 用零值判断会把"没配这个字段"误当成"显式配 0"。非法/缺省一律回落内置默认。
+func configuredLaneDefaults() model.LaneRelayConfig {
+	common.OptionMapRWMutex.RLock()
+	raw := strings.TrimSpace(common.OptionMap[model.OptionLaneDefaults])
+	common.OptionMapRWMutex.RUnlock()
+
+	laneDefaultsCache.mu.Lock()
+	defer laneDefaultsCache.mu.Unlock()
+	if raw == laneDefaultsCache.raw && raw != "" {
+		return laneDefaultsCache.cfg
+	}
+
+	cfg := model.BuiltinLaneRelayConfig()
+	if raw != "" {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &fields); err == nil {
+			readInt := func(key string, apply func(int)) {
+				value, ok := fields[key]
+				if !ok {
+					return
+				}
+				var parsed int
+				if err := json.Unmarshal(value, &parsed); err == nil && parsed >= 0 {
+					apply(parsed)
+				}
+			}
+			readInt("member_max_attempts", func(v int) {
+				if v > 0 {
+					cfg.MemberMaxAttempts = v
+				}
+			})
+			readInt("member_retry_interval_seconds", func(v int) {
+				cfg.MemberRetryIntervalSeconds = v
+			})
+			readInt("member_non_stream_response_timeout_seconds", func(v int) {
+				if v > 0 {
+					cfg.MemberNonStreamResponseTimeoutSeconds = v
+				}
+			})
+			readInt("member_stream_first_event_timeout_seconds", func(v int) {
+				if v > 0 {
+					cfg.MemberStreamFirstEventTimeoutSeconds = v
+				}
+			})
+			readInt("member_cooldown_seconds", func(v int) {
+				if v > 0 {
+					cfg.MemberCooldownSeconds = v
+				}
+			})
+			readInt("member_affinity_seconds", func(v int) {
+				cfg.MemberAffinitySeconds = v
+			})
+		}
+	}
+	laneDefaultsCache.raw = raw
+	laneDefaultsCache.cfg = cfg
+	return cfg
 }

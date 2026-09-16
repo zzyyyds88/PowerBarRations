@@ -28,16 +28,51 @@ import type {
 
 /**
  * Send chat completion request (non-streaming)
+ *
+ * 用 `fetch` 而不是管理面的 axios 实例：模型面凭据是客户端密钥，
+ * 而 axios 实例的请求拦截器会强制带上管理面 access token 与会话 Cookie。
  */
 export async function sendChatCompletion(
   payload: ChatCompletionRequest,
+  clientKey: string,
   signal?: AbortSignal
 ): Promise<ChatCompletionResponse> {
-  const res = await api.post(API_ENDPOINTS.CHAT_COMPLETIONS, payload, {
+  const response = await fetch(API_ENDPOINTS.CHAT_COMPLETIONS, {
+    method: 'POST',
+    credentials: 'omit',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${clientKey}`,
+    },
+    body: JSON.stringify(payload),
     signal,
-    skipErrorHandler: true,
-  } as Record<string, unknown>)
-  return res.data
+  })
+  if (!response.ok) {
+    throw new Error(await buildModelFaceErrorMessage(response))
+  }
+  return (await response.json()) as ChatCompletionResponse
+}
+
+/** 把模型面的失败响应压成一句可展示的话（优先服务端 message，其次状态码）。 */
+async function buildModelFaceErrorMessage(
+  response: Response
+): Promise<string> {
+  try {
+    const body = (await response.json()) as {
+      error?: { message?: string; code?: string }
+    }
+    const message = body.error?.message?.trim()
+    if (message) {
+      return `${response.status}: ${message}`
+    }
+    const code = body.error?.code?.trim()
+    if (code) {
+      return `${response.status}: ${code}`
+    }
+  } catch {
+    // 响应不是 JSON（例如网关层错误页）：退回到状态码
+  }
+  return `HTTP ${response.status}`
 }
 
 /**

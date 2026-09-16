@@ -73,7 +73,18 @@ export function useChatHandler({
   onMessageUpdate,
 }: UseChatHandlerOptions) {
   const { t } = useTranslation()
-  const { sendStreamRequest, stopStream, isStreaming } = useStreamRequest()
+  const clientKey = config.clientKey.trim()
+  // 模型面凭据：客户端密钥（不是管理面会话）。getHeaders 每次发送时调用，
+  // 因此密钥变化会立即生效，无需重建 controller。
+  const getModelFaceHeaders = useCallback(
+    () => ({
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${clientKey}`,
+    }),
+    [clientKey]
+  )
+  const { sendStreamRequest, stopStream, isStreaming } =
+    useStreamRequest(getModelFaceHeaders)
   const [isRequesting, setIsRequesting] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const requestGenerationRef = useRef(0)
@@ -294,6 +305,7 @@ export function useChatHandler({
         setIsRequesting(true)
         const response = await sendChatCompletion(
           payload,
+          clientKey,
           abortController.signal
         )
         if (
@@ -338,6 +350,7 @@ export function useChatHandler({
     },
     [
       config,
+      clientKey,
       parameterEnabled,
       stopStream,
       discardPendingStreamUpdates,
@@ -349,13 +362,31 @@ export function useChatHandler({
   // Send chat request (stream or non-stream based on config)
   const sendChat = useCallback(
     (messages: Message[]) => {
+      // 模型面必须带客户端密钥：缺了就直接给出可操作提示，不发注定 401 的请求。
+      if (!clientKey) {
+        const generation = requestGenerationRef.current + 1
+        requestGenerationRef.current = generation
+        onMessageUpdate((prev) =>
+          updateAssistantMessageWithError(
+            prev,
+            ERROR_MESSAGES.MISSING_CLIENT_KEY
+          )
+        )
+        return
+      }
       if (config.stream) {
         sendStreamingChat(messages)
       } else {
         sendNonStreamingChat(messages)
       }
     },
-    [config.stream, sendStreamingChat, sendNonStreamingChat]
+    [
+      clientKey,
+      config.stream,
+      sendStreamingChat,
+      sendNonStreamingChat,
+      onMessageUpdate,
+    ]
   )
 
   // Stop generation

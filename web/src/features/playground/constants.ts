@@ -33,10 +33,12 @@ export const MESSAGE_STATUS = {
 } as const
 
 // API endpoints
+//
+// 试打台走**模型面**：`/v1/chat/completions` + 客户端密钥（Bearer）。
+// 基座的 `/pg/chat/completions`（登录用户试玩）已随多用户面删除，不得再使用。
 export const API_ENDPOINTS = {
-  CHAT_COMPLETIONS: '/pg/chat/completions',
-  USER_MODELS: '/api/user/models',
-  USER_GROUPS: '/api/user/self/groups',
+  CHAT_COMPLETIONS: '/v1/chat/completions',
+  MODELS: '/api/models',
 } as const
 
 // Default group — uses 'default' as the safe fallback; auto-group is
@@ -47,6 +49,7 @@ export const DEFAULT_GROUP = 'default' as const
 export const DEFAULT_CONFIG: PlaygroundConfig = {
   model: 'gpt-4o',
   group: DEFAULT_GROUP,
+  clientKey: '',
   temperature: 0.7,
   top_p: 1,
   max_tokens: 4096,
@@ -65,11 +68,11 @@ export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
   seed: false,
 }
 
-// Storage keys
+// Storage keys（ui-spec §2：localStorage 键名统一 pbr_ 前缀）
 export const STORAGE_KEYS = {
-  CONFIG: 'playground_config',
-  MESSAGES: 'playground_messages',
-  PARAMETER_ENABLED: 'playground_parameter_enabled',
+  CONFIG: 'pbr_playground_config',
+  MESSAGES: 'pbr_playground_messages',
+  PARAMETER_ENABLED: 'pbr_playground_parameter_enabled',
 } as const
 
 // Error messages
@@ -80,6 +83,7 @@ export const ERROR_MESSAGES = {
   STREAM_START_ERROR: 'Error establishing connection',
   CONNECTION_CLOSED: 'Connection closed',
   INTERRUPTED: 'Generation was interrupted',
+  MISSING_CLIENT_KEY: 'Fill in a client key before sending a message',
 } as const
 
 // Message action button styles

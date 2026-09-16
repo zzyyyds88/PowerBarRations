@@ -27,6 +27,7 @@ export const MAX_LOADED_MESSAGE_CHARS = 40_000
 export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
   group: z.string().optional(),
+  clientKey: z.string().optional(),
   temperature: z.number().optional(),
   top_p: z.number().optional(),
   max_tokens: z.number().optional(),

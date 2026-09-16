@@ -16,10 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { SSE } from 'sse.js'
-
-import { getFreshAuthHeaders } from '@/lib/api'
 
 import { API_ENDPOINTS, ERROR_MESSAGES } from '../constants'
 import {
@@ -72,7 +70,8 @@ export function createStreamRequestController(
 
   const send = async (
     payload: ChatCompletionRequest,
-    callbacks: StreamRequestCallbacks
+    callbacks: StreamRequestCallbacks,
+    headersOverride?: Record<string, string>
   ) => {
     const requestGeneration = generation + 1
     generation = requestGeneration
@@ -82,16 +81,20 @@ export function createStreamRequestController(
     runtime.setStreaming(false)
 
     let headers: Record<string, string>
-    try {
-      headers = await runtime.getHeaders()
-    } catch (error: unknown) {
-      if (generation !== requestGeneration) return
-      callbacks.onError(
-        error instanceof Error
-          ? error.message
-          : ERROR_MESSAGES.STREAM_START_ERROR
-      )
-      return
+    if (headersOverride) {
+      headers = headersOverride
+    } else {
+      try {
+        headers = await runtime.getHeaders()
+      } catch (error: unknown) {
+        if (generation !== requestGeneration) return
+        callbacks.onError(
+          error instanceof Error
+            ? error.message
+            : ERROR_MESSAGES.STREAM_START_ERROR
+        )
+        return
+      }
     }
     if (generation !== requestGeneration) return
 
@@ -182,15 +185,20 @@ export function createStreamRequestController(
 
 /**
  * Hook for handling streaming chat completion requests
+ *
+ * `getHeaders` 由调用方注入：模型面必须带**客户端密钥**（`Authorization: Bearer pbr-...`），
+ * 而管理面会话对模型面无效（token-spec §1）。每次发送都把当前 headers 传下去，
+ * 因此密钥变化无需重建 controller。
  */
-export function useStreamRequest() {
+export function useStreamRequest(
+  getHeaders: () => Record<string, string> = () => ({
+    'Content-Type': 'application/json',
+  })
+) {
   const [isStreaming, setIsStreaming] = useState(false)
-  const controllerRef = useRef<ReturnType<
-    typeof createStreamRequestController
-  > | null>(null)
-  if (!controllerRef.current) {
-    controllerRef.current = createStreamRequestController({
-      getHeaders: getFreshAuthHeaders,
+  const [controller] = useState(() =>
+    createStreamRequestController({
+      getHeaders: async () => getHeaders(),
       createSource: (payload, headers) =>
         new SSE(API_ENDPOINTS.CHAT_COMPLETIONS, {
           headers,
@@ -199,7 +207,7 @@ export function useStreamRequest() {
         }) as StreamEventSource,
       setStreaming: setIsStreaming,
     })
-  }
+  )
 
   const sendStreamRequest = useCallback(
     (
@@ -208,24 +216,24 @@ export function useStreamRequest() {
       onComplete: () => void,
       onError: (error: string, errorCode?: string) => void
     ) =>
-      controllerRef.current?.send(payload, {
-        onUpdate,
-        onComplete,
-        onError,
-      }),
-    []
+      controller.send(
+        payload,
+        {
+          onUpdate,
+          onComplete,
+          onError,
+        },
+        // 每次发送都取当前密钥：密钥改了不必重建 controller。
+        getHeaders()
+      ),
+    [controller, getHeaders]
   )
 
   const stopStream = useCallback(() => {
-    controllerRef.current?.stop()
-  }, [])
+    controller.stop()
+  }, [controller])
 
-  useEffect(
-    () => () => {
-      controllerRef.current?.dispose()
-    },
-    []
-  )
+  useEffect(() => () => controller.dispose(), [controller])
 
   return {
     sendStreamRequest,
