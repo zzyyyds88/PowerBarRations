@@ -32,6 +32,9 @@ func rfc3339(sec int64) string {
 }
 
 // pageParams 解析分页参数。
+//
+// 非法 cursor 一律 400（api-spec §2.4）：静默当空串会让调用方永远停在第一页，
+// 表现为"翻页没反应"而不是"游标传错了"。
 func pageParams(c *gin.Context) (limit int, cursor string, err error) {
 	limit = defaultLimit
 	if raw := c.Query("limit"); raw != "" {
@@ -41,7 +44,11 @@ func pageParams(c *gin.Context) (limit int, cursor string, err error) {
 		}
 		limit = min(parsed, maxLimit)
 	}
-	return limit, decodeCursor(c.Query("cursor")), nil
+	cursor, decodeErr := decodeCursor(c.Query("cursor"))
+	if decodeErr != nil {
+		return 0, "", &apiError{code: apierr.CodeValidationFailed, message: "cursor is not a valid cursor"}
+	}
+	return limit, cursor, nil
 }
 
 // apiError 内部错误载体：携带对外 HTTP 状态与稳定 code。
@@ -77,15 +84,17 @@ func encodeCursor(name string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(name))
 }
 
-func decodeCursor(cursor string) string {
+// decodeCursor 解析不透明游标：空串合法（等于"从头开始"），
+// 非法编码返回错误（由调用方转成 400，不静默回退第一页）。
+func decodeCursor(cursor string) (string, error) {
 	if cursor == "" {
-		return ""
+		return "", nil
 	}
 	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return string(decoded)
+	return string(decoded), nil
 }
 
 // dryRun 是否只做校验与 diff、不落库。

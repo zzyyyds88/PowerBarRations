@@ -14,13 +14,23 @@ import (
 // 源码审计修复的回归用例（管理面）。
 
 // 游标必须能被自己读回来：写入端与读取端编码不一致会让翻页永远停在第一页。
+// 非法游标必须报错（静默回退第一页会让调用方陷入翻页死循环，api-spec §2.4）。
 func TestCursorRoundTrip(t *testing.T) {
 	for _, raw := range []string{"3001", "1", "42", "999999999"} {
 		encoded := encodeCursor(raw)
 		require.NotEmpty(t, encoded)
-		assert.Equal(t, raw, decodeCursor(encoded), "裸 id 与 base64 混用会让分页失效")
+		decoded, err := decodeCursor(encoded)
+		require.NoError(t, err)
+		assert.Equal(t, raw, decoded, "裸 id 与 base64 混用会让分页失效")
 	}
-	assert.Empty(t, decodeCursor(""))
+
+	decoded, err := decodeCursor("")
+	require.NoError(t, err)
+	assert.Empty(t, decoded)
+
+	if _, err := decodeCursor("!!!not-base64!!!"); err == nil {
+		t.Fatal("非法游标必须报错，不得静默当成空串")
+	}
 }
 
 // 渠道 key_prefix 必须是"展示前缀"，短密钥不得整串回显。

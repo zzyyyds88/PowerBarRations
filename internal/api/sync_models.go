@@ -106,9 +106,10 @@ func SyncChannelModels(c *gin.Context) {
 	force := isForce(c)
 
 	// 审查 B5：上游鉴权异常但返回 200 + 空清单时，整表覆盖会把渠道 models 清空，
-	// 正在被隐式路由/显式车道使用的成员会被静默摘掉。空清单默认拒绝，需 ?force=1。
+	// 那些"靠渠道声明做候选来源"的模型会失去来源。空清单默认拒绝，需 ?force=1。
 	emptyWipe := len(remote) == 0 && len(local) > 0
-	// 审查 B5：被移除的模型若仍被显式车道成员点名，摘掉会让该成员立即断流。
+	// 被本次移除命中的同名车道（且该车道有本渠道成员）要先处理，否则该车道对
+	// 这个路由键就失去成员来源。见 findRemovedModelReferences 的判据说明。
 	referenced := findRemovedModelReferences(channel.Id, removed)
 
 	// dry_run 是预览：始终返回差异与"是否会被拦截"，不写库、不报错，让调用方先看清楚。
@@ -143,7 +144,7 @@ func SyncChannelModels(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
-	// models 变了要重建渠道缓存与 abilities，隐式链才会立刻反映新清单。
+	// models 变了要重建渠道缓存与 abilities（后者供基座遗留链路使用）。
 	if err := channel.UpdateAbilities(nil); err != nil {
 		writeAPIError(c, err)
 		return
@@ -170,8 +171,16 @@ func isForce(c *gin.Context) bool {
 	}
 }
 
-// findRemovedModelReferences 找出仍引用这些将被移除模型的显式车道成员。
-// 返回形如 "lane lane-a -> channel/upstream_model" 的清单，供 409 提示。
+// findRemovedModelReferences 找出**会因本次移除而失去成员来源的车道**。
+//
+// 判据是**车道名 ∈ 被移除的路由键**且该车道里有本渠道的成员：车道名就是路由键，
+// 渠道不再声明该路由键（也不再有映射）后，这条成员链对该模型名就失去意义，
+// 抽取同步前应先让运维处理这条车道。
+//
+// 回归背景（审查 F11）：此前拿被移除的**路由键**去比成员的 `upstream_model`
+// （那是上游真名），既漏报（成员留空用渠道映射时完全不触发）又误报
+// （上游真名恰好等于某个被删路由键时阻断合法同步）。
+// 返回形如 "lane lane-a has a member on this channel" 的清单，供 409 提示。
 func findRemovedModelReferences(channelID int, removed []string) []string {
 	removedSet := map[string]bool{}
 	for _, m := range removed {
@@ -186,17 +195,28 @@ func findRemovedModelReferences(channelID int, removed []string) []string {
 	if err := model.DB.Where("channel_id = ?", channelID).Find(&members).Error; err != nil {
 		return nil
 	}
+	laneNames := map[int]string{}
 	refs := make([]string, 0, len(members))
+	seenLanes := map[int]bool{}
 	for _, member := range members {
-		if !removedSet[strings.TrimSpace(member.UpstreamModel)] {
+		if seenLanes[member.LaneId] {
 			continue
 		}
-		var lane model.Lane
-		laneName := strconv.Itoa(member.LaneId)
-		if err := model.DB.Select("name").Where("id = ?", member.LaneId).First(&lane).Error; err == nil {
-			laneName = lane.Name
+		name, ok := laneNames[member.LaneId]
+		if !ok {
+			var lane model.Lane
+			laneName := strconv.Itoa(member.LaneId)
+			if err := model.DB.Select("name").Where("id = ?", member.LaneId).First(&lane).Error; err == nil {
+				laneName = lane.Name
+			}
+			laneNames[member.LaneId] = laneName
+			name = laneName
 		}
-		refs = append(refs, "lane "+laneName+" uses upstream_model "+member.UpstreamModel)
+		seenLanes[member.LaneId] = true
+		if !removedSet[strings.TrimSpace(name)] {
+			continue
+		}
+		refs = append(refs, "lane "+name+" has a member on this channel")
 	}
 	sort.Strings(refs)
 	return refs

@@ -163,10 +163,20 @@ type passwordChangeRequest struct {
 }
 
 // ChangePassword POST /api/v1/auth/password（需鉴权）：变更口令，旧管理密钥立即失效。
+//
+// 例外：`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时**拒绝**改口令。环境变量优先于库内派生值
+// （token-spec §2.4），改口令既不改变实际生效的密钥、也不废掉旧会话；若返回 updated:true，
+// 运维会误以为旧密钥已失效（token-spec §2.3 承诺"旧密钥立即失效"）。
 func ChangePassword(c *gin.Context) {
 	var req passwordChangeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apierr.BadRequest(c, "invalid json body")
+		return
+	}
+	if len(middleware.PBRAdminKeysFromEnv()) > 0 {
+		apierr.Conflict(c, apierr.CodeConflict,
+			"password change is disabled while PBR_ADMIN_KEY/PBR_ADMIN_KEYS is set",
+			"unset the environment variable (or rotate the key there) to manage the credential by password")
 		return
 	}
 	if !middleware.VerifyPBRAdminKey(model.DeriveAdminKey(req.Current)) {
