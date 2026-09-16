@@ -2,10 +2,9 @@ package middleware
 
 import (
 	"fmt"
-	"strings"
 
-	"pbr/common"
 	"github.com/gin-gonic/gin"
+	"pbr/common"
 )
 
 const RouteTagKey = "route_tag"
@@ -29,11 +28,6 @@ func SetUpLogger(server *gin.Engine) {
 			tag = "web"
 		}
 		path := param.Path
-		// OAuth callbacks carry one-time codes and state in the query string.
-		// Redact the log value only; the handler still needs the original query.
-		if strings.HasPrefix(path, "/api/oauth/") || strings.HasPrefix(path, "/oauth/") {
-			path, _, _ = strings.Cut(path, "?")
-		}
 		return fmt.Sprintf("[GIN] %s | %s | %s | %3d | %13v | %15s | %7s %s\n",
 			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
 			tag,

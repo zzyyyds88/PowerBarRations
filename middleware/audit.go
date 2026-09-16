@@ -40,20 +40,10 @@ func (w *auditResponseWriter) WriteString(s string) (int, error) {
 // 这些是未被 handler 手动埋点的写操作，由中间件兜底记录；前端依据 action 用 i18n 本地化展示。
 // 未命中的写操作回退为 action="generic"，前端展示 "METHOD route"。
 var auditRouteActions = map[string]string{
-	// 用户管理
-	"POST /api/user/topup/complete":                    "user.topup_complete",
-	"DELETE /api/user/:id/reset_passkey":               "user.reset_passkey",
-	"DELETE /api/user/:id/oauth/bindings/:provider_id": "user.oauth_unbind",
-
 	// 系统设置（root）
 	"POST /api/option/payment_compliance":       "option.payment_compliance",
 	"POST /api/option/rest_model_ratio":         "option.reset_ratio",
 	"DELETE /api/option/channel_affinity_cache": "option.clear_affinity_cache",
-
-	// 自定义 OAuth（root）
-	"POST /api/custom-oauth-provider/":      "custom_oauth.create",
-	"PUT /api/custom-oauth-provider/:id":    "custom_oauth.update",
-	"DELETE /api/custom-oauth-provider/:id": "custom_oauth.delete",
 
 	// 性能/缓存（root）
 	"DELETE /api/performance/disk_cache": "performance.clear_disk_cache",
