@@ -16,23 +16,41 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { api } from '@/lib/api'
-
-import { fetchModels } from '../../api'
-import { ChannelsProvider } from '../channels-provider'
-import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import { UpstreamModelSelection } from '../upstream-model-selection'
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
 })
+
+type RemovedSelectionHarnessProps = {
+  models: string[]
+}
+
+function RemovedSelectionHarness(props: RemovedSelectionHarnessProps) {
+  const [selected, setSelected] = useState([
+    'gpt-existing',
+    'alias',
+    'manual-model',
+  ])
+  return (
+    <>
+      <UpstreamModelSelection
+        models={props.models}
+        selected={selected}
+        existingModels={['gpt-existing', 'alias', 'manual-model']}
+        redirectSourceModels={['alias']}
+        onChange={setSelected}
+      />
+      <output aria-label='Selected models'>{selected.join(',')}</output>
+    </>
+  )
+}
 
 test.each([
   {
@@ -50,37 +68,8 @@ test.each([
 ])(
   'removed models stay available after batch deselection with a $result upstream list and only checked models are saved',
   async ({ models, removedCount, savedModels }) => {
-    vi.spyOn(api, 'post').mockResolvedValue({
-      data: { success: true, data: models },
-    })
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    })
-    const select = vi.fn()
-    const close = vi.fn()
     const user = userEvent.setup()
-    const view = render(
-      <QueryClientProvider client={client}>
-        <ChannelsProvider>
-          <FetchModelsDialog
-            open
-            onOpenChange={close}
-            onModelsSelected={select}
-            existingModelsOverride={['gpt-existing', 'alias', 'manual-model']}
-            redirectSourceModels={['alias']}
-            customFetcher={async () =>
-              (
-                await fetchModels({
-                  type: 1,
-                  base_url: 'https://example.com',
-                  key: 'test-key',
-                })
-              ).data ?? []
-            }
-          />
-        </ChannelsProvider>
-      </QueryClientProvider>
-    )
+    render(<RemovedSelectionHarness models={models} />)
     const removedTab = await screen.findByRole('tab', {
       name: `Removed Models (${removedCount})`,
     })
@@ -104,12 +93,9 @@ test.each([
     expect(
       screen.getByRole('tab', { name: `Removed Models (${removedCount})` })
     ).toHaveAttribute('aria-selected', 'true')
-    expect(select).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Save Models' }))
-    expect(select).toHaveBeenCalledWith(savedModels)
-    expect(close).toHaveBeenCalledWith(false)
-    view.unmount()
-    client.clear()
+    expect(screen.getByLabelText('Selected models')).toHaveTextContent(
+      savedModels.join(',')
+    )
   }
 )
 

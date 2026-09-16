@@ -16,10 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import type { ChannelModelPrice } from '../types'
@@ -27,10 +25,16 @@ import type { ChannelModelPrice } from '../types'
 // 渠道级上游单价编辑器（人民币/百万 token）。
 //
 // 用于成本折算：同一模型在不同上游的采购价不同，故渠道价优先于全局默认单价表。
+// 表格跟随渠道模型清单：每个模型一行、模型名只读，保存时仅落库至少填了一项的模型。
 // 这里只负责编辑，写入 setting JSON 由 channel-form.buildSettingJSON 完成。
+
+const PRICE_FIELDS = ['input', 'output', 'cache_read', 'cache_write'] as const
+
+type PriceField = (typeof PRICE_FIELDS)[number]
 
 type ChannelPricesEditorProps = {
   value: ChannelModelPrice[]
+  models: string[]
   onChange: (next: ChannelModelPrice[]) => void
   disabled?: boolean
 }
@@ -42,90 +46,77 @@ function toNumber(value: string): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
 }
 
+function createPrice(
+  model: string,
+  key: PriceField,
+  value: number | undefined
+): ChannelModelPrice {
+  const price: ChannelModelPrice = { model }
+  price[key] = value
+  return price
+}
+
 export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
   const { t } = useTranslation()
 
-  const update = (index: number, key: keyof ChannelModelPrice, raw: string) => {
-    const next = props.value.map((item, i) => {
-      if (i !== index) return item
-      if (key === 'model') return { ...item, model: raw }
-      return { ...item, [key]: toNumber(raw) }
-    })
-    props.onChange(next)
+  const update = (model: string, key: PriceField, raw: string) => {
+    const value = toNumber(raw)
+    if (props.value.some((item) => item.model === model)) {
+      props.onChange(
+        props.value.map(
+          (item): ChannelModelPrice =>
+            item.model === model ? { ...item, [key]: value } : item
+        )
+      )
+      return
+    }
+    props.onChange([...props.value, createPrice(model, key, value)])
+  }
+
+  if (props.models.length === 0) {
+    return (
+      <p className='text-muted-foreground text-sm'>
+        {t('Add models first, then set their upstream prices.')}
+      </p>
+    )
   }
 
   return (
-    <div className='space-y-3'>
-      <div className='overflow-x-auto'>
-        <table className='w-full min-w-[560px] text-sm'>
-          <thead>
-            <tr className='text-muted-foreground border-b text-left'>
-              <th className='py-2 pr-2 font-medium'>{t('Model')}</th>
-              <th className='py-2 pr-2 font-medium'>{t('Input')}</th>
-              <th className='py-2 pr-2 font-medium'>{t('Output')}</th>
-              <th className='py-2 pr-2 font-medium'>{t('Cache read')}</th>
-              <th className='py-2 pr-2 font-medium'>{t('Cache write')}</th>
-              <th className='w-10' />
-            </tr>
-          </thead>
-          <tbody>
-            {props.value.map((item, index) => (
-              // eslint-disable-next-line react/no-array-index-key -- rows have no id and cannot be reordered
-              <tr key={index} className='border-b last:border-0'>
-                <td className='py-1.5 pr-2'>
-                  <Input
-                    aria-label={t('Model')}
-                    value={item.model}
-                    disabled={props.disabled}
-                    onChange={(event) =>
-                      update(index, 'model', event.target.value)
-                    }
-                  />
-                </td>
-                {(
-                  ['input', 'output', 'cache_read', 'cache_write'] as const
-                ).map((field) => (
+    <div className='overflow-x-auto'>
+      <table className='w-full min-w-[560px] text-sm'>
+        <thead>
+          <tr className='text-muted-foreground border-b text-left'>
+            <th className='py-2 pr-2 font-medium'>{t('Model')}</th>
+            <th className='py-2 pr-2 font-medium'>{t('Input')}</th>
+            <th className='py-2 pr-2 font-medium'>{t('Output')}</th>
+            <th className='py-2 pr-2 font-medium'>{t('Cache read')}</th>
+            <th className='py-2 pr-2 font-medium'>{t('Cache write')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {props.models.map((model) => {
+            const price = props.value.find((item) => item.model === model)
+            return (
+              <tr key={model} className='border-b last:border-0'>
+                <td className='py-1.5 pr-2 break-all'>{model}</td>
+                {PRICE_FIELDS.map((field) => (
                   <td key={field} className='py-1.5 pr-2'>
                     <Input
-                      aria-label={t(field)}
+                      aria-label={`${model} ${field}`}
                       inputMode='decimal'
-                      value={item[field] ?? ''}
+                      value={price?.[field] ?? ''}
                       disabled={props.disabled}
                       onChange={(event) =>
-                        update(index, field, event.target.value)
+                        update(model, field, event.target.value)
                       }
                     />
                   </td>
                 ))}
-                <td className='py-1.5'>
-                  <Button
-                    type='button'
-                    variant='ghost'
-                    size='icon'
-                    aria-label={t('Remove')}
-                    disabled={props.disabled}
-                    onClick={() =>
-                      props.onChange(props.value.filter((_, i) => i !== index))
-                    }
-                  >
-                    <Trash2 className='size-4' />
-                  </Button>
-                </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Button
-        type='button'
-        variant='outline'
-        size='sm'
-        disabled={props.disabled}
-        onClick={() => props.onChange([...props.value, { model: '' }])}
-      >
-        <Plus className='size-4' />
-        {t('Add model')}
-      </Button>
+            )
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
