@@ -5540,7 +5540,7 @@
     "The name displayed across the application": "在整个应用程序中显示的名称",
     "The new token will only be shown once. Copy it and store it securely.": "新令牌仅显示一次。请复制并妥善保存。",
     "The OAuth account does not match the account linked to your profile.": "此 OAuth 账号与已绑定的账号不一致。",
-    "The public URL of your server, used for OAuth callbacks, webhooks, and other external integrations": "服务器的公开URL，用于OAuth回调、Webhook和其他外部集成",
+    "The public URL of your server, used for webhooks and other external integrations": "服务器的公开URL，用于Webhook和其他外部集成",
     "The requested chat preset does not exist or has been removed.": "请求的聊天预设不存在或已被删除。",
     "The reset request stays disabled until a credit is available.": "没有可用次数时，重置请求会保持禁用。",
     "The setup wizard will use this database during initialization.": "设置向导将在初始化过程中使用此数据库。",
