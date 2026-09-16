@@ -17,18 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import type {
-  ModelPricingConfig,
-  ModelPricingPluginVariant,
-} from '@/features/model-pricing/api'
+import type { ModelPricingPluginVariant } from '@/features/model-pricing/api'
 import { USD_PRICING_CURRENCY } from '@/features/model-pricing/currency'
-import { ModelPricingPanel } from '@/features/model-pricing/model-pricing-panel'
-import { pricingOptions } from '@/features/model-pricing/pricing'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePricingPreferencesStore } from '@/stores/pricing-preferences-store'
@@ -49,149 +44,6 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('keeps provider drafts across tabs and saves nested expressions with the model version', async () => {
-  useAuthStore
-    .getState()
-    .auth.setUser({ id: 1, username: 'administrator', role: 100 })
-  usePricingPreferencesStore.setState({ currency: 'USD' })
-  const expression = 'tier("base", u("seconds") * 0.4)'
-  const values = {
-    'billing_setting.billing_mode': 'tiered_expr',
-    'billing_setting.billing_expr': expression,
-  }
-  const snapshot: ModelPricingConfig = {
-    entries: [
-      {
-        model_name: 'shared',
-        version: 'version-with-providers',
-        configured: values,
-        effective: values,
-        usage_schema: {
-          seconds: {
-            type: 'number',
-            unit: 'second',
-            description: 'Video unit price',
-          },
-        },
-        plugin_variants: [
-          {
-            plugin_key: 'alpha',
-            plugin_name: 'Alpha',
-            usage_schema: {
-              seconds: {
-                type: 'number',
-                unit: 'second',
-                description: 'Video unit price',
-              },
-            },
-            configured: '',
-            effective: expression,
-            compatible: true,
-          },
-          {
-            plugin_key: 'beta',
-            plugin_name: 'Beta',
-            usage_schema: {
-              credits: {
-                type: 'number',
-                unit: 'credit',
-                description: 'Credit unit price',
-              },
-            },
-            configured: '',
-            effective: expression,
-            compatible: false,
-          },
-        ],
-      },
-    ],
-    options: pricingOptions({}),
-    empty_version: 'empty',
-  }
-  vi.spyOn(api, 'get').mockImplementation(async (url) => {
-    if (url === '/api/option/model_pricing') {
-      return { data: { success: true, data: snapshot } }
-    }
-    if (url === '/api/pricing') {
-      return { data: { success: true, data: [], vendors: [] } }
-    }
-    return { data: { success: true, data: {} } }
-  })
-  let finishSave: (() => void) | undefined
-  const save = vi.spyOn(api, 'patch').mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        finishSave = () => resolve({ data: { success: true } })
-      })
-  )
-  const dirty = vi.fn()
-  client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  })
-  render(
-    <QueryClientProvider client={client}>
-      <ModelPricingPanel modelName='shared' onDirtyChange={dirty} />
-    </QueryClientProvider>
-  )
-  const user = userEvent.setup()
-  const defaultTab = await screen.findByRole('tab', { name: 'Default' })
-  expect(defaultTab).toHaveAttribute('aria-selected', 'true')
-  expect(
-    await screen.findByText(
-      'The model-level expression cannot be evaluated by: Beta'
-    )
-  ).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Beta' }))
-  const betaPanel = screen.getByRole('tabpanel', { name: 'Beta' })
-  expect(
-    within(betaPanel).getByText('Not configured for this provider')
-  ).toBeVisible()
-  const separate = within(betaPanel).getByRole('switch', {
-    name: 'Set separately for this provider',
-  })
-  expect(separate).not.toBeChecked()
-  await user.click(separate)
-  expect(separate).toBeChecked()
-  await user.click(separate)
-  expect(separate).not.toBeChecked()
-  expect(
-    within(betaPanel).getByText('Use model-level expression')
-  ).toBeVisible()
-  expect(
-    within(betaPanel).queryByRole('textbox', { name: 'credits' })
-  ).not.toBeInTheDocument()
-  await user.click(separate)
-  const price = within(betaPanel).getByRole('textbox', { name: 'credits' })
-  await user.clear(price)
-  await user.type(price, '1.5')
-  expect(dirty).toHaveBeenLastCalledWith(true)
-  await user.click(defaultTab)
-  expect(
-    screen.queryByText(
-      'The model-level expression cannot be evaluated by: Beta'
-    )
-  ).not.toBeInTheDocument()
-  await user.click(screen.getByRole('tab', { name: 'Beta' }))
-  expect(price).toHaveValue('1.5')
-  const saveButton = screen.getByRole('button', { name: 'Save model prices' })
-  await user.click(saveButton)
-  await waitFor(() => expect(save).toHaveBeenCalledOnce())
-  expect(saveButton).toBeDisabled()
-  const changes = save.mock.calls[0][1] as {
-    changes: { expected_version: string; pricing: Record<string, unknown> }[]
-  }
-  expect(changes.changes[0].expected_version).toBe('version-with-providers')
-  expect(changes.changes[0].pricing['billing_setting.billing_expr']).toBe(
-    expression
-  )
-  expect(
-    changes.changes[0].pricing['billing_setting.plugin_billing_expr']
-  ).toEqual({ beta: 'tier("base", u("credits") * 1.5)' })
-  await act(async () => {
-    finishSave?.()
-  })
-  await waitFor(() => expect(saveButton).toBeEnabled())
-})
 
 it('keeps long provider names accessible while allowing the tabs to wrap', () => {
   const longName =

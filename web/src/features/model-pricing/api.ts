@@ -29,13 +29,13 @@ import type {
   BillingUsageSchema,
   BillingUsageExample,
 } from '@/features/pricing/types'
-import { api } from '@/lib/api'
 import { ROLE } from '@/lib/roles'
 import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
   PRICING_KEYS,
+  pricingOptions,
   pricingValuesByModel,
   type PricingOptions,
   type PricingValues,
@@ -90,14 +90,9 @@ export async function previewModelPricingConversion(request: {
   model_name: string
   pricing: PricingValues
 }): Promise<ModelPricingConversion> {
-  const response = await api.post('/api/option/model_pricing/convert', request)
-  if (!response.data.success) {
-    throw createServerError(
-      response.data,
-      t('Failed to prepare pricing conversion')
-    )
-  }
-  return response.data.data
+  // 基座 /api/option/model_pricing/convert 已随计费面删除；PBR 单价表只有
+  // 输入/输出/缓存读/缓存写四个直接单价，无需转换。
+  return { effective: request.pricing }
 }
 
 export async function previewModelPricing(request: {
@@ -108,15 +103,8 @@ export async function previewModelPricing(request: {
   cacheWriteMode?: CacheWriteMode
   billingDetails?: LegacyBillingDetails
 }> {
-  const response = await api.post('/api/option/model_pricing/preview', request)
-  if (!response.data.success) {
-    throw createServerError(response.data, t('Failed to load model pricing'))
-  }
-  return {
-    effective: response.data.data.effective,
-    cacheWriteMode: response.data.data.cache_write_mode,
-    billingDetails: response.data.data.billing_details,
-  }
+  // 同上：PBR 直接用配置值作为生效值，没有基座的比例/表达式折算。
+  return { effective: request.pricing }
 }
 
 export function useCanEditModelPricing() {
@@ -124,15 +112,16 @@ export function useCanEditModelPricing() {
 }
 
 export async function getModelPricing(
-  names: string[] = []
+  _names: string[] = []
 ): Promise<ModelPricingConfig> {
-  const params = new URLSearchParams()
-  for (const name of names) params.append('model', name)
-  const res = await api.get('/api/option/model_pricing', { params })
-  if (!res.data.success) {
-    throw createServerError(res.data, t('Failed to load model pricing'))
+  // 基座 /api/option/model_pricing 已随计费面删除。PBR 的单价表是
+  // options 表的 PBRModelPrices（人民币/百万 token 四字段），在
+  // 系统设置 → 模型 → 单价表 里维护；这里不再假装有倍率/表达式数据。
+  return {
+    entries: [],
+    options: pricingOptions({}),
+    empty_version: 'pbr',
   }
-  return res.data.data
 }
 
 export function useModelPricing(names: string[] = [], enabled = true) {
@@ -157,10 +146,16 @@ export async function invalidateModelPricing(client: QueryClient) {
 
 export async function saveModelPricing(changes: ModelPricingChange[]) {
   if (!changes.length) return
-  const res = await api.patch('/api/option/model_pricing', { changes })
-  if (!res.data.success) {
-    throw createServerError(res.data, t('Failed to save model pricing'))
-  }
+  // 基座 /api/option/model_pricing 已删除；PBR 单价表请走系统设置 → 模型 → 单价表。
+  throw createServerError(
+    {
+      success: false,
+      message: t(
+        'PBR 单价表请在「系统设置 → 模型 → 单价表」中维护。'
+      ),
+    },
+    t('Failed to save model pricing')
+  )
 }
 
 export function useSaveModelPricing() {

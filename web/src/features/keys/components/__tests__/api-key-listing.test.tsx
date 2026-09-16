@@ -43,7 +43,6 @@ import { I18nextProvider } from 'react-i18next'
 import { Toaster, toast } from 'sonner'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 import {
   DEFAULT_CURRENCY_CONFIG,
@@ -83,6 +82,7 @@ function QuotaTable(props: { apiKey: ApiKey }) {
   const columns = useApiKeysColumns(now).filter(
     (column) => column.id === 'quota'
   )
+  // eslint-disable-next-line react/incompatible-library -- test fixture only
   const table = useReactTable({
     columns,
     data: [props.apiKey],
@@ -303,24 +303,48 @@ function KeysPage() {
   )
 }
 
-async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
-  let currentKey = { ...key, status, ...overrides }
+type PbrKeyOverrides = {
+  id?: number
+  name?: string
+  enabled?: boolean
+  key_prefix?: string
+  lane_policy?: {
+    mode?: string
+    allow_lanes?: string[]
+    deny_lanes?: string[]
+  }
+  ip_allowlist?: string[]
+  expires_at?: string | null
+  last_used_at?: string | null
+}
+
+async function renderKeysPage(overrides: PbrKeyOverrides = {}) {
+  const pbrKey = {
+    id: 7,
+    name: 'production',
+    enabled: true,
+    key_prefix: 'pbr-abcd1234',
+    lane_policy: { mode: 'all', allow_lanes: [], deny_lanes: [] },
+    ip_allowlist: [],
+    expires_at: null,
+    created_at: '2026-09-15T16:47:00Z',
+    updated_at: '2026-09-15T16:47:00Z',
+    last_used_at: null,
+    ...overrides,
+  }
   vi.mocked(api.get).mockImplementation(async (url) => {
-    if (url.startsWith('/api/token/')) {
-      return {
-        data: { success: true, data: { items: [currentKey], total: 1 } },
-      }
+    if (url === '/api/keys') {
+      return { data: { items: [pbrKey], next_cursor: null } }
     }
-    return { data: { success: true, data: { default: { ratio: 1 } } } }
+    if (url.startsWith('/api/keys/')) {
+      return { data: pbrKey }
+    }
+    return { data: { success: true, data: {} } }
   })
   const post = vi.spyOn(api, 'post').mockResolvedValue({
-    data: { success: true, data: { key: 'fake-key-for-test-only' } },
+    data: { ...pbrKey, key: 'pbr-fake-key-for-test-only' },
   })
-  const put = vi.spyOn(api, 'put').mockImplementation(async (_url, data) => {
-    const update = data as { id: number; status: number }
-    currentKey = { ...currentKey, status: update.status }
-    return { data: { success: true, data: currentKey } }
-  })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: pbrKey })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -345,174 +369,63 @@ async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
       </QueryClientProvider>
     </I18nextProvider>
   )
-  await screen.findByText(currentKey.name)
+  await screen.findByText(pbrKey.name)
   return { post, put }
 }
 
-it('combines creation and last use while keeping expiry, models and IP restrictions separate', async () => {
+it('lists PBR client keys with the columns the contract exposes', async () => {
   await renderKeysPage()
-  for (const name of ['Name', 'API Key', 'Group', 'Models', 'IP Restriction']) {
+  for (const name of ['Name', 'API Key', 'Models', 'IP Restriction']) {
     expect(screen.getByRole('columnheader', { name })).toBeInTheDocument()
   }
-  expect(screen.getByRole('columnheader', { name: 'Time' })).toBeInTheDocument()
   expect(
-    screen.getByRole('columnheader', { name: 'Expires' })
+    screen.getByRole('cell', { name: /Created.*Last Used/ })
   ).toBeInTheDocument()
-  const timeCell = screen.getByRole('cell', { name: /Created.*Last Used/ })
-  expect(within(timeCell).getByText('Last Used')).toBeInTheDocument()
-  const quotaHeader = screen.getByRole('columnheader', { name: 'Quota ($)' })
-  const quotaTrigger = screen.getByRole('button', {
-    name: /Remaining 80; Remaining percentage 40%; Used amount 120/,
-  })
-  expect(quotaHeader).not.toHaveClass('pr-8')
-  expect(quotaTrigger.closest('td')).not.toHaveClass('pr-8')
+  expect(screen.getByText('Enabled')).toBeInTheDocument()
 })
 
-it('restores dates hidden by the old default and preserves unrelated column preferences', async () => {
-  localStorage.setItem(
-    'api-keys:column-visibility',
-    JSON.stringify({
-      created_time: false,
-      accessed_time: false,
-      expired_time: false,
-      model_limits: false,
-    })
+it('toggles enabled through PUT /api/keys/{name}', async () => {
+  const { put, post } = await renderKeysPage()
+  const user = userEvent.setup()
+  const button = screen.getByRole('button', { name: 'Disable' })
+  act(() => button.focus())
+  await user.keyboard('{Enter}')
+  await waitFor(() =>
+    expect(put).toHaveBeenCalledWith('/api/keys/production', { enabled: false })
   )
-  await renderKeysPage()
-  expect(screen.getByRole('columnheader', { name: 'Time' })).toBeInTheDocument()
-  expect(
-    screen.getByRole('columnheader', { name: 'Expires' })
-  ).toBeInTheDocument()
-  expect(
-    screen.queryByRole('columnheader', { name: 'Models' })
-  ).not.toBeInTheDocument()
-})
-
-it.each([
-  [1, 'Disable', 2, 'Disabled'],
-  [2, 'Enable', 1, 'Enabled'],
-])(
-  'keeps status %s toggling at its original row button without fetching a full key',
-  async (status, action, nextStatus, nextLabel) => {
-    const { post, put } = await renderKeysPage(status)
-    const user = userEvent.setup()
-    const button = screen.getByRole('button', { name: action })
-    act(() => button.focus())
-    await user.keyboard('{Enter}')
-    await waitFor(() =>
-      expect(put).toHaveBeenCalledWith('/api/token/?status_only=true', {
-        id: 7,
-        status: nextStatus,
-      })
-    )
-    await screen.findByText(nextLabel)
-    expect(post).not.toHaveBeenCalled()
-  }
-)
-
-it('keeps expired status when the server refuses reactivation', async () => {
-  const { put, post } = await renderKeysPage(3)
-  put.mockResolvedValue({ data: { success: false, message: 'Token expired' } })
-  await userEvent.click(screen.getByRole('button', { name: 'Enable' }))
-  await screen.findByText('Token expired')
-  expect(screen.getByText('Expired')).toBeInTheDocument()
-  expect(screen.queryByText('Enabled')).not.toBeInTheDocument()
   expect(post).not.toHaveBeenCalled()
 })
 
-it.each([true, false])(
-  'fetches a full key only on explicit copy and honors permission success=%s',
-  async (success) => {
-    const user = userEvent.setup()
-    const { post } = await renderKeysPage()
-    post.mockResolvedValue(
-      success
-        ? { data: { success: true, data: { key: 'fake-key-for-test-only' } } }
-        : { data: { success: false, message: 'Verification required' } }
-    )
-    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
-    await user.click(screen.getByRole('button', { name: 'Open menu' }))
-    expect(post).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('menuitem', { name: 'Copy Key' }))
-    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/token/7/key'))
-    if (success) {
-      await waitFor(() =>
-        expect(copy).toHaveBeenCalledWith('sk-fake-key-for-test-only')
-      )
-    } else {
-      await screen.findByText('Verification required')
-      expect(copy).not.toHaveBeenCalled()
-    }
-  }
-)
-
-it('keeps full mobile information without group or quota section headings', async () => {
-  const matchMedia = window.matchMedia
-  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
-    ...matchMedia(query),
-    matches: query.includes('max-width'),
-  }))
-  i18n.addResourceBundle('zh', 'translation', zh.translation)
-  await i18n.changeLanguage('zh')
-  try {
-    await renderKeysPage()
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
-    expect(screen.queryByText('额度 ($)')).not.toBeInTheDocument()
-    expect(screen.getByText('($)')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /剩余 80;/ })).toBeInTheDocument()
-    expect(screen.getByText('80')).toBeInTheDocument()
-    expect(screen.getByText('120')).toBeInTheDocument()
-    expect(screen.getByText(zh.translation['Created'])).toBeInTheDocument()
-    expect(screen.getByText(zh.translation['Last Used'])).toBeInTheDocument()
-    expect(screen.getByText(zh.translation['Expires'])).toBeInTheDocument()
-    expect(
-      screen.queryByText(zh.translation['Group'], { exact: true })
-    ).not.toBeInTheDocument()
-    expect(screen.getByText('default')).toBeInTheDocument()
-    expect(screen.getByText('1x')).toBeInTheDocument()
-    expect(screen.getByText(zh.translation['Models'])).toBeInTheDocument()
-    expect(
-      screen.getByText(zh.translation['IP Restriction'])
-    ).toBeInTheDocument()
-  } finally {
-    await i18n.changeLanguage('en')
-  }
+it('rotates the key on explicit copy and copies the new plaintext', async () => {
+  const user = userEvent.setup()
+  const { post } = await renderKeysPage()
+  post.mockResolvedValue({ data: { key: 'pbr-fake-key-for-test-only' } })
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+  await user.click(screen.getByRole('button', { name: 'Open menu' }))
+  expect(post).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('menuitem', { name: 'Copy Key' }))
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith('/api/keys/production/rotate', {})
+  )
+  await waitFor(() =>
+    expect(copy).toHaveBeenCalledWith('pbr-fake-key-for-test-only')
+  )
 })
 
-it('keeps mobile quota readable and opens complete model and IP restrictions by tapping', async () => {
+it('shows model and IP restrictions in the mobile card details', async () => {
   const matchMedia = window.matchMedia
   vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
     ...matchMedia(query),
     matches: query.includes('max-width'),
   }))
-  await renderKeysPage(1, {
-    name: 'production-with-a-long-key-name',
-    used_quota: 2245080000,
-    unlimited_quota: true,
-    model_limits_enabled: true,
-    model_limits: 'model-alpha,model-beta-with-a-long-name',
-    allow_ips: '192.0.2.1\n2001:db8::1',
+  await renderKeysPage({
+    lane_policy: {
+      mode: 'allow',
+      allow_lanes: ['model-alpha', 'model-beta-with-a-long-name'],
+      deny_lanes: [],
+    },
+    ip_allowlist: ['192.0.2.1', '2001:db8::1'],
   })
-  const quota = screen.getByRole('button', {
-    name: /Unlimited; Used amount 4,490.16/,
-  })
-  expect(quota).toHaveTextContent('Remaining($)UnlimitedUsed amount4,490.16')
-  expect(quota.parentElement).toHaveClass('w-full')
-  expect(quota.parentElement).not.toHaveClass('max-w-45')
-  expect(quota.querySelector('[data-slot="api-key-quota-values"]')).toHaveClass(
-    'grid-cols-[auto_minmax(0,1fr)]'
-  )
-  expect(within(quota).getByText('Unlimited')).toHaveClass(
-    'text-right',
-    'text-sm',
-    'font-normal'
-  )
-  expect(within(quota).getByText('4,490.16')).toHaveClass(
-    'tabular-nums',
-    'text-sm',
-    'font-normal',
-    'text-right'
-  )
   await userEvent.click(screen.getByRole('button', { name: /Models: 2 model/ }))
   let details = await screen.findByRole('dialog')
   expect(within(details).getByText('model-alpha')).toBeVisible()

@@ -28,100 +28,247 @@ import type {
   TokenAutoGroupsConfig,
 } from './types'
 
-// ============================================================================
-// API Key Management
-// ============================================================================
+// PBR 客户端密钥适配层（api-spec §4.3 / §5.4，token-spec §3）。
+//
+// 控制台表格沿用基座的 ApiKey 形状，PBR 的管理面是按名称定位的 /api/keys，
+// 且没有配额/分组语义：
+//   - 允许的模型（model_limits）↔ lane_policy.allow_lanes（路由键即模型名）
+//   - 允许的 IP ↔ ip_allowlist；过期时间 ↔ expires_at；启用状态 ↔ enabled
+//   - quota/分组等 PBR 没有的字段固定为"无限/默认"，仅供界面展示
+// 明文只在创建/轮换时出现一次，"查看明文"通过轮换实现。
 
-// Get paginated API keys list
+type PbrLanePolicy = {
+  mode?: string
+  allow_lanes?: string[]
+  deny_lanes?: string[]
+}
+
+type PbrClientKey = {
+  id: number
+  name: string
+  enabled: boolean
+  lane_policy?: PbrLanePolicy
+  ip_allowlist?: string[]
+  rate_limit_rpm?: number
+  max_concurrency?: number
+  expires_at?: string | null
+  notes?: string
+  key_prefix?: string
+  created_at?: string
+  updated_at?: string
+  last_used_at?: string | null
+  key?: string
+}
+
+const idToName = new Map<number, string>()
+
+function unixSeconds(value?: string | null): number {
+  if (!value) return 0
+  const ms = Date.parse(value)
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : 0
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function splitLines(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function toApiKey(item: PbrClientKey): ApiKey {
+  idToName.set(item.id, item.name)
+  const allowLanes = item.lane_policy?.allow_lanes ?? []
+  return {
+    id: item.id,
+    name: item.name,
+    key: item.key_prefix ?? '',
+    status: item.enabled ? 1 : 2,
+    remain_quota: 0,
+    used_quota: 0,
+    unlimited_quota: true,
+    expired_time: item.expires_at ? unixSeconds(item.expires_at) : -1,
+    created_time: unixSeconds(item.created_at),
+    accessed_time: unixSeconds(item.last_used_at),
+    group: 'default',
+    auto_groups: null,
+    cross_group_retry: false,
+    model_limits_enabled: allowLanes.length > 0,
+    model_limits: allowLanes.join(','),
+    allow_ips: (item.ip_allowlist ?? []).join('\n'),
+  }
+}
+
+async function listPbrKeys(): Promise<PbrClientKey[]> {
+  const res = await api.get('/api/keys')
+  const body = res.data as { items?: PbrClientKey[] }
+  return body.items ?? []
+}
+
+async function nameForId(id: number): Promise<string | null> {
+  if (idToName.has(id)) return idToName.get(id) ?? null
+  const items = await listPbrKeys()
+  for (const item of items) idToName.set(item.id, item.name)
+  return idToName.get(id) ?? null
+}
+
+function toPbrPayload(data: ApiKeyFormData) {
+  const allowLanes = data.model_limits_enabled
+    ? splitList(data.model_limits)
+    : []
+  return {
+    name: data.name,
+    lane_policy: {
+      mode: allowLanes.length > 0 ? 'allow' : 'all',
+      allow_lanes: allowLanes,
+      deny_lanes: [],
+    },
+    ip_allowlist: splitLines(data.allow_ips),
+    expires_at:
+      data.expired_time > 0
+        ? new Date(data.expired_time * 1000).toISOString()
+        : null,
+  }
+}
+
 export async function getApiKeys(
   params: GetApiKeysParams = {}
 ): Promise<GetApiKeysResponse> {
   const { p = 1, size = 10 } = params
-  const res = await api.get(`/api/token/?p=${p}&size=${size}`)
-  return res.data
+  const items = (await listPbrKeys()).map(toApiKey)
+  const start = Math.max(0, (p - 1) * size)
+  return {
+    success: true,
+    data: {
+      items: items.slice(start, start + size),
+      total: items.length,
+      page: p,
+      page_size: size,
+    },
+  }
 }
 
-// Search API keys by keyword or token (with pagination)
 export async function searchApiKeys(
   params: SearchApiKeysParams
 ): Promise<GetApiKeysResponse> {
-  const { keyword = '', token = '', p, size } = params
-  const queryParams = new URLSearchParams()
-  if (keyword) queryParams.set('keyword', keyword)
-  if (token) queryParams.set('token', token)
-  if (p != null) queryParams.set('p', String(p))
-  if (size != null) queryParams.set('size', String(size))
-  const res = await api.get(`/api/token/search?${queryParams.toString()}`)
-  return res.data
+  const { keyword = '', token = '', p = 1, size = 10 } = params
+  const lowerKeyword = keyword.toLowerCase()
+  const lowerToken = token.toLowerCase()
+  const items = (await listPbrKeys())
+    .map(toApiKey)
+    .filter((item) => {
+      const matchesKeyword =
+        !lowerKeyword || item.name.toLowerCase().includes(lowerKeyword)
+      const matchesToken =
+        !lowerToken || item.key.toLowerCase().includes(lowerToken)
+      return matchesKeyword && matchesToken
+    })
+  const start = Math.max(0, (p - 1) * size)
+  return {
+    success: true,
+    data: {
+      items: items.slice(start, start + size),
+      total: items.length,
+      page: p,
+      page_size: size,
+    },
+  }
 }
 
-// Get single API key by ID
 export async function getApiKey(id: number): Promise<ApiResponse<ApiKey>> {
-  const res = await api.get(`/api/token/${id}`)
-  return res.data
+  const name = await nameForId(id)
+  if (!name) return { success: false, message: 'API key not found' }
+  const res = await api.get(`/api/keys/${encodeURIComponent(name)}`)
+  return { success: true, data: toApiKey(res.data as PbrClientKey) }
 }
 
-// Get the current user's global Auto order and the per-token selection limit.
 export async function getTokenAutoGroups(): Promise<
   ApiResponse<TokenAutoGroupsConfig>
 > {
-  const res = await api.get('/api/token/auto-groups')
-  return res.data
+  return { success: true, data: { groups: [], max_count: 0 } }
 }
 
-// Create a new API key
 export async function createApiKey(
   data: ApiKeyFormData
 ): Promise<ApiResponse<ApiKey>> {
-  const res = await api.post('/api/token/', data)
-  return res.data
+  const res = await api.post('/api/keys', toPbrPayload(data))
+  return { success: true, data: toApiKey(res.data as PbrClientKey) }
 }
 
-// Update an existing API key
 export async function updateApiKey(
   data: ApiKeyFormData & { id: number }
 ): Promise<ApiResponse<ApiKey>> {
-  const res = await api.put('/api/token/', data)
-  return res.data
+  const name = await nameForId(data.id)
+  if (!name) return { success: false, message: 'API key not found' }
+  const payload = toPbrPayload({ ...data, name })
+  const res = await api.put(`/api/keys/${encodeURIComponent(name)}`, payload)
+  return { success: true, data: toApiKey(res.data as PbrClientKey) }
 }
 
-// Delete a single API key
 export async function deleteApiKey(id: number): Promise<ApiResponse> {
-  const res = await api.delete(`/api/token/${id}/`)
-  return res.data
+  const name = await nameForId(id)
+  if (!name) return { success: false, message: 'API key not found' }
+  await api.delete(`/api/keys/${encodeURIComponent(name)}`)
+  return { success: true }
 }
 
-// Batch delete multiple API keys
 export async function batchDeleteApiKeys(
   ids: number[]
 ): Promise<ApiResponse<number>> {
-  const res = await api.post('/api/token/batch', { ids })
-  return res.data
+  let deleted = 0
+  for (const id of ids) {
+    const result = await deleteApiKey(id)
+    if (result.success) deleted += 1
+  }
+  return { success: true, data: deleted }
 }
 
-// Update API key status (enable/disable)
 export async function updateApiKeyStatus(
   id: number,
   status: number
 ): Promise<ApiResponse<ApiKey>> {
-  const res = await api.put('/api/token/?status_only=true', { id, status })
-  return res.data
+  const name = await nameForId(id)
+  if (!name) return { success: false, message: 'API key not found' }
+  const res = await api.put(`/api/keys/${encodeURIComponent(name)}`, {
+    enabled: status === 1,
+  })
+  return { success: true, data: toApiKey(res.data as PbrClientKey) }
 }
 
-// Fetch the real (unmasked) key for a token by ID
+// Rotate an existing key and return the new plaintext once.
+export async function rotateApiKey(
+  id: number
+): Promise<ApiResponse<{ key: string }>> {
+  const name = await nameForId(id)
+  if (!name) return { success: false, message: 'API key not found' }
+  const res = await api.post(
+    `/api/keys/${encodeURIComponent(name)}/rotate`,
+    {}
+  )
+  return { success: true, data: { key: String(res.data.key ?? '') } }
+}
+
+// PBR 只在创建/轮换时返回明文；"查看明文"通过轮换获取新密钥。
 export async function fetchTokenKey(
   id: number
 ): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
-  const res = await api.post(`/api/token/${id}/key`)
-  return res.data
+  const result = await rotateApiKey(id)
+  if (!result.success || !result.data?.key) {
+    return { success: false, message: result.message }
+  }
+  return { success: true, data: { key: result.data.key } }
 }
 
-// Batch fetch real (unmasked) keys for multiple tokens
-export async function fetchTokenKeysBatch(ids: number[]): Promise<{
+export async function fetchTokenKeysBatch(_ids: number[]): Promise<{
   success: boolean
   message?: string
   data?: { keys: Record<number, string> }
 }> {
-  const res = await api.post('/api/token/batch/keys', { ids })
-  return res.data
+  return { success: false, message: 'PBR 不提供批量明文读取。' }
 }
