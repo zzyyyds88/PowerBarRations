@@ -177,11 +177,13 @@ type RouteMember struct {
 	ChannelId     int    `json:"channel_id"`
 	Channel       string `json:"channel"`
 	UpstreamModel string `json:"upstream_model"`
-	PublicAlias   string `json:"public_alias,omitempty"`
-	Priority      int    `json:"priority"`
-	Weight        int    `json:"weight"`
-	MemberId      int    `json:"member_id,omitempty"`
-	Overrides     string `json:"-"`
+	// UpstreamOverride 是成员级显式改名（数据库原值，可能为空）。为空表示"用渠道映射"。
+	UpstreamOverride string `json:"upstream_override,omitempty"`
+	PublicAlias      string `json:"public_alias,omitempty"`
+	Priority         int    `json:"priority"`
+	Weight           int    `json:"weight"`
+	MemberId         int    `json:"member_id,omitempty"`
+	Overrides        string `json:"-"`
 }
 
 // ResolvedRoute 一个路由键解析出的完整成员链。
@@ -440,14 +442,15 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 			name = got.Name
 		}
 		route.Members = append(route.Members, RouteMember{
-			ChannelId:     m.ChannelId,
-			Channel:       name,
-			UpstreamModel: effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
-			PublicAlias:   m.PublicAlias,
-			Priority:      m.Priority,
-			Weight:        m.Weight,
-			MemberId:      m.Id,
-			Overrides:     m.Overrides,
+			ChannelId:        m.ChannelId,
+			Channel:          name,
+			UpstreamModel:    effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
+			UpstreamOverride: m.UpstreamModel,
+			PublicAlias:      m.PublicAlias,
+			Priority:         m.Priority,
+			Weight:           m.Weight,
+			MemberId:         m.Id,
+			Overrides:        m.Overrides,
 		})
 	}
 	sort.SliceStable(route.Members, func(i, j int) bool {

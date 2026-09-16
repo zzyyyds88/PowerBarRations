@@ -46,6 +46,9 @@ func GetRoute(c *gin.Context) {
 			"priority":       m.Priority,
 			"weight":         m.Weight,
 		}
+		if m.UpstreamOverride != "" && m.UpstreamOverride != m.UpstreamModel {
+			item["upstream_override"] = m.UpstreamOverride
+		}
 		if m.PublicAlias != "" {
 			item["public_alias"] = m.PublicAlias
 		}
