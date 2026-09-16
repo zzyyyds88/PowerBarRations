@@ -12,7 +12,7 @@
 
 | | 控制台会话（人登录） | 管理密钥（AI/脚本） | 客户端密钥 ClientKey |
 |---|---|---|---|
-| 面向 | 浏览器控制台 | `/api/v1/*`（Bearer） | `/v1/*` 模型流量 |
+| 面向 | 浏览器控制台 | `/api/*`（Bearer） | `/v1/*` 模型流量 |
 | 凭据形态 | **HttpOnly 会话 Cookie**（服务端签发，JS 读不到） | `Base64(SHA256(登录口令))` | 服务端随机生成 |
 | 数量 | 每个浏览器一个会话 | 由口令唯一决定（无状态） | 多个，每消费者一把（用于分账） |
 | 存储 | 只存 `sha256(管理密钥)`（Cookie 里是 HMAC 签名，不含密钥） | 不存储；用时现算 | 只存 `sha256(明文密钥)` + 展示前缀 |
@@ -45,8 +45,8 @@
 
 | 端点 | 说明 |
 |---|---|
-| `GET /api/v1/setup/status` | `{ "initialized": false }` |
-| `POST /api/v1/setup` | body `{"password":"<口令>"}`；仅在未初始化时可用，否则 `409 conflict` |
+| `GET /api/setup/status` | `{ "initialized": false }` |
+| `POST /api/setup` | body `{"password":"<口令>"}`；仅在未初始化时可用，否则 `409 conflict` |
 
 - 设置成功后返回一次派生值，便于用户/运维直接配置 AI 调用：
 
@@ -61,9 +61,9 @@
 
 | 端点 | 说明 |
 |---|---|
-| `POST /api/v1/auth/login` | body `{"password":"<口令>"}`；校验通过后**设置 HttpOnly 会话 Cookie**，同时响应里返回 `admin_key`（便于 AI 首次取得，见下） |
-| `POST /api/v1/auth/logout` | 清除会话 Cookie |
-| `POST /api/v1/auth/password` | body `{"current":"...","new":"..."}`；**变更后管理密钥随之变化**，旧密钥与旧会话立即失效，并**续签当前浏览器会话** |
+| `POST /api/auth/login` | body `{"password":"<口令>"}`；校验通过后**设置 HttpOnly 会话 Cookie**，同时响应里返回 `admin_key`（便于 AI 首次取得，见下） |
+| `POST /api/auth/logout` | 清除会话 Cookie |
+| `POST /api/auth/password` | body `{"current":"...","new":"..."}`；**变更后管理密钥随之变化**，旧密钥与旧会话立即失效，并**续签当前浏览器会话** |
 
 - 无用户名、无注册、无找回、无 OAuth/2FA/passkey。
 - 登录响应形如 `{"token":"<管理密钥>","admin_key":"<管理密钥>"}`：`admin_key` 供 AI/脚本直接取用；浏览器**不使用它**，只用 Cookie。
@@ -85,8 +85,8 @@
 
 - SHA256 单次、无盐：抗离线爆破弱于 Argon2/bcrypt。**这是应用户指定的派生规则**；缓解手段是**启用 HTTPS** + 使用较长随机口令（建议 ≥16 字符，非强制），且数据库文件收紧为 600 权限、仅本机（启动时对主库及 WAL/SHM 显式 `chmod 0600`，见 `model/main.go` 的 `hardenSQLiteFilePermissions`，不依赖进程 umask）。
 - **监听 `0.0.0.0` 对局域网开放**，不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。
-- **HTTPS**：`TLS_ENABLED=true` 时加载证书（`TLS_CERT_FILE`/`TLS_KEY_FILE`）；无证书则首次启动自动生成自签证书到 `TLS_DIR`。支持 `PUT /api/v1/tls/certificate` 导入自有证书并**热加载**（无需重启），见 README §5.1。
-- 管理密钥不写日志；仅在 `POST /api/v1/setup` 与 `POST /api/v1/auth/login` 的成功响应里返回（后者是为了让 AI/脚本能直接取得）。
+- **HTTPS**：`TLS_ENABLED=true` 时加载证书（`TLS_CERT_FILE`/`TLS_KEY_FILE`）；无证书则首次启动自动生成自签证书到 `TLS_DIR`。支持 `PUT /api/tls/certificate` 导入自有证书并**热加载**（无需重启），见 README §5.1。
+- 管理密钥不写日志；仅在 `POST /api/setup` 与 `POST /api/auth/login` 的成功响应里返回（后者是为了让 AI/脚本能直接取得）。
 - **会话 Cookie 属性**：`HttpOnly`（JS 不可读）、`SameSite=Lax`、`Path=/`、`Max-Age` 默认 7 天（可用 `PBR_SESSION_TTL_HOURS` 调整）；HTTPS 下自动带 `Secure`（`TLS_ENABLED=true` 或 `SESSION_COOKIE_SECURE=true` 时）。Cookie 名 `pbr_session`。
 
 ---
@@ -159,12 +159,12 @@ type LanePolicy struct {
 
 | 动作 | 端点 | 说明 |
 |---|---|---|
-| 创建 | `POST /api/v1/keys` | 响应含一次性明文 |
-| 列表/详情 | `GET /api/v1/keys` `/{name}` | 只含前缀 |
-| 更新 | `PUT /api/v1/keys/{name}` | 权限/限流/备注；不含明文 |
-| 轮换 | `POST /api/v1/keys/{name}/rotate` | 返回新明文一次 |
+| 创建 | `POST /api/keys` | 响应含一次性明文 |
+| 列表/详情 | `GET /api/keys` `/{name}` | 只含前缀 |
+| 更新 | `PUT /api/keys/{name}` | 权限/限流/备注；不含明文 |
+| 轮换 | `POST /api/keys/{name}/rotate` | 返回新明文一次 |
 | 停用/启用 | `PUT`（`enabled`） | 立即生效 |
-| 删除 | `DELETE /api/v1/keys/{name}` | 立即失效 |
+| 删除 | `DELETE /api/keys/{name}` | 立即失效 |
 
 ### 3.6 统计与"令牌面板"
 

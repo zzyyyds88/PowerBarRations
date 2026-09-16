@@ -197,7 +197,7 @@ type LaneRuntime struct {
 - `half_open`：到期后放开**一个**探测请求（复用 `ProbeMemberID` 单槽，与冷却探测共用机制）。
   - 成功 → `closed`，写一条恢复事件日志，并解除冷却；
   - 失败 → 回到 `open`，且退避时长按次数指数增长（`open_seconds × 2^k`，设上限）。
-- 阈值与时长经 `system/options` 配置，可用 `POST /api/v1/lanes/{n}/circuits/reset` 手动清除。
+- 阈值与时长经 `system/options` 配置，可用 `POST /api/lanes/{n}/circuits/reset` 手动清除。
 
 ### 5.3 与冷却的关系
 
@@ -218,8 +218,8 @@ type LaneRuntime struct {
 
 ## 7. 运行态对外的暴露
 
-- `GET /api/v1/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind`，以及 `current_member` / `probe_member` / `affinity_until`。
-- `GET /api/v1/route-events`（SSE）→ 推送车道运行态增量（形状对齐线上 `RouteState`），供控制台的"成员状态"实时显示；连接拥塞时服务端断开由客户端重连取快照。
+- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind`，以及 `current_member` / `probe_member` / `affinity_until`。
+- `GET /api/route-events`（SSE）→ 推送车道运行态增量（形状对齐线上 `RouteState`），供控制台的"成员状态"实时显示；连接拥塞时服务端断开由客户端重连取快照。
 - 控制台另有 30s 轮询兜底（对齐线上 `refetchInterval`），SSE 仅作加速，不作为唯一数据源。
 
 ---

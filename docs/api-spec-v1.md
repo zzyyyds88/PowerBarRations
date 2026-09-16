@@ -10,8 +10,12 @@
 
 | 面 | 前缀 | 凭据 |
 |---|---|---|
-| 管理面 | `/api/v1/*` | **二选一**：`Authorization: Bearer <管理密钥>`（AI/脚本）或 HttpOnly 会话 Cookie（浏览器，登录后自动携带） |
+| 管理面 | `/api/*` | **二选一**：`Authorization: Bearer <管理密钥>`（AI/脚本）或 HttpOnly 会话 Cookie（浏览器，登录后自动携带） |
 | 模型面 | `/v1/*` | `Authorization: Bearer <客户端密钥>`（同时兼容 `X-Api-Key`） |
+
+> **前缀说明**：`/api` 是规范前缀；`/api/v1` 保留为**兼容别名**（注册完全相同的处理器），既有脚本无需改动。
+> 与 AI 契约冲突的两个控制台内部资源收在 `/api/console/*`（`/api/console/models`、`/api/console/audit`）；其余控制台内部接口仍在 `/api/*` 下，可用同一管理密钥调用，但**不属于**本契约（§5 表内才是稳定契约）。
+> 面向 AI 的手册：`GET /doc`（`text/markdown`，见 §5.1）、`GET /llms.txt`（`text/plain`）；交互式 OpenAPI UI：`GET /doc/ui`。
 
 **管理密钥由登录口令派生**（无账号体系，详见 [`token-spec-v1.md`](token-spec-v1.md) §2）：
 
@@ -19,9 +23,9 @@
 管理密钥 = Base64( SHA256( 登录口令 ) )
 ```
 
-- 首次启动时未初始化，必须先 `POST /api/v1/setup` 设置口令；否则除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`。
+- 首次启动时未初始化，必须先 `POST /api/setup` 设置口令；否则除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`。
 - 服务端只存 `sha256(管理密钥)`；口令与管理密钥明文都不落库。
-- **浏览器走会话 Cookie**：`POST /api/v1/auth/login` 成功后签发 HttpOnly Cookie，控制台**不再把管理密钥写进 localStorage**；`POST /api/v1/auth/logout` 清除。
+- **浏览器走会话 Cookie**：`POST /api/auth/login` 成功后签发 HttpOnly Cookie，控制台**不再把管理密钥写进 localStorage**；`POST /api/auth/logout` 清除。
 - **AI/脚本走 Bearer**：管理密钥 = `Base64(SHA256(登录口令))`，由调用方自行计算，无需人工复制（见 token-spec §2.1）。
 - 两条通道等价：任一通过即鉴权成功。口令变更后旧 Cookie 与新签名不匹配，自动失效。
 - **监听 `0.0.0.0` 对局域网开放**（模型面与管理面同端口），凭凭据鉴权、不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。局域网为明文 HTTP，故口令须为长随机串。
@@ -38,7 +42,7 @@ HTTP/1.1 401 Unauthorized
 
 ## 2. 通用约定
 
-1. **全量幂等写**：`PUT /api/v1/{resource}/{name}`，body 为完整对象，upsert 语义；同名重复提交结果一致。
+1. **全量幂等写**：`PUT /api/{resource}/{name}`，body 为完整对象，upsert 语义；同名重复提交结果一致。
 2. **写后回读**：响应体是**落库后重新读取**的最终状态。实现必须在 handler 内 re-read 再返回。
 3. **dry-run**：任何 `PUT/POST/DELETE` 支持 `?dry_run=true`，返回将发生的 diff 而不落库：
 
@@ -61,7 +65,7 @@ HTTP/1.1 401 Unauthorized
 ## 3. 错误模型
 
 ```json
-{ "error": { "code": "lane_not_found", "message": "lane 'lane-alpha' not found", "hint": "GET /api/v1/lanes" } }
+{ "error": { "code": "lane_not_found", "message": "lane 'lane-alpha' not found", "hint": "GET /api/lanes" } }
 ```
 
 | HTTP | code | 触发场景 |
@@ -72,7 +76,7 @@ HTTP/1.1 401 Unauthorized
 | 403 | `forbidden_scope` | 客户端密钥访问了被 deny 的车道（仅模型面） |
 | 404 | `lane_not_found` / `channel_not_found` / `key_not_found` / `log_not_found` | 对象不存在 |
 | 409 | `conflict` | 唯一名冲突 / 乐观锁冲突 / 车道名与成员别名冲突 |
-| 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/v1/setup`） |
+| 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/setup`） |
 | 422 | `lane_has_no_members` | 启用车道但无成员 |
 | 422 | `member_channel_missing` | 成员引用的渠道不存在 |
 | 422 | `invalid_mode` | 模式不在 failover/manual/weighted/round_robin |
@@ -107,7 +111,7 @@ HTTP/1.1 401 Unauthorized
 - `models`：本渠道提供的**路由键**（模型名）。声明后这些模型名即刻可路由，无需再建对象（见 [routing-spec-v1.md](routing-spec-v1.md) §1.1）。
 - `priority`：隐式成员链的排序依据，数字大者优先。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
-- `type` 取值见 `GET /api/v1/capabilities` 的 `adapters`。
+- `type` 取值见 `GET /api/capabilities` 的 `adapters`。
 
 ### 4.2 Lane
 
@@ -199,83 +203,86 @@ HTTP/1.1 401 Unauthorized
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/health` | 存活与依赖状态（**免鉴权**） |
-| GET | `/api/v1/version` | 版本与构建信息（**免鉴权**） |
-| GET | `/api/v1/setup/status` | `{initialized}`（免鉴权） |
-| POST | `/api/v1/setup` | 首次设置登录口令，**签发会话 Cookie** 并返回派生管理密钥（仅未初始化时可用） |
-| POST | `/api/v1/auth/login` | 口令校验通过→**签发会话 Cookie**，并返回派生管理密钥 |
-| POST | `/api/v1/auth/logout` | 清除会话 Cookie |
-| POST | `/api/v1/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签） |
-| GET | `/api/v1/capabilities` | 适配器、模式、能力枚举 |
-| GET | `/api/v1/openapi.json` | OpenAPI 3 文档 |
-| GET | `/api/v1/system/options` | 全局选项 |
-| PUT | `/api/v1/system/options` | 更新全局选项（全量） |
+| GET | `/api/health` | 存活与依赖状态（**免鉴权**） |
+| GET | `/api/version` | 版本与构建信息（**免鉴权**） |
+| GET | `/api/setup/status` | `{initialized}`（免鉴权） |
+| POST | `/api/setup` | 首次设置登录口令，**签发会话 Cookie** 并返回派生管理密钥（仅未初始化时可用） |
+| POST | `/api/auth/login` | 口令校验通过→**签发会话 Cookie**，并返回派生管理密钥 |
+| POST | `/api/auth/logout` | 清除会话 Cookie |
+| POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签） |
+| GET | `/api/capabilities` | 适配器、模式、能力枚举 |
+| GET | `/api/openapi.json` | OpenAPI 3 文档（**免鉴权**） |
+| GET | `/doc` | 面向 AI 的管理 API 手册（`text/markdown`；浏览器 `Accept: text/html` 时返回说明页。**免鉴权**） |
+| GET | `/llms.txt` | 与 `/doc` 同源的纯文本手册（**免鉴权**） |
+| GET | `/doc/ui` | 交互式 OpenAPI 文档（复用 Scalar，指向 `/api/openapi.json`。**免鉴权**） |
+| GET | `/api/system/options` | 全局选项 |
+| PUT | `/api/system/options` | 更新全局选项（全量） |
 
 ### 5.2 车道
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/lanes` | 列表（cursor） |
-| GET | `/api/v1/lanes/{name}` | 详情（含成员） |
-| PUT | `/api/v1/lanes/{name}` | 全量 upsert（含成员，按数组顺序即优先级） |
-| DELETE | `/api/v1/lanes/{name}` | 删除 |
-| PUT | `/api/v1/lanes/{name}/members` | 仅替换成员列表（有序全量） |
-| POST | `/api/v1/lanes/{name}/probe` | 逐成员探活 |
-| GET | `/api/v1/lanes/{name}/health` | 当前冷却/熔断/亲和快照 |
-| POST | `/api/v1/lanes/{name}/circuits/reset` | 清除该车道全部熔断与冷却 |
+| GET | `/api/lanes` | 列表（cursor） |
+| GET | `/api/lanes/{name}` | 详情（含成员） |
+| PUT | `/api/lanes/{name}` | 全量 upsert（含成员，按数组顺序即优先级） |
+| DELETE | `/api/lanes/{name}` | 删除 |
+| PUT | `/api/lanes/{name}/members` | 仅替换成员列表（有序全量） |
+| POST | `/api/lanes/{name}/probe` | 逐成员探活 |
+| GET | `/api/lanes/{name}/health` | 当前冷却/熔断/亲和快照 |
+| POST | `/api/lanes/{name}/circuits/reset` | 清除该车道全部熔断与冷却 |
 
 ### 5.3 渠道
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/channels` | 列表 |
-| GET | `/api/v1/channels/{name}` | 详情 |
-| PUT | `/api/v1/channels/{name}` | 全量 upsert（`key` 只写不读） |
-| DELETE | `/api/v1/channels/{name}` | 删除（被车道引用时 409） |
-| POST | `/api/v1/channels/{name}/test` | 单渠道探活 |
-| POST | `/api/v1/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；被显式车道成员点名的模型仍在引用时返回 409（同样需 `?force=1` 覆盖） |
+| GET | `/api/channels` | 列表 |
+| GET | `/api/channels/{name}` | 详情 |
+| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读） |
+| DELETE | `/api/channels/{name}` | 删除（被车道引用时 409） |
+| POST | `/api/channels/{name}/test` | 单渠道探活 |
+| POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；被显式车道成员点名的模型仍在引用时返回 409（同样需 `?force=1` 覆盖） |
 
 ### 5.4 客户端密钥
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/keys` | 列表 |
-| POST | `/api/v1/keys` | 创建（响应含一次性明文） |
-| GET | `/api/v1/keys/{name}` | 详情 |
-| PUT | `/api/v1/keys/{name}` | 更新（不含明文） |
-| DELETE | `/api/v1/keys/{name}` | 删除 |
-| POST | `/api/v1/keys/{name}/rotate` | 轮换（响应含新明文一次） |
+| GET | `/api/keys` | 列表 |
+| POST | `/api/keys` | 创建（响应含一次性明文） |
+| GET | `/api/keys/{name}` | 详情 |
+| PUT | `/api/keys/{name}` | 更新（不含明文） |
+| DELETE | `/api/keys/{name}` | 删除 |
+| POST | `/api/keys/{name}/rotate` | 轮换（响应含新明文一次） |
 
 ### 5.5 观测
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/logs` | 过滤：`lane` `channel` `key` `success` `since` `until` `cursor` `limit` |
-| GET | `/api/v1/logs/{id}` | 单条（含 attempts 链） |
-| POST | `/api/v1/logs/prune?before=&dry_run=` | 按需清理明细日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；只删明细，聚合表长期保留 |
-| GET | `/api/v1/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model` |
-| GET | `/api/v1/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
-| GET | `/api/v1/audit` | 变更审计 |
+| GET | `/api/logs` | 过滤：`lane` `channel` `key` `success` `since` `until` `cursor` `limit` |
+| GET | `/api/logs/{id}` | 单条（含 attempts 链） |
+| POST | `/api/logs/prune?before=&dry_run=` | 按需清理明细日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；只删明细，聚合表长期保留 |
+| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model` |
+| GET | `/api/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
+| GET | `/api/audit` | 变更审计 |
 
 ### 5.6 配置生命周期
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/export` | 导出完整配置 JSON（不含密钥明文与哈希） |
-| POST | `/api/v1/import?dry_run=` | 导入并可选 dry-run，返回 diff |
+| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希） |
+| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff |
 
 ### 5.7 模型路由（隐式车道）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/models` | 全部可路由模型名：`{model, source: implicit\|explicit, member_count}` |
-| GET | `/api/v1/routes/{model}` | 解析该模型的**成员链**（含来源与优先级），用于排障与 UI 展示 |
-| PUT | `/api/v1/lanes/{model}` | **把某模型的成员链固化为显式顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
+| GET | `/api/models` | 全部可路由模型名：`{model, source: implicit\|explicit, member_count}` |
+| GET | `/api/routes/{model}` | 解析该模型的**成员链**（含来源与优先级），用于排障与 UI 展示 |
+| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为显式顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型 → 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。未固化时保持隐式链（渠道声明即自动成链）。
 
 ```bash
-curl -s $PBR/api/v1/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
+curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
 {
@@ -297,14 +304,14 @@ curl -s $PBR/api/v1/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 ### 6.1 健康与能力
 
 ```bash
-curl -s $PBR/api/v1/health
+curl -s $PBR/api/health
 ```
 ```json
 { "status": "ok", "version": "0.1.0", "uptime_s": 12345, "db": "ok" }
 ```
 
 ```bash
-curl -s $PBR/api/v1/capabilities -H "Authorization: Bearer $ADMIN_KEY"
+curl -s $PBR/api/capabilities -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
 {
@@ -318,7 +325,7 @@ curl -s $PBR/api/v1/capabilities -H "Authorization: Bearer $ADMIN_KEY"
 ### 6.2 建渠道（写后回读）
 
 ```bash
-curl -s -X PUT $PBR/api/v1/channels/channel-a \
+curl -s -X PUT $PBR/api/channels/channel-a \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{
     "type": "openai",
@@ -337,7 +344,7 @@ curl -s -X PUT $PBR/api/v1/channels/channel-a \
 ### 6.3 建车道（含两成员不同渠道不同上游名）
 
 ```bash
-curl -s -X PUT $PBR/api/v1/lanes/lane-alpha \
+curl -s -X PUT $PBR/api/lanes/lane-alpha \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{
     "enabled": true,
@@ -362,7 +369,7 @@ curl -s -X PUT $PBR/api/v1/lanes/lane-alpha \
 ### 6.4 探活（逐成员）
 
 ```bash
-curl -s -X POST $PBR/api/v1/lanes/lane-alpha/probe \
+curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
   -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
@@ -379,7 +386,7 @@ curl -s -X POST $PBR/api/v1/lanes/lane-alpha/probe \
 ### 6.5 车道健康快照（冷却/熔断/亲和）
 
 ```bash
-curl -s $PBR/api/v1/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
+curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
 {
@@ -399,7 +406,7 @@ curl -s $PBR/api/v1/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY
 ### 6.6 重置熔断
 
 ```bash
-curl -s -X POST $PBR/api/v1/lanes/lane-alpha/circuits/reset \
+curl -s -X POST $PBR/api/lanes/lane-alpha/circuits/reset \
   -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
@@ -409,7 +416,7 @@ curl -s -X POST $PBR/api/v1/lanes/lane-alpha/circuits/reset \
 ### 6.7 创建客户端密钥（明文只出现一次）
 
 ```bash
-curl -s -X POST $PBR/api/v1/keys \
+curl -s -X POST $PBR/api/keys \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{ "name": "client-a", "enabled": true,
         "lane_policy": { "mode": "all", "allow_lanes": [], "deny_lanes": [] } }'
@@ -423,7 +430,7 @@ curl -s -X POST $PBR/api/v1/keys \
 ### 6.8 读日志（含逐尝试链）
 
 ```bash
-curl -s "$PBR/api/v1/logs?lane=lane-alpha&success=false&limit=1" \
+curl -s "$PBR/api/logs?lane=lane-alpha&success=false&limit=1" \
   -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
@@ -433,7 +440,7 @@ curl -s "$PBR/api/v1/logs?lane=lane-alpha&success=false&limit=1" \
 ### 6.9 更新全局选项（关键词表等；取代拷库改表）
 
 ```bash
-curl -s -X PUT $PBR/api/v1/system/options \
+curl -s -X PUT $PBR/api/system/options \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{
     "automatic_disable_keywords": ["arrearage", "insufficient balance", "..."],
@@ -454,8 +461,8 @@ curl -s -X PUT $PBR/api/v1/system/options \
 - **未在 body 中出现的键保持不变**（字段级补丁，不是全量替换）：只想改熔断阈值时
   不会把关键词表清空。
 - 车道六键（`member_max_attempts` 等）是**车道级**配置，在
-  `PUT /api/v1/lanes/{name}` 的 `config` 里设置，不属于全局选项。
-- `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/v1/logs/prune` 触发。
+  `PUT /api/lanes/{name}` 的 `config` 里设置，不属于全局选项。
+- `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
 - `probe_concurrency`（默认 4）限制 `POST /lanes/{name}/probe` 对上游的并发压力。
 - `model_prices`（design-v1 §16.9#7）是**单价表**，单位**人民币 / 百万 token**，
   四个价格字段（`input` / `output` / `cache_read` / `cache_write`）可留空或为 0。
@@ -467,9 +474,9 @@ curl -s -X PUT $PBR/api/v1/system/options \
 ### 6.10 导出 / 导入（取代拷库备份）
 
 ```bash
-curl -s $PBR/api/v1/export -H "Authorization: Bearer $ADMIN_KEY" -o pbr-config.json
+curl -s $PBR/api/export -H "Authorization: Bearer $ADMIN_KEY" -o pbr-config.json
 
-curl -s -X POST "$PBR/api/v1/import?dry_run=true" \
+curl -s -X POST "$PBR/api/import?dry_run=true" \
   -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   --data-binary @pbr-config.json
 ```
@@ -524,69 +531,69 @@ HTTP/1.1 503 Service Unavailable
 
 ```bash
 # 0) 只有首次需要：设置登录口令（响应会带 admin_key，但 AI 也可自行计算）
-curl -sf $PBR/api/v1/setup/status
-curl -sfX POST $PBR/api/v1/setup -H 'Content-Type: application/json' \
+curl -sf $PBR/api/setup/status
+curl -sfX POST $PBR/api/setup -H 'Content-Type: application/json' \
   -d '{"password":"<16 位以上随机口令>"}'      # 响应含 admin_key；浏览器另得到会话 Cookie
 
 # 1) 探活（无需鉴权）
-curl -sf $PBR/api/v1/health || echo "gateway down"
+curl -sf $PBR/api/health || echo "gateway down"
 
 # 2) 发现能力（模式、适配器枚举）
-curl -sf $PBR/api/v1/capabilities -H "Authorization: Bearer $ADMIN_KEY"
+curl -sf $PBR/api/capabilities -H "Authorization: Bearer $ADMIN_KEY"
 
 # 3) 拉取 OpenAPI（自描述，供工具注册）
-curl -sf $PBR/api/v1/openapi.json -H "Authorization: Bearer $ADMIN_KEY" -o openapi.json
+curl -sf $PBR/api/openapi.json -H "Authorization: Bearer $ADMIN_KEY" -o openapi.json
 ```
 
 ### 7.2 新增一条"优先 A 渠道再用 B 渠道"的车道
 
 ```bash
 # 1) 建两个渠道（key 由运维注入，AI 只填占位符）
-curl -sfX PUT $PBR/api/v1/channels/channel-a -H "Authorization: Bearer $ADMIN_KEY" \
+curl -sfX PUT $PBR/api/channels/channel-a -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"type":"openai","base_url":"https://a.example/v1","key":"__INJECT_BY_OPERATOR__"}'
-curl -sfX PUT $PBR/api/v1/channels/channel-b -H "Authorization: Bearer $ADMIN_KEY" \
+curl -sfX PUT $PBR/api/channels/channel-b -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"type":"openai","base_url":"https://b.example/v1","key":"__INJECT_BY_OPERATOR__"}'
 
 # 2) 建车道并排好成员优先级
-curl -sfX PUT $PBR/api/v1/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY" \
+curl -sfX PUT $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"enabled":true,"mode":"failover","members":[
         {"channel":"channel-a","upstream_model":"model-x","priority":1},
         {"channel":"channel-b","upstream_model":"model-y","priority":2}]}'
 
 # 3) 回读确认（写接口自带回读，但首次接入仍建议显式 GET）
-curl -sf $PBR/api/v1/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY"
+curl -sf $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY"
 ```
 
 ### 7.3 排障：某车道"断断续续"
 
 ```bash
 # 1) 看车道当前冷却/熔断/亲和
-curl -sf $PBR/api/v1/lanes/<lane>/health -H "Authorization: Bearer $ADMIN_KEY"
+curl -sf $PBR/api/lanes/<lane>/health -H "Authorization: Bearer $ADMIN_KEY"
 
 # 2) 拉最近失败日志，看 attempts 链定位是哪个成员在挂
-curl -sf "$PBR/api/v1/logs?lane=<lane>&success=false&limit=20" \
+curl -sf "$PBR/api/logs?lane=<lane>&success=false&limit=20" \
   -H "Authorization: Bearer $ADMIN_KEY"
 
 # 3) 主动逐成员探活
-curl -sfX POST $PBR/api/v1/lanes/<lane>/probe -H "Authorization: Bearer $ADMIN_KEY"
+curl -sfX POST $PBR/api/lanes/<lane>/probe -H "Authorization: Bearer $ADMIN_KEY"
 
 # 4) 确认上游已恢复后，清掉冷却立即复通（正常情况下应等自动半开）
-curl -sfX POST $PBR/api/v1/lanes/<lane>/circuits/reset -H "Authorization: Bearer $ADMIN_KEY"
+curl -sfX POST $PBR/api/lanes/<lane>/circuits/reset -H "Authorization: Bearer $ADMIN_KEY"
 ```
 
 ### 7.4 配置备份与回滚（不碰文件与数据库）
 
 ```bash
-curl -sf $PBR/api/v1/export -H "Authorization: Bearer $ADMIN_KEY" -o backup-$(date +%s).json
+curl -sf $PBR/api/export -H "Authorization: Bearer $ADMIN_KEY" -o backup-$(date +%s).json
 
 # 回滚前先 dry-run 看 diff
-curl -sfX POST "$PBR/api/v1/import?dry_run=true" -H "Authorization: Bearer $ADMIN_KEY" \
+curl -sfX POST "$PBR/api/import?dry_run=true" -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' --data-binary @backup.json
 # 确认后去掉 dry_run 执行
-curl -sfX POST "$PBR/api/v1/import" -H "Authorization: Bearer $ADMIN_KEY" \
+curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' --data-binary @backup.json
 ```
 
@@ -603,3 +610,26 @@ curl -sfX POST "$PBR/api/v1/import" -H "Authorization: Bearer $ADMIN_KEY" \
 ## 8. 与 UI 的对应关系
 
 控制台每个页面只调用本契约的端点（详见 [`ui-spec-v1.md`](ui-spec-v1.md) §3 的"数据来源"列）。若某页面需要的数据在本契约中缺端点，**先补契约再实现页面**，不许前端直连数据库或自造接口。
+
+---
+
+## 9. 能力边界（AI 稳定契约 vs 控制台内部接口）
+
+§5 是本契约的全部稳定端点。控制台前端另有一批 new-api 基座接口：它们同样用 PBR 管理密钥
+（`Authorization: Bearer <管理密钥>`）鉴权，**可以调用、但随控制台实现变动，不属于稳定契约**。
+
+| 能力 | 控制台内部前缀 |
+|---|---|
+| 模型目录/元数据（描述、标签、厂商、同步上游） | `/api/console/models/**` |
+| 变更审计（控制台视图） | `/api/console/audit` |
+| 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
+| 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
+| 任务插件 | `/api/plugin/task/**` |
+| 厂商 / 部署 / 预填组 | `/api/vendors/**`、`/api/deployments/**`、`/api/prefill_group/**` |
+| 管理员日志 / 任务视图 | `/api/log/**`、`/api/task`、`/api/mj/` |
+| 系统任务 / 系统信息 / 性能 | `/api/system-task/**`、`/api/system-info/**`、`/api/performance/**`、`/api/perf-metrics/**` |
+
+**结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
+导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据、任务插件、厂商/部署等"控制台运维面"
+以同一管理密钥在 `/api/console/**` 及上述基座路径可用。要把某一项提升为稳定契约，先在 §5 补端点再实现。
+

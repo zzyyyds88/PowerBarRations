@@ -265,10 +265,10 @@ type Option     struct { Key, Value string }
 ### 5.1 核心约定
 
 1. **认证**：管理面无账号体系，只有**一个登录口令**，支撑两条等价通道：
-   - **控制台（人）** → `POST /api/v1/auth/login` 换取 **HttpOnly 会话 Cookie**，浏览器不再保存管理密钥；
+   - **控制台（人）** → `POST /api/auth/login` 换取 **HttpOnly 会话 Cookie**，浏览器不再保存管理密钥；
    - **AI/脚本** → 用 `管理密钥 = Base64(SHA256(登录口令))` 作 `Authorization: Bearer`，可自行计算，无需人工复制。
    首启时设置口令（详见 [`token-spec-v1.md`](token-spec-v1.md) §2）。模型面用客户端密钥。**模型面与管理面同端口全部监听 `0.0.0.0` 对局域网开放**（§18），凭凭据鉴权，不做来源限制；口令必须是长随机串。
-2. **幂等写**：`PUT /api/v1/{resource}/{name}` 收全量对象 upsert。
+2. **幂等写**：`PUT /api/{resource}/{name}` 收全量对象 upsert。
 3. **写后回读**：任何写操作响应前重新读库，响应体即最终状态；集成测试断言"写完 GET == 提交值"。
 4. **`?dry_run=true`**：返回变更 diff，不落库。
 5. **统一错误包络**：`{"error":{"code","message","hint"}}`，`code` 为稳定字符串。
@@ -290,8 +290,8 @@ AI 侧的全部运维动作——建渠道、建/改车道、调成员顺序、�
 - **蓝本 = new-api 上游前端**（Rsbuild + React + TanStack Router + Base UI + Tailwind）：**直接整体搬迁，做减法（删多用户/计费）+ 接线（认证、成员链）**，而非另起炉灶。
 - **认证极简**：无账号，只有登录口令；首启设置口令，之后登录换取 **HttpOnly 会话 Cookie**（浏览器不存管理密钥）。无注册/找回/OAuth/passkey/2FA。
 - **页面集合**（保留上游页面，删多用户/计费）：数据看板、渠道管理、模型管理（含成员链/故障切换）、令牌、请求日志、任务插件、系统信息、性能指标、系统设置、试打台、关于/法律页等。
-- **实时机制**：车道运行态经 SSE 推送 + 30s 轮询兜底（PBR 自有 `/api/v1/route-events`）。
-- **产物形态**：Rsbuild 构建产物 embed 进二进制，单进程同时服务 `/v1/*`、`/api/v1/*` 与静态控制台。
+- **实时机制**：车道运行态经 SSE 推送 + 30s 轮询兜底（PBR 自有 `/api/route-events`）。
+- **产物形态**：Rsbuild 构建产物 embed 进二进制，单进程同时服务 `/v1/*`、`/api/*` 与静态控制台。
 - **品牌**：全量替换为 PowerBarRations（见 §17）。
 
 ---
@@ -352,7 +352,7 @@ type LaneRelayConfig struct {
 
 ### 7.6 自动禁用关键词（行为继承，条目属部署数据）
 
-自动禁用依赖关键词表命中上游错误体。某些欠费类上游以 **HTTP 400** 到达，不在默认重试状态码集内，关键词是唯一捕获路径；机制必须保留，部署侧自定义条目完整继承（条目见私有台账，不写入本文）。关键词表读写一律走 `PUT /api/v1/system/options`。
+自动禁用依赖关键词表命中上游错误体。某些欠费类上游以 **HTTP 400** 到达，不在默认重试状态码集内，关键词是唯一捕获路径；机制必须保留，部署侧自定义条目完整继承（条目见私有台账，不写入本文）。关键词表读写一律走 `PUT /api/system/options`。
 
 ### 7.7 模型管理内的成员链（故障切换）
 
@@ -361,13 +361,13 @@ type LaneRelayConfig struct {
 - 模型管理页对每个模型展示：声明了它的渠道（隐式链）、显式配置的成员链（若有）、当前解析顺序。
 - 用户可把某模型的成员链固化为显式顺序（拖拽/设 priority），即 PBR 的 `Lane`（模式默认 `failover`）。
 - 未固化时保持 PBR 现有语义：**渠道声明即自动成链**（按渠道 priority 降序），零配置可路由。
-- "车道"作为**可选覆盖层**仍然存在（四种模式、六键、成员级覆盖），但不作为用户的必经入口；`/api/v1/lanes/**` 契约不变，模型管理页只是它的友好视图。
+- "车道"作为**可选覆盖层**仍然存在（四种模式、六键、成员级覆盖），但不作为用户的必经入口；`/api/lanes/**` 契约不变，模型管理页只是它的友好视图。
 
-**验收**：在模型管理页为"模型1"设定"上游1 → 上游2"后，`GET /api/v1/routes/模型1` 的成员顺序与之一致；把上游1 打成故障后，请求自动逃逸到上游2（fault_injection 覆盖）。
+**验收**：在模型管理页为"模型1"设定"上游1 → 上游2"后，`GET /api/routes/模型1` 的成员顺序与之一致；把上游1 打成故障后，请求自动逃逸到上游2（fault_injection 覆盖）。
 
 ### 7.8 探活
 
-`POST /api/v1/lanes/{name}/probe`（逐成员）与 `POST /api/v1/channels/{name}/test`（单渠道）；默认不内置定时器，由 API 或熔断器驱动。
+`POST /api/lanes/{name}/probe`（逐成员）与 `POST /api/channels/{name}/test`（单渠道）；默认不内置定时器，由 API 或熔断器驱动。
 
 ---
 
@@ -399,7 +399,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 | | 管理凭据 | 客户端密钥 ClientKey |
 |---|---|---|
-| 面向 | 控制台登录 + `/api/v1/*` | `/v1/*` 模型流量 |
+| 面向 | 控制台登录 + `/api/*` | `/v1/*` 模型流量 |
 | 数量 | 一个登录口令（无账号） | 每消费者一把（分账） |
 | 生成 | 由登录口令派生（`Base64(SHA256(口令))`） | 服务端随机生成，明文只回显一次 |
 | 存储 | 只存 `sha256(管理密钥)` | 只存 `sha256(明文)` + 展示前缀 |
@@ -498,7 +498,7 @@ powerbar-rations/
 │   └── ui-spec-v1.md         # 控制台规格
 ├── cmd/pbr/main.go           # 入口
 ├── internal/
-│   ├── api/                  # 管理 API（/api/v1）+ OpenAPI
+│   ├── api/                  # 管理 API（/api）+ OpenAPI
 │   ├── relay/                # 路由核心：lane 选择、冷却、熔断、转发编排
 │   │   └── circuit/          # 熔断器（新增）
 │   ├── channel/              # 适配器注册与调用（vendor 自 new-api relay/channel）
@@ -551,7 +551,7 @@ powerbar-rations/
 ### 11.3 输入输出边界
 
 - **输入**：运维私有台账（渠道清单、车道成员、六键覆盖值、凭据注入点位、单价表）。**不入仓库。**
-- **输出**：PBR 配置（经 `POST /api/v1/import` 落库）+ 对账报告。
+- **输出**：PBR 配置（经 `POST /api/import` 落库）+ 对账报告。
 
 ---
 
@@ -645,7 +645,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 ③ `MIGRATION.md`：§11 算法 + 切流与回滚（含告警链路改造）。
 ④ `docs/adr/`：至少 4 条——为什么以 new-api 转发管道为基座、为什么删 `model_mapping`、为什么默认开自动复通、为什么保留控制台但认证极简化。
 ⑤ `verify/`：每波次的命令与输出证据，含时间戳。
-⑥ `GET /api/v1/openapi.json`：AI 调用的机器可读接口契约。
+⑥ `GET /api/openapi.json`（机器可读契约）+ `GET /doc` / `GET /llms.txt`（面向 AI 的纯文本手册）+ `GET /doc/ui`（复用 Scalar 的交互式文档）。
 
 ### 切流（交付后由运维执行）
 1. 下游逐个把 base_url 从旧路由层改指 PBR（模型名不变），每次改一个并跑一发真实会话验证。
@@ -673,9 +673,11 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 16.3 OpenAPI 生成
 
-- **以代码为源**：在路由注册处维护端点表，`GET /api/v1/openapi.json` 返回运行时结果。当前实现是 `internal/api/config_lifecycle.go` 的手写 `openAPIPaths()` 表（尚未改为结构体标签自动生成），靠下述守卫测试把"漏登记"变成构建期失败，效果等价于验收断言。
+- **以代码为源**：在路由注册处维护端点表，`GET /api/openapi.json` 返回运行时结果。当前实现是 `internal/api/config_lifecycle.go` 的手写 `openAPIPaths()` 表（尚未改为结构体标签自动生成），靠下述守卫测试把"漏登记"变成构建期失败，效果等价于验收断言。
 - 验收断言：`openapi.json` 可被标准工具解析，且**所有已注册路由都出现在文档中**。落地为 `router/openapi_coverage_test.go` 的 `TestOpenAPICoversEveryRegisteredRoute`：对比 `engine.Routes()` 与端点表，双向校验（既不漏档、也不登记不存在的路由）。
 - 若将来改为标签生成，保留该守卫测试即可；漂移口径不变。
+- **给人/AI 的入口**：`GET /doc`（默认 `text/markdown`，浏览器 `Accept: text/html` 返回说明页）、`GET /llms.txt`（`text/plain`）、`GET /doc/ui`（复用 GitHub 项目 Scalar 渲染 `/api/openapi.json`）。三者与 `/api/openapi.json` 均免鉴权，便于 AI 先读手册再自行派生管理密钥。
+- **前缀**：管理面规范前缀为 `/api`，`/api/v1` 为兼容别名（注册相同处理器）。与 AI 契约冲突的控制台内部资源（模型目录、审计）收在 `/api/console/*`；其余控制台内部接口仍在 `/api/*` 下同权限可用，但不属于稳定契约。
 
 ### 16.4 存储与迁移版本
 
@@ -684,7 +686,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 16.5 日志保留
 
-- 不引入 cron。保留策略由 `system/options.log_retention_days` 配置（默认 30），并提供 `POST /api/v1/logs/prune?before=<ts>&dry_run=` 由外部按需触发。
+- 不引入 cron。保留策略由 `system/options.log_retention_days` 配置（默认 30），并提供 `POST /api/logs/prune?before=<ts>&dry_run=` 由外部按需触发。
 - 聚合表长期保留（体积小）；明细表按上述策略清理。
 
 ### 16.6 并发与超时
@@ -722,7 +724,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
 | 5 | Playground | **保留**（控制台内，排障用） |
 | 6 | `round_robin` 游标 | 每车道一个全局游标（与车道级粘滞一致） |
-| 7 | 单价表 | **PBR 自建一张单价表**（人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`，留空或 0 = 该口径不折算；模型不在表里 = 完全不折算），存 `options` 表的 `PBRModelPrices` 键，随 `GET/PUT /api/v1/system/options` 读写并随 export/import 往返。只用于日志 `estimated_cost` 折算，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
+| 7 | 单价表 | **PBR 自建一张单价表**（人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`，留空或 0 = 该口径不折算；模型不在表里 = 完全不折算），存 `options` 表的 `PBRModelPrices` 键，随 `GET/PUT /api/system/options` 读写并随 export/import 往返。只用于日志 `estimated_cost` 折算，**不参与准入、不扣额度**。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
 | 8 | 旧库日志 | **不迁移**；旧库整体归档保留，不额外导出 |
 | 9 | 请求头兼容 | 管理面仅收 `Authorization`；模型面 `Authorization` 与 `X-Api-Key` 都收（兼容存量客户端） |
 | 10 | 渠道模型清单来源 | 手工录入 + 可选"从上游拉取"（`POST /channels/{name}/sync-models`，即原蓝本的模型同步，收敛为渠道上的一个动作）。**保护性约束**：上游返回空清单默认拒绝清空（`?force=1` 覆盖）；要移除的模型仍被显式车道成员引用时返回 409（同样 `?force=1` 覆盖），避免一次上游抖动摘掉在用成员 |
