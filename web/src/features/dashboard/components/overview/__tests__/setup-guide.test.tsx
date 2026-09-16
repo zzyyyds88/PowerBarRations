@@ -90,6 +90,24 @@ beforeEach(() => {
             items: [{ model: 'gpt-4o-mini', source: 'implicit', member_count: 1 }],
           },
         }
+      case '/api/stats':
+        return {
+          data: {
+            granularity: 'hour',
+            group_by: 'lane',
+            items: [
+              {
+                bucket_ts: Math.floor(Date.now() / 1000 / 3600) * 3600,
+                group: 'gpt-4o-mini',
+                requests: 3,
+                successes: 3,
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                estimated_cost: 0.01,
+              },
+            ],
+          },
+        }
       default:
         throw new Error(`Unexpected dashboard request: ${url}`)
     }
