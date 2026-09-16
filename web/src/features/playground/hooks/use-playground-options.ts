@@ -78,7 +78,7 @@ export function usePlaygroundOptions({
   } = useQuery({
     queryKey: ['playground-models', currentGroup],
     queryFn: async () =>
-      requireServerSuccess(await getUserModels(currentGroup)),
+      requireServerSuccess(await getUserModels()),
     enabled: currentGroup !== '',
   })
 
