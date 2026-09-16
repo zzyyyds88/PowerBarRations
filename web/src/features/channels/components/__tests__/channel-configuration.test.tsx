@@ -1928,3 +1928,16 @@ test('closing an edited channel retains its left exit direction after the parent
     }
   }
 })
+
+// 上游单价编辑器必须与模型清单同屏（design-v1 §16#7）：每个模型在不同渠道的采购价
+// 不同，埋进「其他设置 → 渠道额外设置」没人找得到。默认分区就是「连接与模型」，
+// 因此不切换任何 tab 也能看到它，即可证明落点正确。
+test('upstream unit price editor sits with the model list in the default section', async () => {
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+
+  expect(
+    screen.getByRole('tab', { name: /Connection & Models/ })
+  ).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByText('Upstream unit prices')).toBeVisible()
+})
