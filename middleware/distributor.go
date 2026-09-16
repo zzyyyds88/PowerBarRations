@@ -109,8 +109,8 @@ func Distribute() func(c *gin.Context) {
 				}
 				var selectGroup string
 				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-				// W7：`/pg/chat/completions`（基座登录用户试玩）已随多用户面删除，
-				// 其分组覆盖逻辑一并移除；PBR 的分组恒为 default。
+				// 分组恒为 default：基座的用户分组/`/pg/chat/completions` 试玩入口
+				// 已随多用户面删除（W7），没有"按用户覆盖分组"这回事。
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
@@ -554,16 +554,6 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 			relayMode = relayconstant.RelayModeAudioTranscription
 		}
 		c.Set("relay_mode", relayMode)
-	}
-	if strings.HasPrefix(c.Request.URL.Path, "/pg/chat/completions") {
-		// playground chat completions
-		req, err := getModelFromRequest(c)
-		if err != nil {
-			return nil, false, err
-		}
-		modelRequest.Model = req.Model
-		modelRequest.Group = req.Group
-		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
 	}
 
 	return &modelRequest, shouldSelectChannel, nil

@@ -127,6 +127,11 @@ chat() { # chat <model>
     -H "Authorization: Bearer $CLIENT_KEY" -H 'Content-Type: application/json' \
     -d '{"model":"'"$1"'","messages":[{"role":"user","content":"ping"}]}'
 }
+chat_stream() { # chat_stream <model> —— 流式：走 member_stream_first_event_timeout
+  curl -s -D "$WORK/headers.txt" -o "$WORK/body.json" -w '%{http_code}' -X POST "$BASE/v1/chat/completions" \
+    -H "Authorization: Bearer $CLIENT_KEY" -H 'Content-Type: application/json' \
+    -d '{"model":"'"$1"'","stream":true,"messages":[{"role":"user","content":"ping"}]}'
+}
 served_by() { grep -i '^x-served-by:' "$WORK/headers.txt" | tr -d '\r' | sed 's/^[Xx]-[Ss]erved-[Bb]y: *//'; }
 control() { curl -s $H -X POST -d "$1" "http://127.0.0.1:$UPSTREAM_PORT/__control" > /dev/null; }
 upstream_hits() { grep -ac '"path"' "$WORK/upstream.log" 2>/dev/null || echo 0; }
@@ -266,6 +271,36 @@ CODE=$(chat mode-rr); S2=$(served_by)
 echo "  round_robin: 第1发 $(echo "$S1"|tr -d '\n') / 第2发 $(echo "$S2"|tr -d '\n')"
 check "round_robin 第 1 发 channel-a" "$S1" 'channel=1:channel-a'
 check "round_robin 第 2 发 channel-b" "$S2" 'channel=2:channel-b'
+
+echo
+echo "=== 验收门 5：上游挂起（不发响应头）→ 按真实超时换人，不得当成客户端取消 ==="
+# 回归：等待响应头阶段的超时曾被误判为 canceled（不换人、不冷却），
+# 必须翻译成 deadline → soft_transient → 换到下一成员（routing-spec §8）。
+curl -s "${A[@]}" -X PUT -d '{
+  "enabled":true,"mode":"failover",
+  "config":{"member_max_attempts":1,"member_retry_interval_seconds":0,
+            "member_non_stream_response_timeout_seconds":120,"member_stream_first_event_timeout_seconds":1,
+            "member_cooldown_seconds":5,"member_affinity_seconds":0},
+  "members":[
+    {"channel":"channel-a","upstream_model":"hang-a","priority":20},
+    {"channel":"channel-b","upstream_model":"hang-b","priority":10}
+  ]}' "$BASE/api/v1/lanes/hang-model" > /dev/null
+control '{"model":"hang-a","delay_ms":4000}'   # channel-a 的上游模型：4s 内不发响应头
+control '{"model":"hang-b","status":200}'      # channel-b 正常
+HITS_BEFORE=$(upstream_hits)
+CODE=$(chat_stream hang-model); SERVED=$(served_by)
+HITS_AFTER=$(upstream_hits)
+echo "  HTTP $CODE served=$SERVED upstream hits ${HITS_BEFORE}→${HITS_AFTER}"
+# 注意：流式请求在打上游之前就已由网关写出 200 + SSE 头，所以 HTTP 码不能区分成败；
+# 判据是"最终服务者变成 channel-b"与"响应体不是错误包"。
+check "挂起成员被跳过，由下一成员服务" "$SERVED" 'channel=2:channel-b'
+check_not "响应体不是错误包" "$(cat "$WORK/body.json")" '"error"'
+H_HANG=$(health hang-model)
+echo "  hang health: $(echo "$H_HANG" | jq1 "json.dumps({m['member']:{'kind':m.get('last_error_kind'),'cooldown_until':m['cooldown_until'],'circuit':m['circuit']} for m in d['members']},ensure_ascii=False)")"
+check "超时归类为 soft_transient（不是 canceled）" "$H_HANG" '"soft_transient"'
+check_not "超时不得被标成 canceled" "$H_HANG" '"last_error_kind":"canceled"'
+assert_json "挂起成员进入冷却/熔断（未被静默放过）" "$H_HANG" "any(m['member'].startswith('channel-a') and (m['cooldown_until']>0 or m['circuit']!='closed') for m in d['members'])"
+control '{"model":"hang-a","status":200,"delay_ms":0}'
 
 echo
 echo "=== 附加：错误分类（429 不误伤 / client_error 不冷却 / 欠费关键词） ==="
