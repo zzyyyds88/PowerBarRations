@@ -46,7 +46,6 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-
 describe('metadata editing', () => {
   it.each([
     {
@@ -123,11 +122,17 @@ describe('metadata editing', () => {
     }
   )
 
-  it('allows an administrator to save metadata without loading or changing system pricing', async () => {
+  it('allows an administrator to save metadata without writing system pricing', async () => {
     useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
-    const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
       if (url === '/api/console/models/7') {
         return { data: { success: true, data: model } }
+      }
+      if (url === '/api/option/') {
+        return { data: { success: true, data: [] } }
+      }
+      if (url === '/api/channel/search') {
+        return { data: { success: true, data: { items: [], total: 0 } } }
       }
       return { data: { success: false, message: 'Root only' } }
     })
@@ -161,9 +166,11 @@ describe('metadata editing', () => {
     )
     await waitFor(() => expect(put).toHaveBeenCalled())
     expect(
-      get.mock.calls.some(([url]) => String(url).startsWith('/api/option'))
+      put.mock.calls.some(([url]) => String(url).startsWith('/api/option'))
     ).toBe(false)
-    expect(put.mock.calls.every(([url]) => url === '/api/console/models/')).toBe(true)
+    expect(
+      put.mock.calls.every(([url]) => url === '/api/console/models/')
+    ).toBe(true)
     expect(put.mock.calls[0][1]).toMatchObject({
       description: 'Updated metadata',
       icon: 'Claude.Avatar',

@@ -27,7 +27,6 @@ import {
   DropdownMenuItem,
   DropdownMenuShortcut,
 } from '@/components/ui/dropdown-menu'
-import { useCanEditModelPricing } from '@/features/model-pricing/api'
 
 import type { Model } from '../types'
 import { ModelDeleteDialog } from './dialogs/model-delete-dialog'
@@ -39,7 +38,6 @@ interface DataTableRowActionsProps {
 
 export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const { t } = useTranslation()
-  const canPrice = useCanEditModelPricing()
   const model = row.original
   const { setOpen, setCurrentRow } = useModels()
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
@@ -61,19 +59,6 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           {model.id > 0 ? t('Edit') : t('Add metadata')}
         </span>
       </Button>
-
-      {canPrice && (
-        <Button
-          variant='ghost'
-          size='sm'
-          onClick={() => {
-            setCurrentRow(model)
-            setOpen('price-model')
-          }}
-        >
-          <span className='truncate'>{t('Pricing')}</span>
-        </Button>
-      )}
 
       <DataTableRowActionMenu ariaLabel={t('Open menu')}>
         <DropdownMenuItem

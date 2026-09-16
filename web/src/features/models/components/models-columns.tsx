@@ -29,10 +29,6 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from '@/components/ui/tooltip'
-import {
-  useCanEditModelPricing,
-  type ModelPricingConfig,
-} from '@/features/model-pricing/api'
 import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
@@ -45,12 +41,8 @@ import { DescriptionCell } from './description-cell'
 import { ModelUnitPriceCell } from './model-unit-price-cell'
 import { useModels } from './models-provider'
 
-export function useModelsColumns(
-  _pricing?: ModelPricingConfig,
-  pricingState?: 'loading' | 'error'
-): ColumnDef<Model>[] {
+export function useModelsColumns(): ColumnDef<Model>[] {
   const { t } = useTranslation()
-  const canPrice = useCanEditModelPricing()
   const { setCurrentRow, setOpen } = useModels()
   const rules = getNameRuleConfig(t)
   return [
@@ -127,32 +119,27 @@ export function useModelsColumns(
       },
     },
     {
-      id: 'pricing',
-      header: t('Pricing'),
-      meta: { label: t('Pricing') },
+      id: 'upstream_unit_price',
+      header: () => (
+        <Tooltip>
+          <TooltipTrigger render={<span tabIndex={0} />}>
+            {t('Upstream unit price')}
+          </TooltipTrigger>
+          <TooltipContent role='tooltip'>
+            {t(
+              'Channel price takes precedence; cost conversion only, never affects billing or admission.'
+            )}
+          </TooltipContent>
+        </Tooltip>
+      ),
+      meta: { label: t('Upstream unit price') },
       size: 225,
       enableSorting: false,
       cell: ({ row }) => {
-        if (!canPrice) {
-          return (
-            <span className='text-muted-foreground text-xs'>
-              {t('Super admin')}
-            </span>
-          )
-        }
         if (row.original.name_rule !== 0) {
           return (
             <span className='text-muted-foreground text-xs'>
               {t('Per matched model')}
-            </span>
-          )
-        }
-        if (pricingState) {
-          return (
-            <span className='text-muted-foreground text-xs'>
-              {pricingState === 'error'
-                ? t('Failed to load model pricing')
-                : t('Loading...')}
             </span>
           )
         }
@@ -231,7 +218,7 @@ export function useModelsColumns(
       header: t('Actions'),
       enableSorting: false,
       enableHiding: false,
-      size: canPrice ? 170 : 105,
+      size: 105,
       cell: ({ row }) => <DataTableRowActions row={row} />,
     },
     {

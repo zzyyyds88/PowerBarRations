@@ -28,7 +28,6 @@ import type { Model, SyncLocale, SyncSource } from '../types'
 type DialogType =
   | 'create-model'
   | 'update-model'
-  | 'price-model'
   | 'missing-models'
   | 'sync-wizard'
   | 'prefill-groups'

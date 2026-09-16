@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -61,9 +61,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { ModelPricingPanel } from '@/features/model-pricing/model-pricing-panel'
 import {
   createServerError,
   getServerErrorMessage,
@@ -79,12 +77,12 @@ import {
   type ModelFormValues,
 } from '../../lib/model-form'
 import type { Model } from '../../types'
+import { ModelLinkedChannels } from '../model-linked-channels'
 
 export function ModelMutateDrawer(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: Model | null
-  initialSection?: 'metadata' | 'pricing'
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -98,17 +96,6 @@ export function ModelMutateDrawer(props: {
       : props.currentRow
   const isEditing = Boolean(currentRow?.id)
   const hasModelName = Boolean(currentRow?.model_name)
-  const [section, setSection] = useState<string>(
-    props.initialSection ?? 'metadata'
-  )
-  const [pricingName, setPricingName] = useState('')
-  const [pricingVisited, setPricingVisited] = useState(
-    props.initialSection === 'pricing'
-  )
-  const [pricingDirty, setPricingDirty] = useState(false)
-  const [pendingPricingName, setPendingPricingName] = useState<string | null>(
-    null
-  )
   const [closeConfirm, setCloseConfirm] = useState(false)
   const loadedKey = useRef('')
   const form = useForm({
@@ -119,6 +106,11 @@ export function ModelMutateDrawer(props: {
       sync_official: 1,
       name_rule: 0,
     } as Model),
+  })
+  // 用 useWatch 而非 form.watch：后者与 React Compiler 不兼容（lint 规则）。
+  const watchedModelName = useWatch({
+    control: form.control,
+    name: 'model_name',
   })
   const modelQuery = useQuery({
     queryKey: modelsQueryKeys.detail(currentRow?.id ?? 0),
@@ -132,25 +124,15 @@ export function ModelMutateDrawer(props: {
     },
     enabled: props.open && isEditing,
   })
-  const savedModel = modelQuery.data ?? currentRow
-
   useEffect(() => {
     if (!props.open) return
-    setSection(props.initialSection ?? 'metadata')
-    setPricingVisited(props.initialSection === 'pricing')
-    setPricingName('')
-    setPricingDirty(false)
-    setPendingPricingName(null)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCloseConfirm(false)
-  }, [
-    props.open,
-    props.initialSection,
-    props.currentRow?.id,
-    props.currentRow?.model_name,
-  ])
+  }, [props.open, props.currentRow?.id, props.currentRow?.model_name])
 
   useEffect(() => {
     if (!props.open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCreatedModel(null)
       loadedKey.current = ''
       return
@@ -178,11 +160,6 @@ export function ModelMutateDrawer(props: {
     meta: { errorToast: false },
     onMutate: () => form.clearErrors('root.server'),
     mutationFn: async (values: ModelFormValues) => {
-      if (pricingDirty && values.model_name !== currentRow?.model_name) {
-        throw new Error(
-          t('Save or discard pricing changes before renaming metadata.')
-        )
-      }
       const payload = transformFormDataToModelPayload(values)
       const response = currentRow?.id
         ? await updateModel({ ...payload, id: currentRow.id })
@@ -203,12 +180,9 @@ export function ModelMutateDrawer(props: {
           response.data
         )
       }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all }),
-        queryClient.invalidateQueries({ queryKey: ['pricing'] }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all })
       toast.success(t('Model metadata saved'))
-      if (!pricingDirty) props.onOpenChange(false)
+      props.onOpenChange(false)
     },
     onError: (error) => {
       form.setError('root.server', {
@@ -228,7 +202,7 @@ export function ModelMutateDrawer(props: {
   const metadataDirty = form.formState.isDirty
   const close = (open: boolean) => {
     if (!open && isSubmitting) return
-    if (!open && (metadataDirty || pricingDirty)) {
+    if (!open && metadataDirty) {
       setCloseConfirm(true)
       return
     }
@@ -247,35 +221,11 @@ export function ModelMutateDrawer(props: {
             </SheetTitle>
             <SheetDescription>
               {t(
-                'Manage metadata, pricing, and channel connections. Each section saves separately.'
+                'Manage model metadata and view channel associations. Metadata is saved separately.'
               )}
             </SheetDescription>
           </SheetHeader>
-          <Tabs
-            value={section}
-            onValueChange={(value) => {
-              setSection(value)
-              if (value === 'pricing') setPricingVisited(true)
-            }}
-            className='shrink-0 px-4'
-          >
-            <TabsList className='grid w-full grid-cols-2 group-data-horizontal/tabs:h-auto'>
-              <TabsTrigger
-                value='metadata'
-                className='h-auto min-w-0 whitespace-normal'
-              >
-                {t('Model metadata')}
-              </TabsTrigger>
-              <TabsTrigger
-                value='pricing'
-                disabled={!hasModelName}
-                className='h-auto min-w-0 whitespace-normal'
-              >
-                {t('Pricing')}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-          {props.open && section === 'metadata' && (
+          {props.open && (
             <>
               {modelQuery.isError ? (
                 <ErrorState
@@ -314,11 +264,10 @@ export function ModelMutateDrawer(props: {
                             <FormDescription>
                               {t('The unique identifier for this model')}
                               {isEditing &&
-                                form.watch('model_name') !==
-                                  currentRow?.model_name && (
+                                watchedModelName !== currentRow?.model_name && (
                                   <span className='text-warning mt-1 block'>
                                     {t(
-                                      'Renaming metadata does not rename channel models or move pricing. Existing prices stay with the original model name.'
+                                      'Renaming metadata does not rename channel models or channel upstream prices. Existing channel prices stay with the original model name.'
                                     )}
                                   </span>
                                 )}
@@ -427,7 +376,7 @@ export function ModelMutateDrawer(props: {
                             </FormControl>
                             <FormDescription>
                               {t(
-                                'Matching rules apply to metadata. Pricing is configured for each concrete model.'
+                                'Matching rules apply to metadata only. Upstream prices are configured per concrete model and channel.'
                               )}
                             </FormDescription>
                             <FormMessage />
@@ -542,6 +491,13 @@ export function ModelMutateDrawer(props: {
                         )}
                       />
                     </SideDrawerSection>
+
+                    {hasModelName && currentRow?.model_name ? (
+                      <ModelLinkedChannels
+                        modelName={currentRow.model_name}
+                        nameRule={currentRow.name_rule}
+                      />
+                    ) : null}
                   </form>
                 </Form>
               )}
@@ -577,58 +533,6 @@ export function ModelMutateDrawer(props: {
               </SheetFooter>
             </>
           )}
-          {props.open && pricingVisited && savedModel && (
-            <div
-              className={
-                section === 'pricing'
-                  ? 'flex min-h-0 flex-1 flex-col'
-                  : 'hidden'
-              }
-            >
-              {savedModel.name_rule !== 0 && (
-                <div className='space-y-2 p-4'>
-                  <p className='text-muted-foreground text-sm'>
-                    {t(
-                      'Select a concrete model to configure pricing. Metadata matching does not propagate prices.'
-                    )}
-                  </p>
-                  <Combobox
-                    value={pricingName}
-                    onValueChange={(value) => {
-                      if (pricingDirty) {
-                        setPendingPricingName(value ?? '')
-                        setCloseConfirm(true)
-                      } else {
-                        setPricingName(value ?? '')
-                      }
-                    }}
-                    options={(savedModel.matched_models ?? []).map((name) => ({
-                      value: name,
-                      label: name,
-                    }))}
-                    aria-label={t('Select model')}
-                    className='w-full'
-                    placeholder={t('Select model')}
-                  />
-                </div>
-              )}
-              {(savedModel.name_rule === 0 || pricingName) && (
-                <ModelPricingPanel
-                  onDirtyChange={setPricingDirty}
-                  key={
-                    savedModel.name_rule === 0
-                      ? savedModel.model_name
-                      : pricingName
-                  }
-                  modelName={
-                    savedModel.name_rule === 0
-                      ? savedModel.model_name
-                      : pricingName
-                  }
-                />
-              )}
-            </div>
-          )}
         </SheetContent>
       </Sheet>
       <ConfirmDialog
@@ -639,13 +543,7 @@ export function ModelMutateDrawer(props: {
         confirmText={t('Discard changes')}
         handleConfirm={() => {
           setCloseConfirm(false)
-          if (pendingPricingName !== null) {
-            setPricingName(pendingPricingName)
-            setPendingPricingName(null)
-            setPricingDirty(false)
-          } else {
-            props.onOpenChange(false)
-          }
+          props.onOpenChange(false)
         }}
       />
     </>

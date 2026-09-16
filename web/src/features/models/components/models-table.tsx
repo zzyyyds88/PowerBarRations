@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next'
 
 import { DataTablePage, useDataTable } from '@/components/data-table'
 import { ErrorState } from '@/components/error-state'
-import { useModelPricing } from '@/features/model-pricing/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -121,16 +120,7 @@ export function ModelsTable() {
   const totalCount = data?.data?.total || 0
 
   // Columns configuration
-  const pricingQuery = useModelPricing(
-    models
-      .filter((item) => item.name_rule === 0)
-      .map((item) => item.model_name),
-    models.length > 0
-  )
-  let pricingState: 'loading' | 'error' | undefined
-  if (pricingQuery.isError) pricingState = 'error'
-  else if (pricingQuery.isLoading) pricingState = 'loading'
-  const columns = useModelsColumns(pricingQuery.data, pricingState)
+  const columns = useModelsColumns()
 
   // React Table instance
   const { table } = useDataTable({
