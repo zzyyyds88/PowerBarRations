@@ -279,6 +279,17 @@ FILTERED=$(curl -s "${A[@]}" "$BASE/api/v1/logs?success=false&limit=200")
 assert_json "按 success=false 过滤有效" "$FILTERED" "all(not i['success'] for i in d['items']) and len(d['items'])>0"
 
 echo
+echo "--- 附加：prune 明细后 /stats 历史仍在（/stats 读聚合表，审查 F5）"
+PRUNE=$(curl -s "${A[@]}" -X POST "$BASE/api/v1/logs/prune?before=9999999999")
+echo "  prune: $PRUNE"
+check "prune 删除了明细" "$PRUNE" '"deleted":'
+DETAIL_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/logs?limit=200")
+assert_json "明细已清空（证明下一条断言不是靠明细）" "$DETAIL_AFTER" "len(d['items'])==0"
+STATS_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/stats?granularity=hour&group_by=lane")
+echo "  $(echo "$STATS_AFTER" | head -c 300)"
+assert_json "prune 后 stats 仍能聚合出 w5-model" "$STATS_AFTER" "any(i['group']=='w5-model' and i['requests']>0 for i in d['items'])"
+
+echo
 echo "--- 私有数据自查：源码中不得出现本次测试密钥"
 LEAK=$(grep -rn "sk-w5-good\|sk-w5-bad" "$REPO" --exclude-dir=.git --exclude-dir=verify 2>/dev/null | head -5)
 if [[ -z "$LEAK" ]]; then echo "  PASS: 源码无测试密钥残留"; PASS=$((PASS+1)); else echo "  FAIL: $LEAK"; FAIL=$((FAIL+1)); fi
