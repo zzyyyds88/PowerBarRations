@@ -143,7 +143,12 @@ export function useModelsColumns(): ColumnDef<Model>[] {
             </span>
           )
         }
-        return <ModelUnitPriceCell modelName={row.original.model_name} />
+        return (
+          <ModelUnitPriceCell
+            modelName={row.original.model_name}
+            nameRule={row.original.name_rule}
+          />
+        )
       },
     },
     {

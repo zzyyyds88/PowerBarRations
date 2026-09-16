@@ -25,53 +25,20 @@ import { SideDrawerSection } from '@/components/drawer-layout'
 import { ErrorState } from '@/components/error-state'
 import { Button } from '@/components/ui/button'
 import { searchChannels } from '@/features/channels/api'
-import {
-  channelsQueryKeys,
-  extractMappingSourceModels,
-  getChannelTypeLabel,
-  parseChannelSettings,
-  parseModelsList,
-} from '@/features/channels/lib'
-import type { Channel, ChannelModelPrice } from '@/features/channels/types'
+import { channelsQueryKeys, getChannelTypeLabel } from '@/features/channels/lib'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
+import {
+  channelRouteKeys,
+  findChannelPrice,
+  matchesName,
+} from '../lib/channel-price'
 import { usePBRModelPrices } from '../pbr-model-prices'
 
 // 模型抽屉「渠道关联」：列出声明该模型（或经 model_mapping 映射它）的渠道，
 // 展示每个渠道的上游单价（渠道 pbr_prices 优先，否则回退全局 PBRModelPrices），
 // 并给出跳转到渠道编辑的入口。此处只读，仅用于成本展示。
 const PAGE_SIZE = 100
-
-function matchesName(name: string, modelName: string, rule: number): boolean {
-  switch (rule) {
-    case 1:
-      return name.startsWith(modelName)
-    case 2:
-      return name.includes(modelName)
-    case 3:
-      return name.endsWith(modelName)
-    default:
-      return name === modelName
-  }
-}
-
-function channelRouteKeys(channel: Channel): string[] {
-  const keys = [
-    ...parseModelsList(channel.models),
-    ...extractMappingSourceModels(channel.model_mapping ?? ''),
-  ]
-  return [...new Set(keys)]
-}
-
-function findChannelPrice(
-  channel: Channel,
-  modelName: string,
-  rule: number
-): ChannelModelPrice | undefined {
-  const prices = parseChannelSettings(channel.setting).pbr_prices ?? []
-  if (rule === 0) return prices.find((item) => item.model === modelName)
-  return prices.find((item) => matchesName(item.model, modelName, rule))
-}
 
 function formatPrice(price: { input?: number; output?: number }): string {
   return `¥${price.input ?? 0} / ¥${price.output ?? 0}`
