@@ -58,3 +58,28 @@ b2140a4 W9 → c3b9e28 W2 → b4652e9 W6 → 7a9f993 W7
 7. 成员链手工增删排序 + 删 `weighted`/`round_robin` 与成员 `weight` → 5a81fef（后端）+ 7a9f993（前端）
 8. 渠道模型自动探测 → 3e74005
 9. 看板「渠道 × 模型」成本 → b2140a4
+## 5. 真机部署与端到端核对（2026-09-16）
+
+在现网服务（`/root/pbr-data/pbr`，监听 5700）上重建二进制并重启，用管理密钥逐条核对：
+
+| 诉求/契约 | 实测 |
+|---|---|
+| `GET /api/v1/capabilities` | `lane_modes = ['failover','manual']` |
+| 渠道 PUT 带旧 `priority/weight` | HTTP 200，响应不含两字段 |
+| 车道 `mode:"weighted"` | HTTP 422，`code=invalid_mode` |
+| `GET /api/v1/routes/{model}` 成员 | 键为 `channel/priority/upstream_model`，无 `weight` |
+| `GET /api/v1/stats?group_by=channel_model` | 200；非法值 400 `validation_failed` |
+| `/api/deployments/`、`/api/vendors/` | 404（已物理删除） |
+| `GET /api/v1/export` | 8 渠道，0 个含 priority/weight |
+| `GET /llms.txt`（嵌入 api-guide） | 含 `channel_model`；无 `/members` 与"隐式链" |
+| 控制台产物 | 嵌入 `index.c18da8540c.js`；含上游单价/渠道关联/成员链手工管理/渠道×模型；无部署/广场/weighted 串 |
+
+数据库迁移在现网库上实际执行：`channels.priority`、`channels.weight`、`models.vendor_id`
+三列已 DROP（7 渠道、12 车道数据保留）。旧二进制与数据库备份留在
+`/root/pbr-data/pbr.bak-20260916-084946` 与 `backup/pbr-pre-w10-20260916-084946.db`。
+
+### 部署中发现并修复的缺陷（提交 29134a1）
+
+列 DROP 后仍有两处运行期 SQL 引用旧列，会在真机上抛 `no such column: priority`：
+`model/channel.go` 的默认渠道排序、`controller/channel_upstream_update.go` 的批量 Select
+字段。两者及 `ChannelTag` 载荷、字段分类表一并清理，修复后全量 Go 测试 44 包绿。
