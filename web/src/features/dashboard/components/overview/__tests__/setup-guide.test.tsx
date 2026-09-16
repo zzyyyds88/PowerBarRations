@@ -54,14 +54,23 @@ beforeEach(() => {
   keyLookupError = null
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     switch (url) {
-      case '/api/token/?p=1&size=10':
+      case '/api/keys':
         if (keyLookupError) throw keyLookupError
         return {
           data: {
-            success: true,
-            data: {
-              items: [{ id: 1, name: 'App key', key: 'masked', status: 1 }],
-            },
+            items: [
+              {
+                id: 1,
+                name: 'App key',
+                enabled: true,
+                key_prefix: 'pbr-masked',
+                lane_policy: { mode: 'all', allow_lanes: [], deny_lanes: [] },
+                ip_allowlist: [],
+                expires_at: null,
+                created_at: '2026-09-15T16:47:00Z',
+                last_used_at: null,
+              },
+            ],
           },
         }
       case '/api/status':
@@ -75,10 +84,12 @@ beforeEach(() => {
             },
           },
         }
-      case '/api/user/models':
-        return { data: { success: true, data: ['gpt-4o-mini'] } }
-      case '/api/data/self':
-        return { data: { success: true, data: [] } }
+      case '/api/models':
+        return {
+          data: {
+            items: [{ model: 'gpt-4o-mini', source: 'implicit', member_count: 1 }],
+          },
+        }
       default:
         throw new Error(`Unexpected dashboard request: ${url}`)
     }

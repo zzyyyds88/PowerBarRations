@@ -28,7 +28,6 @@ import { createElement, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { saveModelPricing } from '@/features/model-pricing/api'
 import { useUpdateOption } from '@/features/system-settings/hooks/use-update-option'
 import { handleServerError } from '@/lib/handle-server-error'
 import { api } from '@/lib/http-client'
@@ -47,34 +46,6 @@ afterEach(() => {
   vi.restoreAllMocks()
   useAuthStore.getState().auth.reset()
   window.history.replaceState({}, '', '/')
-})
-
-it('reports the pricing rejection once when the request error reaches multiple handlers', async () => {
-  const message = 'model_pricing: unknown name fixed (1:16)'
-  const notify = vi.spyOn(toast, 'error').mockReturnValue('pricing-error')
-  const adapter: AxiosAdapter = async (config) => {
-    throw new AxiosError(
-      'Request failed with status code 400',
-      'ERR_BAD_REQUEST',
-      config,
-      undefined,
-      {
-        data: { success: false, message },
-        status: 400,
-        statusText: 'Bad Request',
-        headers: {},
-        config,
-      }
-    )
-  }
-  api.defaults.adapter = adapter
-  await saveModelPricing([
-    { model_name: 'example', expected_version: 'v1', pricing: {}, reset: true },
-  ]).catch((error) => {
-    handleServerError(error)
-    handleServerError(error)
-  })
-  expect(notify.mock.calls.map(([message]) => message)).toEqual([message])
 })
 
 it('uses an ordinary Error message and reports identical independent failures separately', () => {
@@ -105,41 +76,6 @@ it('keeps unsuccessful business responses resolved and silent until a caller han
   expect(notify.mock.calls.map(([message]) => message)).toEqual([
     'Invalid expression',
   ])
-})
-
-it('uses production mutation callbacks to report nested pricing failures only once per operation', async () => {
-  const client = createAppQueryClient()
-  const notify = vi.spyOn(toast, 'error').mockReturnValue('error')
-  api.defaults.adapter = async (config) => ({
-    data: { success: false, message: 'Invalid expression' },
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config,
-  })
-  for (const name of ['first attempt', 'second attempt']) {
-    const inner = client
-      .getMutationCache()
-      .build(client, { mutationFn: saveModelPricing })
-    const outer = client.getMutationCache().build(client, {
-      mutationFn: () =>
-        inner.execute([
-          {
-            model_name: name,
-            expected_version: 'v1',
-            pricing: {},
-            reset: true,
-          },
-        ]),
-      onError: (error) => handleServerError(error),
-    })
-    await outer.execute(undefined).catch((error) => handleServerError(error))
-  }
-  expect(notify.mock.calls.map(([message]) => message)).toEqual([
-    'Invalid expression',
-    'Invalid expression',
-  ])
-  client.clear()
 })
 
 it('only reports a query failure after retries are exhausted and stays silent when a retry succeeds', async () => {

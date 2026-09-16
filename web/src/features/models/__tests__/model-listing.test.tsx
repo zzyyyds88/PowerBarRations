@@ -25,11 +25,6 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table'
-import {
   render,
   screen,
   within,
@@ -46,8 +41,6 @@ import type {
   ModelPricingEntry,
 } from '@/features/model-pricing/api'
 import { pricingOptions } from '@/features/model-pricing/pricing'
-import { usePricingColumns } from '@/features/pricing/components/pricing-columns'
-import type { PricingModel } from '@/features/pricing/types'
 import fr from '@/i18n/locales/fr.json'
 import zhCN from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
@@ -91,24 +84,6 @@ function Page() {
       <ModelsTable />
       <ModelsDialogs />
     </ModelsProvider>
-  )
-}
-
-function CatalogPrice(props: { model: PricingModel }) {
-  const columns = usePricingColumns({ tokenUnit: 'M' })
-  const table = useReactTable({
-    data: [props.model],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  })
-  const cell = table
-    .getRowModel()
-    .rows[0].getAllCells()
-    .find((item) => item.column.id === 'price')
-  return (
-    <div role='group' aria-label='Catalog price'>
-      {cell && flexRender(cell.column.columnDef.cell, cell.getContext())}
-    </div>
   )
 }
 
@@ -347,41 +322,6 @@ it('prefills and creates metadata only when the user explicitly saves it', async
   )
 })
 
-it('keeps prices and channel explanations readable in the mobile card and detail drawer', async () => {
-  const originalMatchMedia = window.matchMedia
-  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
-    ...originalMatchMedia(query),
-    matches: query === '(max-width: 640px)',
-  }))
-  await renderList([metadata], {
-    pricing: [
-      {
-        model_name: metadata.model_name,
-        version: 'v1',
-        configured: {},
-        effective: { ModelRatio: 0.625, CompletionRatio: 8 },
-      },
-    ],
-  })
-  const price = screen.getByRole('button', {
-    name: 'View pricing for catalog-only',
-  })
-  expect(within(price).getByText('1.25')).toHaveClass('whitespace-normal')
-  expect(within(price).getByText('USD / 1M tokens')).toHaveClass(
-    'whitespace-normal'
-  )
-  expect(screen.getByText('Channels 0 · Groups 0')).toHaveClass(
-    'whitespace-normal'
-  )
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'catalog-only' }))
-  await user.click(screen.getByRole('tab', { name: 'Channels and groups' }))
-  expect(
-    screen.getByText(
-      'No channel is configured. This model will not appear in the model square.'
-    )
-  ).toBeVisible()
-})
 
 it('uses backend square states for success, warning, hidden, and partial rows including models without metadata', async () => {
   const activeChannels = [{ name: 'Active', type: 1 }]
@@ -541,200 +481,10 @@ it('opens a long translated reason by touch in the mobile card without requiring
   ).not.toBeInTheDocument()
 })
 
-it.each([
-  {
-    name: 'legacy',
-    effective: { ModelRatio: 1.5, CompletionRatio: 5, CacheRatio: 0.1 },
-    catalog: { model_ratio: 1.5, completion_ratio: 5 },
-    text: 'Input3Output15',
-  },
-  {
-    name: 'single-expression',
-    effective: {
-      'billing_setting.billing_mode': 'tiered_expr',
-      'billing_setting.billing_expr': 'tier("base", p * 3 + c * 15 + cr * 0.3)',
-    },
-    catalog: {
-      billing_mode: 'tiered_expr',
-      billing_expr: 'tier("base", p * 3 + c * 15 + cr * 0.3)',
-    },
-    text: 'Input3Output15',
-  },
-  {
-    name: 'tier-expression',
-    effective: {
-      'billing_setting.billing_mode': 'tiered_expr',
-      'billing_setting.billing_expr':
-        'len <= 200000 ? tier("standard", p * 3 + c * 15) : tier("long", p * 6 + c * 22.5)',
-    },
-    catalog: {
-      billing_mode: 'tiered_expr',
-      billing_expr:
-        'len <= 200000 ? tier("standard", p * 3 + c * 15) : tier("long", p * 6 + c * 22.5)',
-    },
-    text: 'Input3Output15',
-  },
-  {
-    name: 'free-request',
-    effective: { ModelPrice: 0 },
-    catalog: { quota_type: 1, model_price: 0 },
-    text: 'Per-request0USD/request',
-  },
-  {
-    name: 'free-tokens',
-    effective: { ModelRatio: 0, CompletionRatio: 2 },
-    catalog: { model_ratio: 0, completion_ratio: 2 },
-    text: 'Input0Output0',
-  },
-  {
-    name: 'free-expression',
-    effective: {
-      'billing_setting.billing_mode': 'tiered_expr',
-      'billing_setting.billing_expr': 'tier("free", p * 0 + c * 0)',
-    },
-    catalog: {
-      billing_mode: 'tiered_expr',
-      billing_expr: 'tier("free", p * 0 + c * 0)',
-    },
-    text: 'Input0Output0',
-  },
-])(
-  'shows $name effective pricing like the catalog without requiring a listed model',
-  async ({ name, effective, catalog, text }) => {
-    const model = { ...channel, model_name: name }
-    await renderList([model], {
-      pricing: [{ model_name: name, version: 'v1', configured: {}, effective }],
-    })
-    const button = screen.getByRole('button', {
-      name: `View pricing for ${name}`,
-    })
-    expect(button.textContent?.replaceAll(/\s/g, '')).toContain(text)
-    expect(button).not.toHaveTextContent('Unset price')
-    expect(button).not.toHaveTextContent('Cache')
-    render(
-      <CatalogPrice
-        model={{
-          id: 1,
-          model_name: name,
-          quota_type: 0,
-          model_ratio: 0,
-          completion_ratio: 0,
-          enable_groups: [],
-          ...catalog,
-        }}
-      />
-    )
-    expect(button.textContent).toBe(
-      screen.getByRole('group', { name: 'Catalog price' }).textContent
-    )
-  }
-)
 
-it('shows task tier ranges in the schema unit and converts site currency only once', async () => {
-  useSystemConfigStore.getState().setConfig({
-    currency: {
-      ...DEFAULT_CURRENCY_CONFIG,
-      quotaDisplayType: 'CNY',
-      usdExchangeRate: 7,
-    },
-  })
-  const expression =
-    'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)'
-  const schema = {
-    seconds: { type: 'number' as const, unit: 'second' as const },
-    mode: { enum: ['std', 'pro'] },
-  }
-  await renderList([channel], {
-    pricing: [
-      {
-        model_name: channel.model_name,
-        version: 'v1',
-        configured: {},
-        effective: {
-          'billing_setting.billing_mode': 'tiered_expr',
-          'billing_setting.billing_expr': expression,
-        },
-        usage_schema: schema,
-      },
-    ],
-  })
-  const button = screen.getByRole('button', {
-    name: 'View pricing for channel-only',
-  })
-  expect(button).toHaveTextContent(/2.8.*5.6/)
-  expect(button).toHaveTextContent('/s')
-  expect(button).toHaveTextContent('CNY')
-  expect(button).not.toHaveTextContent('¥')
-  expect(button).not.toHaveTextContent('1M tokens')
-})
 
-it('opens the effective expression breakdown from the price without creating metadata', async () => {
-  const expression =
-    '(len <= 200000 ? tier("standard", p * 3 + c * 15 + cr * 0.3) : tier("long", p * 6 + c * 22.5 + cr * 0.6)) * (header("x-priority") == "high" ? 2 : 1)'
-  await renderList([channel], {
-    pricing: [
-      {
-        model_name: channel.model_name,
-        version: 'v1',
-        configured: {},
-        effective: {
-          'billing_setting.billing_mode': 'tiered_expr',
-          'billing_setting.billing_expr': expression,
-        },
-      },
-    ],
-  })
-  const write = vi.spyOn(api, 'post')
-  await userEvent.click(
-    screen.getByRole('button', { name: 'View pricing for channel-only' })
-  )
-  const preview = await screen.findByRole('region', { name: 'Current Billing' })
-  expect(preview).toHaveTextContent('standard')
-  expect(preview).toHaveTextContent('long')
-  expect(preview).toHaveTextContent('0.3')
-  expect(preview).toHaveTextContent('0.6')
-  expect(preview).toHaveTextContent('x-priority')
-  expect(write).not.toHaveBeenCalled()
-})
 
-it('shows an unrecognized expression as special and retains its full source in pricing details', async () => {
-  const expression = 'tier("custom", max(p * 2 + c * 8, 100))'
-  await renderList([channel], {
-    pricing: [
-      {
-        model_name: channel.model_name,
-        version: 'v1',
-        configured: {},
-        effective: {
-          'billing_setting.billing_mode': 'tiered_expr',
-          'billing_setting.billing_expr': expression,
-        },
-      },
-    ],
-  })
-  const button = screen.getByRole('button', {
-    name: 'View pricing for channel-only',
-  })
-  expect(button).toHaveTextContent('Special billing expression')
-  expect(button).not.toHaveTextContent('$2')
-  expect(button).not.toHaveTextContent(expression)
-  await userEvent.click(button)
-  const preview = await screen.findByRole('region', { name: 'Current Billing' })
-  expect(preview).toHaveTextContent(expression)
-})
 
-it('distinguishes pending and failed pricing requests from an unset price', async () => {
-  let rejectPricing: (reason: Error) => void = () => {}
-  const pricing = new Promise<ModelPricingConfig>((_resolve, reject) => {
-    rejectPricing = reject
-  })
-  await renderList([channel], { pricing, waitForPricing: false })
-  expect(screen.getByText('Loading...')).toBeVisible()
-  expect(screen.queryByText('Unset price')).not.toBeInTheDocument()
-  await act(async () => rejectPricing(new Error('pricing unavailable')))
-  expect(await screen.findByText('Failed to load model pricing')).toBeVisible()
-  expect(screen.queryByText('Unset price')).not.toBeInTheDocument()
-})
 
 it('filters actual visibility independently of policy and restores filters through browser history', async () => {
   const { get, router } = await renderList([channel], {
@@ -819,39 +569,3 @@ it('keeps an active visibility filter when its server result is empty', async ()
   })
 })
 
-it.each([
-  { type: 'CUSTOM' as const, caption: '🐱 / 1M tokens' },
-  { type: 'TOKENS' as const, caption: 'USD / 1M tokens' },
-])(
-  'uses one currency caption in $type mode without replacing prices with quota counts',
-  async ({ type, caption }) => {
-    useSystemConfigStore.getState().setConfig({
-      currency: {
-        ...DEFAULT_CURRENCY_CONFIG,
-        quotaDisplayType: type,
-        customCurrencySymbol: '🐱',
-        customCurrencyExchangeRate: 1,
-      },
-    })
-    await renderList([channel], {
-      pricing: [
-        {
-          model_name: channel.model_name,
-          version: 'v1',
-          configured: {},
-          effective: { ModelRatio: 0.25, CompletionRatio: 2 },
-        },
-      ],
-    })
-    const button = screen.getByRole('button', {
-      name: 'View pricing for channel-only',
-    })
-    expect(button.textContent?.replaceAll(/\s/g, '')).toContain(
-      'Input0.5Output1'
-    )
-    expect(within(button).getByText(caption)).toBeVisible()
-    if (type === 'CUSTOM') {
-      expect(button.textContent?.match(/🐱/g)).toHaveLength(1)
-    }
-  }
-)

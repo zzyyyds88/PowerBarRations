@@ -61,6 +61,7 @@ func clientKeyResponse(key *model.ClientKey) gin.H {
 		lastUsedAt = time.Unix(key.LastUsedAt, 0).UTC().Format(time.RFC3339)
 	}
 	return gin.H{
+		"id":              key.Id,
 		"name":            key.Name,
 		"enabled":         key.Enabled,
 		"lane_policy":     gin.H{"mode": policy.Mode, "allow_lanes": allow, "deny_lanes": deny},
