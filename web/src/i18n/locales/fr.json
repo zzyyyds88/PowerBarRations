@@ -1524,6 +1524,7 @@
     "Credentials": "Identifiants",
     "Credentials verification failed": "Échec de la vérification des identifiants",
     "Credentials verification failed — double-check Merchant ID and API private key.": "Échec de la vérification des identifiants — vérifiez l’ID marchand et la clé privée API.",
+    "Credentials changed. Please sign in again.": "Identifiants modifiés. Veuillez vous reconnecter.",
     "credit": "credit",
     "Credit remaining": "Crédit restant",
     "Creem API key (leave blank unless updating)": "Clé API Creem (laissez vide sauf si mise à jour)",

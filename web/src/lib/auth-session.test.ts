@@ -315,3 +315,38 @@ describe('authentication session coordination', () => {
     )
   })
 })
+describe("stale session outcome", () => {
+  // token-spec §2.5.1：服务端判定"带了 Cookie 但已失效"时必须单独归类为 stale，
+  // 让上层给出"凭据已变更"的可操作提示，而不是笼统的 anonymous。
+  test("server-reported stale maps to the stale outcome and clears local state", async () => {
+    const cleared: boolean[] = []
+    const runRefresh = createRefreshRunner({
+      request: async () => ({ status: 200, data: { stale: true } }),
+      getExpectedSID: () => undefined,
+      parseBundle: () => null,
+      acceptBundle: () => undefined,
+      clear: () => {
+        cleared.push(true)
+      },
+      markTransient: () => undefined,
+      wait: async () => undefined,
+    })
+
+    expect(await runRefresh()).toEqual({ kind: "stale" })
+    expect(cleared.length).toBeGreaterThan(0)
+  })
+
+  test("an ordinary 401 still maps to anonymous", async () => {
+    const runRefresh = createRefreshRunner({
+      request: async () => ({ status: 401, data: undefined }),
+      getExpectedSID: () => undefined,
+      parseBundle: () => null,
+      acceptBundle: () => undefined,
+      clear: () => undefined,
+      markTransient: () => undefined,
+      wait: async () => undefined,
+    })
+
+    expect(await runRefresh()).toEqual({ kind: "anonymous" })
+  })
+})

@@ -192,6 +192,12 @@ func PBRAuth() gin.HandlerFunc {
 		}
 		key := bearerToken(c)
 		if key == "" || !VerifyPBRAdminKey(key) {
+			// 带了会话 Cookie 但校验不过：顺手把它作废（对齐上游 new-api 的
+			// "失败即清 Cookie"口径）。否则失效 Cookie 会随每个请求反复发送，
+			// 让浏览器在"已重新登录"之后仍持续 401。
+			if AdminSessionCookieState(c).Stale() {
+				ClearAdminSession(c)
+			}
 			apierr.Write(c, http.StatusUnauthorized, apierr.CodeUnauthorized,
 				"missing or invalid bearer token or session", "")
 			return

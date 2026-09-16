@@ -1524,6 +1524,7 @@
     "Credentials": "憑證",
     "Credentials verification failed": "憑證驗證失敗",
     "Credentials verification failed — double-check Merchant ID and API private key.": "憑證驗證失敗，請檢查 Merchant ID 和 API 私鑰。",
+    "Credentials changed. Please sign in again.": "憑證已變更，請重新登入。",
     "credit": "credit",
     "Credit remaining": "剩餘額度",
     "Creem API key (leave blank unless updating)": "Creem API 金鑰（除非更新，否則留空）",

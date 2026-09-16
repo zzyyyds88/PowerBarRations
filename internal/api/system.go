@@ -151,12 +151,20 @@ func Logout(c *gin.Context) {
 //   - 200 + {authenticated:true}：Cookie 有效，前端可直接进入
 //   - 200 + {authenticated:false, stale:false}：从未登录 / 无 Cookie，前端跳登录页
 //   - 200 + {authenticated:false, stale:true}：**带了 Cookie 但已失效**（口令变更等），
-//     前端必须清除本地会话态、提示"凭据已变更，请重新登录"，并让浏览器丢弃该 Cookie
+//     此时服务端**自己下发清除 Cookie**，前端只需清本地态并跳登录页
 //
 // 刻意不用 401：这是"查询状态"而非"受保护资源"，用 200 承载布尔值，
 // 免得前端把正常未登录误报成错误 toast。stale 的契约见 token-spec §2.5.1。
+//
+// 失效 Cookie 由**服务端**负责清除（对齐上游 new-api 的 RefreshAuth 口径：失败即
+// ClearRefreshCookie），不把清理责任推给用户手动清浏览器数据。前端若也清一次只是兜底。
 func SessionStatus(c *gin.Context) {
 	state := middleware.AdminSessionCookieState(c)
+	if state.Stale() {
+		// 失效 Cookie 立即作废：否则它会随每个请求继续发送（Path=/），
+		// 让"登录成功"之后的所有业务请求仍然 401。
+		middleware.ClearAdminSession(c)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"authenticated": state.Valid,
 		"stale":         state.Stale(),
