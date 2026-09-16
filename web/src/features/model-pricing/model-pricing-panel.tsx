@@ -163,8 +163,6 @@ export function ModelPricingPanel(props: {
         embedded
         ref={editor}
         editData={editData}
-        usageSchema={entry.usage_schema}
-        pluginVariants={entry.plugin_variants}
         onDirtyChange={props.onDirtyChange}
         onSave={() => persist()}
         isSaving={save.isPending}
@@ -206,7 +204,6 @@ export function ModelPricingPanel(props: {
                 <DynamicPricingBreakdown
                   compact
                   billingExpr={effectivePricing.billing_expr}
-                  usageSchema={entry.usage_schema}
                 />
               ) : (
                 effectivePricing.quota_type === 0 &&

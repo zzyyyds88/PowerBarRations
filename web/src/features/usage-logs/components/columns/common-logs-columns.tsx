@@ -35,18 +35,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
-import {
-  normalizeTierLabel,
-  parseTaskTiersFromExpr,
-} from '@/features/pricing/lib/billing-expr'
-import {
-  formatTaskUsageUnitPrice,
-  getTaskUsagePriceUnitLabelKey,
-} from '@/features/pricing/lib/dynamic-price'
-import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
-import { taskUsageUnitLabel } from '@/features/pricing/lib/task-price-display'
-import type { BillingUsageSchema } from '@/features/pricing/types'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
@@ -56,7 +44,6 @@ import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
-  decodeBillingExprB64,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   parseLogOther,
@@ -111,11 +98,9 @@ function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
   t: (key: string, opts?: Record<string, unknown>) => string,
-  isAdmin: boolean,
-  language: string,
-  usageSchema?: BillingUsageSchema
+  isAdmin: boolean
 ): DetailSegment[] {
-  const segments = buildTypeDetailSegments(log, other, t, language, usageSchema)
+  const segments = buildTypeDetailSegments(log, other, t)
   const adminSegments: DetailSegment[] = []
   // Quota saturation is a rare, admin-only anomaly marker; surface it first
   // and in danger styling so it stands out on the related billing log. The
@@ -130,18 +115,12 @@ function buildDetailSegments(
 function buildTypeDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-  language: string,
-  usageSchema?: BillingUsageSchema
+  t: (key: string, opts?: Record<string, unknown>) => string
 ): DetailSegment[] {
   // Top-up, audit, and login logs can carry a localized operation descriptor.
   if (log.type === 1 || log.type === 3 || log.type === 7) {
     const text = renderAuditContent(other, t)
     return text ? [{ text }] : []
-  }
-
-  if (log.type === 6) {
-    return [{ text: t('Async task refund') }]
   }
 
   if (log.type !== 2) return []
@@ -178,40 +157,7 @@ function buildTypeDetailSegments(
   }
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
-  if (isTieredExpr && other.is_task) {
-    const tiers = parseTaskTiersFromExpr(
-      decodeBillingExprB64(other.expr_b64),
-      usageSchema,
-      true
-    )
-    const tier = tiers.find(
-      (entry) =>
-        Boolean(other.matched_tier) &&
-        normalizeTierLabel(entry.label) ===
-          normalizeTierLabel(other.matched_tier)
-    )
-    if (tier) {
-      const prices = Object.entries(tier.unitPrices).map(([field, price]) => {
-        const definition = usageSchema?.[field]
-        const unitKey = getTaskUsagePriceUnitLabelKey(definition?.unit)
-        const unitLabel = taskUsageUnitLabel(definition, language, t(unitKey))
-        return `${field} ${formatTaskUsageUnitPrice(price, { tokenUnit: 'M' })}/${unitLabel}`
-      })
-      if (tier.constant > 0) {
-        prices.push(
-          `${t('Additional charge')} ${formatTaskUsageUnitPrice(tier.constant, { tokenUnit: 'M' })}/${t('request')}`
-        )
-      }
-      segments.push({
-        text: `${tier.label || t('Default')} · ${prices.join(' · ')}`,
-      })
-    } else {
-      segments.push({
-        text: `${t('Dynamic Pricing')} · ${t('No matching results')}`,
-        muted: true,
-      })
-    }
-  } else if (isTieredExpr) {
+  if (isTieredExpr) {
     if (tieredSummary) {
       const baseEntries = tieredSummary.priceEntries
         .filter((entry) => ['inputPrice', 'outputPrice'].includes(entry.field))
@@ -692,7 +638,6 @@ export function useCommonLogsColumns(
         return (
           <StreamTpsCell
             isStream={log.is_stream}
-            isTask={other?.is_task === true}
             tokensPerSecond={tokensPerSecond}
             streamStatus={other?.stream_status}
           />
@@ -785,30 +730,12 @@ export function useCommonLogsColumns(
       accessorKey: 'content',
       header: t('Details'),
       cell: function DetailsCell({ row }) {
-        const { t, i18n } = useTranslation()
+        const { t } = useTranslation()
         const [dialogOpen, setDialogOpen] = useState(false)
         const log = row.original
         const other = parseLogOther(log.other)
 
-        const pricingData = usePricingData(
-          log.type === 2 &&
-            other?.is_task === true &&
-            other.billing_mode === 'tiered_expr'
-        )
-        const usageSchema = pluginUsageSchema(
-          pricingData.models.find(
-            (model) => model.model_name === log.model_name
-          ),
-          other?.admin_info?.task_plugin?.key
-        )
-        const segments = buildDetailSegments(
-          log,
-          other,
-          t,
-          isAdmin,
-          i18n.language,
-          usageSchema
-        )
+        const segments = buildDetailSegments(log, other, t, isAdmin)
         const primary = segments[0]
         const hasMore = segments.length > 1
         let primaryTextClass = 'text-foreground'

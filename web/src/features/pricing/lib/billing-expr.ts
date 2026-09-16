@@ -23,14 +23,12 @@ For commercial licensing, please contact support@quantumnous.com
  * UI can be rendered from the same backend expressions.
  *
  * Display adapters intentionally accept fewer shapes than the shared
- * simulator. Existing ordered-tier, task-unit and request-rule contracts
- * stay intact; executable custom expressions do not imply fixed unit prices.
+ * simulator. Existing ordered-tier and request-rule contracts stay intact;
+ * executable custom expressions do not imply fixed unit prices.
  */
 
-import type { BillingUsageSchema } from '../types'
 import {
   readTokenTierChain,
-  readTaskTierChain,
   readTimeTokenPricing,
   type TokenTier,
 } from './billing-expression/display'
@@ -267,18 +265,6 @@ export type ParsedTier = {
   [field: string]: unknown
 }
 
-export type TaskTierCondition = {
-  field: string
-  value: string
-}
-
-export type ParsedTaskTier = {
-  label: string
-  conditions: TaskTierCondition[]
-  constant: number
-  unitPrices: Record<string, number>
-}
-
 // ---------------------------------------------------------------------------
 // Tier parser
 // ---------------------------------------------------------------------------
@@ -320,18 +306,6 @@ export function getCurrentTimePricingTiers(
   return (
     readTimeTokenPricing(exprStr, now)?.currentTiers.map(mapTokenTier) ?? null
   )
-}
-
-export function parseTaskTiersFromExpr(
-  exprStr: string,
-  schema: BillingUsageSchema | null | undefined,
-  includeBooleanConditions = false
-): ParsedTaskTier[] {
-  if (!exprStr || !schema || Object.keys(schema).length === 0) return []
-  const { billingExpr } = splitBillingExprAndRequestRules(exprStr)
-  const compiled = compileBillingExpression(billingExpr)
-  if (compiled.status !== 'ready') return []
-  return readTaskTierChain(compiled.ast, schema, includeBooleanConditions) ?? []
 }
 
 export function normalizeTierLabel(label: string | undefined): string {

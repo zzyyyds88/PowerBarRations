@@ -21,7 +21,6 @@ import { z } from 'zod'
 import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_TYPE_NEW_API,
-  CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_STATUS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -202,7 +201,6 @@ export const channelFormSchema = z
     name: z.string().min(1, ERROR_MESSAGES.REQUIRED_NAME),
     type: z.number().min(0, ERROR_MESSAGES.REQUIRED_TYPE),
     base_url: z.string().optional(),
-    task_plugin_key: z.string().optional(),
     key: z.string(),
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
@@ -289,7 +287,6 @@ export const channelFormSchema = z
     allow_inference_geo: z.boolean().optional(), // OpenAI/Anthropic: inference geography
     allow_speed: z.boolean().optional(), // Anthropic: speed mode control
     claude_beta_query: z.boolean().optional(), // Anthropic: beta query passthrough
-    disable_task_polling_sleep: z.boolean().optional(),
     // Upstream model update settings (stored in settings JSON)
     upstream_model_update_check_enabled: z.boolean().optional(),
     upstream_model_update_auto_sync_enabled: z.boolean().optional(),
@@ -297,9 +294,7 @@ export const channelFormSchema = z
   })
   .superRefine((data, ctx) => {
     if (
-      [3, 8, 36, 45, CHANNEL_TYPE_NEW_API, CHANNEL_TYPE_TASK_PLUGIN].includes(
-        data.type
-      ) &&
+      [3, 8, 36, 45, CHANNEL_TYPE_NEW_API].includes(data.type) &&
       !data.base_url?.trim()
     ) {
       addRequiredIssue(
@@ -307,12 +302,6 @@ export const channelFormSchema = z
         'base_url',
         'Base URL is required for this channel type'
       )
-    }
-    if (
-      data.type === CHANNEL_TYPE_TASK_PLUGIN &&
-      !data.task_plugin_key?.trim()
-    ) {
-      addRequiredIssue(ctx, 'task_plugin_key', 'Task plugin is required')
     }
 
     if (data.type === CHANNEL_TYPE_ADVANCED_CUSTOM) {
@@ -425,7 +414,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   name: '',
   type: 1,
   base_url: '',
-  task_plugin_key: '',
   key: '',
   openai_organization: '',
   models: '',
@@ -469,7 +457,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   allow_inference_geo: false,
   allow_speed: false,
   claude_beta_query: false,
-  disable_task_polling_sleep: false,
   upstream_model_update_check_enabled: false,
   upstream_model_update_auto_sync_enabled: false,
   upstream_model_update_ignored_models: '',
@@ -488,7 +475,6 @@ export function transformChannelToFormDefaults(
 ): ChannelFormValues {
   // Parse channel extra settings from setting field
   let extraSettings = {
-    task_plugin_key: '',
     force_format: false,
     thinking_to_content: false,
     proxy: '',
@@ -508,7 +494,6 @@ export function transformChannelToFormDefaults(
         parsed.http2_connection_shards
       )
       extraSettings = {
-        task_plugin_key: parsed.task_plugin_key || '',
         force_format: parsed.force_format || false,
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
@@ -539,7 +524,6 @@ export function transformChannelToFormDefaults(
   let allowInferenceGeo = false
   let allowSpeed = false
   let claudeBetaQuery = false
-  let disableTaskPollingSleep = false
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
@@ -559,7 +543,6 @@ export function transformChannelToFormDefaults(
       allowInferenceGeo = parsed.allow_inference_geo === true
       allowSpeed = parsed.allow_speed === true
       claudeBetaQuery = parsed.claude_beta_query === true
-      disableTaskPollingSleep = parsed.disable_task_polling_sleep === true
       upstreamModelUpdateCheckEnabled =
         parsed.upstream_model_update_check_enabled === true
       upstreamModelUpdateAutoSyncEnabled =
@@ -615,7 +598,6 @@ export function transformChannelToFormDefaults(
     allow_inference_geo: allowInferenceGeo,
     allow_speed: allowSpeed,
     claude_beta_query: claudeBetaQuery,
-    disable_task_polling_sleep: disableTaskPollingSleep,
     allow_safety_identifier: allowSafetyIdentifier,
     upstream_model_update_check_enabled: upstreamModelUpdateCheckEnabled,
     upstream_model_update_auto_sync_enabled: upstreamModelUpdateAutoSyncEnabled,
@@ -629,10 +611,6 @@ export function transformChannelToFormDefaults(
  */
 export function buildSettingJSON(formData: ChannelFormValues): string {
   const settingObj: Record<string, unknown> = {
-    task_plugin_key:
-      formData.type === CHANNEL_TYPE_TASK_PLUGIN
-        ? formData.task_plugin_key?.trim() || ''
-        : undefined,
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
     proxy: formData.proxy?.trim() || '',
@@ -774,9 +752,6 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   } else if ('claude_beta_query' in settingsObj) {
     delete settingsObj.claude_beta_query
   }
-
-  settingsObj.disable_task_polling_sleep =
-    formData.disable_task_polling_sleep === true
 
   // Upstream model update settings (for model-fetchable channel types)
   if (MODEL_FETCHABLE_TYPES.has(formData.type)) {

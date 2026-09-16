@@ -184,94 +184,94 @@ describe('searchable single selection', () => {
   })
 })
 
-const pluginOptions = [
+const providerOptions = [
   {
     value: 'alpha',
-    label: 'Alpha plugin',
-    icon: <img src='/api/plugin/task/alpha/icon' alt='' />,
+    label: 'Alpha provider',
+    icon: <img src='/icons/alpha.png' alt='' />,
   },
   {
     value: 'beta',
-    label: 'Beta plugin',
-    icon: <img src='/api/plugin/task/beta/icon' alt='' />,
+    label: 'Beta provider',
+    icon: <img src='/icons/beta.png' alt='' />,
   },
 ]
 
-function PluginSelectionFixture() {
+function ProviderSelectionFixture() {
   const [value, setValue] = useState<string | null>('alpha')
   return (
     <Combobox
-      options={pluginOptions}
+      options={providerOptions}
       value={value}
       onValueChange={setValue}
       showSelectedIcon
-      aria-label='Task plugin'
+      aria-label='Model provider'
     />
   )
 }
 
 describe('selected option icons', () => {
-  it('shows the selected plugin logo and updates it when choosing another plugin', async () => {
-    render(<PluginSelectionFixture />)
+  it('shows the selected option logo and updates it when choosing another option', async () => {
+    render(<ProviderSelectionFixture />)
     const user = userEvent.setup()
-    const input = screen.getByRole('combobox', { name: 'Task plugin' })
+    const input = screen.getByRole('combobox', { name: 'Model provider' })
     expect(screen.getByAltText('')).toHaveAttribute(
       'src',
-      '/api/plugin/task/alpha/icon'
+      '/icons/alpha.png'
     )
     await user.click(input)
-    const nextOption = screen.getByRole('option', { name: 'Beta plugin' })
+    const nextOption = screen.getByRole('option', { name: 'Beta provider' })
     expect(nextOption.querySelector('img')).toHaveAttribute(
       'src',
-      '/api/plugin/task/beta/icon'
+      '/icons/beta.png'
     )
     await user.click(nextOption)
-    await waitFor(() => expect(input).toHaveValue('Beta plugin'))
+    await waitFor(() => expect(input).toHaveValue('Beta provider'))
     expect(screen.getByAltText('')).toHaveAttribute(
       'src',
-      '/api/plugin/task/beta/icon'
+      '/icons/beta.png'
     )
   })
 
   it('removes the logo when the selection is cleared or no longer has an icon', () => {
     const view = render(
       <Combobox
-        options={pluginOptions}
+        options={providerOptions}
         value='alpha'
         showSelectedIcon
-        aria-label='Task plugin'
+        aria-label='Model provider'
       />
     )
     expect(screen.getByAltText('')).toBeInTheDocument()
     view.rerender(
       <Combobox
-        options={pluginOptions}
+        options={providerOptions}
         value={null}
         showSelectedIcon
-        aria-label='Task plugin'
+        aria-label='Model provider'
       />
     )
     expect(screen.queryByAltText('')).not.toBeInTheDocument()
     view.rerender(
       <Combobox
-        options={[{ value: 'alpha', label: 'Alpha plugin' }]}
+        options={[{ value: 'alpha', label: 'Alpha provider' }]}
         value='alpha'
         showSelectedIcon
-        aria-label='Task plugin'
+        aria-label='Model provider'
       />
     )
     expect(screen.queryByAltText('')).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Task plugin' })).toHaveValue(
-      'Alpha plugin'
+    expect(screen.getByRole('combobox', { name: 'Model provider' })).toHaveValue(
+      'Alpha provider'
     )
   })
 
   it('preserves the existing text-only selected state unless icon display is requested', () => {
     render(
       <Combobox
-        options={pluginOptions}
+        options={providerOptions}
         value='alpha'
-        aria-label='Task plugin'
+        aria-label='Model provider'
       />
     )
     expect(screen.queryByAltText('')).not.toBeInTheDocument()

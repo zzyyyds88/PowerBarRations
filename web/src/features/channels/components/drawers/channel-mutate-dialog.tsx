@@ -20,7 +20,6 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
-  AlertCircle,
   ClipboardPaste,
   Loader2,
   Server,
@@ -54,7 +53,6 @@ import { ErrorState } from '@/components/error-state'
 import { JsonCodeEditor } from '@/components/json-code-editor'
 import { JsonEditor } from '@/components/json-editor'
 import { LearnMore } from '@/components/learn-more'
-import { LoadingState } from '@/components/loading-state'
 import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -117,7 +115,6 @@ import {
   getChannel,
   getChannelDefaultBaseURLs,
   getGroups,
-  getTaskPluginOptions,
   refreshCodexCredential,
 } from '../../api'
 import {
@@ -126,8 +123,6 @@ import {
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OPTIONS,
-  CHANNEL_TYPE_TASK_PLUGIN,
-  channelTypeOptionsForTaskPluginBind,
   CHANNEL_TYPE_WARNINGS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -167,19 +162,10 @@ import {
   type ChannelConfigurationSection,
 } from '../../lib/channel-configuration'
 import {
-  getChannelPluginExtensions,
-  supportsChannelPluginExtensions,
-} from '../../lib/channel-plugin-extensions'
-import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
-import {
-  assessBaseUrlTrust,
-  nextTaskPluginBaseUrl,
-} from '../../lib/task-plugin-base-url'
 import type { Channel } from '../../types'
-import { ChannelPluginExtensions } from '../channel-plugin-extensions'
 import { ChannelPricesEditor } from '../channel-prices-editor'
 import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
@@ -243,7 +229,6 @@ const DISCOVERY_BASE_URL_REQUIRED_TYPES = new Set([
   36,
   45,
   CHANNEL_TYPE_NEW_API,
-  CHANNEL_TYPE_TASK_PLUGIN,
 ])
 const SENSITIVE_FORM_FIELDS = [
   'type',
@@ -276,7 +261,6 @@ const SENSITIVE_FORM_FIELDS = [
   'allow_inference_geo',
   'allow_speed',
   'claude_beta_query',
-  'disable_task_polling_sleep',
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
   'upstream_model_update_ignored_models',
@@ -380,11 +364,6 @@ export function ChannelMutateDialog({
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.OPERATE
   )
-  const canBindTaskPlugin = hasPermission(
-    currentUser,
-    ADMIN_PERMISSION_RESOURCES.TASK_PLUGIN,
-    ADMIN_PERMISSION_ACTIONS.BIND
-  )
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
   const initialModelsRef = useRef<string[]>([])
@@ -483,7 +462,6 @@ export function ChannelMutateDialog({
     defaultBaseURLs?.[currentType] || t(FIELD_PLACEHOLDERS.BASE_URL)
   const currentStatus = formValues.status
   const currentBaseUrl = formValues.base_url
-  const currentTaskPluginKey = formValues.task_plugin_key
   const currentKey = formValues.key
   const currentModels = formValues.models
   const currentModelMapping = formValues.model_mapping
@@ -628,29 +606,6 @@ export function ChannelMutateDialog({
     [currentModels]
   )
 
-  const taskPluginOptionsQuery = useQuery({
-    queryKey: ['task-plugin-options'],
-    queryFn: async () => requireServerSuccess(await getTaskPluginOptions()),
-    enabled: open && canBindTaskPlugin,
-    meta: { errorToast: false },
-  })
-  const canHavePluginExtensions = supportsChannelPluginExtensions(currentType)
-  const pluginExtensions = useMemo(() => {
-    if (!canBindTaskPlugin || !taskPluginOptionsQuery.isSuccess) return []
-    return getChannelPluginExtensions(currentType, taskPluginOptionsQuery.data)
-  }, [
-    canBindTaskPlugin,
-    currentType,
-    taskPluginOptionsQuery.isSuccess,
-    taskPluginOptionsQuery.data,
-  ])
-  const boundTaskPlugin =
-    currentType === CHANNEL_TYPE_TASK_PLUGIN
-      ? taskPluginOptionsQuery.data?.find(
-          (item) => item.key === currentTaskPluginKey
-        )
-      : undefined
-
   const selectChannelType = useCallback(
     (value: number) => {
       if (!canEditSensitive) return
@@ -666,76 +621,15 @@ export function ChannelMutateDialog({
     [canEditSensitive, isEditing, form, t]
   )
 
-  const selectTaskPlugin = useCallback(
-    (key: string) => {
-      if (!canBindTaskPlugin) return
-      const plugin = taskPluginOptionsQuery.data?.find(
-        (item) => item.key === key
-      )
-      if (!plugin) return
-      const previousPlugin = taskPluginOptionsQuery.data?.find(
-        (item) => item.key === form.getValues('task_plugin_key')
-      )
-      form.setValue('type', CHANNEL_TYPE_TASK_PLUGIN, { shouldDirty: true })
-      form.setValue('task_plugin_key', plugin.key, { shouldDirty: true })
-      if (!isEditing && !form.getValues('name').trim()) {
-        form.setValue('name', plugin.name)
-      }
-      if (plugin.models.length) {
-        form.setValue('models', formatModelsArray(plugin.models), {
-          shouldDirty: true,
-        })
-      }
-      const baseUrl = nextTaskPluginBaseUrl(
-        form.getValues('base_url'),
-        previousPlugin?.baseUrl,
-        plugin.baseUrl
-      )
-      if (baseUrl !== null) {
-        form.setValue('base_url', baseUrl, {
-          shouldDirty: true,
-          shouldValidate: true,
-        })
-      }
-    },
-    [
-      canBindTaskPlugin,
-      isEditing,
-      form,
-      taskPluginOptionsQuery.data,
-    ]
-  )
-
-  const channelTypeComboboxOptions = useMemo(() => {
-    const builtin = channelTypeOptionsForTaskPluginBind(canBindTaskPlugin)
-      .filter((option) => option.value !== CHANNEL_TYPE_TASK_PLUGIN)
-      .map((option) => ({
+  const channelTypeComboboxOptions = useMemo(
+    () =>
+      CHANNEL_TYPE_OPTIONS.map((option) => ({
         value: `type:${option.value}`,
         label: t(option.label),
         icon: <ChannelTypeLogo type={option.value} size={16} />,
-      }))
-    const plugins = canBindTaskPlugin
-      ? (taskPluginOptionsQuery.data ?? []).map((item) => ({
-          value: `plugin:${item.key}`,
-          label: item.name,
-          icon: (
-            <ChannelTypeLogo
-              type={CHANNEL_TYPE_TASK_PLUGIN}
-              plugin={item}
-              size={16}
-            />
-          ),
-        }))
-      : []
-    return [...builtin, ...plugins]
-  }, [canBindTaskPlugin, taskPluginOptionsQuery.data, t])
-  // The plugin author proposes the destination host once a default is
-  // prefilled, so the admin is told when the key would travel over plain HTTP
-  // or to a private network before the channel is saved.
-  const taskPluginBaseUrlTrust =
-    currentType === CHANNEL_TYPE_TASK_PLUGIN
-      ? assessBaseUrlTrust(currentBaseUrl)
-      : null
+      })),
+    [t]
+  )
 
   const formErrors = form.formState.errors
   const configuration = getChannelConfigurationState(
@@ -758,16 +652,12 @@ export function ChannelMutateDialog({
 
   // Transform models to multi-select options
   const modelOptions = useMemo(() => {
-    const allModels = new Set([
-      ...allModelsList,
-      ...currentModelsArray,
-      ...pluginExtensions.flatMap((plugin) => plugin.models),
-    ])
+    const allModels = new Set([...allModelsList, ...currentModelsArray])
     return [...allModels].map((model) => ({
       value: model,
       label: model,
     }))
-  }, [allModelsList, currentModelsArray, pluginExtensions])
+  }, [allModelsList, currentModelsArray])
 
   const modelMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
     if (!currentModelMapping?.trim()) {
@@ -1589,32 +1479,6 @@ export function ChannelMutateDialog({
     />
   )
 
-  const taskPollingFields = (
-    <FormField
-      control={form.control}
-      name='disable_task_polling_sleep'
-      render={({ field }) => (
-        <FormItem className='flex items-center justify-between px-4 py-3'>
-          <div className='space-y-0.5'>
-            <FormLabel>{t('Skip async task polling delay')}</FormLabel>
-            <FormDescription>
-              {t(
-                'Do not wait one second between polling async tasks for this channel'
-              )}
-            </FormDescription>
-          </div>
-          <FormControl>
-            <Switch
-              disabled={sensitiveLocked}
-              checked={field.value}
-              onCheckedChange={field.onChange}
-            />
-          </FormControl>
-        </FormItem>
-      )}
-    />
-  )
-
   const formatFields = currentType === 1 && (
     <FormField
       control={form.control}
@@ -2111,11 +1975,7 @@ export function ChannelMutateDialog({
             control={form.control}
             name='type'
             render={({ field }) => {
-              const isPluginType = field.value === CHANNEL_TYPE_TASK_PLUGIN
-              const comboboxValue =
-                isPluginType && currentTaskPluginKey
-                  ? `plugin:${currentTaskPluginKey}`
-                  : `type:${field.value ?? ''}`
+              const comboboxValue = `type:${field.value ?? ''}`
               return (
                 <FormItem>
                   <FormLabel required>{t('Type')}</FormLabel>
@@ -2125,9 +1985,7 @@ export function ChannelMutateDialog({
                       value={comboboxValue}
                       onValueChange={(value) => {
                         if (!value) return
-                        if (value.startsWith('plugin:')) {
-                          selectTaskPlugin(value.slice('plugin:'.length))
-                        } else if (value.startsWith('type:')) {
+                        if (value.startsWith('type:')) {
                           const parsed = Number(value.slice('type:'.length))
                           if (Number.isSafeInteger(parsed) && parsed > 0) {
                             selectChannelType(parsed)
@@ -2684,12 +2542,7 @@ export function ChannelMutateDialog({
                       variant='outline'
                       size='sm'
                       onClick={() => setModelConfiguration({})}
-                      disabled={
-                        currentModelsArray.length === 0 &&
-                        !pluginExtensions.some(
-                          (plugin) => plugin.models.length > 0
-                        )
-                      }
+                      disabled={currentModelsArray.length === 0}
                     >
                       <Settings className='mr-2 h-4 w-4' aria-hidden='true' />
                       {t('Configure Models')}
@@ -2707,33 +2560,6 @@ export function ChannelMutateDialog({
                       copyChipOnClick
                     />
                   </FormControl>
-                  {canBindTaskPlugin &&
-                    canHavePluginExtensions && (
-                      <>
-                        {taskPluginOptionsQuery.isLoading && (
-                          <LoadingState
-                            inline
-                            message={t('Loading plugins...')}
-                          />
-                        )}
-                        {taskPluginOptionsQuery.isError && (
-                          <ErrorState
-                            className='min-h-0 p-3'
-                            title={t('Failed to load plugins')}
-                            onRetry={() => {
-                              void taskPluginOptionsQuery.refetch()
-                            }}
-                          />
-                        )}
-                        <ChannelPluginExtensions
-                          plugins={pluginExtensions}
-                          selected={currentModelsArray}
-                          onConfigure={(pluginKey) =>
-                            setModelConfiguration({ pluginKey })
-                          }
-                        />
-                      </>
-                    )}
                   {modelMappingGuardrail.exposedTargetModels.length > 0 && (
                     <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
                       <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
@@ -3531,79 +3357,16 @@ export function ChannelMutateDialog({
                 name='base_url'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel
-                      required={currentType === CHANNEL_TYPE_TASK_PLUGIN}
-                    >
-                      {t('Base URL')}
-                    </FormLabel>
+                    <FormLabel>{t('Base URL')}</FormLabel>
                     <FormControl>
                       <Input placeholder={baseUrlPlaceholder} {...field} />
                     </FormControl>
-                    {currentType !== CHANNEL_TYPE_TASK_PLUGIN && (
-                      <FormDescription>
-                        {t(
-                          'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
-                        )}
-                      </FormDescription>
-                    )}
-                    {currentType === CHANNEL_TYPE_TASK_PLUGIN &&
-                      !boundTaskPlugin?.baseUrl && (
-                        <FormDescription>
-                          {t(
-                            'The upstream address this plugin sends requests to. The plugin declares no default, so it must be filled in.'
-                          )}
-                        </FormDescription>
+                    <FormDescription>
+                      {t(
+                        'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
                       )}
-                    {currentType === CHANNEL_TYPE_TASK_PLUGIN &&
-                      boundTaskPlugin?.baseUrl && (
-                        <FormDescription className='flex flex-wrap items-center gap-x-1'>
-                          <span>{t('Plugin default')}:</span>
-                          <span className='font-mono break-all'>
-                            {boundTaskPlugin.baseUrl}
-                          </span>
-                          {(field.value ?? '').trim().replace(/\/+$/, '') !==
-                            boundTaskPlugin.baseUrl && (
-                            <Button
-                              type='button'
-                              variant='link'
-                              size='xs'
-                              className='h-auto p-0'
-                              onClick={() =>
-                                form.setValue(
-                                  'base_url',
-                                  boundTaskPlugin.baseUrl ?? '',
-                                  {
-                                    shouldDirty: true,
-                                    shouldValidate: true,
-                                  }
-                                )
-                              }
-                            >
-                              {t('Use default')}
-                            </Button>
-                          )}
-                        </FormDescription>
-                      )}
+                    </FormDescription>
                     <FormMessage />
-                    {(taskPluginBaseUrlTrust?.plainHttp ||
-                      taskPluginBaseUrlTrust?.privateHost) && (
-                      <Alert>
-                        <AlertCircle />
-                        <AlertDescription>
-                          {taskPluginBaseUrlTrust?.plainHttp &&
-                            t(
-                              'This base URL uses plain HTTP, so the channel key is sent unencrypted.'
-                            )}
-                          {taskPluginBaseUrlTrust?.plainHttp &&
-                            taskPluginBaseUrlTrust?.privateHost &&
-                            ' '}
-                          {taskPluginBaseUrlTrust?.privateHost &&
-                            t(
-                              'This base URL points at a private or local network host. Make sure it is an upstream you control.'
-                            )}
-                        </AlertDescription>
-                      </Alert>
-                    )}
                   </FormItem>
                 )}
               />
@@ -4050,7 +3813,6 @@ export function ChannelMutateDialog({
                 disabled={sensitiveLocked}
                 className='space-y-4 disabled:opacity-60'
               >
-                {taskPollingFields}
                 {proxyFields}
                 {httpProtocolFields}
                 {httpShardsFields}
@@ -4197,8 +3959,6 @@ export function ChannelMutateDialog({
         <ConfigureModelsDialog
           open
           models={currentModelsArray}
-          plugins={pluginExtensions}
-          initialPluginKey={modelConfiguration.pluginKey}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) setModelConfiguration(null)
           }}

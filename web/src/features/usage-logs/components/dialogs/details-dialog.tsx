@@ -57,9 +57,7 @@ import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
-import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { BILLING_PRICING_VARS } from '@/features/pricing/lib/billing-expr'
-import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
@@ -87,7 +85,6 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
-import { PluginAuthorLink } from '../plugin-author-link'
 import { DetailRow, DetailSection } from './log-detail-layout'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
@@ -489,13 +486,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
     !isViolation &&
     other?.billing_mode === 'tiered_expr' &&
     !!other?.expr_b64
-  const pricingData = usePricingData(props.open && isTieredBilling)
-  const billingUsageSchema = pluginUsageSchema(
-    pricingData.models.find(
-      (model) => model.model_name === props.log.model_name
-    ),
-    other?.admin_info?.task_plugin?.key
-  )
   const hasAudioTokens = other?.ws || other?.audio
   const showTiming = isTimingLogType(props.log.type)
   const showAdminIp =
@@ -862,69 +852,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
         )}
 
         {/* Refund details (type=6) */}
-        {isRefund && other && (other.task_id || other.reason) && (
+        {isRefund && other?.reason && (
           <DetailSection label={t('Refund Details')}>
-            {other.task_id && (
-              <DetailRow label={t('Task ID')} value={other.task_id} mono />
-            )}
-            {other.reason && (
-              <DetailRow label={t('Reason')} value={other.reason} />
-            )}
+            <DetailRow label={t('Reason')} value={other.reason} />
           </DetailSection>
         )}
 
-        {props.isAdmin && adminInfo?.task_plugin ? (
-          <DetailSection label={t('Task Plugin')}>
-            <DetailRow
-              label={t('Plugin key')}
-              value={adminInfo.task_plugin.key}
-              mono
-            />
-            <DetailRow label={t('Name')} value={adminInfo.task_plugin.name} />
-            {adminInfo.task_plugin.version ? (
-              <DetailRow
-                label={t('Version')}
-                value={adminInfo.task_plugin.version}
-                mono
-              />
-            ) : null}
-            {adminInfo.task_plugin.author ? (
-              <DetailRow
-                label={t('Plugin author')}
-                value={
-                  <PluginAuthorLink
-                    author={adminInfo.task_plugin.author}
-                    showUrl
-                  />
-                }
-              />
-            ) : null}
-          </DetailSection>
-        ) : null}
-
         {props.isRoot && other?.root_info ? (
           <DetailSection label={t('Root Diagnostics')}>
-            {other.root_info.task_plugin ? (
-              <>
-                <DetailRow
-                  label={t('API Version')}
-                  value={String(other.root_info.task_plugin.api_version)}
-                  mono
-                />
-                <DetailRow
-                  label={t('Plugin Generation')}
-                  value={String(other.root_info.task_plugin.generation)}
-                  mono
-                />
-              </>
-            ) : null}
-            {other.root_info.upstream_task_id ? (
-              <DetailRow
-                label={t('Upstream Task ID')}
-                value={other.root_info.upstream_task_id}
-                mono
-              />
-            ) : null}
             {other.root_info.node_name ? (
               <DetailRow
                 label={t('Node Name')}
@@ -1165,8 +1100,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
               matchedFixedPrice={other.fixed_price}
               requestRules={other.request_rules}
               hideCacheColumns={!hasAnyCacheTokens(other)}
-              usageSchema={billingUsageSchema}
-              usageFacts={other.usage_facts}
             />
           </DetailSection>
         )}

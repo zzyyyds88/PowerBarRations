@@ -170,52 +170,6 @@ export const MJ_SUBMIT_RESULT_CODES = {
 } as const
 
 // ============================================================================
-// Task Logs Constants
-// ============================================================================
-
-/**
- * Task action types
- * Must match backend constants in constant/task.go
- */
-export const TASK_ACTIONS = {
-  // Suno (uppercase)
-  MUSIC: 'MUSIC', // 生成音乐
-  LYRICS: 'LYRICS', // 生成歌词
-
-  // Video generation (camelCase)
-  GENERATE: 'generate', // 图生视频
-  TEXT_GENERATE: 'textGenerate', // 文生视频
-  FIRST_TAIL_GENERATE: 'firstTailGenerate', // 首尾生视频
-  REFERENCE_GENERATE: 'referenceGenerate', // 参照生视频
-  REMIX_GENERATE: 'remixGenerate', // 视频 Remix
-} as const
-
-/**
- * Task status
- */
-export const TASK_STATUS = {
-  NOT_START: 'NOT_START', // 未启动
-  SUBMITTED: 'SUBMITTED', // 队列中
-  IN_PROGRESS: 'IN_PROGRESS', // 执行中
-  SUCCESS: 'SUCCESS', // 成功
-  FAILURE: 'FAILURE', // 失败
-  QUEUED: 'QUEUED', // 排队中
-  UNKNOWN: 'UNKNOWN', // 未知
-} as const
-
-/**
- * Task platforms
- */
-export const TASK_PLATFORMS = {
-  SUNO: 'suno',
-  SUNOAPI: 'sunoapi',
-  KLING: 'kling',
-  RUNWAY: 'runway',
-  LUMA: 'luma',
-  VIGGLE: 'viggle',
-} as const
-
-// ============================================================================
 // Status Mappings
 // ============================================================================
 
@@ -284,53 +238,6 @@ export const MJ_SUBMIT_RESULT_MAPPINGS: Record<string, StatusMapping> = {
   },
 }
 
-/**
- * Task action type mappings
- */
-export const TASK_ACTION_MAPPINGS: Record<string, StatusMapping> = {
-  [TASK_ACTIONS.MUSIC]: { label: 'Generate Music', variant: 'neutral' },
-  [TASK_ACTIONS.LYRICS]: { label: 'Generate Lyrics', variant: 'pink' },
-  [TASK_ACTIONS.GENERATE]: { label: 'Image to Video', variant: 'blue' },
-  [TASK_ACTIONS.TEXT_GENERATE]: { label: 'Text to Video', variant: 'blue' },
-  [TASK_ACTIONS.FIRST_TAIL_GENERATE]: {
-    label: 'First/Last Frame to Video',
-    variant: 'blue',
-  },
-  [TASK_ACTIONS.REFERENCE_GENERATE]: {
-    label: 'Reference Video',
-    variant: 'blue',
-  },
-  [TASK_ACTIONS.REMIX_GENERATE]: {
-    label: 'Video Remix',
-    variant: 'blue',
-  },
-}
-
-/**
- * Task status mappings
- */
-export const TASK_STATUS_MAPPINGS: Record<string, StatusMapping> = {
-  [TASK_STATUS.SUCCESS]: { label: 'Success', variant: 'green' },
-  [TASK_STATUS.NOT_START]: { label: 'Not Started', variant: 'neutral' },
-  [TASK_STATUS.SUBMITTED]: { label: 'Queued', variant: 'yellow' },
-  [TASK_STATUS.IN_PROGRESS]: { label: 'In Progress', variant: 'blue' },
-  [TASK_STATUS.FAILURE]: { label: 'Failed', variant: 'red' },
-  [TASK_STATUS.QUEUED]: { label: 'Queued', variant: 'orange' },
-  [TASK_STATUS.UNKNOWN]: { label: 'Unknown', variant: 'neutral' },
-}
-
-/**
- * Task platform mappings
- */
-export const TASK_PLATFORM_MAPPINGS: Record<string, StatusMapping> = {
-  [TASK_PLATFORMS.SUNO]: { label: 'suno', variant: 'green' },
-  [TASK_PLATFORMS.SUNOAPI]: { label: 'sunoapi', variant: 'green' },
-  [TASK_PLATFORMS.KLING]: { label: 'kling', variant: 'blue' },
-  [TASK_PLATFORMS.RUNWAY]: { label: 'runway', variant: 'violet' },
-  [TASK_PLATFORMS.LUMA]: { label: 'luma', variant: 'orange' },
-  [TASK_PLATFORMS.VIGGLE]: { label: 'viggle', variant: 'pink' },
-}
-
 // ============================================================================
 // Log Category Labels
 // ============================================================================
@@ -341,7 +248,6 @@ export const TASK_PLATFORM_MAPPINGS: Record<string, StatusMapping> = {
 export const LOG_CATEGORY_LABELS: Record<LogCategory, string> = {
   common: 'Common',
   drawing: 'Drawing',
-  task: 'Task',
 }
 
 // ============================================================================

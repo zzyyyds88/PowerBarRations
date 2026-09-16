@@ -867,7 +867,6 @@ function CostEstimator({ effectiveExpr, fullExpr, currency }: EstimatorProps) {
         expression={fullExpr}
         tokens={tokens}
         currency={currency}
-        mode='token'
       />
     </div>
   )

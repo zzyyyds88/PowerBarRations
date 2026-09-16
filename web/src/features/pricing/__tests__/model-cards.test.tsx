@@ -340,67 +340,6 @@ describe('model cards', () => {
     )
   })
 
-  it('keeps task price ranges in their actual usage unit instead of the selected token unit', () => {
-    render(
-      <ModelCard
-        model={pricingModel({
-          billing_mode: 'tiered_expr',
-          billing_expr:
-            'u("mode") == "pro" ? tier("pro", u("seconds") * 0.8) : tier("std", u("seconds") * 0.4)',
-          billing_usage_schema: {
-            seconds: { type: 'number', unit: 'second' },
-            mode: { enum: ['std', 'pro'] },
-          },
-        })}
-        onClick={vi.fn()}
-        tokenUnit='K'
-      />
-    )
-    expect(screen.getByText(/0.4.*0.8/)).toHaveTextContent(/0.4 – \$0.8/)
-    expect(screen.getByText(/^\/\s*s$/)).toBeVisible()
-    expect(screen.queryByText(/1K|1M/)).not.toBeInTheDocument()
-  })
-
-  it('shows the unconfigured usage message without inventing a token price', () => {
-    render(
-      <ModelCard
-        model={pricingModel({
-          billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
-        })}
-        onClick={vi.fn()}
-      />
-    )
-    expect(
-      screen.getByText('Usage-based billing · price not configured')
-    ).toBeVisible()
-    expect(screen.queryByText('Input')).not.toBeInTheDocument()
-  })
-
-  it('shows a spaced task token range with its unit when an example price is present', () => {
-    render(
-      <ModelCard
-        model={pricingModel({
-          billing_mode: 'tiered_expr',
-          billing_expr:
-            'u("mode") == "pro" ? tier("pro", u("tokens") * 70 / 1000000) : tier("std", u("tokens") * 42 / 1000000)',
-          billing_usage_schema: {
-            tokens: { type: 'number', unit: 'token' },
-            mode: { enum: ['std', 'pro'] },
-          },
-          billing_usage_examples: [
-            { label: '480p · 5s', facts: { tokens: 48000, mode: 'std' } },
-          ],
-        })}
-        onClick={vi.fn()}
-        tokenUnit='K'
-      />
-    )
-    expect(screen.getByText('$42 – $70').parentElement).toHaveTextContent(
-      '$42 – $70 / 1M token'
-    )
-    expect(screen.getByText(/480p · 5s ≈/)).toBeVisible()
-  })
-
   it('keeps an unrecognized expression visible with the special billing message', () => {
     const expression =
       'u("seconds") > 30 ? tier("long", u("seconds") * 0.3) : tier("short", u("seconds") * 0.4)'
@@ -409,7 +348,6 @@ describe('model cards', () => {
         model={pricingModel({
           billing_mode: 'tiered_expr',
           billing_expr: expression,
-          billing_usage_schema: { seconds: { type: 'number', unit: 'second' } },
         })}
         onClick={vi.fn()}
       />

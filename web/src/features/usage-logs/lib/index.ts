@@ -51,13 +51,7 @@ export {
 export { createStatusMapper } from './status'
 
 // Mappers
-export {
-  mjTaskTypeMapper,
-  mjStatusMapper,
-  taskActionMapper,
-  taskStatusMapper,
-  taskPlatformMapper,
-} from './mappers'
+export { mjTaskTypeMapper, mjStatusMapper } from './mappers'
 
 // Column utilities
 export { useColumnsByCategory } from './columns'

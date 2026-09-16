@@ -192,7 +192,6 @@ export function CommonLogMobileCard<TData>(props: {
                   compact
                   className='min-h-5 max-w-full min-w-0 justify-end'
                   isStream={log.is_stream}
-                  isTask={other?.is_task === true}
                   tokensPerSecond={
                     log.use_time > 0 && log.completion_tokens > 0
                       ? log.completion_tokens / log.use_time

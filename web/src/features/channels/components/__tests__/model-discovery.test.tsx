@@ -81,9 +81,6 @@ function mockChannelGet(override?: GetOverride) {
     if (url === '/api/prefill_group') {
       return { data: { success: true, data: [] } }
     }
-    if (url === '/api/task_plugin_options') {
-      return { data: { success: true, data: [] } }
-    }
     throw new Error(`Unexpected GET ${url}`)
   })
 }

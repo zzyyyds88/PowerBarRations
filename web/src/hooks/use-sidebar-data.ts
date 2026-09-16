@@ -24,9 +24,7 @@ import {
   FlaskConical,
   Key,
   LayoutDashboard,
-  ListTodo,
   MessageSquare,
-  PlugZap,
   Radio,
   ServerCog,
   Settings,
@@ -42,9 +40,9 @@ import { ROLE } from '@/lib/roles'
  * These are shown when the URL does not match any nested sidebar view
  * registered in `layout/lib/sidebar-view-registry.ts`.
  *
- * PBR 保留范围（ui-spec §5）：模型/渠道/令牌/日志/仪表盘/试打/系统设置/任务插件/
+ * PBR 保留范围（ui-spec §5）：模型/渠道/令牌/日志/仪表盘/试打/系统设置/
  * 系统信息/性能指标。多用户与计费（钱包/充值/订阅/兑换码/排名/个人中心/账号安全）
- * 已随 W7 删除，此处不得再出现入口。
+ * 已随 W7 删除，此处不得再出现入口；任务插件/异步任务入口已随 T2 删除。
  */
 export function useSidebarData(): SidebarData {
   const { t } = useTranslation()
@@ -96,13 +94,6 @@ export function useSidebarData(): SidebarData {
             url: '/usage-logs/audit',
             icon: ClipboardList,
           },
-          {
-            title: t('Task Logs'),
-            url: '/usage-logs/task',
-            activeUrls: ['/usage-logs/drawing'],
-            configUrls: ['/usage-logs/drawing', '/usage-logs/task'],
-            icon: ListTodo,
-          },
         ],
       },
       {
@@ -123,12 +114,6 @@ export function useSidebarData(): SidebarData {
             title: t('System Info'),
             url: '/system-info',
             icon: ServerCog,
-            requiredRole: ROLE.SUPER_ADMIN,
-          },
-          {
-            title: t('Task Plugins'),
-            url: '/task-plugins',
-            icon: PlugZap,
             requiredRole: ROLE.SUPER_ADMIN,
           },
           {

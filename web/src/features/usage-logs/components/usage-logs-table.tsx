@@ -41,7 +41,7 @@ import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
-import { TaskLogsFilterBar } from './task-logs-filter-bar'
+import { DrawingLogsFilterBar } from './drawing-logs-filter-bar'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 import { useLogsViewScope, type LogsViewAccess } from './usage-logs-provider'
 
@@ -214,7 +214,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         isCommon ? (
           <CommonLogsFilterBar table={table} />
         ) : (
-          <TaskLogsFilterBar table={table} logCategory={logCategory} />
+          <DrawingLogsFilterBar table={table} logCategory='drawing' />
         )
       }
       renderRow={(row) => {

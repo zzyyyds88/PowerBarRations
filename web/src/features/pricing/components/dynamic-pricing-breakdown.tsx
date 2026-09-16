@@ -38,7 +38,6 @@ import {
   requestRuleGroupsFromTrace,
   splitBillingExprAndRequestRules,
   tryParseRequestRuleExpr,
-  type ParsedTaskTier,
   type ParsedTier,
   type RequestCondition,
   type RequestRuleGroup,
@@ -48,18 +47,7 @@ import {
 import { formatBillingCondition } from '../lib/billing-expression/condition-display'
 import { compileBillingExpression } from '../lib/billing-expression/parser'
 import { isBreakdownTierMatched } from '../lib/breakdown-tier-match'
-import {
-  formatTaskUsageUnitPrice,
-  type DynamicPriceLabelKind,
-  type DynamicPriceOptions,
-} from '../lib/dynamic-price'
-import { getTaskPricingDisplayTiers } from '../lib/task-matrix-display'
-import {
-  taskPriceLabel,
-  taskUsageUnitLabel,
-  taskPricingConditions,
-} from '../lib/task-price-display'
-import type { BillingUsageSchema, BillingUsageUnit } from '../types'
+import { formatUnitPrice } from '../lib/dynamic-price'
 
 type DynamicPricingBreakdownProps = {
   billingExpr: string | null | undefined
@@ -85,27 +73,15 @@ type DynamicPricingBreakdownProps = {
    * icon header and uses the dialog's small text sizes. Defaults to false.
    */
   compact?: boolean
-  usageSchema?: BillingUsageSchema
-  taskPriceOptions?: Pick<
-    DynamicPriceOptions,
-    'showRechargePrice' | 'priceRate' | 'usdExchangeRate'
-  >
-  /**
-   * Settlement usage facts from the consume log. Used to highlight the
-   * expanded matrix display row when the engine label no longer matches
-   * any synthesized combination label.
-   */
-  usageFacts?: Record<string, string | number>
 }
 
-type BreakdownTier = ParsedTier | ParsedTaskTier
+type BreakdownTier = ParsedTier
 
 type BreakdownPriceField = {
   id: string
   label: string
-  labelKind: DynamicPriceLabelKind
-  unit: BillingUsageUnit | 'request' | 'token' | 'image'
-  unitLabel?: string | Record<string, string>
+  labelKind: 'i18n'
+  unit: 'request' | 'token' | 'image'
   showTokenUnit?: boolean
   value: (tier: BreakdownTier) => number
 }
@@ -114,9 +90,6 @@ function breakdownPriceFieldLabel(
   field: BreakdownPriceField,
   t: (key: string) => string
 ): ReactNode {
-  if (field.labelKind === 'schema') {
-    return <span className='break-words whitespace-normal'>{field.label}</span>
-  }
   return field.showTokenUnit
     ? `${t(field.label)} / ${t('1M token')}`
     : t(field.label)
@@ -167,30 +140,18 @@ function formatConditionSummary(
     .join(' && ')
 }
 
-function isTaskBreakdownTier(tier: BreakdownTier): tier is ParsedTaskTier {
-  return 'unitPrices' in tier
-}
-
 function formatBreakdownConditionSummary(
   tier: BreakdownTier,
   t: (key: string) => string,
-  schema: BillingUsageSchema | undefined,
-  language: string,
-  tierCount: number
+  language: string
 ): string {
-  if (!isTaskBreakdownTier(tier)) {
-    if (tier.conditionText) {
-      return (
-        formatBillingCondition(tier.conditionText, t, language) ??
-        t(tier.conditionText)
-      )
-    }
-    return formatConditionSummary(tier.conditions, t)
+  if (tier.conditionText) {
+    return (
+      formatBillingCondition(tier.conditionText, t, language) ??
+      t(tier.conditionText)
+    )
   }
-  return (
-    taskPricingConditions(tier.conditions, schema, language, t) ||
-    t(tierCount > 1 ? 'Other cases' : 'All requests')
-  )
+  return formatConditionSummary(tier.conditions, t)
 }
 
 function formatBreakdownPrice(
@@ -198,22 +159,13 @@ function formatBreakdownPrice(
   field: BreakdownPriceField,
   symbol: string,
   rate: number,
-  t: (key: string) => string,
-  taskPriceOptions: DynamicPricingBreakdownProps['taskPriceOptions'],
-  language: string
+  t: (key: string) => string
 ): string {
   const amount =
-    field.labelKind === 'schema' ||
-    field.unit === 'request' ||
-    field.unit === 'image'
-      ? formatTaskUsageUnitPrice(value, { tokenUnit: 'M', ...taskPriceOptions })
+    field.unit === 'request' || field.unit === 'image'
+      ? formatUnitPrice(value, { tokenUnit: 'M' })
       : `${symbol}${(value * rate).toFixed(4)}`
-  if (field.unit === 'second') return `${amount}/${t('s')}`
-  if (field.unit === 'count') {
-    return `${amount}/${taskUsageUnitLabel(field, language, t('unit'))}`
-  }
-  if (field.unit === 'credit') return `${amount}/${t('credit')}`
-  if (field.unit === 'token' && field.labelKind === 'schema') {
+  if (field.unit === 'token' && field.showTokenUnit) {
     return `${amount}/${t('1M token')}`
   }
   if (field.unit === 'request') return `${amount}/${t('request')}`
@@ -286,9 +238,6 @@ export function DynamicPricingBreakdown({
   requestRules,
   hideCacheColumns = false,
   compact = false,
-  usageSchema,
-  taskPriceOptions,
-  usageFacts,
 }: DynamicPricingBreakdownProps) {
   const { t, i18n } = useTranslation()
   const expr = billingExpr || ''
@@ -309,9 +258,7 @@ export function DynamicPricingBreakdown({
 
   const { tiers, ruleGroups } = useMemo(() => {
     const split = splitBillingExprAndRequestRules(expr)
-    const parsedTiers = usageSchema
-      ? getTaskPricingDisplayTiers(split.billingExpr, usageSchema)
-      : parseTiersFromExpr(split.billingExpr)
+    const parsedTiers = parseTiersFromExpr(split.billingExpr)
     let parsedRules =
       requestRules != null
         ? requestRuleGroupsFromTrace(requestRules)
@@ -332,7 +279,7 @@ export function DynamicPricingBreakdown({
       tiers: parsedTiers,
       ruleGroups: parsedRules || [],
     }
-  }, [expr, usageSchema, requestRules])
+  }, [expr, requestRules])
 
   const hasTiers = tiers.length > 0
   const hasRules = ruleGroups.length > 0
@@ -369,48 +316,11 @@ export function DynamicPricingBreakdown({
 
   const visiblePriceFields: BreakdownPriceField[] = (() => {
     if (!hasTiers) return []
-    if (usageSchema) {
-      const fields: BreakdownPriceField[] = Object.entries(usageSchema)
-        .filter(
-          ([field, definition]) =>
-            definition.type === 'number' &&
-            Boolean(definition.unit) &&
-            tiers.some(
-              (tier) =>
-                isTaskBreakdownTier(tier) &&
-                Number(tier.unitPrices[field] || 0) > 0
-            )
-        )
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([field, definition]) => ({
-          id: field,
-          label: taskPriceLabel(definition.description, field, i18n.language),
-          labelKind: 'schema' as const,
-          unit: definition.unit as BillingUsageUnit,
-          unitLabel: definition.unitLabel,
-          value: (tier: BreakdownTier) =>
-            isTaskBreakdownTier(tier) ? Number(tier.unitPrices[field] || 0) : 0,
-        }))
-      if (
-        tiers.some((tier) => isTaskBreakdownTier(tier) && tier.constant > 0)
-      ) {
-        fields.push({
-          id: 'constant',
-          label: 'Additional charge',
-          labelKind: 'i18n',
-          unit: 'request',
-          value: (tier: BreakdownTier) =>
-            isTaskBreakdownTier(tier) ? tier.constant : 0,
-        })
-      }
-      return fields
-    }
     const fields: BreakdownPriceField[] = BILLING_PRICING_VARS.filter(
       (variable) => {
         if (hideCacheColumns && variable.group === 'cache') return false
         return tiers.some(
           (tier) =>
-            !isTaskBreakdownTier(tier) &&
             Number(tier[variable.field as string as keyof ParsedTier] || 0) > 0
         )
       }
@@ -420,33 +330,19 @@ export function DynamicPricingBreakdown({
       labelKind: 'i18n' as const,
       unit: 'token',
       value: (tier: BreakdownTier) =>
-        isTaskBreakdownTier(tier)
-          ? 0
-          : Number(tier[variable.field as string as keyof ParsedTier] || 0),
+        Number(tier[variable.field as string as keyof ParsedTier] || 0),
     }))
-    if (
-      tiers.some(
-        (tier) => !isTaskBreakdownTier(tier) && tier.billingUnit === 'request'
-      )
-    ) {
+    if (tiers.some((tier) => tier.billingUnit === 'request')) {
       for (const field of fields) field.showTokenUnit = true
       fields.push({
         id: 'fixedPrice',
-        label: tiers.some(
-          (tier) => !isTaskBreakdownTier(tier) && tier.imageCount
-        )
+        label: tiers.some((tier) => tier.imageCount)
           ? 'Price per image'
           : 'Price per request',
         labelKind: 'i18n',
-        unit: tiers.some(
-          (tier) => !isTaskBreakdownTier(tier) && tier.imageCount
-        )
-          ? 'image'
-          : 'request',
+        unit: tiers.some((tier) => tier.imageCount) ? 'image' : 'request',
         value: (tier) =>
-          !isTaskBreakdownTier(tier) && tier.billingUnit === 'request'
-            ? Number(tier.fixedPrice)
-            : Number.NaN,
+          tier.billingUnit === 'request' ? Number(tier.fixedPrice) : Number.NaN,
       })
     }
     return fields
@@ -456,7 +352,7 @@ export function DynamicPricingBreakdown({
 
   return (
     <section className={cn('min-w-0', !compact && 'py-3 sm:py-4')}>
-      {!compact && !usageSchema && (
+      {!compact && (
         <div className='mb-3 flex items-start gap-2 sm:mb-4'>
           <span className='mt-0.5 inline-flex size-6 items-center justify-center rounded-lg bg-amber-100 text-amber-700 shadow-sm dark:bg-amber-500/20 dark:text-amber-300'>
             <TagIcon className='size-3.5' />
@@ -474,31 +370,26 @@ export function DynamicPricingBreakdown({
 
       {hasTiers && (
         <div className={cn(compact ? cn(hasRules && 'mb-2') : 'mb-3 sm:mb-4')}>
-          {!usageSchema && (
-            <div
-              className={
-                compact
-                  ? 'text-muted-foreground mb-1.5 text-xs font-medium'
-                  : 'text-foreground mb-2 text-sm font-semibold'
-              }
-            >
-              {t('Tiered price table')}
-            </div>
-          )}
+          <div
+            className={
+              compact
+                ? 'text-muted-foreground mb-1.5 text-xs font-medium'
+                : 'text-foreground mb-2 text-sm font-semibold'
+            }
+          >
+            {t('Tiered price table')}
+          </div>
           <div className='space-y-1.5 sm:hidden'>
             {tiers.map((tier) => {
               const condSummary = formatBreakdownConditionSummary(
                 tier,
                 t,
-                usageSchema,
-                i18n.language,
-                tiers.length
+                i18n.language
               )
               const isMatched = isBreakdownTierMatched(
                 tier,
                 tiers,
                 matchedTierLabel,
-                usageFacts,
                 matchedBillingUnit,
                 matchedFixedPrice
               )
@@ -515,14 +406,12 @@ export function DynamicPricingBreakdown({
                   )}
                 >
                   <div className='mb-1.5 flex flex-wrap items-center gap-1.5'>
-                    {!usageSchema && (
-                      <Badge
-                        variant='secondary'
-                        className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
-                      >
-                        {tier.label || t('Default')}
-                      </Badge>
-                    )}
+                    <Badge
+                      variant='secondary'
+                      className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                    >
+                      {tier.label || t('Default')}
+                    </Badge>
                     {isMatched && (
                       <Badge
                         variant='secondary'
@@ -565,9 +454,7 @@ export function DynamicPricingBreakdown({
                                   field,
                                   symbol,
                                   rate,
-                                  t,
-                                  taskPriceOptions,
-                                  i18n.language
+                                  t
                                 )
                               : '-'}
                           </div>
@@ -594,7 +481,6 @@ export function DynamicPricingBreakdown({
                 tier,
                 tiers,
                 matchedTierLabel,
-                usageFacts,
                 matchedBillingUnit,
                 matchedFixedPrice
               )
@@ -606,7 +492,7 @@ export function DynamicPricingBreakdown({
             columns={[
               {
                 id: 'tier',
-                header: usageSchema ? t('Applicable conditions') : t('Tier'),
+                header: t('Tier'),
                 className: cn(
                   'text-muted-foreground py-2 font-medium',
                   compact && 'h-8'
@@ -619,29 +505,24 @@ export function DynamicPricingBreakdown({
                   const condSummary = formatBreakdownConditionSummary(
                     tier,
                     t,
-                    usageSchema,
-                    i18n.language,
-                    tiers.length
+                    i18n.language
                   )
                   const isMatched = isBreakdownTierMatched(
                     tier,
                     tiers,
                     matchedTierLabel,
-                    usageFacts,
                     matchedBillingUnit,
                     matchedFixedPrice
                   )
                   return (
                     <>
                       <div className='flex flex-wrap items-center gap-1.5'>
-                        {!usageSchema && (
-                          <Badge
-                            variant='secondary'
-                            className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
-                          >
-                            {tier.label || t('Default')}
-                          </Badge>
-                        )}
+                        <Badge
+                          variant='secondary'
+                          className='bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300'
+                        >
+                          {tier.label || t('Default')}
+                        </Badge>
                         {isMatched && (
                           <Badge
                             variant='secondary'
@@ -682,9 +563,7 @@ export function DynamicPricingBreakdown({
                         field,
                         symbol,
                         rate,
-                        t,
-                        taskPriceOptions,
-                        i18n.language
+                        t
                       )}
                     </span>
                   ) : (
