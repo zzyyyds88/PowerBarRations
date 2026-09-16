@@ -143,8 +143,8 @@ export const STATIC_I18N_KEYS = [
   'Metadata only',
   'Available channels: {{count}}',
   'No configured channel models match this metadata rule.',
-  'No channel is configured. This model will not appear in the model square.',
-  'No channel is currently available. This model will not appear in the model square.',
+  'No channel is configured. This model will not be listed.',
+  'No channel is currently available. This model will not be listed.',
   'Listing also depends on metadata visibility and the user’s group access.',
   'Add metadata to all selected models first.',
 
@@ -165,7 +165,6 @@ export const STATIC_I18N_KEYS = [
   // Header navigation
   'Home',
   'Console',
-  'Model Square',
   'Rankings',
   'Docs',
   'About',

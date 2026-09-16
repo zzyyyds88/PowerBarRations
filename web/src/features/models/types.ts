@@ -33,10 +33,7 @@ export interface BoundChannel {
 /**
  * Model entity from API
  */
-export type ModelSquareState = 'visible' | 'unavailable' | 'hidden' | 'partial'
-
 export interface Model {
-  square_state?: ModelSquareState
   has_metadata?: boolean
   configured_channel_count?: number
   id: number
@@ -78,7 +75,6 @@ export interface PrefillGroup {
  * Get models list parameters
  */
 export interface GetModelsParams {
-  square_state?: ModelSquareState
   include_channel_models?: boolean
   p?: number
   page_size?: number
@@ -90,7 +86,6 @@ export interface GetModelsParams {
  * Search models parameters
  */
 export interface SearchModelsParams {
-  square_state?: ModelSquareState
   include_channel_models?: boolean
   keyword?: string
   status?: string // filter by status

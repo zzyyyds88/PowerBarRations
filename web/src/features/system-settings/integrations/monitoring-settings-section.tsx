@@ -213,7 +213,7 @@ export function MonitoringSettingsSection({
             <h4 className='font-medium'>{t('Model performance metrics')}</h4>
             <p className='text-muted-foreground mt-1 text-xs'>
               {t(
-                'Collect relay latency and success-rate metrics for the model square.'
+                'Collect relay latency and success-rate metrics for the model catalog.'
               )}
             </p>
           </div>

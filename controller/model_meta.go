@@ -23,25 +23,8 @@ func SearchModelsMeta(c *gin.Context) {
 }
 
 func listModelsMeta(c *gin.Context, keyword string) {
-	squareState := model.ModelSquareState(c.Query("square_state"))
-	switch squareState {
-	case "", model.ModelSquareVisible, model.ModelSquareUnavailable, model.ModelSquareHidden, model.ModelSquarePartial:
-	default:
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid model square state"})
-		return
-	}
-
 	pageInfo := common.GetPageQuery(c)
-	if squareState != "" && (pageInfo.GetPage() < 1 || pageInfo.GetPageSize() < 1) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid pagination"})
-		return
-	}
 	offset, limit := pageInfo.GetStartIdx(), pageInfo.GetPageSize()
-	if squareState != "" {
-		// Visibility depends on live channels and metadata rules. Filter the
-		// enriched candidate set before counting and paginating the results.
-		offset, limit = 0, -1
-	}
 	search := model.SearchModels
 	if c.Query("include_channel_models") == "true" {
 		search = model.SearchModelsWithChannels
@@ -55,22 +38,6 @@ func listModelsMeta(c *gin.Context, keyword string) {
 		common.ApiError(c, err)
 		return
 	}
-	if squareState != "" {
-		filtered := make([]*model.Model, 0, len(modelsMeta))
-		for _, metadata := range modelsMeta {
-			if metadata.SquareState == squareState {
-				filtered = append(filtered, metadata)
-			}
-		}
-		total = int64(len(filtered))
-		start := len(filtered)
-		if pageInfo.GetPage()-1 <= len(filtered)/pageInfo.GetPageSize() {
-			start = (pageInfo.GetPage() - 1) * pageInfo.GetPageSize()
-		}
-		end := min(start+pageInfo.GetPageSize(), len(filtered))
-		modelsMeta = filtered[start:end]
-	}
-
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(modelsMeta)
 	common.ApiSuccess(c, gin.H{
@@ -267,9 +234,6 @@ func enrichModels(models []*model.Model) error {
 	}
 	connections, err := model.GetModelConnections()
 	if err != nil {
-		return err
-	}
-	if err := model.FillModelSquareStates(models, configured, connections); err != nil {
 		return err
 	}
 	for _, metadata := range models {

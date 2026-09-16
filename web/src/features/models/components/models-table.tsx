@@ -30,7 +30,6 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 import { getModels, searchModels } from '../api'
 import { DEFAULT_PAGE_SIZE } from '../constants'
 import { modelsQueryKeys } from '../lib'
-import type { ModelSquareState } from '../types'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { useModelsColumns } from './models-columns'
 
@@ -59,7 +58,6 @@ export function ModelsTable() {
     globalFilter: { enabled: true, key: 'filter' },
     columnFilters: [
       { columnId: 'status', searchKey: 'status', type: 'array' },
-      { columnId: 'square_state', searchKey: 'square_state', type: 'array' },
       { columnId: 'sync_official', searchKey: 'sync', type: 'array' },
     ],
   })
@@ -67,11 +65,6 @@ export function ModelsTable() {
   // Extract filters from column filters
   const statusFilter =
     (columnFilters.find((f) => f.id === 'status')?.value as string[]) || []
-  const squareState = (
-    columnFilters.find((f) => f.id === 'square_state')?.value as
-      | ModelSquareState[]
-      | undefined
-  )?.[0]
   const syncFilter =
     (columnFilters.find((f) => f.id === 'sync_official')?.value as string[]) ||
     []
@@ -87,7 +80,7 @@ export function ModelsTable() {
 
   // Use search API whenever any filter is active so status/sync are applied server-side
   const shouldSearch = Boolean(
-    globalFilter?.trim() || statusFilterValue || squareState || syncFilterValue
+    globalFilter?.trim() || statusFilterValue || syncFilterValue
   )
 
   // Fetch models data
@@ -97,7 +90,6 @@ export function ModelsTable() {
       include_channel_models: true,
       keyword: globalFilter,
       status: statusFilterValue,
-      square_state: squareState,
       sync_official: syncFilterValue,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
@@ -109,7 +101,6 @@ export function ModelsTable() {
             include_channel_models: true,
             keyword: globalFilter,
             status: statusFilterValue,
-            square_state: squareState,
             sync_official: syncFilterValue,
             p: pagination.pageIndex + 1,
             page_size: pagination.pageSize,
@@ -208,17 +199,6 @@ export function ModelsTable() {
             options: [
               { label: t('Allowed'), value: 'enabled' },
               { label: t('Not listed'), value: 'disabled' },
-            ],
-            singleSelect: true,
-          },
-          {
-            columnId: 'square_state',
-            title: t('Model square visibility'),
-            options: [
-              { label: t('Displayed'), value: 'visible' },
-              { label: t('Unavailable'), value: 'unavailable' },
-              { label: t('Listing hidden'), value: 'hidden' },
-              { label: t('Partly shown'), value: 'partial' },
             ],
             singleSelect: true,
           },

@@ -42,7 +42,6 @@ import { getModelChannelState } from '../lib/model-utils'
 import type { Model } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
-import { ModelSquareStatus } from './model-square-status'
 import { ModelUnitPriceCell } from './model-unit-price-cell'
 import { useModels } from './models-provider'
 
@@ -159,14 +158,6 @@ export function useModelsColumns(
         }
         return <ModelUnitPriceCell modelName={row.original.model_name} />
       },
-    },
-    {
-      accessorKey: 'square_state',
-      header: t('Model square visibility'),
-      size: 115,
-      enableSorting: false,
-      meta: { mobileBadge: true },
-      cell: ({ row }) => <ModelSquareStatus model={row.original} />,
     },
     {
       id: 'connections',

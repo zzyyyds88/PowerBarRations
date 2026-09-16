@@ -18,15 +18,6 @@ const (
 	NameRuleSuffix
 )
 
-type ModelSquareState string
-
-const (
-	ModelSquareVisible     ModelSquareState = "visible"
-	ModelSquareUnavailable ModelSquareState = "unavailable"
-	ModelSquareHidden      ModelSquareState = "hidden"
-	ModelSquarePartial     ModelSquareState = "partial"
-)
-
 type BoundChannel struct {
 	Name string `json:"name"`
 	Type int    `json:"type"`
@@ -54,9 +45,8 @@ type Model struct {
 	MatchedModels []string `json:"matched_models,omitempty" gorm:"-"`
 	MatchedCount  int      `json:"matched_count,omitempty" gorm:"-"`
 
-	HasMetadata            bool             `json:"has_metadata" gorm:"-"`
-	ConfiguredChannelCount int              `json:"configured_channel_count" gorm:"-"`
-	SquareState            ModelSquareState `json:"square_state" gorm:"-"`
+	HasMetadata            bool `json:"has_metadata" gorm:"-"`
+	ConfiguredChannelCount int  `json:"configured_channel_count" gorm:"-"`
 }
 
 // MatchesName applies a metadata rule to a concrete channel model name.
@@ -96,79 +86,6 @@ func resolveModelMetadata(records []Model, names []string) map[string]*Model {
 		}
 	}
 	return resolved
-}
-
-// FillModelSquareStates applies the same metadata policy as the public catalog
-// to live routes, then aggregates concrete models for metadata rule rows.
-func FillModelSquareStates(rows []*Model, configured map[string][]int, connections []ModelConnection) error {
-	var metadata []Model
-	if err := DB.Find(&metadata).Error; err != nil {
-		return err
-	}
-	nameSet := make(map[string]struct{}, len(configured))
-	for name := range configured {
-		nameSet[name] = struct{}{}
-	}
-	for _, row := range rows {
-		if row != nil && row.NameRule == NameRuleExact {
-			nameSet[row.ModelName] = struct{}{}
-		}
-	}
-	names := make([]string, 0, len(nameSet))
-	for name := range nameSet {
-		names = append(names, name)
-	}
-	resolved := resolveModelMetadata(metadata, names)
-	available := make(map[string]bool)
-	for _, connection := range connections {
-		available[connection.Model] = true
-	}
-	states := make(map[string]ModelSquareState, len(names))
-	for _, name := range names {
-		state := ModelSquareUnavailable
-		if policy := resolved[name]; policy != nil && policy.Status != 1 {
-			state = ModelSquareHidden
-		} else if available[name] {
-			state = ModelSquareVisible
-		}
-		states[name] = state
-	}
-	for _, row := range rows {
-		if row == nil {
-			continue
-		}
-		if row.NameRule == NameRuleExact {
-			row.SquareState = states[row.ModelName]
-			continue
-		}
-		total, visible, hidden := 0, 0, 0
-		for name := range configured {
-			if !row.MatchesName(name) {
-				continue
-			}
-			total++
-			switch states[name] {
-			case ModelSquareVisible:
-				visible++
-			case ModelSquareHidden:
-				hidden++
-			}
-		}
-		row.SquareState = ModelSquareUnavailable
-		switch {
-		case total == 0:
-			if row.Status != 1 {
-				row.SquareState = ModelSquareHidden
-			}
-		case hidden == total:
-			row.SquareState = ModelSquareHidden
-		case visible == total:
-			row.SquareState = ModelSquareVisible
-		case visible > 0:
-			row.SquareState = ModelSquarePartial
-		}
-	}
-	return nil
 }
 
 // GetConfiguredModelChannels includes disabled channels and reads no credentials.
