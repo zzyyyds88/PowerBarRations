@@ -25,10 +25,6 @@ import {
 } from '../constants'
 import { channelFormSchema, type ChannelFormValues } from './channel-form'
 
-export type ChannelProviderTarget =
-  | { kind: 'builtin'; type: number }
-  | { kind: 'plugin'; key: string }
-
 export type ChannelConfigurationSection =
   | 'connection'
   | 'routing'

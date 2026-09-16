@@ -39,7 +39,7 @@ import {
 } from '../../hooks/use-channel-model-discovery'
 import { channelSchema, type Channel } from '../../types'
 import { ChannelsProvider } from '../channels-provider'
-import { ChannelMutateDrawer } from '../drawers/channel-mutate-drawer'
+import { ChannelMutateDialog } from '../drawers/channel-mutate-dialog'
 
 const originalAuth = useAuthStore.getState().auth
 let client: QueryClient
@@ -50,7 +50,7 @@ function DiscoveryHarness(props: { currentRow?: Channel }) {
   return (
     <QueryClientProvider client={client}>
       <ChannelsProvider>
-        <ChannelMutateDrawer
+        <ChannelMutateDialog
           open={open}
           onOpenChange={setOpen}
           currentRow={props.currentRow ?? null}
