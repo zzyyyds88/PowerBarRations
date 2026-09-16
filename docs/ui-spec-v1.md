@@ -28,7 +28,7 @@
 
 ## 2. 品牌与命名（全量替换）
 
-- 所有面向用户的品牌标识替换为 **PowerBarRations**：页面标题、logo/favicon、i18n 文案、`/api/v1/version` 自述、OpenAPI `info.title`、错误页脚、空态文案、`localStorage` 键名前缀（`pbr_*`）、CSS 变量前缀、构建注入的应用名。
+- 所有面向用户的品牌标识替换为 **PowerBarRations**：页面标题、logo/favicon、i18n 文案、`/api/version` 自述、OpenAPI `info.title`、错误页脚、空态文案、`localStorage` 键名前缀（`pbr_*`）、CSS 变量前缀、构建注入的应用名。
 - 不残留 `new-api` / `New API` / `Octopus` 等品牌字样。**代码注释里对来源文件的引用可以保留**（"移植自某上游某文件"），但产品名与界面文案不得出现第三方品牌。
 - **许可证义务**：保留 AGPL-3.0 版权头、`LICENSE`、`NOTICE`、第三方许可清单；不得声称重新授权。品牌替换 ≠ 版权替换。
 - 品牌替换范围包括：二进制名 `pbr`、Docker 镜像/容器名、配置前缀 `PBR_`、日志前缀。
@@ -39,11 +39,11 @@
 
 - 无账号、无用户名、无注册。只有**一个登录口令**（见 [token-spec-v1.md](token-spec-v1.md) §2）。
 - 首启流程：
-  1. `GET /api/v1/setup/status` 若 `initialized=false` → 强制进入**设置口令页**；
-  2. 提交 `POST /api/v1/setup`；成功后签发**会话 Cookie** 直接进控制台，并展示一次派生**管理密钥**（供 AI 使用，可复制）；
+  1. `GET /api/setup/status` 若 `initialized=false` → 强制进入**设置口令页**；
+  2. 提交 `POST /api/setup`；成功后签发**会话 Cookie** 直接进控制台，并展示一次派生**管理密钥**（供 AI 使用，可复制）；
   3. 进入数据看板。
-- 常规登录页：单输入框（登录口令）→ `POST /api/v1/auth/login` → 服务端签发 **HttpOnly 会话 Cookie**，之后所有管理请求由浏览器自动携带；**不把管理密钥存 localStorage**。
-- 登出：`POST /api/v1/auth/logout` 清 Cookie 并跳登录页。
+- 常规登录页：单输入框（登录口令）→ `POST /api/auth/login` → 服务端签发 **HttpOnly 会话 Cookie**，之后所有管理请求由浏览器自动携带；**不把管理密钥存 localStorage**。
+- 登出：`POST /api/auth/logout` 清 Cookie 并跳登录页。
 - 401 处理：清除本地会话标记并跳登录页。
 - **上游 `features/auth`、`profile`、`security`、`wallet` 等登录/用户模块一律删除**，用 PBR 的 `setup/login` 替换。
 
@@ -51,7 +51,7 @@
 
 ## 4. 实时数据
 
-- 车道运行态（当前成员 / 探测占用 / 亲和截止 / 各成员冷却）通过 **SSE** `GET /api/v1/route-events` 增量推送，合并进前端缓存，**不写回**持久配置。
+- 车道运行态（当前成员 / 探测占用 / 亲和截止 / 各成员冷却）通过 **SSE** `GET /api/route-events` 增量推送，合并进前端缓存，**不写回**持久配置。
 - 用 `fetch` + `ReadableStream` 读 SSE（Cookie 自动携带；**不用 `EventSource`** 以便统一错误处理与中断）。
 - 另有 **30s 轮询**兜底；SSE 仅作加速，不作为唯一数据源。
 - SSE 断开自动重连，重连后先取一次快照再接受增量。
@@ -101,7 +101,7 @@
 ### 6.2 数据看板 `/`
 
 - 沿用上游 `dashboard`/`home`：总量卡（请求数/成功率/token/折算成本）、时间范围切换、活动曲线、模型/渠道排行、最近失败列表。
-- **数据**：`GET /api/v1/stats`、`GET /api/v1/logs?success=false`、`GET /api/v1/system/options`。
+- **数据**：`GET /api/stats`、`GET /api/logs?success=false`、`GET /api/system/options`。
 - **验收**：异常渠道（有冷却/熔断成员）有醒目入口；成本卡标注"仅折算、非计费"。
 
 ### 6.3 模型管理 `/models`（**核心改造**）
@@ -114,17 +114,17 @@
 
 规格：
 
-- 列出**全部可路由模型**（`GET /api/v1/models`）：模型名、来源（`implicit` 隐式 / `explicit` 显式）、成员数、当前解析顺序摘要。
-- 点开某模型显示**成员链**（`GET /api/v1/routes/{model}`）：声明了它的渠道 + 顺序 + 优先级。
-- **故障切换编辑**：可把成员链固化为显式顺序（拖拽或填 priority），保存即写入 PBR 车道（名称 = 模型名，模式默认 `failover`）；`PUT /api/v1/lanes/{model}`，成员 `{channel, upstream_model, priority}`。
+- 列出**全部可路由模型**（`GET /api/models`）：模型名、来源（`implicit` 隐式 / `explicit` 显式）、成员数、当前解析顺序摘要。
+- 点开某模型显示**成员链**（`GET /api/routes/{model}`）：声明了它的渠道 + 顺序 + 优先级。
+- **故障切换编辑**：可把成员链固化为显式顺序（拖拽或填 priority），保存即写入 PBR 车道（名称 = 模型名，模式默认 `failover`）；`PUT /api/lanes/{model}`，成员 `{channel, upstream_model, priority}`。
 - 未固化时保持"渠道声明即自动成链"（按渠道 priority 降序），零配置可路由。
 - 保留上游模型元数据能力（来源 `/api/models/**`）：模型描述、标签、供应商等。
-- **验收**：为"模型1"设定"上游1 → 上游2"后，`GET /api/v1/routes/模型1` 顺序一致；上游1 故障时请求逃逸到上游2；拖拽顺序与后端 priority 一致。
+- **验收**：为"模型1"设定"上游1 → 上游2"后，`GET /api/routes/模型1` 顺序一致；上游1 故障时请求逃逸到上游2；拖拽顺序与后端 priority 一致。
 
 ### 6.4 渠道管理 `/channels`、`/channels/$id`
 
 - 沿用上游 `channels`：卡片列表 + 表单（协议类型、**API 地址**、key（只写不读）、优先级、模型清单、参数覆盖 JSON、代理、启用）+ 探活 + 批量操作 + 标签。
-- **模型清单**：手工增删；另提供"从上游拉取"（`POST /api/v1/channels/{name}/sync-models?dry_run=`，先看差异再确认）。
+- **模型清单**：手工增删；另提供"从上游拉取"（`POST /api/channels/{name}/sync-models?dry_run=`，先看差异再确认）。
 - **验收**：列表与详情只显示 `key_prefix`；新增模型名后立即出现在模型管理页；删除被显式成员链引用的渠道返回 409 并给出引用清单。
 - **注意**：上游 `update_balance` 相关 UI 保留但只作运维展示——PBR 已移除"余额≤0 自动禁用渠道"逻辑。
 
@@ -132,7 +132,7 @@
 
 - 沿用上游令牌面板：创建、启用停用、编辑、删除；用量卡（请求数/token/折算成本/最后使用）。
 - 权限（PBR 语义）：默认"**允许全部模型**"，可切"仅允许指定模型"并叠加拒绝；**判定对象是路由键（模型名）**。
-- **验收**：明文只在创建/轮换时出现一次；权限候选来自 `GET /api/v1/models`（不是显式车道），且支持手填。
+- **验收**：明文只在创建/轮换时出现一次；权限候选来自 `GET /api/models`（不是显式车道），且支持手填。
 
 ### 6.6 请求日志 `/logs`、`/logs/$id`
 
@@ -170,7 +170,7 @@
 
 ## 7. 构建与集成
 
-- 构建 `pnpm build`（或 `bun run build`，Rsbuild）→ 产物交 Go `embed`，单二进制同时服务 `/v1/*`、`/api/v1/*` 与控制台静态资源；SPA 路由回退 `index.html`。
+- 构建 `pnpm build`（或 `bun run build`，Rsbuild）→ 产物交 Go `embed`，单二进制同时服务 `/v1/*`、`/api/*` 与控制台静态资源；SPA 路由回退 `index.html`。
 - 开发：上游 `dev` 经代理转发 `/api`、`/v1` 到本地 `pbr`。
 - i18n：新增文案必须同时补三语；禁止硬编码中文到组件。
 - 品牌：构建时注入应用名与版本，供标题/关于页/`/version` 使用，避免散落硬编码。

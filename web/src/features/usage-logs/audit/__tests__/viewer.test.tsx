@@ -435,7 +435,7 @@ it('filters own access history by result, generation and time and resets paginat
   )
   await user.click(screen.getByRole('button', { name: 'Go to next page' }))
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/audit/self', {
+    expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', {
       params: expect.objectContaining({ p: 2, category: 'access_token' }),
     })
   )
@@ -451,7 +451,7 @@ it('filters own access history by result, generation and time and resets paginat
   })
   await user.click(screen.getByRole('button', { name: 'Confirm' }))
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/audit/self', {
+    expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', {
       params: expect.objectContaining({
         p: 1,
         success: 'false',
@@ -463,7 +463,7 @@ it('filters own access history by result, generation and time and resets paginat
   await user.click(screen.getByRole('combobox', { name: 'Token scope' }))
   await user.click(await screen.findByRole('option', { name: 'Current token' }))
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/audit/self', {
+    expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', {
       params: expect.objectContaining({ token_ref: 'a'.repeat(64) }),
     })
   )
@@ -496,7 +496,7 @@ it('administrator scope uses the admin endpoint and exposes the username filter'
     target: { value: 'alice' },
   })
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/audit', {
+    expect(get).toHaveBeenLastCalledWith('/api/console/audit', {
       params: expect.objectContaining({ username: 'alice' }),
     })
   )
@@ -515,14 +515,14 @@ it('changing rows per page resets pagination and sends the selected page size', 
   )
   await user.click(screen.getByRole('button', { name: 'Go to next page' }))
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/audit/self', {
+    expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', {
       params: expect.objectContaining({ p: 2 }),
     })
   )
   await user.click(screen.getByRole('combobox', { name: '' }))
   await user.click(await screen.findByRole('option', { name: '50' }))
   await waitFor(() =>
-    expect(get).toHaveBeenLastCalledWith('/api/audit/self', {
+    expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', {
       params: expect.objectContaining({ p: 1, page_size: 50 }),
     })
   )
@@ -553,12 +553,12 @@ it.each([10, 100])(
       'true'
     )
     await waitFor(() =>
-      expect(get).toHaveBeenCalledWith('/api/audit', expect.anything())
+      expect(get).toHaveBeenCalledWith('/api/console/audit', expect.anything())
     )
-    expect(get).not.toHaveBeenCalledWith('/api/audit/self', expect.anything())
+    expect(get).not.toHaveBeenCalledWith('/api/console/audit/self', expect.anything())
     await userEvent.click(screen.getByRole('tab', { name: 'Only Mine' }))
     await waitFor(() =>
-      expect(get).toHaveBeenLastCalledWith('/api/audit/self', expect.anything())
+      expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', expect.anything())
     )
     expect(screen.getByRole('tab', { name: 'Only Mine' })).toHaveAttribute(
       'aria-selected',
@@ -566,7 +566,7 @@ it.each([10, 100])(
     )
     await userEvent.click(screen.getByRole('tab', { name: 'All' }))
     await waitFor(() =>
-      expect(get).toHaveBeenLastCalledWith('/api/audit', expect.anything())
+      expect(get).toHaveBeenLastCalledWith('/api/console/audit', expect.anything())
     )
     expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute(
       'aria-selected',
@@ -591,9 +591,9 @@ it.each([1, 10])(
       </QueryClientProvider>
     )
     await waitFor(() =>
-      expect(get).toHaveBeenCalledWith('/api/audit/self', expect.anything())
+      expect(get).toHaveBeenCalledWith('/api/console/audit/self', expect.anything())
     )
-    expect(get).not.toHaveBeenCalledWith('/api/audit', expect.anything())
+    expect(get).not.toHaveBeenCalledWith('/api/console/audit', expect.anything())
     expect(
       screen.queryByRole('tablist', { name: 'View scope' })
     ).not.toBeInTheDocument()
@@ -632,14 +632,14 @@ it('clears global records and open details on revocation, falls back to self, an
         },
       }
     }
-    if (url === '/api/audit' && revoked) throw forbidden
+    if (url === '/api/console/audit' && revoked) throw forbidden
     return {
       data: {
         success: true,
         data: {
-          total: url === '/api/audit' ? 1 : 0,
+          total: url === '/api/console/audit' ? 1 : 0,
           items:
-            url === '/api/audit'
+            url === '/api/console/audit'
               ? [
                   {
                     event_id: 'private-event',
@@ -683,7 +683,7 @@ it('clears global records and open details on revocation, falls back to self, an
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   )
   await waitFor(() =>
-    expect(get).toHaveBeenCalledWith('/api/audit/self', expect.anything())
+    expect(get).toHaveBeenCalledWith('/api/console/audit/self', expect.anything())
   )
   await waitFor(() => expect(get).toHaveBeenCalledWith('/api/user/self'))
   expect(screen.queryByText('other-account')).not.toBeInTheDocument()
@@ -732,7 +732,7 @@ it('mobile access history keeps pagination visible and puts result filters in a 
     await user.click(within(drawer).getByRole('combobox', { name: 'Result' }))
     await user.click(await screen.findByRole('option', { name: 'Failed' }))
     await waitFor(() =>
-      expect(get).toHaveBeenLastCalledWith('/api/audit/self', {
+      expect(get).toHaveBeenLastCalledWith('/api/console/audit/self', {
         params: expect.objectContaining({ success: 'false', p: 1 }),
       })
     )

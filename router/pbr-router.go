@@ -7,14 +7,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SetPBRRouter 注册 PowerBarRations 管理 API（`/api/v1/*`）。
+// pbrAPIPrefixes 是管理面的前缀：
+//
+//   - `/api`   —— 面向 AI / 脚本的规范前缀（design-v1 §7.7、api-spec §2）。
+//   - `/api/v1` —— 兼容别名，控制台前端与既有验收脚本仍在使用。
+//
+// 两个前缀注册完全相同的处理器，因此 `/api/health` 与 `/api/v1/health` 等价。
+var pbrAPIPrefixes = []string{"/api", "/api/v1"}
+
+// SetPBRRouter 注册 PowerBarRations 管理 API（`/api/*`，兼容 `/api/v1/*`）。
 //
 // 认证模型见 docs/token-spec-v1.md §2：无账号，一个登录口令；
 // 管理密钥 = Base64(SHA256(口令))，只存其 sha256。
-// 免鉴权端点只有健康/版本与初始化相关三个（api-spec §5.1）。
+// 免鉴权端点只有健康/版本、初始化相关三个与文档页（api-spec §5.1）。
+// 面向 AI 的纯文本手册挂在根路径 `/doc` 与 `/llms.txt`。
 func SetPBRRouter(router *gin.Engine) {
-	group := router.Group("/api/v1")
+	router.GET("/doc", api.Doc)
+	router.GET("/doc/ui", api.DocUI)
+	router.GET("/llms.txt", api.LLMs)
 
+	for _, prefix := range pbrAPIPrefixes {
+		registerPBRAPIRoutes(router.Group(prefix))
+	}
+}
+
+func registerPBRAPIRoutes(group *gin.RouterGroup) {
 	// 免鉴权：健康检查、版本、初始化状态与首启设口令。
 	group.GET("/health", api.Health)
 	group.GET("/version", api.Version)
@@ -25,13 +42,14 @@ func SetPBRRouter(router *gin.Engine) {
 	group.POST("/auth/logout", api.Logout)
 	// 会话状态查询：免鉴权，200 承载布尔值（控制台启动判定）。
 	group.GET("/auth/session", api.SessionStatus)
+	// 机器可读契约免鉴权：/doc 与 /doc/ui 需要它，且只暴露端点形状。
+	group.GET("/openapi.json", api.GetOpenAPI)
 
 	authed := group.Group("")
 	authed.Use(middleware.PBRAuth())
 	{
 		authed.POST("/auth/password", api.ChangePassword)
 		authed.GET("/capabilities", api.GetCapabilities)
-		authed.GET("/openapi.json", api.GetOpenAPI)
 		authed.GET("/export", api.GetExport)
 		authed.POST("/import", api.PostImport)
 		authed.GET("/audit", api.ListAudit)

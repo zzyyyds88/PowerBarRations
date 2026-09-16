@@ -60,7 +60,7 @@ export async function getAuditLogs(
 ): Promise<{ items: AuditLog[]; total: number }> {
   const response = await api.get<
     ApiResponse<{ items: AuditLog[]; total: number }>
-  >(scope === 'all' ? '/api/audit' : '/api/audit/self', { params })
+  >(scope === 'all' ? '/api/console/audit' : '/api/console/audit/self', { params })
   if (!response.data.success || !response.data.data) {
     throw createServerError(response.data, t('Failed to load audit records'))
   }

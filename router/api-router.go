@@ -25,13 +25,11 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
-	anonymousRequestBodyLimit := middleware.AnonymousRequestBodyLimit()
 	{
-		apiRouter.GET("/setup", controller.GetSetup)
-		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
 		apiRouter.GET("/status", controller.GetStatus)
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
-		apiRouter.GET("/models", middleware.PBRAuth(), controller.DashboardListModels)
+		// 控制台内部接口统一收进 /api/console/*，把 /api/* 让给 PBR 管理面（api-spec §2）。
+		apiRouter.GET("/console/models", middleware.PBRAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.PBRAuth(), controller.TestStatus)
 		apiRouter.GET("/notice", controller.GetNotice)
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
@@ -81,7 +79,7 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		apiRouter.GET("/task_plugin_options", middleware.PBRAuth(), controller.GetTaskPluginOptions)
 		registerChannelRoutes(apiRouter)
-		apiRouter.GET("/audit", middleware.PBRAuth(), controller.GetAuditLogs)
+		apiRouter.GET("/console/audit", middleware.PBRAuth(), controller.GetAuditLogs)
 
 		// 基座用量记录（记账视图）：只读，保留给管理员排障。
 		// 用户自助视图（/log/self*、/log/token）与额度口径统计（/log/stat）随多用户/计费删除。
@@ -138,7 +136,7 @@ func SetApiRouter(router *gin.Engine) {
 			vendorRoute.DELETE("/:id", controller.DeleteVendorMeta)
 		}
 
-		modelsRoute := apiRouter.Group("/models")
+		modelsRoute := apiRouter.Group("/console/models")
 		modelsRoute.Use(middleware.PBRAuth())
 		{
 			modelsRoute.GET("/sync_upstream/preview", controller.SyncUpstreamPreview)

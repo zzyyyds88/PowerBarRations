@@ -131,7 +131,7 @@ describe('metadata sync preview', () => {
       screen.getByRole('button', { name: 'Apply 2 model changes' })
     )
     await screen.findByText('Metadata sync completed')
-    expect(post).toHaveBeenCalledWith('/api/models/sync_upstream', {
+    expect(post).toHaveBeenCalledWith('/api/console/models/sync_upstream', {
       locale: 'en',
       source_version: 'source-v1',
       selections: [
@@ -258,7 +258,7 @@ describe('metadata sync preview', () => {
       screen.getByRole('button', { name: 'Apply 21 model changes' })
     )
     await screen.findByText('Metadata sync completed')
-    expect(post).toHaveBeenCalledWith('/api/models/sync_upstream', {
+    expect(post).toHaveBeenCalledWith('/api/console/models/sync_upstream', {
       locale: 'en',
       source_version: 'source-v1',
       selections: syncable.map((item) => ({

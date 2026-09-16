@@ -90,7 +90,7 @@ describe('model deletion', () => {
     ).not.toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
-    expect(remove).toHaveBeenCalledWith('/api/models/7', {
+    expect(remove).toHaveBeenCalledWith('/api/console/models/7', {
       params: { remove_from_channels: false, remove_pricing: false },
     })
     expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['channels'] })
@@ -124,7 +124,7 @@ describe('model deletion', () => {
     ).toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Delete' }))
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
-    expect(post).toHaveBeenLastCalledWith('/api/models/delete', {
+    expect(post).toHaveBeenLastCalledWith('/api/console/models/delete', {
       model_ids: [7, 8],
       remove_from_channels: true,
       remove_pricing: false,
@@ -154,7 +154,7 @@ describe('model deletion', () => {
     await user.keyboard('{Escape}')
     expect(screen.getByRole('alertdialog')).toBeVisible()
     expect(remove).toHaveBeenCalledTimes(1)
-    expect(remove).toHaveBeenCalledWith('/api/models/7', {
+    expect(remove).toHaveBeenCalledWith('/api/console/models/7', {
       params: { remove_from_channels: true, remove_pricing: false },
     })
     complete({
@@ -183,7 +183,7 @@ it('lets a super administrator remove pricing independently of channel removal',
   expect(screen.queryByText(/Pricing will be retained/)).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Delete' }))
   await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
-  expect(post).toHaveBeenCalledWith('/api/models/delete', {
+  expect(post).toHaveBeenCalledWith('/api/console/models/delete', {
     model_ids: [7, 8],
     remove_from_channels: false,
     remove_pricing: true,

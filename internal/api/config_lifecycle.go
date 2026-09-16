@@ -768,7 +768,7 @@ func GetCapabilities(c *gin.Context) {
 	})
 }
 
-// GetOpenAPI GET /api/v1/openapi.json
+// GetOpenAPI GET /api/openapi.json（免鉴权）
 //
 // 由端点表生成，保证与实现同步（api-spec §2 要求自描述、可被工具解析）。
 func GetOpenAPI(c *gin.Context) {
@@ -779,7 +779,7 @@ func GetOpenAPI(c *gin.Context) {
 			"version":     common.Version,
 			"description": "单层化 LLM 聚合网关的管理面契约。管理密钥 = Base64(SHA256(登录口令))。",
 		},
-		"servers": []gin.H{{"url": "/api/v1"}},
+		"servers": []gin.H{{"url": "/api"}},
 		"components": gin.H{
 			"securitySchemes": gin.H{
 				"adminKey": gin.H{"type": "http", "scheme": "bearer"},
