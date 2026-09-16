@@ -1871,25 +1871,31 @@ export function ChannelMutateDrawer({
           )}
         />
 
-        <FormField
-          control={form.control}
-          name='weight'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Weight')}</FormLabel>
-              <FormControl>
-                <Input
-                  type='number'
-                  placeholder='0'
-                  {...field}
-                  onChange={(e) => field.onChange(Number(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>{t(FIELD_DESCRIPTIONS.WEIGHT)}</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        {currentType === CHANNEL_TYPE_TASK_PLUGIN && (
+          <FormField
+            control={form.control}
+            name='weight'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Weight')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    placeholder='0'
+                    {...field}
+                    onChange={(e) => field.onChange(Number(e.target.value))}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'Used only for legacy task-plugin channel selection. Model routing uses lane ordering (priority) instead.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
       </div>
 
       <FormField
@@ -1908,27 +1914,6 @@ export function ChannelMutateDrawer({
               {t(FIELD_DESCRIPTIONS.TEST_MODEL)}
             </FormDescription>
             <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name='auto_ban'
-        render={({ field }) => (
-          <FormItem className='flex items-center justify-between'>
-            <div className='space-y-0.5'>
-              <FormLabel>{t('Auto Ban')}</FormLabel>
-              <FormDescription>
-                {t(FIELD_DESCRIPTIONS.AUTO_BAN)}
-              </FormDescription>
-            </div>
-            <FormControl>
-              <Switch
-                checked={field.value === 1}
-                onCheckedChange={(checked) => field.onChange(checked ? 1 : 0)}
-              />
-            </FormControl>
           </FormItem>
         )}
       />

@@ -61,6 +61,7 @@ type LaneMember struct {
 ```
 
 - 隐式车道的成员：`Channel=渠道, UpstreamModel=路由键, Priority=渠道 priority`，不可单独配置别名/覆盖。
+- **隐式车道固定 `failover`**（按 priority 降序），**不使用 `Channel.Weight`**；`weighted` 只在显式车道上按**成员** `weight` 生效。渠道 `weight` 仅残留在基座遗留选择链（任务插件身份请求、abilities 表），与模型名键控路由无关。
 - 显式车道的成员：完全可控，支持改名与别名（把多个上游的**不同**模型名聚到一个自定义名字下，就走这里）。
 
 ### 1.3 进程内运行态（每车道一份，全部请求共享）
