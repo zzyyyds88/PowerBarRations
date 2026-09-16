@@ -84,11 +84,12 @@
 
 ### 2.5 安全取舍（须在 README 与代码注释写明）
 
-- SHA256 单次、无盐：抗离线爆破弱于 Argon2/bcrypt。**这是应用户指定的派生规则**；缓解手段是**启用 HTTPS** + 使用较长随机口令（建议 ≥16 字符，非强制），且数据库文件收紧为 600 权限、仅本机（启动时对主库及 WAL/SHM 显式 `chmod 0600`，见 `model/main.go` 的 `hardenSQLiteFilePermissions`，不依赖进程 umask）。
-- **监听 `0.0.0.0` 对局域网开放**，不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。
-- **HTTPS**：`TLS_ENABLED=true` 时加载证书（`TLS_CERT_FILE`/`TLS_KEY_FILE`）；无证书则首次启动自动生成自签证书到 `TLS_DIR`。支持 `PUT /api/tls/certificate` 导入自有证书并**热加载**（无需重启），见 README §5.1。
+- SHA256 单次、无盐：抗离线爆破弱于 Argon2/bcrypt。**这是应用户指定的派生规则**；缓解手段是**使用较长随机口令**（建议 ≥32 字符），并把数据库文件收紧为 600 权限、仅本机（启动时对主库及 WAL/SHM 显式 `chmod 0600`，见 `model/main.go` 的 `hardenSQLiteFilePermissions`，不依赖进程 umask）。
+- **本网关只提供 HTTP（明文），不提供 TLS/HTTPS 服务能力**（业主决定，与上游 new-api 口径一致）：不加载证书、不自签、不热加载，也没有 `/api/tls/*` 路由与 `TLS_*` 环境变量。需要 HTTPS 时**在外部反向代理（Nginx/Caddy/云负载均衡）终结 TLS**，代理到本服务的明文端口。
+- **监听 `0.0.0.0` 对局域网开放**，不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。**因为只有明文 HTTP，跨机部署必须收紧监听或加反向代理，否则口令/密钥/渠道 key 会明文过网。**
+- **明文传输的风险由此显式承接**：管理口令派生弱（单次 SHA256）+ 传输明文，两者叠加后仅适用于受控网络。生产化的正确做法仍是由外部代理提供 HTTPS，而不是把本服务直接暴露。
 - 管理密钥不写日志；仅在 `POST /api/setup` 与 `POST /api/auth/login` 的成功响应里返回（后者是为了让 AI/脚本能直接取得）。
-- **会话 Cookie 属性**：`HttpOnly`（JS 不可读）、`SameSite=Lax`、`Path=/`、`Max-Age` 默认 7 天（可用 `PBR_SESSION_TTL_HOURS` 调整）；HTTPS 下自动带 `Secure`（`TLS_ENABLED=true` 或 `SESSION_COOKIE_SECURE=true` 时）。Cookie 名 `pbr_session`。
+- **会话 Cookie 属性**：`HttpOnly`（JS 不可读）、`SameSite=Lax`、`Path=/`、`Max-Age` 默认 7 天（可用 `PBR_SESSION_TTL_HOURS` 调整）。网关本身只跑 HTTP，**不再自动设置 `Secure`**；若由外部反向代理终结 TLS，用 `SESSION_COOKIE_SECURE=true` 显式开启。Cookie 名 `pbr_session`。
 
 ---
 
