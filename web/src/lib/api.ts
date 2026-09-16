@@ -80,22 +80,6 @@ export async function getStatus() {
   return requireServerSuccess(res.data)?.data as Record<string, unknown>
 }
 
-export async function getNotice(): Promise<{
-  success: boolean
-  message?: string
-  data?: string
-}> {
-  // Drop the client's global `Cache-Control: no-store` for this public,
-  // non-user-specific payload. `no-store` forbids the browser from keeping a
-  // copy at all, so it would never hold an ETag to revalidate with and the
-  // server could never answer 304. The server sends `no-cache`, so the browser
-  // still revalidates on every request and an admin edit shows up immediately.
-  const res = await api.get('/api/notice', {
-    headers: { 'Cache-Control': null },
-  })
-  return res.data
-}
-
 // ============================================================================
 // 2FA Management APIs
 // ============================================================================

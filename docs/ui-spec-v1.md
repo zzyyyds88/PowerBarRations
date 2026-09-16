@@ -104,7 +104,7 @@
 
 | 分节 | 内容 |
 |---|---|
-| `/dashboard/overview` | 用量速览（上游花费 / 请求数 / 成功率 / Token，24h）+ 品牌/公告/FAQ/服务状态面板 + 起步向导 |
+| `/dashboard/overview` | 用量速览（上游花费 / 请求数 / 成功率 / Token，24h）+ 品牌/API 信息/服务状态面板 + 起步向导。**没有公告、FAQ、顶部通知铃铛**（个人自用无运营内容；后端 `/api/notice` 与 `console_setting.announcements/faq` 一并移除） |
 | `/dashboard/models` | 模型分析：按模型的请求/token/花费汇总、花费趋势与分布 |
 | `/dashboard/cost` | 成本统计：按渠道/模型/车道/密钥的上游花费 |
 

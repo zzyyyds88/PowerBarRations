@@ -31,7 +31,6 @@ func SetApiRouter(router *gin.Engine) {
 		// 控制台内部接口统一收进 /api/console/*，把 /api/* 让给 PBR 管理面（api-spec §2）。
 		apiRouter.GET("/console/models", middleware.PBRAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.PBRAuth(), controller.TestStatus)
-		apiRouter.GET("/notice", controller.GetNotice)
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
 		apiRouter.GET("/about", controller.GetAbout)
