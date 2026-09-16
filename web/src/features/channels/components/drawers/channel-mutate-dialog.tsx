@@ -117,7 +117,6 @@ import {
   getChannel,
   getChannelDefaultBaseURLs,
   getGroups,
-  getPrefillGroups,
   getTaskPluginOptions,
   refreshCodexCredential,
 } from '../../api'
@@ -461,13 +460,6 @@ export function ChannelMutateDialog({
     enabled: open,
   })
 
-  // Fetch prefill model groups
-  const { data: prefillGroupsData } = useQuery({
-    queryKey: ['prefill_groups', 'model'],
-    queryFn: async () => requireServerSuccess(await getPrefillGroups('model')),
-    enabled: open,
-  })
-
   const { copyToClipboard } = useCopyToClipboard()
 
   // Check if this is a multi-key channel
@@ -618,24 +610,6 @@ export function ChannelMutateDialog({
   const allModelsList = useMemo(
     () => allModelsData?.data?.map((model) => model.id).filter(Boolean) || [],
     [allModelsData]
-  )
-
-  // Get basic models for the current channel type
-  const basicModels = useMemo(() => {
-    if (!allModelsList.length) return []
-    // Filter models based on common patterns for specific types
-    if (currentType === 1) {
-      return allModelsList.filter(
-        (model) => model.startsWith('gpt-') || model.startsWith('text-')
-      )
-    }
-    return allModelsList
-  }, [allModelsList, currentType])
-
-  // Get prefill groups
-  const prefillGroups = useMemo(
-    () => prefillGroupsData?.data || [],
-    [prefillGroupsData]
   )
 
   // Transform groups to multi-select options
@@ -1195,17 +1169,6 @@ export function ChannelMutateDialog({
   }
 
   // Handle model operations
-  const handleFillRelatedModels = useCallback(() => {
-    if (!basicModels.length) {
-      toast.info(t('No related models available for this channel type'))
-      return
-    }
-    updateModels(basicModels)
-    toast.success(
-      t('Filled {{count}} related model(s)', { count: basicModels.length })
-    )
-  }, [basicModels, updateModels, t])
-
   const handleClearModels = useCallback(() => {
     form.setValue('models', '')
     toast.success(t('Cleared all models'))
@@ -1219,32 +1182,6 @@ export function ChannelMutateDialog({
     }
     await copyToClipboard(models)
   }, [form, copyToClipboard, t])
-
-  // Handle adding prefill group models
-  const handleAddPrefillGroup = useCallback(
-    (group: { id: number; name: string; items: string | string[] }) => {
-      try {
-        const items = Array.isArray(group.items)
-          ? group.items
-          : JSON.parse(group.items)
-
-        if (!Array.isArray(items)) {
-          throw new Error('Invalid items format')
-        }
-
-        const count = updateModels(items, true)
-        toast.success(
-          t('Added {{count}} models from "{{name}}"', {
-            count,
-            name: group.name,
-          })
-        )
-      } catch {
-        toast.error(t('Failed to parse group items'))
-      }
-    },
-    [updateModels, t]
-  )
 
   // Handle model selection change from MultiSelect
   const handleModelsChange = useCallback(
@@ -2960,63 +2897,27 @@ export function ChannelMutateDialog({
 
             <Separator className='my-4' />
 
-            <div className='space-y-3'>
-              <div>
-                <p className='text-sm font-medium'>{t('Quick actions')}</p>
-                <p className='text-muted-foreground text-xs'>
-                  {t('Use presets to populate the model list faster.')}
-                </p>
-              </div>
-              <div className='flex flex-wrap gap-2'>
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  onClick={handleFillRelatedModels}
-                  disabled={!basicModels.length}
-                >
-                  <FileText className='mr-2 h-4 w-4' aria-hidden='true' />
-                  {t('Fill Related Models')}
-                </Button>
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  onClick={handleCopyModels}
-                  disabled={currentModelsArray.length === 0}
-                >
-                  <Copy className='mr-2 h-4 w-4' aria-hidden='true' />
-                  {t('Copy All')}
-                </Button>
-                <Button
-                  type='button'
-                  variant='ghost'
-                  size='sm'
-                  onClick={handleClearModels}
-                  disabled={currentModelsArray.length === 0}
-                >
-                  <Eraser className='mr-2 h-4 w-4' aria-hidden='true' />
-                  {t('Clear All')}
-                </Button>
-              </div>
-              {prefillGroups.length > 0 && (
-                <div className='flex flex-wrap items-center gap-2'>
-                  <span className='text-muted-foreground text-xs'>
-                    {t('Preset groups')}:
-                  </span>
-                  {prefillGroups.map((group) => (
-                    <Button
-                      key={group.id}
-                      type='button'
-                      variant='secondary'
-                      size='sm'
-                      onClick={() => handleAddPrefillGroup(group)}
-                    >
-                      {group.name}
-                    </Button>
-                  ))}
-                </div>
-              )}
+            <div className='flex flex-wrap items-center gap-2'>
+              <Button
+                type='button'
+                variant='outline'
+                size='sm'
+                onClick={handleCopyModels}
+                disabled={currentModelsArray.length === 0}
+              >
+                <Copy className='mr-2 h-4 w-4' aria-hidden='true' />
+                {t('Copy All')}
+              </Button>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                onClick={handleClearModels}
+                disabled={currentModelsArray.length === 0}
+              >
+                <Eraser className='mr-2 h-4 w-4' aria-hidden='true' />
+                {t('Clear All')}
+              </Button>
             </div>
           </div>
 
@@ -4259,7 +4160,7 @@ export function ChannelMutateDialog({
               id='channel-form'
               ref={channelFormRef}
               onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-              className='flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-1'
+              className='flex min-h-0 flex-1 flex-col gap-5 overflow-hidden'
             >
               {formContent}
             </form>
