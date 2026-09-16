@@ -34,6 +34,7 @@ import {
   useUsageLogsContext,
 } from './components/usage-logs-provider'
 import { UsageLogsTable } from './components/usage-logs-table'
+import { PBRLaneLogsSection } from './pbr/components/pbr-lane-logs-section'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
@@ -42,10 +43,14 @@ import {
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
 const TASK_LOG_SECTIONS = ['drawing', 'task'] as const
+const REQUEST_LOG_SECTIONS = ['common', 'pbr'] as const
 
 const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
   common: {
     titleKey: 'Common Logs',
+  },
+  pbr: {
+    titleKey: 'PBR Requests',
   },
   drawing: {
     titleKey: 'Drawing Logs',
@@ -75,6 +80,13 @@ function UsageLogsContent() {
   const tabNavGroups = useMemo<NavGroup[]>(
     () => [
       {
+        title: 'Request Logs',
+        items: REQUEST_LOG_SECTIONS.map((section) => ({
+          title: SECTION_META[section].titleKey,
+          url: `/usage-logs/${section}`,
+        })),
+      },
+      {
         title: 'Task Logs',
         items: TASK_LOG_SECTIONS.map((section) => ({
           title: SECTION_META[section].titleKey,
@@ -87,7 +99,8 @@ function UsageLogsContent() {
   const filteredTabGroups = useSidebarConfig(tabNavGroups)
   const visibleSections = useMemo(
     () =>
-      (filteredTabGroups[0]?.items ?? [])
+      filteredTabGroups
+        .flatMap((group) => group.items ?? [])
         .map((item) => {
           if (!('url' in item) || typeof item.url !== 'string') return null
           return item.url.split('/').pop() ?? null
@@ -117,10 +130,9 @@ function UsageLogsContent() {
     [setViewScope]
   )
 
-  const pageMeta =
-    activeCategory === 'common' ? SECTION_META.common : SECTION_META.task
-  const showTaskSwitcher =
-    activeCategory !== 'common' && visibleSections.length > 1
+  const pageMeta = SECTION_META[activeCategory]
+  const showSectionSwitcher = visibleSections.length > 1
+  const showScopeTabs = canManageScope && activeCategory !== 'pbr'
 
   return (
     <>
@@ -129,7 +141,7 @@ function UsageLogsContent() {
           {t(pageMeta.titleKey)}
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          {canManageScope && (
+          {showScopeTabs && (
             <Tabs value={viewScope} onValueChange={handleViewScopeChange}>
               <TabsList>
                 <TabsTrigger value='all'>{t('All')}</TabsTrigger>
@@ -140,7 +152,7 @@ function UsageLogsContent() {
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-4'>
-            {showTaskSwitcher && (
+            {showSectionSwitcher && (
               <Tabs value={activeCategory} onValueChange={handleSectionChange}>
                 <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                   {visibleSections.map((section) => (
@@ -152,7 +164,11 @@ function UsageLogsContent() {
               </Tabs>
             )}
             <div className='min-h-0 flex-1'>
-              <UsageLogsTable logCategory={activeCategory} />
+              {activeCategory === 'pbr' ? (
+                <PBRLaneLogsSection />
+              ) : (
+                <UsageLogsTable logCategory={activeCategory} />
+              )}
             </div>
           </div>
         </SectionPageLayout.Content>

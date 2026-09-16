@@ -147,8 +147,9 @@
 
 ### 6.6 请求日志 `/logs`、`/logs/$id`
 
-- 沿用上游 `usage-logs` 的外壳：筛选（车道/渠道/令牌/模型/成功与否/时间）、虚拟滚动；**Common 分节的数据源是 PBR `GET /api/logs`**（基座 `/api/log/**` 只留给 Drawing / Task 两个分节）。
-- **详情**：`GET /api/logs/{id}` 的 `attempts` 逐尝试时间线（成员、状态、耗时、`error_kind`、`msg`），区分 `cooldown`/`circuit_break`/`skipped` 状态色；另展示 `lane`/`route_source`/`upstream_model`/`http_status`/`total_ms`/`estimated_cost`。
+- 保留上游 `usage-logs` 外壳：Common / Drawing / Task 三个基座分节不变（数据源仍是基座 `/api/log/**`），**另加一个 PBR 分节**（页签 "PBR Requests"）。
+- **PBR 分节的数据源是 `GET /api/logs`**：筛选车道 / 渠道 / 令牌 / 请求模型 / 成功与否 + 游标翻页；列表展示时间、车道、渠道、上游真名、密钥名、结果、attempts 摘要、总耗时、折算成本。
+- **详情**：`GET /api/logs/{id}` 的 `attempts` 逐尝试时间线（成员、状态、`duration_ms`、`error_kind`、`msg`），区分 `cooldown`/`circuit_break`/`skipped` 状态色；另展示 `lane`/`route_source`/`upstream_model`/`http_status`/token 用量/`total_ms`/`estimated_cost`。
 - **验收**：一次含逃逸的请求能完整复现 `failed → success`；被跳过的成员有原因说明。
 
 ### 6.7 系统设置 `/settings`
