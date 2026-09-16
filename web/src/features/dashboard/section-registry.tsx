@@ -35,6 +35,11 @@ const DASHBOARD_SECTIONS = [
     build: () => null,
   },
   {
+    id: 'cost',
+    titleKey: 'Cost analytics',
+    build: () => null,
+  },
+  {
     id: 'flow',
     titleKey: 'Flow',
     build: () => null,

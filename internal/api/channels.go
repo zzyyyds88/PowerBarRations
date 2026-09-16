@@ -12,6 +12,7 @@ import (
 	"pbr/constant"
 	"pbr/internal/apierr"
 	"pbr/model"
+	"pbr/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -55,16 +56,17 @@ func AdapterList() []string {
 // 指针/切片字段用来区分"字段缺席"（保持原值）与"显式置空"（清空）。
 // key 特殊：省略即保留原值（api-spec §4.1），读侧永不返回明文。
 type channelPayload struct {
-	Name          string          `json:"name"`
-	Type          *string         `json:"type"`
-	BaseURL       *string         `json:"base_url"`
-	Priority      *int            `json:"priority"`
-	Models        []string        `json:"models"`
-	ParamOverride json.RawMessage `json:"param_override"`
-	Enabled       *bool           `json:"enabled"`
-	Proxy         *string         `json:"proxy"`
-	Weight        *int            `json:"weight"`
-	Key           string          `json:"key"`
+	Name          string                   `json:"name"`
+	Type          *string                  `json:"type"`
+	BaseURL       *string                  `json:"base_url"`
+	Priority      *int                     `json:"priority"`
+	Models        []string                 `json:"models"`
+	ParamOverride json.RawMessage          `json:"param_override"`
+	Enabled       *bool                    `json:"enabled"`
+	Proxy         *string                  `json:"proxy"`
+	Weight        *int                     `json:"weight"`
+	Key           string                   `json:"key"`
+	Prices        *[]dto.ChannelModelPrice `json:"prices"`
 }
 
 func channelResponse(ch *model.Channel) gin.H {
@@ -82,6 +84,10 @@ func channelResponse(ch *model.Channel) gin.H {
 	} else if len(key) > 1 {
 		prefix = key[:len(key)-1]
 	}
+	prices := ch.GetSetting().PBRPrices
+	if prices == nil {
+		prices = []dto.ChannelModelPrice{}
+	}
 	resp := gin.H{
 		"name":           ch.Name,
 		"type":           ChannelTypeSlug(ch.Type),
@@ -92,6 +98,7 @@ func channelResponse(ch *model.Channel) gin.H {
 		"param_override": jsonObject(derefString(ch.ParamOverride)),
 		"enabled":        ch.Status == common.ChannelStatusEnabled,
 		"proxy":          ch.GetSetting().Proxy,
+		"prices":         prices,
 		"key_set":        strings.TrimSpace(key) != "",
 		"key_prefix":     prefix,
 		"created_at":     rfc3339(ch.CreatedTime),
@@ -369,6 +376,34 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 		raw, err := json.Marshal(setting)
 		if err != nil {
 			return nil, &apiError{code: apierr.CodeValidationFailed, message: "invalid channel setting"}
+		}
+		encoded := string(raw)
+		channel.Setting = &encoded
+	}
+
+	if payload.Prices != nil {
+		// 渠道级上游单价（成本折算用）：模型名去空、去重，单价不得为负。
+		cleaned := make([]dto.ChannelModelPrice, 0, len(*payload.Prices))
+		seen := map[string]bool{}
+		for _, item := range *payload.Prices {
+			item.Model = strings.TrimSpace(item.Model)
+			if item.Model == "" {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: "prices: model name must not be empty"}
+			}
+			if seen[item.Model] {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: "prices: duplicate model '" + item.Model + "'"}
+			}
+			seen[item.Model] = true
+			if item.Input < 0 || item.Output < 0 || item.CacheRead < 0 || item.CacheWrite < 0 {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: "prices: unit price must be >= 0"}
+			}
+			cleaned = append(cleaned, item)
+		}
+		setting := channel.GetSetting()
+		setting.PBRPrices = cleaned
+		raw, err := json.Marshal(setting)
+		if err != nil {
+			return nil, &apiError{code: apierr.CodeValidationFailed, message: "invalid channel prices"}
 		}
 		encoded := string(raw)
 		channel.Setting = &encoded

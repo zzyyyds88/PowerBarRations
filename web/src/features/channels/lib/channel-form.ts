@@ -28,7 +28,7 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
-import type { Channel } from '../types'
+import type { Channel, ChannelModelPrice } from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -266,6 +266,18 @@ export const channelFormSchema = z
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
+    // 渠道级上游单价（成本折算用，存 setting JSON）
+    pbr_prices: z
+      .array(
+        z.object({
+          model: z.string(),
+          input: z.number().nonnegative().optional(),
+          output: z.number().nonnegative().optional(),
+          cache_read: z.number().nonnegative().optional(),
+          cache_write: z.number().nonnegative().optional(),
+        })
+      )
+      .optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -447,6 +459,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
+  pbr_prices: [],
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -488,6 +501,7 @@ export function transformChannelToFormDefaults(
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    pbr_prices: [] as ChannelModelPrice[],
   }
 
   if (channel.setting) {
@@ -507,6 +521,9 @@ export function transformChannelToFormDefaults(
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
+        pbr_prices: Array.isArray(parsed.pbr_prices)
+          ? (parsed.pbr_prices as ChannelModelPrice[])
+          : [],
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -628,6 +645,20 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     pass_through_body_enabled: formData.pass_through_body_enabled || false,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,
+  }
+
+  // 渠道级上游单价：去掉空模型名后写入 setting JSON（成本折算用）。
+  const channelPrices = (formData.pbr_prices ?? [])
+    .map((item) => ({
+      model: item.model.trim(),
+      input: item.input ?? 0,
+      output: item.output ?? 0,
+      cache_read: item.cache_read ?? 0,
+      cache_write: item.cache_write ?? 0,
+    }))
+    .filter((item) => item.model !== '')
+  if (channelPrices.length > 0) {
+    settingObj.pbr_prices = channelPrices
   }
 
   const protocol = normalizeHttpProtocol(formData.http_protocol)

@@ -79,6 +79,17 @@ export type Channel = z.infer<typeof channelSchema>
 // Channel Settings Types
 // ============================================================================
 
+// ChannelModelPrice 渠道级上游单价（人民币/百万 token），用于成本折算。
+//
+// 渠道价优先于全局默认单价表（PBRModelPrices）：同一模型在不同上游的采购价不同。
+export interface ChannelModelPrice {
+  model: string
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write?: number
+}
+
 export interface ChannelSettings {
   task_plugin_key?: string
   force_format?: boolean
@@ -89,6 +100,7 @@ export interface ChannelSettings {
   system_prompt_override?: boolean
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
+  pbr_prices?: ChannelModelPrice[]
 }
 
 export interface ChannelOtherSettings {
