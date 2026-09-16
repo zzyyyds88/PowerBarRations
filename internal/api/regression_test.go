@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"pbr/common"
+	"pbr/internal/apierr"
 	"pbr/model"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ func setupAPITestDB(t *testing.T) *gorm.DB {
 	path := filepath.Join(t.TempDir(), "api-test.db")
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Lane{}, &model.LaneMember{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Lane{}, &model.LaneMember{}, &model.ClientKey{}))
 	previous := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = previous })
@@ -33,6 +34,9 @@ func setupAPITestDB(t *testing.T) *gorm.DB {
 
 // dry-run 必须能发现"真实导入会 422"的问题（车道成员引用不存在的渠道），
 // 否则调用方拿到 valid:true 却在下一次真实导入失败。
+//
+// 注意：校验函数只返回错误、不写响应（响应由最外层 handler 写一次，审查 F6），
+// 因此这里断言"错误携带的状态与 code"，再由 writeAPIError 验证实际响应。
 func TestValidateBundleRejectsMissingMemberChannel(t *testing.T) {
 	setupAPITestDB(t)
 	gin.SetMode(gin.TestMode)
@@ -47,6 +51,14 @@ func TestValidateBundleRejectsMissingMemberChannel(t *testing.T) {
 	}
 	err := validateBundle(c, bundle)
 	require.Error(t, err, "引用不存在渠道的车道必须校验失败")
+	assert.Zero(t, recorder.Body.Len(), "校验函数不得自己写响应体（否则与 handler 双写）")
+
+	ae, ok := err.(*apiError)
+	require.True(t, ok, "校验错误必须携带对外状态与 code")
+	assert.Equal(t, http.StatusUnprocessableEntity, ae.status)
+	assert.Equal(t, apierr.CodeMemberChannelMissing, ae.code)
+
+	writeAPIError(c, err)
 	assert.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "member_channel_missing")
 }

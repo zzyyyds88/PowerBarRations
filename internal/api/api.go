@@ -44,16 +44,27 @@ func pageParams(c *gin.Context) (limit int, cursor string, err error) {
 	return limit, decodeCursor(c.Query("cursor")), nil
 }
 
+// apiError 内部错误载体：携带对外 HTTP 状态与稳定 code。
+//
+// status 为 0 时按 400（validation_failed 语义）写出；需要 409/422/500 的调用点
+// 必须显式填 status，否则调用方拿到错误状态码。**校验链路上的 error 只返回、
+// 不写响应**：由最外层 handler 统一 writeAPIError 一次，避免重复写响应体。
 type apiError struct {
+	status  int
 	code    string
 	message string
+	hint    string
 }
 
 func (e *apiError) Error() string { return e.message }
 
 func writeAPIError(c *gin.Context, err error) {
 	if ae, ok := err.(*apiError); ok {
-		apierr.Write(c, http.StatusBadRequest, ae.code, ae.message, "")
+		status := ae.status
+		if status == 0 {
+			status = http.StatusBadRequest
+		}
+		apierr.Write(c, status, ae.code, ae.message, ae.hint)
 		return
 	}
 	apierr.Write(c, http.StatusInternalServerError, "internal_error", err.Error(), "")

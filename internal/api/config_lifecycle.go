@@ -10,6 +10,7 @@ import (
 	"pbr/internal/apierr"
 	"pbr/internal/route"
 	"pbr/model"
+	"pbr/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -22,9 +23,16 @@ import (
 // 这属于"私有台账"范畴，不进仓库。
 
 // ChannelConfig 是渠道的可导出形态（无密钥）。
+//
+// 字段必须覆盖"路由与成本折算所依赖的全部配置"：漏掉 model_mapping 会让恢复后的
+// 实例把路由键直发上游（通常 404），漏掉 prices 会让成本折算归零。新增渠道级字段时
+// 必须同时更新 BuildConfigBundle 与 channelDigestOfChannel，否则导出会静默丢字段、
+// dry-run diff 也会假装"无变更"。
 type ChannelConfig struct {
-	Name          string   `json:"name"`
-	Type          string   `json:"type"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+	// BaseURL 与 Proxy 用非指针：导出总是给出确定值（空串即"无"），
+	// 导入侧据此覆盖；要"保持原值"必须显式省略整个字段（见 §5.6 的缺席/空值语义）。
 	BaseURL       string   `json:"base_url"`
 	Priority      int      `json:"priority"`
 	Weight        int      `json:"weight"`
@@ -32,7 +40,11 @@ type ChannelConfig struct {
 	ParamOverride any      `json:"param_override,omitempty"`
 	Enabled       bool     `json:"enabled"`
 	Proxy         string   `json:"proxy,omitempty"`
-	KeySet        bool     `json:"key_set"`
+	// Prices 渠道级上游单价（成本折算）；空表导出为 []，与"缺席=保持原值"区分。
+	Prices []dto.ChannelModelPrice `json:"prices"`
+	// ModelMapping 路由键 → 上游真名；空表导出为 {}（ADR 0005）。
+	ModelMapping map[string]string `json:"model_mapping"`
+	KeySet       bool              `json:"key_set"`
 }
 
 // LaneMemberConfig 车道成员的可导出形态。
@@ -94,18 +106,7 @@ func BuildConfigBundle() (*ConfigBundle, error) {
 				models = append(models, m)
 			}
 		}
-		bundle.Channels = append(bundle.Channels, ChannelConfig{
-			Name:          channel.Name,
-			Type:          ChannelTypeSlug(channel.Type),
-			BaseURL:       channel.GetBaseURL(),
-			Priority:      int(channel.GetPriority()),
-			Weight:        channel.GetWeight(),
-			Models:        models,
-			ParamOverride: jsonObject(derefString(channel.ParamOverride)),
-			Enabled:       channel.Status == common.ChannelStatusEnabled,
-			Proxy:         channel.GetSetting().Proxy,
-			KeySet:        strings.TrimSpace(channel.Key) != "",
-		})
+		bundle.Channels = append(bundle.Channels, exportedChannelConfig(channel, models))
 	}
 
 	lanes, err := model.ListLanes()
@@ -251,6 +252,7 @@ func PostImport(c *gin.Context) {
 		// dry-run：先跑与真实导入同一套构造/校验（不落库），再算 diff。
 		// 否则调用方会拿到 valid:true，却在真实导入时因"车道成员引用不存在的渠道"等 422 失败。
 		if err := validateBundle(c, &bundle); err != nil {
+			writeAPIError(c, err)
 			return
 		}
 		if err := planImport(&bundle, &result); err != nil {
@@ -325,56 +327,79 @@ func newDiffList() DiffList {
 	return DiffList{Add: []string{}, Update: []string{}, Unchanged: []string{}, Remove: []string{}, Skipped: []string{}}
 }
 
+// channelPayloadFromConfig 把导出形态还原成渠道写入 payload。
+// validateBundle（dry-run）与 applyImport（真实落库）共用同一实现，避免两处漂移
+// 导致"dry-run 说没问题、真实导入报错"。
+func channelPayloadFromConfig(config ChannelConfig) *channelPayload {
+	payload := &channelPayload{
+		Type:    &config.Type,
+		BaseURL: &config.BaseURL,
+		Enabled: &config.Enabled,
+	}
+	priority, weight := config.Priority, config.Weight
+	payload.Priority, payload.Weight = &priority, &weight
+	payload.Models = config.Models
+	if config.ParamOverride != nil {
+		encoded, _ := json.Marshal(config.ParamOverride)
+		payload.ParamOverride = encoded
+	}
+	proxy := config.Proxy
+	payload.Proxy = &proxy
+	// nil = 配置文件里没这个字段 → 保持原值；非 nil（含空表）= 覆盖/清空。
+	if config.Prices != nil {
+		prices := config.Prices
+		payload.Prices = &prices
+	}
+	if config.ModelMapping != nil {
+		mapping := config.ModelMapping
+		payload.ModelMapping = &mapping
+	}
+	return payload
+}
+
+// lanePayloadFromConfig 同理：车道的导出形态 → 写入 payload。
+func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
+	payload := &lanePayload{
+		Enabled:      &lane.Enabled,
+		Mode:         orDefault(lane.Mode, model.LaneModeFailover),
+		ActiveMember: lane.ActiveMember,
+	}
+	encodedConfig, _ := json.Marshal(lane.Config)
+	payload.Config = encodedConfig
+	for _, member := range lane.Members {
+		entry := laneMemberPayload{
+			Channel:       member.Channel,
+			UpstreamModel: member.UpstreamModel,
+			PublicAlias:   member.PublicAlias,
+			Priority:      member.Priority,
+			Weight:        member.Weight,
+		}
+		if member.Overrides != nil {
+			encoded, _ := json.Marshal(member.Overrides)
+			entry.Overrides = encoded
+		}
+		payload.Members = append(payload.Members, entry)
+	}
+	return payload
+}
+
 // validateBundle 用与真实导入完全相同的构造/校验路径检查 bundle（不落库）。
 // dry-run 必须能发现"apply 会失败"的问题，否则 valid:true 是误导。
+//
+// 只返回错误、不写响应：响应由 PostImport 统一写一次，避免"helper 写一次 +
+// 调用方再写一次"造成响应体拼接两个 JSON（审查 F6）。
 func validateBundle(c *gin.Context, bundle *ConfigBundle) error {
 	for _, channel := range bundle.Channels {
 		found, findErr := findChannelByName(channel.Name)
 		isCreate := findErr != nil
-		payload := &channelPayload{
-			Type:    &channel.Type,
-			BaseURL: &channel.BaseURL,
-			Enabled: &channel.Enabled,
-		}
-		priority, weight := channel.Priority, channel.Weight
-		payload.Priority, payload.Weight = &priority, &weight
-		payload.Models = channel.Models
-		if channel.ParamOverride != nil {
-			encoded, _ := json.Marshal(channel.ParamOverride)
-			payload.ParamOverride = encoded
-		}
-		proxy := channel.Proxy
-		payload.Proxy = &proxy
+		payload := channelPayloadFromConfig(channel)
 		if _, buildErr := buildChannel(channel.Name, found, payload, isCreate); buildErr != nil {
-			apierr.Write(c, http.StatusBadRequest, buildErr.code, buildErr.message, "")
-			return &apiError{code: buildErr.code, message: buildErr.message}
+			return &apiError{status: http.StatusBadRequest, code: buildErr.code, message: buildErr.message}
 		}
 	}
 	for _, lane := range bundle.Lanes {
-		payload := &lanePayload{
-			Enabled:      &lane.Enabled,
-			Mode:         orDefault(lane.Mode, model.LaneModeFailover),
-			ActiveMember: lane.ActiveMember,
-		}
-		encodedConfig, _ := json.Marshal(lane.Config)
-		payload.Config = encodedConfig
-		for _, member := range lane.Members {
-			entry := laneMemberPayload{
-				Channel:       member.Channel,
-				UpstreamModel: member.UpstreamModel,
-				PublicAlias:   member.PublicAlias,
-				Priority:      member.Priority,
-				Weight:        member.Weight,
-			}
-			if member.Overrides != nil {
-				encoded, _ := json.Marshal(member.Overrides)
-				entry.Overrides = encoded
-			}
-			payload.Members = append(payload.Members, entry)
-		}
-		if _, buildErr := buildLane(lane.Name, payload); buildErr != nil {
-			apierr.Write(c, buildErr.status, buildErr.code, buildErr.message, buildErr.hint)
-			return &apiError{code: buildErr.code, message: buildErr.message}
+		if _, buildErr := buildLane(lane.Name, lanePayloadFromConfig(lane)); buildErr != nil {
+			return &apiError{status: buildErr.status, code: buildErr.code, message: buildErr.message, hint: buildErr.hint}
 		}
 	}
 	return nil
@@ -472,55 +497,19 @@ func applyImport(c *gin.Context, bundle *ConfigBundle, result *ImportResult) err
 	for _, channel := range bundle.Channels {
 		found, findErr := findChannelByName(channel.Name)
 		isCreate := findErr != nil
-		payload := &channelPayload{
-			Type:    &channel.Type,
-			BaseURL: &channel.BaseURL,
-			Enabled: &channel.Enabled,
-		}
-		priority, weight := channel.Priority, channel.Weight
-		payload.Priority, payload.Weight = &priority, &weight
-		payload.Models = channel.Models
-		if channel.ParamOverride != nil {
-			encoded, _ := json.Marshal(channel.ParamOverride)
-			payload.ParamOverride = encoded
-		}
-		proxy := channel.Proxy
-		payload.Proxy = &proxy
-		built, buildErr := buildChannel(channel.Name, found, payload, isCreate)
+		built, buildErr := buildChannel(channel.Name, found, channelPayloadFromConfig(channel), isCreate)
 		if buildErr != nil {
-			apierr.Write(c, http.StatusBadRequest, buildErr.code, buildErr.message, "")
-			return &apiError{code: buildErr.code, message: buildErr.message}
+			// 只返回错误；响应体由 PostImport → writeAPIError 写一次（审查 F6）。
+			return &apiError{status: http.StatusBadRequest, code: buildErr.code, message: buildErr.message}
 		}
 		channelPlans = append(channelPlans, channelPlan{name: channel.Name, built: built, config: channel, isCreate: isCreate})
 	}
 
 	lanePlans := make([]lanePlan, 0, len(bundle.Lanes))
 	for _, lane := range bundle.Lanes {
-		payload := &lanePayload{
-			Enabled:      &lane.Enabled,
-			Mode:         orDefault(lane.Mode, model.LaneModeFailover),
-			ActiveMember: lane.ActiveMember,
-		}
-		encodedConfig, _ := json.Marshal(lane.Config)
-		payload.Config = encodedConfig
-		for _, member := range lane.Members {
-			entry := laneMemberPayload{
-				Channel:       member.Channel,
-				UpstreamModel: member.UpstreamModel,
-				PublicAlias:   member.PublicAlias,
-				Priority:      member.Priority,
-				Weight:        member.Weight,
-			}
-			if member.Overrides != nil {
-				encoded, _ := json.Marshal(member.Overrides)
-				entry.Overrides = encoded
-			}
-			payload.Members = append(payload.Members, entry)
-		}
-		built, buildErr := buildLane(lane.Name, payload)
+		built, buildErr := buildLane(lane.Name, lanePayloadFromConfig(lane))
 		if buildErr != nil {
-			apierr.Write(c, buildErr.status, buildErr.code, buildErr.message, buildErr.hint)
-			return &apiError{code: buildErr.code, message: buildErr.message}
+			return &apiError{status: buildErr.status, code: buildErr.code, message: buildErr.message, hint: buildErr.hint}
 		}
 		_, existingErr := model.GetLaneByName(lane.Name)
 		lanePlans = append(lanePlans, lanePlan{name: lane.Name, built: built, config: lane, isCreate: existingErr != nil})
@@ -606,10 +595,13 @@ func applyImport(c *gin.Context, bundle *ConfigBundle, result *ImportResult) err
 
 	// 未在 bundle 中给出 system_options 时保持原样：不能拿零值把关键词表清空
 	if bundle.SystemOptions != nil {
+		// 先取"改动前"快照：与 planImport 同一口径（before vs bundle）。
+		// 若拿改动后的状态比，两者恒等，changed 永远是空的。
+		beforeOptions := currentSystemOptions()
 		if err := applySystemOptions(*bundle.SystemOptions); err != nil {
 			return err
 		}
-		result.markOptionsChanged(true)
+		result.markOptionsChanged(model.DigestOf(beforeOptions) != model.DigestOf(currentSystemOptions()))
 	}
 	writeAudit(c, "import", "config", "bundle")
 	return nil
@@ -666,16 +658,25 @@ func orDefault(value, fallback string) string {
 	return value
 }
 
-// 归一化摘要：导出形态与库内形态必须落到同一个可比对象上。
-func channelDigestOfChannel(channel *model.Channel) string {
-	models := make([]string, 0, 4)
-	for _, m := range channel.GetModels() {
-		if m = strings.TrimSpace(m); m != "" {
-			models = append(models, m)
-		}
+// exportedChannelConfig 把库内渠道归一化成导出形态。**导出与摘要共用同一实现**，
+// 避免两处字段漂移导致"导出丢了字段、diff 却报无变更"。
+//
+// Prices / ModelMapping 一律给非 nil 值（空 → [] / {}）：这样"导出 → 导入"能把
+// 清空动作也带过去，且再次导出的摘要稳定；JSON 里字段缺席（旧导出文件）反序列化后
+// 是 nil，导入侧据此保持原值。
+func exportedChannelConfig(channel *model.Channel, models []string) ChannelConfig {
+	if models == nil {
+		models = []string{}
 	}
-	proxy := channel.GetSetting().Proxy
-	config := ChannelConfig{
+	prices := channel.GetSetting().PBRPrices
+	if prices == nil {
+		prices = []dto.ChannelModelPrice{}
+	}
+	mapping := channel.ModelMappingMap()
+	if mapping == nil {
+		mapping = map[string]string{}
+	}
+	return ChannelConfig{
 		Name:          channel.Name,
 		Type:          ChannelTypeSlug(channel.Type),
 		BaseURL:       channel.GetBaseURL(),
@@ -684,10 +685,22 @@ func channelDigestOfChannel(channel *model.Channel) string {
 		Models:        models,
 		ParamOverride: jsonObject(derefString(channel.ParamOverride)),
 		Enabled:       channel.Status == common.ChannelStatusEnabled,
-		Proxy:         proxy,
+		Proxy:         channel.GetSetting().Proxy,
+		Prices:        prices,
+		ModelMapping:  mapping,
 		KeySet:        strings.TrimSpace(channel.Key) != "",
 	}
-	return model.DigestOf(config)
+}
+
+// 归一化摘要：导出形态与库内形态必须落到同一个可比对象上。
+func channelDigestOfChannel(channel *model.Channel) string {
+	models := make([]string, 0, 4)
+	for _, m := range channel.GetModels() {
+		if m = strings.TrimSpace(m); m != "" {
+			models = append(models, m)
+		}
+	}
+	return model.DigestOf(exportedChannelConfig(channel, models))
 }
 
 func laneDigestOf(lane *LaneConfig) string {
