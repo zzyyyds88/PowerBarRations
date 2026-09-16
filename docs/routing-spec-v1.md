@@ -10,26 +10,32 @@
 
 ### 1.1 路由键 = 模型名（核心语义）
 
-请求体里的 `model` **就是路由键**。网关不要求你为每个模型预先建对象：
+请求体里的 `model` **就是路由键**。渠道只负责"声明自己能提供哪些模型 + 上游真名映射"；**模型必须有一条同名显式车道**才能被调用：
 
 ```
-上游1  ——  模型1 模型2 模型3
-上游2  ——  模型1 模型2 模型3
+渠道A  ——  模型1 → 上游真名 a-model-1
+渠道B  ——  模型1 → 上游真名 b/model-1
 
-下游请求 模型1 → 先打 上游1的模型1 → 失败则打 上游2的模型1
+车道 模型1：成员 = [渠道A(a-model-1), 渠道B(b/model-1)]
+
+下游请求 模型1 → 先打 渠道A 的 a-model-1 → 失败则打 渠道B 的 b/model-1
 ```
 
-- **任何模型都自动可路由**：只要某个渠道声明它提供该模型，该模型名就立刻可用，无需"建车道"。
-- 渠道声明自己提供的模型清单（`Channel.Models []string`）；对每个模型名，取**所有**声明提供它的渠道，按渠道 `priority` 降序排成成员链 —— 这就是"上游1失败换上游2"的故障链。
-- `Channel.Priority`：**数字大者优先**（沿用上游渠道优先级语义）；相同则按渠道 id 保证确定性顺序。
-- **统一约定**：隐式成员与显式车道成员的 `priority` 均为**数字大者优先**（不再用"1=首选"的反向语义）。
-- **显式车道是可选覆盖层**：用于自定义顺序、成员别名、或把不同上游的**不同**模型名聚到一个名字下（池化）。显式车道同名时优先于隐式链。
+- **车道是唯一入口**：不存在"隐式车道"。渠道声明了某个模型但没有对应车道时，该模型**不可调用**（503），必须先在模型管理里把它的成员链固化成车道。
+- 渠道声明自己提供的模型清单（`Channel.Models []string`）；`Channel.Priority` 只用于"一键固化"时生成车道成员的**初始顺序**（数字大者优先；相同按渠道 id）。
+- **渠道模型映射**（`Channel.ModelMapping`，JSON dict：路由键 → 上游真名）：上游命名不一致时在渠道管理里配置一次，参与该渠道所有车道成员的上游名解析。
+- **成员上游名解析优先级**：成员级显式改名 > 渠道映射 > 路由键本身。
+- 车道成员 `priority` **数字大者优先**（不再用"1=首选"的反向语义）。
 
 **解析顺序**（对请求的 `model`）：
 
-1. 存在同名**显式车道** → 用它的成员链；
-2. 否则生成**隐式车道**：所有声明提供该模型的渠道，按渠道 priority 排序；
-3. 两者皆无（无渠道声明该模型）→ 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`。
+1. 存在同名**启用车道** → 用它的成员链（模式默认 `failover`）；
+2. 否则按成员别名点名（`PublicAlias`）匹配；
+3. 都没有 → 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`（对"没建车道"与"上游全挂"不做区分，下游无需分支）。
+
+**配置入口**：
+- 模型管理页为每个模型展示"渠道声明 → 建议成员链"，一键保存即固化成车道；`POST /api/lanes/seed` 可批量为所有未配车道的模型生成（按渠道 priority）。
+- 车道作为可选的高级层仍完整保留：四种模式、六键、成员级覆盖、别名。
 
 > 第 3 条是刻意的：让"模型名写错"与"上游全挂"对下游呈现同一错误形态，下游无需分支。
 
@@ -37,13 +43,14 @@
 
 ```go
 type Channel struct {
-    Name     string
-    Priority int      // 隐式成员的排序依据；数字大者优先
-    Models   []string // 本渠道提供的模型名（路由键）；可从上游拉取同步
+    Name         string
+    Priority     int               // 仅用于"一键固化"生成车道成员的初始顺序；数字大者优先
+    Models       []string          // 本渠道提供的路由键；可从上游拉取同步
+    ModelMapping map[string]string // 路由键 → 上游真名（上游命名不一致时配置一次）
     // base_url/key/type/param_override/enabled/proxy 见 design-v1 §3.4
 }
 
-type Lane struct { // 显式车道（可选覆盖层）
+type Lane struct { // 车道：唯一路由入口（不再有隐式覆盖层）
     Name    string
     Mode    string   // failover(默认) | manual | weighted | round_robin
     Config  LaneRelayConfig
@@ -52,7 +59,7 @@ type Lane struct { // 显式车道（可选覆盖层）
 
 type LaneMember struct {
     Channel       string
-    UpstreamModel string // 实际发给上游的模型名；与路由键不同即为"改名"
+    UpstreamModel string // 可选：成员级改名覆盖；留空则用渠道 ModelMapping，再退回路由键
     PublicAlias   string
     Priority      int    // 数字大者优先
     Weight        int
@@ -60,9 +67,9 @@ type LaneMember struct {
 }
 ```
 
-- 隐式车道的成员：`Channel=渠道, UpstreamModel=路由键, Priority=渠道 priority`，不可单独配置别名/覆盖。
-- **隐式车道固定 `failover`**（按 priority 降序），**不使用 `Channel.Weight`**；`weighted` 只在显式车道上按**成员** `weight` 生效。渠道 `weight` 仅残留在基座遗留选择链（任务插件身份请求、abilities 表），与模型名键控路由无关。
-- 显式车道的成员：完全可控，支持改名与别名（把多个上游的**不同**模型名聚到一个自定义名字下，就走这里）。
+- **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
+- 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。
+- 车道在 `failover` 下按 priority 降序遍历；`weighted` 按**成员** `weight` 加权；`round_robin` 环形推进。渠道自身的 `weight` 与模型路由无关（仅残留在基座遗留选择链）。
 
 ### 1.3 进程内运行态（每车道一份，全部请求共享）
 
