@@ -39,7 +39,7 @@ import type { TaskPluginOption } from '../../api'
 import { channelSchema, type Channel } from '../../types'
 import { ChannelPluginExtensions } from '../channel-plugin-extensions'
 import { ChannelsProvider } from '../channels-provider'
-import { ChannelMutateDrawer } from '../drawers/channel-mutate-drawer'
+import { ChannelMutateDialog } from '../drawers/channel-mutate-dialog'
 
 const originalAuth = useAuthStore.getState().auth
 let client: QueryClient
@@ -84,6 +84,18 @@ function deferredResponse<T>() {
   return { promise, resolve }
 }
 
+type UserEventInstance = ReturnType<typeof userEvent.setup>
+
+// Opens the Basic Information type combobox and picks one of its options
+// (built-in types render as "type:<n>", task plugins as "plugin:<key>").
+async function selectTypeOption(
+  user: UserEventInstance,
+  name: string | RegExp
+) {
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  await user.click(await screen.findByRole('option', { name }))
+}
+
 function ConfigurationHarness(props: {
   initialOpen?: boolean
   currentRow?: Channel
@@ -96,7 +108,7 @@ function ConfigurationHarness(props: {
         <button type='button' onClick={() => setOpen(true)}>
           Open channel
         </button>
-        <ChannelMutateDrawer
+        <ChannelMutateDialog
           open={open}
           onOpenChange={setOpen}
           currentRow={open || !props.clearRowOnClose ? props.currentRow : null}
@@ -177,7 +189,7 @@ afterEach(() => {
 test('changing built-in providers updates server-provided URL placeholders without replacing the draft address', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(screen.getByRole('option', { name: /^DeepSeek / }))
+  await selectTypeOption(user, 'DeepSeek')
   const address = screen.getByRole('textbox', { name: 'Base URL' })
   await waitFor(() =>
     expect(address).toHaveAttribute(
@@ -188,8 +200,7 @@ test('changing built-in providers updates server-provided URL placeholders witho
   expect(address).toHaveValue('')
   await user.type(address, 'https://custom.example')
 
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(screen.getByRole('option', { name: /^Gemini / }))
+  await selectTypeOption(user, 'Gemini')
   const geminiAddress = screen.getByRole('textbox', { name: 'Base URL' })
   expect(geminiAddress).toHaveAttribute(
     'placeholder',
@@ -199,8 +210,7 @@ test('changing built-in providers updates server-provided URL placeholders witho
   await user.clear(geminiAddress)
   expect(geminiAddress).toHaveValue('')
 
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(screen.getByRole('option', { name: /^New API / }))
+  await selectTypeOption(user, 'New API')
   expect(screen.getByRole('textbox', { name: 'Base URL' })).toHaveAttribute(
     'placeholder',
     'Leave empty to use default'
@@ -363,15 +373,11 @@ test('selecting a plugin opens a prefilled channel and creates its explicit bind
     .mockResolvedValue({ data: { success: true } })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  expect(
-    screen.getByRole('combobox', {
-      name: 'Search providers, plugins, or type numbers',
-    })
-  ).toBeVisible()
-  expect(
-    screen.queryByRole('textbox', { name: /^Name\s*\*$/ })
-  ).not.toBeInTheDocument()
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  // The form is immediately editable: no provider picker step, and the type
+  // defaults to OpenAI.
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
+  expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toBeVisible()
+  await selectTypeOption(user, /Video A/)
   expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toHaveValue(
     'Video A'
   )
@@ -403,14 +409,14 @@ test('selecting a plugin opens a prefilled channel and creates its explicit bind
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   )
   await user.click(screen.getByRole('button', { name: 'Open channel' }))
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   expect(screen.getByLabelText('API Key *')).toHaveValue('')
 })
 
 test('changing plugins preserves credentials and custom settings while applying existing model and address rules', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'keep-secret' },
   })
@@ -421,10 +427,10 @@ test('changing plugins preserves credentials and custom settings while applying 
   fireEvent.change(screen.getByLabelText('Test Model'), {
     target: { value: 'gpt-4o-mini' },
   })
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(
-    screen.getByRole('option', { name: 'Video B Plugin video-b' })
-  )
+  // The type combobox lives in the connection pane; switch back before
+  // choosing the next plugin.
+  await user.click(screen.getByRole('tab', { name: /Connection & Models/ }))
+  await selectTypeOption(user, 'Video B')
   await user.click(screen.getByRole('tab', { name: /Connection & Models/ }))
   expect(screen.getByLabelText('API Key *')).toHaveValue('keep-secret')
   expect(screen.getByLabelText('Name *')).toHaveValue('My channel')
@@ -432,45 +438,30 @@ test('changing plugins preserves credentials and custom settings while applying 
   fireEvent.change(screen.getByDisplayValue('https://b.example'), {
     target: { value: 'https://custom.example' },
   })
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(screen.getByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   expect(screen.getByDisplayValue('https://custom.example')).toBeVisible()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
   expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
 })
 
-test('canceling provider selection or selecting the same provider preserves adjusted models', async () => {
+test('switching plugins re-applies the plugin models after the list was cleared', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
+  expect(screen.getByRole('button', { name: 'video-a-1' })).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Clear All' }))
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  expect(screen.getByRole('dialog')).toHaveAccessibleDescription(/Video A/)
-  expect(screen.getByRole('option', { name: /Video A/ })).toHaveAttribute(
-    'aria-current',
-    'true'
-  )
   expect(
-    within(
-      screen.getByRole('button', { name: 'Back to configuration' })
-    ).getByText('Video A')
-  ).toBeVisible()
-  await user.click(
-    screen.getByRole('button', { name: 'Back to configuration' })
-  )
-  expect(screen.getByRole('button', { name: 'Change provider' })).toHaveFocus()
-  expect(
-    screen.getByRole('button', { name: 'Configure Models' })
-  ).toBeDisabled()
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(screen.getByRole('option', { name: /Video A/ }))
-  expect(
-    screen.getByRole('button', { name: 'Configure Models' })
-  ).toBeDisabled()
+    screen.queryByRole('button', { name: 'video-a-1' })
+  ).not.toBeInTheDocument()
+  await selectTypeOption(user, 'Video B')
+  expect(screen.getByRole('button', { name: 'video-b-1' })).toBeVisible()
+  await selectTypeOption(user, /Video A/)
+  expect(screen.getByRole('button', { name: 'video-a-1' })).toBeVisible()
+  expect(screen.getByDisplayValue('https://a.example')).toBeVisible()
 })
 
 test.each(['Cancel', 'Escape'])(
-  '%s while changing an existing provider returns to the same draft and category',
+  '%s closes the edited channel dialog and discards unsaved changes',
   async (action) => {
     const user = userEvent.setup()
     render(<ConfigurationHarness currentRow={editingChannel} />)
@@ -479,22 +470,23 @@ test.each(['Cancel', 'Escape'])(
     fireEvent.change(screen.getByLabelText('Test Model'), {
       target: { value: 'gpt-4o-mini' },
     })
-    await user.click(screen.getByRole('button', { name: 'Change provider' }))
     if (action === 'Escape') {
       await user.keyboard('{Escape}')
     } else {
       await user.click(screen.getByRole('button', { name: 'Cancel' }))
     }
-    expect(screen.getByRole('dialog')).toBeVisible()
-    expect(
-      screen.getByRole('tab', { name: /Routing & Mapping/ })
-    ).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
-    const providerControl = screen.getByRole('button', {
-      name: 'Change provider',
-    })
-    expect(providerControl).toHaveFocus()
-    expect(providerControl).toHaveTextContent('OpenAI')
+    // There is no "return to configuration" middle layer: closing dismisses
+    // the whole dialog.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Edit Channel' })
+      ).not.toBeInTheDocument()
+    )
+    await user.click(screen.getByRole('button', { name: 'Open channel' }))
+    expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
+    expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
+    await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
+    expect(screen.getByLabelText('Test Model')).toHaveValue('')
   }
 )
 
@@ -502,7 +494,7 @@ test('submitting a missing plugin address focuses its field without leaving crea
   const post = vi.spyOn(api, 'post')
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /No Address/ }))
+  await selectTypeOption(user, /No Address/)
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'test-key' },
   })
@@ -517,8 +509,7 @@ test('submitting a missing plugin address focuses its field without leaving crea
     screen.getByText('Base URL is required for this channel type')
   ).toBeVisible()
   expect(post).not.toHaveBeenCalled()
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(screen.getByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   await waitFor(() =>
     expect(
       screen.queryByText('Base URL is required for this channel type')
@@ -529,21 +520,26 @@ test('submitting a missing plugin address focuses its field without leaving crea
 test('a hidden creation drawer does not request plugin options', async () => {
   render(<ConfigurationHarness initialOpen={false} />)
   expect(api.get).not.toHaveBeenCalledWith('/api/task_plugin_options')
-  await userEvent.click(screen.getByRole('button', { name: 'Open channel' }))
-  expect(await screen.findByRole('option', { name: /Video A/ })).toBeVisible()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Open channel' }))
+  await waitFor(() =>
+    expect(api.get).toHaveBeenCalledWith('/api/task_plugin_options')
+  )
+  await selectTypeOption(user, /Video A/)
 })
 
 test('configuration navigation retains its height when the form content overflows', async () => {
   render(<ConfigurationHarness />)
-  await userEvent.click(await screen.findByRole('option', { name: /Video A/ }))
   const navigation = screen.getByRole('tablist', {
     name: 'Channel configuration',
   })
   expect(navigation.parentElement).toHaveClass('shrink-0')
-  expect(screen.getByRole('dialog')).toHaveClass('sm:max-w-7xl')
+  expect(screen.getByRole('dialog', { name: 'Create Channel' })).toHaveClass(
+    'sm:max-w-5xl'
+  )
 })
 
-test('without plugin binding permission only built-in providers are offered', () => {
+test('without plugin binding permission only built-in providers are offered', async () => {
   useAuthStore.setState({
     auth: {
       ...originalAuth,
@@ -557,11 +553,11 @@ test('without plugin binding permission only built-in providers are offered', ()
       },
     },
   })
+  const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  expect(screen.getByRole('option', { name: /^OpenAI / })).toBeVisible()
-  expect(
-    screen.queryByRole('button', { name: 'Plugins' })
-  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  expect(await screen.findByRole('option', { name: 'OpenAI' })).toBeVisible()
+  expect(screen.queryByRole('option', { name: /Video A/ })).not.toBeInTheDocument()
   expect(api.get).not.toHaveBeenCalledWith('/api/task_plugin_options')
 })
 
@@ -577,9 +573,15 @@ test('plugin loading failure can be retried while built-in providers remain sele
   })
   render(<ConfigurationHarness />)
   expect(await screen.findByText('Failed to load plugins')).toBeVisible()
-  expect(screen.getByRole('option', { name: /^OpenAI / })).toBeVisible()
-  await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
-  expect(await screen.findByRole('option', { name: /Video A/ })).toBeVisible()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  expect(await screen.findByRole('option', { name: 'OpenAI' })).toBeVisible()
+  await user.keyboard('{Escape}')
+  await user.click(screen.getByRole('button', { name: 'Retry' }))
+  await selectTypeOption(user, /Video A/)
+  expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toHaveValue(
+    'Video A'
+  )
 })
 
 test('creating a migrated provider uses its plugin binding instead of the legacy type', async () => {
@@ -589,11 +591,13 @@ test('creating a migrated provider uses its plugin binding instead of the legacy
     .mockResolvedValue({ data: { success: true } })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  const plugin = await screen.findByRole('option', { name: 'Sora Plugin sora' })
-  expect(
-    screen.queryByRole('option', { name: 'Sora Built-in #55' })
-  ).not.toBeInTheDocument()
-  await user.click(plugin)
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  // The legacy built-in Sora type and the plugin are both offered in the
+  // combobox; the search value "plugin" narrows the list to the plugin entry.
+  await user.type(screen.getByRole('combobox', { name: 'Type' }), 'plugin')
+  expect(await screen.findByRole('option', { name: 'Sora' })).toBeVisible()
+  expect(screen.getAllByRole('option', { name: 'Sora' })).toHaveLength(1)
+  await user.click(screen.getByRole('option', { name: 'Sora' }))
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'test-key' },
   })
@@ -649,8 +653,9 @@ test.each(['create', 'edit'])(
       />
     )
     if (mode === 'create') {
-      await user.click(
-        screen.getByRole('option', { name: 'OpenAI Built-in #1' })
+      // The form opens on the default OpenAI type without a picker step.
+      expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue(
+        'OpenAI'
       )
       fireEvent.change(screen.getByLabelText('Name *'), {
         target: { value: 'Combined channel' },
@@ -881,7 +886,8 @@ test('loading a replacement plugin preserves an already selected legacy creation
     .mockResolvedValue({ data: { success: true } })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(screen.getByRole('option', { name: 'Sora Built-in #55' }))
+  // The legacy built-in type stays selectable while plugin options are pending.
+  await selectTypeOption(user, 'Sora')
   fireEvent.change(screen.getByLabelText('Name *'), {
     target: { value: 'Legacy draft' },
   })
@@ -896,17 +902,17 @@ test('loading a replacement plugin preserves an already selected legacy creation
     'draft-model,'
   )
   await user.keyboard('{Escape}')
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
   await act(async () => {
     reply.resolve({ data: { success: true, data: [soraPlugin] } })
     await reply.promise
   })
-  expect(
-    await screen.findByRole('option', { name: 'Sora Plugin sora' })
-  ).toBeVisible()
-  const legacy = screen.getByRole('option', { name: 'Sora Built-in #55' })
-  expect(legacy).toHaveAttribute('aria-current', 'true')
-  await user.click(legacy)
+  // The plugin option appears next to the built-in type; re-selecting the
+  // built-in keeps every kind of unsaved input.
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  const soraOptions = await screen.findAllByRole('option', { name: 'Sora' })
+  expect(soraOptions).toHaveLength(2)
+  await user.click(soraOptions[0])
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('Sora')
   expect(screen.getByLabelText('Name *')).toHaveValue('Legacy draft')
   expect(screen.getByLabelText('API Key *')).toHaveValue('draft-key')
   expect(screen.getByLabelText(/Base URL/)).toHaveValue('https://draft.example')
@@ -930,7 +936,7 @@ test('loading a replacement plugin preserves an already selected legacy creation
 test('an invalid setting in another category is revealed and focused on submission', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'secret' },
   })
@@ -962,7 +968,7 @@ test.each([
     .mockResolvedValue({ data: { success: true } })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   await user.click(screen.getByRole('combobox', { name: 'Add Mode' }))
   await user.click(screen.getByRole('option', { name: label }))
   fireEvent.change(screen.getByLabelText('API Key *'), {
@@ -991,7 +997,7 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
   const post = vi.spyOn(api, 'post').mockReturnValue(reply.promise)
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'keep-secret' },
   })
@@ -1023,7 +1029,7 @@ test('model discovery discards a response for old credentials and retains manual
     })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(screen.getByRole('option', { name: /^OpenAI / }))
+  // The form opens on the default OpenAI type, so only the key is needed.
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'first-key' },
   })
@@ -1063,7 +1069,7 @@ test('model discovery reports failures inline and allows an empty result to fall
     .mockResolvedValueOnce({ data: { success: true, data: [] } })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(screen.getByRole('option', { name: /^OpenAI / }))
+  // The form opens on the default OpenAI type, so only the key is needed.
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'test-key' },
   })
@@ -1107,8 +1113,7 @@ test('editing opens the shared configuration and omits an unchanged key on updat
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={channel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
-  expect(screen.queryByLabelText('Type *')).not.toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Change provider' })).toBeVisible()
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
   expect(screen.getAllByRole('tab')).toHaveLength(4)
   expect(
     screen.getByRole('tab', { name: /Connection & Models/ })
@@ -1144,16 +1149,15 @@ test('editing legacy channels retains the full provider list and saves the origi
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('Sora')
+  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  // The full list keeps both the plugin and the legacy built-in types.
   expect(
-    await screen.findByRole('option', { name: 'Sora Plugin sora' })
-  ).toBeVisible()
-  expect(
-    screen.getByRole('option', { name: 'DoubaoVideo Built-in #54' })
-  ).toBeVisible()
-  const legacy = screen.getByRole('option', { name: 'Sora Built-in #55' })
-  expect(legacy).toHaveAttribute('aria-current', 'true')
-  await user.click(legacy)
+    (await screen.findAllByRole('option', { name: 'Sora' })).length
+  ).toBe(2)
+  expect(screen.getByRole('option', { name: 'DoubaoVideo' })).toBeVisible()
+  // Re-selecting the saved built-in type keeps the channel values.
+  await user.click(screen.getAllByRole('option', { name: 'Sora' })[0])
   expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   fireEvent.change(screen.getByLabelText('Name *'), {
@@ -1175,7 +1179,7 @@ test('editing legacy channels retains the full provider list and saves the origi
   expect(JSON.parse(payload.setting)).not.toHaveProperty('task_plugin_key')
 })
 
-test('opening and reselecting an existing plugin preserves its saved configuration', async () => {
+test('switching plugins in an edited channel keeps the saved name, address, and test model', async () => {
   editingChannel = {
     ...editingChannel,
     type: 61,
@@ -1185,25 +1189,19 @@ test('opening and reselecting an existing plugin preserves its saved configurati
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('Video A')
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
   expect(screen.queryByLabelText('Task plugin *')).not.toBeInTheDocument()
-  const providerControl = screen.getByRole('button', {
-    name: 'Change provider',
-  })
-  await user.click(await within(providerControl).findByText('Video A'))
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
-  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
-  expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(
-    screen.getByRole('button', { name: 'Back to configuration' })
+  await selectTypeOption(user, 'Video B')
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('Video B')
+  // Edit mode never auto-fills the name, and a saved address that is not the
+  // previous plugin default survives the switch; models follow the new plugin.
+  expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toHaveValue(
+    'Existing channel'
   )
-  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Change provider' }))
-  await user.click(screen.getByRole('option', { name: /^Video B Plugin/ }))
-  expect(screen.getByDisplayValue('Existing channel')).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'custom-model' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'video-b-1' })).toBeVisible()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
   expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
@@ -1219,7 +1217,11 @@ test('an unavailable plugin keeps its identifier and binding when other fields a
     .spyOn(api, 'put')
     .mockResolvedValue({ data: { success: true } })
   render(<ConfigurationHarness currentRow={editingChannel} />)
-  expect(await screen.findByText('removed-plugin')).toBeVisible()
+  expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
+  // An unknown plugin key is shown as the raw combobox value.
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue(
+    'plugin:removed-plugin'
+  )
   fireEvent.change(screen.getByLabelText('Name *'), {
     target: { value: 'Updated name' },
   })
@@ -1245,7 +1247,11 @@ test('a failed detail request blocks updating until retry loads the saved channe
     expect(screen.getByText('Failed to load channel')).toBeVisible()
   )
   expect(screen.getByRole('button', { name: 'Update Channel' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: 'Change provider' })).toBeDisabled()
+  // While the saved channel is missing, the form is replaced by the error
+  // state, so no type editing is possible at all.
+  expect(
+    screen.queryByRole('combobox', { name: 'Type' })
+  ).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Retry' }))
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
@@ -1598,7 +1604,7 @@ test('model configuration keeps unchecked candidates searchable and supports cat
 test('model configuration is available for a plugin channel without upstream discovery and is disabled when its model list is empty', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await user.click(await screen.findByRole('option', { name: /Video A/ }))
+  await selectTypeOption(user, /Video A/)
   const trigger = screen.getByRole('button', { name: 'Configure Models' })
   expect(trigger).toBeEnabled()
   expect(
@@ -1683,7 +1689,7 @@ test('an operator without sensitive write permission can discover saved models a
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
-  expect(screen.getByRole('button', { name: 'Change provider' })).toBeDisabled()
+  expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
   expect(screen.getByLabelText('API Key *')).toBeDisabled()
   expect(
     await screen.findByRole('checkbox', { name: 'upstream-model' })
@@ -1856,7 +1862,8 @@ test('an unknown saved type remains editable without selecting a new provider', 
     .mockResolvedValue({ data: { success: true } })
   render(<ConfigurationHarness currentRow={editingChannel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
-  expect(screen.getByText('#999')).toBeVisible()
+  // Unknown saved types stay editable and display the raw type number.
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('type:999')
   await userEvent.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
   expect(put.mock.calls[0]?.[1]).toMatchObject({ id: 42, type: 999 })
@@ -1879,54 +1886,24 @@ test('a background refresh updates untouched values without moving the selected 
   )
 })
 
-test('closing an edited channel retains its left exit direction after the parent clears the row', async () => {
-  const animation = deferredResponse<void>()
-  const originalGetAnimations = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    'getAnimations'
+test('closing an edited channel clears the row so the next open starts a fresh creation', async () => {
+  const user = userEvent.setup()
+  const view = render(
+    <ConfigurationHarness currentRow={editingChannel} clearRowOnClose />
   )
-  Object.defineProperty(HTMLElement.prototype, 'getAnimations', {
-    configurable: true,
-    value(this: HTMLElement) {
-      return this.hasAttribute('data-ending-style')
-        ? [{ finished: animation.promise }]
-        : []
-    },
-  })
-  try {
-    const user = userEvent.setup()
-    const view = render(
-      <ConfigurationHarness currentRow={editingChannel} clearRowOnClose />
-    )
-    await screen.findByDisplayValue('Existing channel')
-    const drawer = screen.getByRole('dialog')
-    expect(drawer).toHaveAttribute('data-side', 'left')
-    await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(drawer).toHaveAttribute('data-ending-style'))
-    expect(drawer).toBeInTheDocument()
-    expect(drawer).toHaveAttribute('data-side', 'left')
-    expect(drawer).toHaveClass('left-0')
-    expect(drawer).not.toHaveClass('right-0')
-    await act(async () => {
-      animation.resolve()
-    })
-    await waitFor(() => expect(drawer).not.toBeInTheDocument())
-
-    view.rerender(<ConfigurationHarness clearRowOnClose />)
-    await user.click(screen.getByRole('button', { name: 'Open channel' }))
-    expect(screen.getByRole('dialog')).toHaveAttribute('data-side', 'right')
-  } finally {
-    animation.resolve()
-    if (originalGetAnimations) {
-      Object.defineProperty(
-        HTMLElement.prototype,
-        'getAnimations',
-        originalGetAnimations
-      )
-    } else {
-      Reflect.deleteProperty(HTMLElement.prototype, 'getAnimations')
-    }
-  }
+  await screen.findByDisplayValue('Existing channel')
+  expect(screen.getByRole('dialog', { name: 'Edit Channel' })).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Edit Channel' })
+    ).not.toBeInTheDocument()
+  )
+  view.rerender(<ConfigurationHarness clearRowOnClose />)
+  await user.click(screen.getByRole('button', { name: 'Open channel' }))
+  expect(await screen.findByRole('dialog', { name: 'Create Channel' })).toBeVisible()
+  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
+  expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toHaveValue('')
 })
 
 // 上游单价编辑器必须与模型清单同屏（design-v1 §16#7）：每个模型在不同渠道的采购价

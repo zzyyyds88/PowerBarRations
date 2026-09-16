@@ -20,9 +20,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
-  ArrowLeft,
   AlertCircle,
-  ChevronDown,
   ClipboardPaste,
   Loader2,
   Server,
@@ -38,7 +36,6 @@ import {
   Wand2,
 } from 'lucide-react'
 import {
-  type ComponentProps,
   type ReactNode,
   useEffect,
   useState,
@@ -51,10 +48,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import {
-  sideDrawerContentClassName,
-  sideDrawerFooterClassName,
-  sideDrawerFormClassName,
-  sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
 import { ErrorState } from '@/components/error-state'
@@ -76,6 +69,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
+import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { PopoverDescription, PopoverTitle } from '@/components/ui/popover'
 import {
@@ -88,14 +82,13 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+  Dialog as DialogRoot,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
@@ -135,6 +128,7 @@ import {
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_TASK_PLUGIN,
+  channelTypeOptionsForTaskPluginBind,
   CHANNEL_TYPE_WARNINGS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -172,7 +166,6 @@ import {
   getChannelConfigurationState,
   type ChannelConfigurationStatus,
   type ChannelConfigurationSection,
-  type ChannelProviderTarget,
 } from '../../lib/channel-configuration'
 import {
   getChannelPluginExtensions,
@@ -205,7 +198,6 @@ import {
   ChannelConfiguration,
   ChannelConfigurationStatusIndicator,
 } from './channel-configuration'
-import { ChannelProviderPicker } from './channel-provider-picker'
 import {
   ChannelApiAccessSection,
   ChannelAuthSection,
@@ -214,7 +206,7 @@ import {
   ChannelModelsSection,
 } from './sections'
 
-type ChannelMutateDrawerProps = {
+type ChannelMutateDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: Channel | null
@@ -370,11 +362,11 @@ function SubHeading(props: {
   )
 }
 
-export function ChannelMutateDrawer({
+export function ChannelMutateDialog({
   open,
   onOpenChange,
   currentRow,
-}: ChannelMutateDrawerProps) {
+}: ChannelMutateDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { setOpen } = useChannels()
@@ -422,33 +414,13 @@ export function ChannelMutateDrawer({
     useState<ChannelConnectionInfo | null>(null)
 
   const isEditing = Boolean(currentRow)
-  const requestedSide = isEditing ? 'left' : 'right'
-  const [drawerSide, setDrawerSide] = useState<'left' | 'right'>(requestedSide)
-  // The parent clears currentRow as soon as closing starts. Keep the last
-  // open direction until the next opening, including the entire exit animation.
-  if (open && drawerSide !== requestedSide) {
-    setDrawerSide(requestedSide)
-  }
   const channelId = currentRow?.id ?? null
   const sensitiveLocked = isEditing && !canEditSensitive
-  const [providerTarget, setProviderTarget] =
-    useState<ChannelProviderTarget | null>(null)
-  const [choosingProvider, setChoosingProvider] = useState(true)
   const [configurationSection, setConfigurationSection] =
     useState<ChannelConfigurationSection>('connection')
   const [pendingErrorFocus, setPendingErrorFocus] = useState<string | null>(
     null
   )
-  const showProviderPicker =
-    choosingProvider && (!isEditing || Boolean(providerTarget))
-  const providerControlRef = useRef<HTMLButtonElement>(null)
-  const previousProviderPicker = useRef(false)
-  useEffect(() => {
-    if (open && previousProviderPicker.current && !showProviderPicker) {
-      providerControlRef.current?.focus({ preventScroll: true })
-    }
-    previousProviderPicker.current = showProviderPicker
-  }, [open, showProviderPicker])
   const loadedForm = useRef<{ channelId: number; snapshot: string } | null>(
     null
   )
@@ -479,21 +451,21 @@ export function ChannelMutateDrawer({
   const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
     queryKey: ['groups'],
     queryFn: async () => requireServerSuccess(await getGroups()),
-    enabled: open && !showProviderPicker,
+    enabled: open,
   })
 
   // Fetch all available models
   const { data: allModelsData } = useQuery({
     queryKey: ['channel_models'],
     queryFn: async () => requireServerSuccess(await getAllModels()),
-    enabled: open && !showProviderPicker,
+    enabled: open,
   })
 
   // Fetch prefill model groups
   const { data: prefillGroupsData } = useQuery({
     queryKey: ['prefill_groups', 'model'],
     queryFn: async () => requireServerSuccess(await getPrefillGroups('model')),
-    enabled: open && !showProviderPicker,
+    enabled: open,
   })
 
   const { copyToClipboard } = useCopyToClipboard()
@@ -586,7 +558,7 @@ export function ChannelMutateDrawer({
   }, [applyConnectionInfo, t])
 
   useEffect(() => {
-    if (!open || isEditing || showProviderPicker) {
+    if (!open || isEditing) {
       setClipboardConnectionInfo(null)
       return
     }
@@ -609,7 +581,7 @@ export function ChannelMutateDrawer({
     return () => {
       cancelled = true
     }
-  }, [isEditing, open, showProviderPicker])
+  }, [isEditing, open])
 
   // Helper computed values
   const isBatchMode =
@@ -682,12 +654,6 @@ export function ChannelMutateDrawer({
     [currentModels]
   )
 
-  const currentTypeLabel = useMemo(
-    () =>
-      CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
-        ?.label || `#${currentType}`,
-    [currentType]
-  )
   const taskPluginOptionsQuery = useQuery({
     queryKey: ['task-plugin-options'],
     queryFn: async () => requireServerSuccess(await getTaskPluginOptions()),
@@ -710,84 +676,85 @@ export function ChannelMutateDrawer({
           (item) => item.key === currentTaskPluginKey
         )
       : undefined
-  const providerLabel =
-    boundTaskPlugin?.name ||
-    (currentType === CHANNEL_TYPE_TASK_PLUGIN && currentTaskPluginKey) ||
-    t(currentTypeLabel)
 
-  const selectProvider = useCallback(
-    (target: ChannelProviderTarget) => {
+  const selectChannelType = useCallback(
+    (value: number) => {
       if (!canEditSensitive) return
-      if (
-        (target.kind === 'builtin' &&
-          providerTarget?.kind === 'builtin' &&
-          target.type === providerTarget.type) ||
-        (target.kind === 'plugin' &&
-          providerTarget?.kind === 'plugin' &&
-          target.key === providerTarget.key)
-      ) {
-        setChoosingProvider(false)
-        return
+      if (!Number.isSafeInteger(value) || value <= 0) return
+      form.setValue('type', value, { shouldDirty: true })
+      if (!isEditing && !form.getValues('name').trim()) {
+        const label = CHANNEL_TYPE_OPTIONS.find(
+          (option) => option.value === value
+        )?.label
+        form.setValue('name', label ? t(label) : `#${value}`)
       }
-      if (target.kind === 'plugin') {
-        if (!canBindTaskPlugin) return
-        const plugin = taskPluginOptionsQuery.data?.find(
-          (item) => item.key === target.key
-        )
-        if (!plugin) return
-        const previousPlugin = taskPluginOptionsQuery.data?.find(
-          (item) => item.key === form.getValues('task_plugin_key')
-        )
-        form.setValue('type', CHANNEL_TYPE_TASK_PLUGIN, { shouldDirty: true })
-        form.setValue('task_plugin_key', plugin.key, { shouldDirty: true })
-        if (!isEditing && !providerTarget && !form.getValues('name').trim()) {
-          form.setValue('name', plugin.name)
-        }
-        if (plugin.models.length) {
-          form.setValue('models', formatModelsArray(plugin.models), {
-            shouldDirty: true,
-          })
-        }
-        const baseUrl = nextTaskPluginBaseUrl(
-          form.getValues('base_url'),
-          previousPlugin?.baseUrl,
-          plugin.baseUrl
-        )
-        if (baseUrl !== null) {
-          form.setValue('base_url', baseUrl, {
-            shouldDirty: true,
-            shouldValidate: true,
-          })
-        }
-      } else {
-        if (
-          !Number.isSafeInteger(target.type) ||
-          target.type <= 0 ||
-          target.type === CHANNEL_TYPE_TASK_PLUGIN
-        ) {
-          return
-        }
-        form.setValue('type', target.type, { shouldDirty: true })
-        if (!isEditing && !providerTarget && !form.getValues('name').trim()) {
-          const label = CHANNEL_TYPE_OPTIONS.find(
-            (option) => option.value === target.type
-          )?.label
-          form.setValue('name', label ? t(label) : `#${target.type}`)
-        }
+    },
+    [canEditSensitive, isEditing, form, t]
+  )
+
+  const selectTaskPlugin = useCallback(
+    (key: string) => {
+      if (!canBindTaskPlugin) return
+      const plugin = taskPluginOptionsQuery.data?.find(
+        (item) => item.key === key
+      )
+      if (!plugin) return
+      const previousPlugin = taskPluginOptionsQuery.data?.find(
+        (item) => item.key === form.getValues('task_plugin_key')
+      )
+      form.setValue('type', CHANNEL_TYPE_TASK_PLUGIN, { shouldDirty: true })
+      form.setValue('task_plugin_key', plugin.key, { shouldDirty: true })
+      if (!isEditing && !form.getValues('name').trim()) {
+        form.setValue('name', plugin.name)
       }
-      setProviderTarget(target)
-      setChoosingProvider(false)
+      if (plugin.models.length) {
+        form.setValue('models', formatModelsArray(plugin.models), {
+          shouldDirty: true,
+        })
+      }
+      const baseUrl = nextTaskPluginBaseUrl(
+        form.getValues('base_url'),
+        previousPlugin?.baseUrl,
+        plugin.baseUrl
+      )
+      if (baseUrl !== null) {
+        form.setValue('base_url', baseUrl, {
+          shouldDirty: true,
+          shouldValidate: true,
+        })
+      }
     },
     [
       canBindTaskPlugin,
-      canEditSensitive,
-      providerTarget,
       isEditing,
       form,
-      t,
       taskPluginOptionsQuery.data,
     ]
   )
+
+  const channelTypeComboboxOptions = useMemo(() => {
+    const builtin = channelTypeOptionsForTaskPluginBind(canBindTaskPlugin)
+      .filter((option) => option.value !== CHANNEL_TYPE_TASK_PLUGIN)
+      .map((option) => ({
+        value: `type:${option.value}`,
+        label: t(option.label),
+        icon: <ChannelTypeLogo type={option.value} size={16} />,
+      }))
+    const plugins = canBindTaskPlugin
+      ? (taskPluginOptionsQuery.data ?? []).map((item) => ({
+          value: `plugin:${item.key}`,
+          label: item.name,
+          icon: (
+            <ChannelTypeLogo
+              type={CHANNEL_TYPE_TASK_PLUGIN}
+              plugin={item}
+              size={16}
+            />
+          ),
+        }))
+      : []
+    return [...builtin, ...plugins]
+  }, [canBindTaskPlugin, taskPluginOptionsQuery.data, t])
   // The plugin author proposes the destination host once a default is
   // prefilled, so the admin is told when the key would travel over plain HTTP
   // or to a private network before the channel is saved.
@@ -927,8 +894,6 @@ export function ChannelMutateDrawer({
       setModelConfiguration(null)
       form.reset(CHANNEL_FORM_DEFAULT_VALUES)
       loadedForm.current = null
-      setProviderTarget(null)
-      setChoosingProvider(true)
       setConfigurationSection('connection')
       setPendingErrorFocus(null)
       return
@@ -949,14 +914,8 @@ export function ChannelMutateDrawer({
         channelId: channelData.data.id,
         snapshot: JSON.stringify(form.getValues()),
       }
-      setProviderTarget(
-        defaults.type === CHANNEL_TYPE_TASK_PLUGIN
-          ? { kind: 'plugin', key: defaults.task_plugin_key || '' }
-          : { kind: 'builtin', type: defaults.type }
-      )
       if (isNewChannel) {
         setModelConfiguration(null)
-        setChoosingProvider(false)
         setConfigurationSection('connection')
         setPendingErrorFocus(null)
       }
@@ -1372,7 +1331,7 @@ export function ChannelMutateDrawer({
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
       if (isEditing && !channelData?.data) return
-      if (!isEditing && (!providerTarget || !canEditSensitive)) return
+      if (!isEditing && !canEditSensitive) return
       // Validate key is required when creating
       if (!isEditing && !data.key?.trim()) {
         form.setError('key', {
@@ -1493,7 +1452,6 @@ export function ChannelMutateDrawer({
     },
     [
       isEditing,
-      providerTarget,
       canEditSensitive,
       sensitiveLocked,
       channelData,
@@ -1518,7 +1476,7 @@ export function ChannelMutateDrawer({
   )
 
   useEffect(() => {
-    if (!pendingErrorFocus || showProviderPicker) return
+    if (!pendingErrorFocus) return
     const frame = window.requestAnimationFrame(() => {
       const panel = channelFormRef.current?.querySelector(
         '[role="tabpanel"]:not([hidden])'
@@ -1535,31 +1493,19 @@ export function ChannelMutateDrawer({
       setPendingErrorFocus(null)
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [pendingErrorFocus, configurationSection, showProviderPicker])
+  }, [pendingErrorFocus, configurationSection])
 
   // Handle drawer close
-  const handleOpenChange = useCallback<
-    NonNullable<ComponentProps<typeof Sheet>['onOpenChange']>
-  >(
-    (v, details) => {
+  const handleOpenChange = useCallback(
+    (v: boolean) => {
       if (!v && isSubmitting) return
-      if (
-        !v &&
-        showProviderPicker &&
-        providerTarget &&
-        details.reason === 'escape-key'
-      ) {
-        details.cancel()
-        setChoosingProvider(false)
-        return
-      }
       onOpenChange(v)
       if (!v) {
         form.reset(CHANNEL_FORM_DEFAULT_VALUES)
         setClipboardConnectionInfo(null)
       }
     },
-    [onOpenChange, form, isSubmitting, showProviderPicker, providerTarget]
+    [onOpenChange, form, isSubmitting]
   )
 
   const proxyFields = (
@@ -2223,6 +2169,45 @@ export function ChannelMutateDrawer({
               </FormItem>
             )}
           />
+
+          <FormField
+            control={form.control}
+            name='type'
+            render={({ field }) => {
+              const isPluginType = field.value === CHANNEL_TYPE_TASK_PLUGIN
+              const comboboxValue =
+                isPluginType && currentTaskPluginKey
+                  ? `plugin:${currentTaskPluginKey}`
+                  : `type:${field.value ?? ''}`
+              return (
+                <FormItem>
+                  <FormLabel required>{t('Type')}</FormLabel>
+                  <FormControl>
+                    <Combobox
+                      options={channelTypeComboboxOptions}
+                      value={comboboxValue}
+                      onValueChange={(value) => {
+                        if (!value) return
+                        if (value.startsWith('plugin:')) {
+                          selectTaskPlugin(value.slice('plugin:'.length))
+                        } else if (value.startsWith('type:')) {
+                          const parsed = Number(value.slice('type:'.length))
+                          if (Number.isSafeInteger(parsed) && parsed > 0) {
+                            selectChannelType(parsed)
+                          }
+                        }
+                      }}
+                      disabled={sensitiveLocked || isSubmitting}
+                      placeholder={t('Type')}
+                      searchPlaceholder={t('Search...')}
+                      aria-label={t('Type')}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )
+            }}
+          />
         </div>
 
         {!isEditing && (
@@ -2786,8 +2771,7 @@ export function ChannelMutateDrawer({
                     />
                   </FormControl>
                   {canBindTaskPlugin &&
-                    canHavePluginExtensions &&
-                    !showProviderPicker && (
+                    canHavePluginExtensions && (
                       <>
                         {taskPluginOptionsQuery.isLoading && (
                           <LoadingState
@@ -4074,9 +4058,7 @@ export function ChannelMutateDrawer({
   )
 
   let formContent: ReactNode
-  if (!isEditing && !providerTarget) {
-    formContent = null
-  } else if (isEditing && isChannelError && !channelData?.data) {
+  if (isEditing && isChannelError && !channelData?.data) {
     formContent = (
       <ErrorState
         title={t('Failed to load channel')}
@@ -4183,84 +4165,28 @@ export function ChannelMutateDrawer({
   let description = t(
     'Configure the connection and models, then create the channel.'
   )
-  if (showProviderPicker && providerTarget) {
-    description = `${t('Current:')} ${providerLabel}`
-  } else if (isEditing) {
+  if (isEditing) {
     description = t(
       "Update channel configuration and click save when you're done."
     )
-  } else if (showProviderPicker) {
-    description = t('Choose a provider or plugin to configure your channel.')
   }
 
   return (
     <>
-      <Sheet open={open} onOpenChange={handleOpenChange}>
-        <SheetContent
-          side={drawerSide}
-          className={sideDrawerContentClassName('sm:max-w-7xl')}
-        >
-          <SheetHeader className={sideDrawerHeaderClassName('pr-12 sm:pr-14')}>
+      <DialogRoot open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className='flex max-h-[calc(100vh-2rem)] w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-5xl sm:p-6'>
+          <DialogHeader className='pr-12'>
             <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
               <div className='min-w-0 flex-1'>
                 <div className='flex min-w-0 items-center gap-2 sm:gap-3'>
-                  <SheetTitle className='flex shrink-0 items-center gap-2 sm:gap-3'>
+                  <DialogTitle className='flex shrink-0 items-center gap-2 sm:gap-3'>
                     <IconBadge tone='info' size='title'>
                       <Server className='size-5' />
                     </IconBadge>
                     <span>
                       {isEditing ? t('Edit Channel') : t('Create Channel')}
                     </span>
-                  </SheetTitle>
-                  {(!showProviderPicker || providerTarget) && (
-                    <Button
-                      ref={providerControlRef}
-                      type='button'
-                      variant='outline'
-                      aria-label={
-                        showProviderPicker
-                          ? t('Back to configuration')
-                          : t('Change provider')
-                      }
-                      aria-description={providerLabel}
-                      title={providerLabel}
-                      className='min-w-0 shrink gap-2 sm:max-w-md'
-                      disabled={
-                        isSubmitting ||
-                        (!showProviderPicker &&
-                          (!canEditSensitive ||
-                            (isEditing && !channelData?.data)))
-                      }
-                      onClick={() => setChoosingProvider(!showProviderPicker)}
-                    >
-                      {showProviderPicker ? (
-                        <>
-                          <ArrowLeft className='size-4' aria-hidden='true' />
-                          <span className='shrink-0 sm:hidden'>
-                            {t('Back')}
-                          </span>
-                          <span className='hidden shrink-0 sm:inline'>
-                            {t('Back to configuration')}
-                          </span>
-                        </>
-                      ) : (
-                        <ChannelTypeLogo
-                          type={currentType}
-                          plugin={boundTaskPlugin}
-                          size={18}
-                        />
-                      )}
-                      <span className='min-w-0 truncate'>{providerLabel}</span>
-                      {!showProviderPicker && (
-                        <>
-                          <span className='hidden shrink-0 sm:inline'>
-                            {t('Change provider')}
-                          </span>
-                          <ChevronDown className='size-4' aria-hidden='true' />
-                        </>
-                      )}
-                    </Button>
-                  )}
+                  </DialogTitle>
                 </div>
                 {isEditing && channelData?.data && (
                   <Badge variant='secondary' className='mt-2'>
@@ -4271,21 +4197,11 @@ export function ChannelMutateDrawer({
                     )}
                   </Badge>
                 )}
-                <SheetDescription
-                  className={cn(
-                    'mt-1',
-                    showProviderPicker && providerTarget && 'truncate'
-                  )}
-                  title={
-                    showProviderPicker && providerTarget
-                      ? description
-                      : undefined
-                  }
-                >
+                <DialogDescription className='mt-1'>
                   {description}
-                </SheetDescription>
+                </DialogDescription>
               </div>
-              {!isEditing && !showProviderPicker && (
+              {!isEditing && (
                 <Button
                   type='button'
                   variant='outline'
@@ -4298,23 +4214,7 @@ export function ChannelMutateDrawer({
                 </Button>
               )}
             </div>
-          </SheetHeader>
-
-          {showProviderPicker && (
-            <ChannelProviderPicker
-              isCreating={!isEditing}
-              plugins={taskPluginOptionsQuery.data ?? []}
-              currentProvider={providerTarget}
-              canBindPlugin={canBindTaskPlugin}
-              loading={taskPluginOptionsQuery.isLoading}
-              failed={taskPluginOptionsQuery.isError}
-              disabled={isSubmitting || !canEditSensitive}
-              onRetry={() => {
-                void taskPluginOptionsQuery.refetch()
-              }}
-              onSelect={selectProvider}
-            />
-          )}
+          </DialogHeader>
 
           {sensitiveLocked && (
             <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
@@ -4329,7 +4229,7 @@ export function ChannelMutateDrawer({
             </Alert>
           )}
 
-          {!isEditing && !showProviderPicker && clipboardConnectionInfo && (
+          {!isEditing && clipboardConnectionInfo && (
             <Alert>
               <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
                 <span>{t('Connection info detected in clipboard')}</span>
@@ -4359,57 +4259,38 @@ export function ChannelMutateDrawer({
               id='channel-form'
               ref={channelFormRef}
               onSubmit={form.handleSubmit(onSubmit, onInvalid)}
-              className={sideDrawerFormClassName(
-                cn(
-                  'gap-5',
-                  (!isEditing ||
-                    (!isChannelDetailLoading && channelData?.data)) &&
-                    'overflow-hidden',
-                  showProviderPicker && 'hidden'
-                )
-              )}
-              hidden={showProviderPicker}
+              className='flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-1'
             >
               {formContent}
             </form>
           </Form>
 
-          <SheetFooter className={sideDrawerFooterClassName()}>
-            {showProviderPicker && providerTarget ? (
-              <Button
-                type='button'
-                variant='outline'
-                disabled={isSubmitting}
-                onClick={() => setChoosingProvider(false)}
-              >
-                {t('Cancel')}
-              </Button>
-            ) : (
-              <SheetClose
-                render={<Button variant='outline' disabled={isSubmitting} />}
-              >
-                {t('Cancel')}
-              </SheetClose>
-            )}
-            {!showProviderPicker && (
-              <Button
-                form='channel-form'
-                type='submit'
-                disabled={
-                  isSubmitting ||
-                  (!isEditing && !canEditSensitive) ||
-                  (isEditing && !channelData?.data)
-                }
-              >
-                {isSubmitting && (
-                  <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                )}
-                {isEditing ? t('Update Channel') : t('Create Channel')}
-              </Button>
-            )}
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+          <DialogFooter className='mt-2'>
+            <Button
+              type='button'
+              variant='outline'
+              disabled={isSubmitting}
+              onClick={() => handleOpenChange(false)}
+            >
+              {t('Cancel')}
+            </Button>
+            <Button
+              form='channel-form'
+              type='submit'
+              disabled={
+                isSubmitting ||
+                (!isEditing && !canEditSensitive) ||
+                (isEditing && !channelData?.data)
+              }
+            >
+              {isSubmitting && (
+                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+              )}
+              {isEditing ? t('Update Channel') : t('Create Channel')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </DialogRoot>
 
       {open && modelConfiguration && (
         <ConfigureModelsDialog
