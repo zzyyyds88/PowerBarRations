@@ -957,9 +957,8 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					require.NoError(t, first.Insert())
 					require.NoError(t, second.Insert())
 					mapping := `{"` + name + `":"upstream-name"}`
-					priority, weight := int64(7), uint(9)
 					channels := []model.Channel{
-						{Name: "Enabled", Type: 1, Key: "fixture-key", Models: name + "," + name + "-keep," + second.ModelName, Group: "default,vip", Status: common.ChannelStatusEnabled, ModelMapping: &mapping, Priority: &priority, Weight: &weight},
+						{Name: "Enabled", Type: 1, Key: "fixture-key", Models: name + "," + name + "-keep," + second.ModelName, Group: "default,vip", Status: common.ChannelStatusEnabled, ModelMapping: &mapping},
 						{Name: "Disabled", Type: 1, Models: name + ",prefix-" + name, Group: "disabled-group", Status: common.ChannelStatusManuallyDisabled},
 						{Name: "Last model", Type: 1, Models: name, Group: "last-model-group", Status: common.ChannelStatusEnabled},
 						{Name: "Case-sensitive name", Type: 1, Models: strings.ToUpper(name), Group: "case-group", Status: common.ChannelStatusEnabled},
@@ -1030,8 +1029,7 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 						assert.NotEqual(t, second.ModelName, ability.Model)
 						assert.NotEmpty(t, ability.Model)
 						if ability.ChannelId == channels[0].Id {
-							assert.Equal(t, &priority, ability.Priority)
-							assert.Equal(t, weight, ability.Weight)
+							// 渠道 priority/weight 已删除：ability 行只保证启用与模型名正确。
 							assert.True(t, ability.Enabled)
 						}
 						if ability.ChannelId == channels[1].Id {

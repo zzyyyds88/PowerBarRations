@@ -1848,56 +1848,6 @@ export function ChannelMutateDrawer({
         icon={<Route className='h-3.5 w-3.5' />}
         iconTone='info'
       />
-      <div className='grid gap-4 sm:grid-cols-2'>
-        <FormField
-          control={form.control}
-          name='priority'
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('Priority')}</FormLabel>
-              <FormControl>
-                <Input
-                  type='number'
-                  placeholder='0'
-                  {...field}
-                  onChange={(e) => field.onChange(Number(e.target.value))}
-                />
-              </FormControl>
-              <FormDescription>
-                {t(FIELD_DESCRIPTIONS.PRIORITY)}
-              </FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        {currentType === CHANNEL_TYPE_TASK_PLUGIN && (
-          <FormField
-            control={form.control}
-            name='weight'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Weight')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='number'
-                    placeholder='0'
-                    {...field}
-                    onChange={(e) => field.onChange(Number(e.target.value))}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Used only for legacy task-plugin channel selection. Model routing uses lane ordering (priority) instead.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
-      </div>
-
       <FormField
         control={form.control}
         name='test_model'
@@ -4272,7 +4222,7 @@ export function ChannelMutateDrawer({
                   'Sensitive channel settings are read-only for your account.'
                 )}{' '}
                 {t(
-                  'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
+                  'You can still edit non-sensitive operations fields such as models and groups.'
                 )}
               </AlertDescription>
             </Alert>

@@ -382,8 +382,6 @@ export const DEFAULT_CHANNEL_VALUES = {
   models: '',
   group: 'default',
   status: CHANNEL_STATUS.ENABLED,
-  priority: 0,
-  weight: 0,
   auto_ban: 1,
   remark: '',
 } as const
@@ -399,7 +397,6 @@ export const CHANNELS_TABLE_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 // ============================================================================
 
 export const SORT_OPTIONS = [
-  { value: 'priority', label: 'Priority (Default)' },
   { value: 'id', label: 'ID' },
   { value: 'name', label: 'Name' },
   { value: 'balance', label: 'Balance' },
@@ -464,8 +461,6 @@ export const FIELD_DESCRIPTIONS = {
   GROUP: 'User groups that can access this channel. ',
   MODEL_MAPPING:
     'For this channel, map the model name in client requests to the model name sent upstream.',
-  PRIORITY: 'Higher priority channels are selected first',
-  WEIGHT: 'Used for load balancing. Higher weight = more requests',
   TEST_MODEL: 'Model to use when testing channel connectivity',
   AUTO_BAN: 'Automatically disable channel on repeated failures',
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',

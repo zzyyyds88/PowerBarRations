@@ -64,9 +64,10 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 	t.Run("omitted sensitive fields do not use zero values", func(t *testing.T) {
 		updated := PatchChannel{}
 		updated.Id = origin.Id
-		updated.Priority = origin.Priority
+		updated.Models = origin.Models
 
-		assert.False(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"priority": 10}))
+		// 请求体里带了未在敏感清单中的字段：不得因"零值 ≠ 原值"被判成敏感变更。
+		assert.False(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"models": "model-9"}))
 	})
 
 	t.Run("unknown field fails closed", func(t *testing.T) {

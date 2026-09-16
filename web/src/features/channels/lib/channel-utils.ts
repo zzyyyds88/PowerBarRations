@@ -495,32 +495,6 @@ export function formatQuota(quota: number): string {
 }
 
 // ============================================================================
-// Priority & Weight Utilities
-// ============================================================================
-
-/**
- * Get priority display value
- */
-export function getPriorityDisplay(
-  priority: number | null | undefined
-): string {
-  if (priority === null || priority === undefined) {
-    return '0'
-  }
-  return String(priority)
-}
-
-/**
- * Get weight display value
- */
-export function getWeightDisplay(weight: number | null | undefined): string {
-  if (weight === null || weight === undefined) {
-    return '0'
-  }
-  return String(weight)
-}
-
-// ============================================================================
 // Validation Utilities
 // ============================================================================
 
@@ -652,8 +626,6 @@ export function aggregateChannelsByTag(
         group: '',
         used_quota: 0,
         response_time: 0,
-        priority: -1 as unknown as number | null,
-        weight: -1 as unknown as number | null,
         balance: 0,
         test_time: 0,
         created_time: 0,
@@ -681,20 +653,6 @@ export function aggregateChannelsByTag(
     tagRow.response_time =
       (tagRow.response_time * (childCount - 1) + channel.response_time) /
       childCount
-
-    // Aggregate priority (same value or null if different)
-    if (tagRow.priority === -1) {
-      tagRow.priority = channel.priority
-    } else if (tagRow.priority !== channel.priority) {
-      tagRow.priority = null
-    }
-
-    // Aggregate weight (same value or null if different)
-    if (tagRow.weight === -1) {
-      tagRow.weight = channel.weight
-    } else if (tagRow.weight !== channel.weight) {
-      tagRow.weight = null
-    }
 
     // Aggregate group (concatenate and deduplicate)
     if (tagRow.group === '') {

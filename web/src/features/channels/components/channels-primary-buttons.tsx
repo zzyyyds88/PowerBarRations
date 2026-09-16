@@ -308,7 +308,7 @@ export function ChannelsPrimaryButtons() {
         onOpenChange={setShowConsistencyDialog}
         title={t('Repair channel consistency?')}
         desc={t(
-          'This will rebuild the channel routing index from every channel configuration, including supported models, groups, priorities, and weights. Routing may be briefly incomplete while the rebuild is running. Continue?'
+          'This will rebuild the channel routing index from every channel configuration, including supported models and groups. Routing may be briefly incomplete while the rebuild is running. Continue?'
         )}
         confirmText={t('Repair')}
         isLoading={isRepairingConsistency}

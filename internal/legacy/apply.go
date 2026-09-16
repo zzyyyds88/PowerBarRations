@@ -58,20 +58,17 @@ func Apply(db *gorm.DB, plan *Plan) error {
 		err := db.Where("name = ?", channel.Name).First(&existing).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			baseURL := channel.BaseURL
-			priority := int64(channel.Priority)
-			weight := uint(channel.Weight)
+			// 渠道 priority/weight 已删除：迁移时不再写入这两列（路由顺序由车道承载）。
 			built := model.Channel{
 				Type:        channel.Type,
 				Key:         channelKey,
 				Status:      status,
 				Name:        channel.Name,
-				Weight:      &weight,
 				CreatedTime: now,
 				UpdatedAt:   now,
 				BaseURL:     &baseURL,
 				Models:      strings.Join(channel.Models, ","),
 				Group:       "default",
-				Priority:    &priority,
 			}
 			if err := db.Create(&built).Error; err != nil {
 				return fmt.Errorf("create channel %s: %w", channel.Name, err)
@@ -86,16 +83,12 @@ func Apply(db *gorm.DB, plan *Plan) error {
 			return err
 		}
 		channelIDByName[channel.Name] = existing.Id
-		priority := int64(channel.Priority)
-		weight := uint(channel.Weight)
 		updates := map[string]any{
 			"type":       channel.Type,
 			"key":        channelKey,
 			"status":     status,
 			"base_url":   channel.BaseURL,
 			"models":     strings.Join(channel.Models, ","),
-			"priority":   priority,
-			"weight":     weight,
 			"updated_at": now,
 		}
 		if err := db.Model(&model.Channel{}).Where("id = ?", existing.Id).Updates(updates).Error; err != nil {
@@ -106,8 +99,6 @@ func Apply(db *gorm.DB, plan *Plan) error {
 		existing.BaseURL = &channel.BaseURL
 		existing.Models = strings.Join(channel.Models, ",")
 		existing.Group = "default"
-		existing.Priority = &priority
-		existing.Weight = &weight
 		if err := existing.UpdateAbilities(nil); err != nil {
 			return fmt.Errorf("update abilities for %s: %w", channel.Name, err)
 		}
@@ -124,7 +115,6 @@ func Apply(db *gorm.DB, plan *Plan) error {
 				ChannelId:     channelID,
 				UpstreamModel: member.UpstreamModel,
 				Priority:      member.Priority,
-				Weight:        member.Weight,
 			})
 		}
 		if err := model.UpsertLane(&built); err != nil {

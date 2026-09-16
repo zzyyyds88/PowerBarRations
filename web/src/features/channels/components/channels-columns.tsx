@@ -27,11 +27,10 @@ import {
   Shuffle,
   SlidersHorizontal,
 } from 'lucide-react'
-import { useState, useMemo, useContext, useEffect } from 'react'
+import { useState, useMemo, useContext } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { ProviderBadge } from '@/components/provider-badge'
@@ -75,9 +74,6 @@ import {
   parseGroupsList,
   parseChannelSettings,
   channelsQueryKeys,
-  handleUpdateChannelField,
-  handleUpdateTagField,
-  createChannelFieldUpdateScheduler,
   isTagAggregateRow,
   type TagRow,
 } from '../lib'
@@ -93,7 +89,6 @@ import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
-import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
   source?: string
@@ -174,152 +169,6 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
         />
       )}
     </div>
-  )
-}
-
-/**
- * Priority cell component with inline editing
- */
-function PriorityCell({ channel }: { channel: Channel }) {
-  if (isTagAggregateRow(channel)) {
-    return <TagPriorityCell channel={channel} />
-  }
-
-  return (
-    <ChannelFieldCell
-      channelId={channel.id}
-      value={channel.priority}
-      field='priority'
-      min={-999}
-    />
-  )
-}
-
-function TagPriorityCell({ channel }: { channel: TagRow }) {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const priority = channel.priority
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [pendingValue, setPendingValue] = useState<number | null>(null)
-  const tag = channel.tag || ''
-  const channelCount = channel.children?.length || 0
-
-  return (
-    <>
-      <NumericSpinnerInput
-        value={priority ?? 0}
-        onChange={(value) => {
-          setPendingValue(value)
-          setConfirmOpen(true)
-        }}
-        min={-999}
-      />
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title={t('Confirm Batch Update')}
-        desc={t(
-          'This will update the priority to {{value}} for all {{count}} channel(s) with tag "{{tag}}". Continue?',
-          { value: pendingValue, count: channelCount, tag }
-        )}
-        confirmText={t('Update')}
-        handleConfirm={() => {
-          if (pendingValue !== null) {
-            handleUpdateTagField(tag, 'priority', pendingValue, queryClient)
-          }
-          setConfirmOpen(false)
-        }}
-      />
-    </>
-  )
-}
-
-function ChannelFieldCell({
-  channelId,
-  value,
-  field,
-  min,
-}: {
-  channelId: number
-  value: number | null | undefined
-  field: 'priority' | 'weight'
-  min: number
-}) {
-  const queryClient = useQueryClient()
-  const fieldUpdateScheduler = useMemo(
-    () =>
-      createChannelFieldUpdateScheduler((nextValue) => {
-        void handleUpdateChannelField(channelId, field, nextValue, queryClient)
-      }),
-    [channelId, field, queryClient]
-  )
-
-  useEffect(() => () => fieldUpdateScheduler.flush(), [fieldUpdateScheduler])
-
-  return (
-    <NumericSpinnerInput
-      value={value ?? 0}
-      onChange={fieldUpdateScheduler.schedule}
-      onCommit={fieldUpdateScheduler.flush}
-      min={min}
-    />
-  )
-}
-
-/**
- * Weight cell component with inline editing
- */
-function WeightCell({ channel }: { channel: Channel }) {
-  if (isTagAggregateRow(channel)) {
-    return <TagWeightCell channel={channel} />
-  }
-
-  return (
-    <ChannelFieldCell
-      channelId={channel.id}
-      value={channel.weight}
-      field='weight'
-      min={0}
-    />
-  )
-}
-
-function TagWeightCell({ channel }: { channel: TagRow }) {
-  const { t } = useTranslation()
-  const queryClient = useQueryClient()
-  const weight = channel.weight
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [pendingValue, setPendingValue] = useState<number | null>(null)
-  const tag = channel.tag || ''
-  const channelCount = channel.children?.length || 0
-
-  return (
-    <>
-      <NumericSpinnerInput
-        value={weight ?? 0}
-        onChange={(value) => {
-          setPendingValue(value)
-          setConfirmOpen(true)
-        }}
-        min={0}
-      />
-      <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        title={t('Confirm Batch Update')}
-        desc={t(
-          'This will update the weight to {{value}} for all {{count}} channel(s) with tag "{{tag}}". Continue?',
-          { value: pendingValue, count: channelCount, tag }
-        )}
-        confirmText={t('Update')}
-        handleConfirm={() => {
-          if (pendingValue !== null) {
-            handleUpdateTagField(tag, 'weight', pendingValue, queryClient)
-          }
-          setConfirmOpen(false)
-        }}
-      />
-    </>
   )
 }
 
@@ -1114,25 +963,6 @@ export function useChannelsColumns(
           )
         },
         size: 120,
-        enableSorting: false,
-      },
-
-      // Priority column
-      {
-        accessorKey: 'priority',
-        header: t('Priority'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => <PriorityCell channel={row.original} />,
-        size: 100,
-      },
-
-      // Weight column
-      {
-        accessorKey: 'weight',
-        header: t('Weight'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => <WeightCell channel={row.original} />,
-        size: 90,
         enableSorting: false,
       },
 

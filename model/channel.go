@@ -28,7 +28,6 @@ type Channel struct {
 	TestModel          *string `json:"test_model"`
 	Status             int     `json:"status" gorm:"default:1"`
 	Name               string  `json:"name" gorm:"index"`
-	Weight             *uint   `json:"weight" gorm:"default:0"`
 	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
 	// UpdatedAt 最后修改时间（api-spec §4.1 要求 created_at / updated_at 同时返回）。
 	// 基座没有该列，此前响应里的 updated_at 直接复用了创建时间，导致任何依赖它
@@ -46,7 +45,6 @@ type Channel struct {
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
 	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
 	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
 	OtherInfo         string  `json:"other_info"`
 	Tag               *string `json:"tag" gorm:"index"`
@@ -526,20 +524,6 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 	return deletedCount, nil
 }
 
-func (channel *Channel) GetPriority() int64 {
-	if channel.Priority == nil {
-		return 0
-	}
-	return *channel.Priority
-}
-
-func (channel *Channel) GetWeight() int {
-	if channel.Weight == nil {
-		return 0
-	}
-	return int(*channel.Weight)
-}
-
 func (channel *Channel) GetBaseURL() string {
 	if channel.BaseURL == nil {
 		return ""
@@ -891,12 +875,10 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		shouldReCreateAbilities = true
 		updateData.Group = *group
 	}
-	if priority != nil {
-		updateData.Priority = priority
-	}
-	if weight != nil {
-		updateData.Weight = weight
-	}
+	// 渠道 priority/weight 已删除（路由顺序只在车道上）：入参保留仅为兼容
+	// 基座调用方与既有控制台标签编辑接口，不再写入任何渠道列。
+	_ = priority
+	_ = weight
 	if paramOverride != nil {
 		updateData.ParamOverride = paramOverride
 	}

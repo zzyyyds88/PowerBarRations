@@ -32,10 +32,11 @@ const (
 	// RouteSourceUnconfigured：渠道声明了该模型但没有对应启用车道 → 不可调用。
 	RouteSourceUnconfigured = "unconfigured"
 
-	LaneModeFailover   = "failover"
-	LaneModeManual     = "manual"
-	LaneModeWeighted   = "weighted"
-	LaneModeRoundRobin = "round_robin"
+	// 只有两种模式：failover（默认，按成员顺序故障切换）与 manual（只走点名成员）。
+	// weighted / round_robin 已删除：单用户自用网关不需要随机/轮询负载均衡，
+	// "这次为什么走了另一个上游"不可解释（design-v1 §7.2）。
+	LaneModeFailover = "failover"
+	LaneModeManual   = "manual"
 )
 
 // LaneRelayConfig 车道六键（design-v1 §7.3）。零值在 Normalize 时回落到默认值。
@@ -194,8 +195,7 @@ type LaneMember struct {
 	ChannelId     int    `json:"channel_id" gorm:"not null"`
 	UpstreamModel string `json:"upstream_model" gorm:"not null"`
 	PublicAlias   string `json:"public_alias" gorm:"type:varchar(128);index"`
-	Priority      int    `json:"priority"` // 数字大者优先
-	Weight        int    `json:"weight"`
+	Priority      int    `json:"priority"` // 车道内顺序：数字大者优先
 	Overrides     string `json:"overrides" gorm:"type:text"` // 成员级六键覆盖 JSON
 }
 
@@ -208,7 +208,6 @@ type RouteMember struct {
 	UpstreamOverride string `json:"upstream_override,omitempty"`
 	PublicAlias      string `json:"public_alias,omitempty"`
 	Priority         int    `json:"priority"`
-	Weight           int    `json:"weight"`
 	MemberId         int    `json:"member_id,omitempty"`
 	Overrides        string `json:"-"`
 }
@@ -372,7 +371,7 @@ func UpsertLane(lane *Lane) error {
 // ValidLaneMode 校验模式取值。
 func ValidLaneMode(mode string) bool {
 	switch mode {
-	case LaneModeFailover, LaneModeManual, LaneModeWeighted, LaneModeRoundRobin:
+	case LaneModeFailover, LaneModeManual:
 		return true
 	}
 	return false
@@ -475,7 +474,6 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 			UpstreamOverride: m.UpstreamModel,
 			PublicAlias:      m.PublicAlias,
 			Priority:         m.Priority,
-			Weight:           m.Weight,
 			MemberId:         m.Id,
 			Overrides:        m.Overrides,
 		})
@@ -504,7 +502,7 @@ func effectiveUpstreamModel(channel *Channel, routeKey, memberUpstream string) s
 	return routeKey
 }
 
-// suggestedMembers 返回"渠道声明"的候选成员（按渠道 priority 降序）。
+// suggestedMembers 返回"渠道声明"的候选成员（按渠道 id 升序；渠道 priority 已删除）。
 // 仅用于模型管理页展示与 POST /api/lanes/seed 一键固化，不参与运行期路由（ADR 0005）。
 func suggestedMembers(modelName string) ([]RouteMember, error) {
 	channels, err := listEnabledChannels()
@@ -517,11 +515,9 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 			cands = append(cands, ch)
 		}
 	}
+	// 渠道 priority 已删除：候选链按渠道 id 升序（仅用于 seed 与"可添加成员"展示，
+	// 运行期路由只认车道成员顺序）。
 	sort.SliceStable(cands, func(i, j int) bool {
-		pi, pj := cands[i].GetPriority(), cands[j].GetPriority()
-		if pi != pj {
-			return pi > pj
-		}
 		return cands[i].Id < cands[j].Id
 	})
 	members := make([]RouteMember, 0, len(cands))
@@ -530,8 +526,7 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 			ChannelId:     c.Id,
 			Channel:       c.Name,
 			UpstreamModel: effectiveUpstreamModel(c, modelName, ""),
-			Priority:      int(c.GetPriority()),
-			Weight:        c.GetWeight(),
+			Priority:      c.Id,
 		})
 	}
 	return members, nil

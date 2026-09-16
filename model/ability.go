@@ -232,8 +232,8 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 				Model:     model,
 				ChannelId: channel.Id,
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
-				Priority:  channel.Priority,
-				Weight:    uint(channel.GetWeight()),
+				// 渠道 priority/weight 已删除：ability 自身的列保留（基座遗留的
+				// 任务插件/显式 pin 选择链仍在用），新行取默认值。
 				Tag:       channel.Tag,
 			}
 			abilities = append(abilities, ability)
@@ -304,8 +304,8 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				Model:     model,
 				ChannelId: channel.Id,
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
-				Priority:  channel.Priority,
-				Weight:    uint(channel.GetWeight()),
+				// 渠道 priority/weight 已删除：ability 自身的列保留（基座遗留的
+				// 任务插件/显式 pin 选择链仍在用），新行取默认值。
 				Tag:       channel.Tag,
 			}
 			abilities = append(abilities, ability)

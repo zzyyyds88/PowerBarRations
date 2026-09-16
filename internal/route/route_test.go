@@ -35,7 +35,6 @@ func testRoute(lane string, members int, maxAttempts int) *model.ResolvedRoute {
 			Channel:       "channel-" + string(rune('a'+i)),
 			UpstreamModel: "model-1",
 			Priority:      100 - i,
-			Weight:        1,
 		})
 	}
 	return resolved
@@ -489,53 +488,6 @@ func TestManualModeWithoutActiveMemberIsUnavailable(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestRoundRobinModeCyclesMembers(t *testing.T) {
-	withFakeClock(t)
-	resolved := testRoute("lane-round-robin", 3, 1)
-	resolved.Mode = model.LaneModeRoundRobin
-
-	var order []string
-	for i := 0; i < 4; i++ {
-		state := NewState(resolved)
-		member, _, ok := state.Next(nil)
-		require.True(t, ok)
-		order = append(order, memberName(member))
-		state.OnSuccess()
-	}
-	assert.Equal(t, []string{"channel-a", "channel-b", "channel-c", "channel-a"}, order)
-}
-
-func TestWeightedModeRespectsZeroWeight(t *testing.T) {
-	withFakeClock(t)
-	resolved := testRoute("lane-weighted-zero", 2, 1)
-	resolved.Mode = model.LaneModeWeighted
-	resolved.Members[0].Weight = 1
-	resolved.Members[1].Weight = 0
-
-	for i := 0; i < 10; i++ {
-		state := NewState(resolved)
-		member, _, ok := state.Next(nil)
-		require.True(t, ok)
-		assert.Equal(t, "channel-a", memberName(member), "权重为 0 的成员不应被选中")
-	}
-}
-
-func TestWeightedModeSpreadsAcrossMembers(t *testing.T) {
-	withFakeClock(t)
-	resolved := testRoute("lane-weighted-spread", 2, 1)
-	resolved.Mode = model.LaneModeWeighted
-
-	seen := map[string]int{}
-	for i := 0; i < 60; i++ {
-		state := NewState(resolved)
-		member, _, ok := state.Next(nil)
-		require.True(t, ok)
-		seen[memberName(member)]++
-	}
-	assert.NotZero(t, seen["channel-a"])
-	assert.NotZero(t, seen["channel-b"])
-}
-
 func TestNoAvailableMessageIsStable(t *testing.T) {
 	// 下游 fallback 分类依赖这个固定文案（routing-spec §4.2）。
 	assert.Equal(t, "No available channel for model model-1", NoAvailableMessage("model-1"))
@@ -556,38 +508,6 @@ func eventTypes(runtime *Runtime) []string {
 }
 
 // ---------- 源码审计修复的回归用例 ----------
-
-// 探测槽：weighted 模式下"冷却到期但没被选中"的成员不得占住探测槽。
-func TestWeightedDoesNotHoldProbeWhenAnotherMemberChosen(t *testing.T) {
-	withFakeClock(t)
-	resolved := testRoute("lane-probe-hold", 2, 1)
-	resolved.Mode = model.LaneModeWeighted
-	// 成员 a 权重 0（不会随机被选中），且冷却已到期（可探测）；成员 b 正常
-	resolved.Members[0].Weight = 0
-	resolved.Members[1].Weight = 1
-	runtime := Default.For(resolved.Model)
-	runtime.withLock(func() {
-		runtime.Cooldowns[memberKeyOf(&resolved.Members[0])] = nowMs() - 1
-	})
-
-	state := NewState(resolved)
-	member, _, ok := state.Next(nil)
-	require.True(t, ok)
-	assert.Equal(t, "channel-b", memberName(member), "权重 0 的探测成员不应被选中")
-	runtime.withLock(func() {
-		assert.False(t, runtime.HasProbe, "没选中它就不该占探测槽（否则槽永久泄漏）")
-	})
-
-	// 把 b 的预算用掉后，只剩 a 可探测 → 必须还能拿到探测位，证明槽没被泄漏
-	next := NewState(resolved)
-	next.attempts[1] = next.budgetFor(1)
-	member, _, ok = next.Next(nil)
-	require.True(t, ok, "槽未被占用时应能放行探测")
-	assert.Equal(t, "channel-a", memberName(member))
-	runtime.withLock(func() {
-		assert.True(t, runtime.HasProbe)
-	})
-}
 
 // 探测槽：client_error / canceled 不换人，收尾必须能归还（否则该成员被永久跳过）。
 func TestReleaseProbeReturnsSlot(t *testing.T) {

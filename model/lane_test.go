@@ -27,16 +27,14 @@ func setupLaneTest(t *testing.T) {
 	t.Cleanup(func() { common.MemoryCacheEnabled = memoryCacheEnabled })
 }
 
-func newTestChannel(t *testing.T, name string, priority int, models ...string) *Channel {
+func newTestChannel(t *testing.T, name string, models ...string) *Channel {
 	t.Helper()
-	priority64 := int64(priority)
 	channel := &Channel{
-		Name:     name,
-		Models:   strings.Join(models, ","),
-		Priority: &priority64,
-		Status:   common.ChannelStatusEnabled,
-		Group:    "default",
-		Key:      "sk-test",
+		Name:   name,
+		Models: strings.Join(models, ","),
+		Status: common.ChannelStatusEnabled,
+		Group:  "default",
+		Key:    "sk-test",
 	}
 	require.NoError(t, DB.Create(channel).Error)
 	return channel
@@ -53,19 +51,19 @@ func memberChannels(route *ResolvedRoute) []string {
 // 没有车道的模型不可调用：运行期空链（503），展示面给出"渠道声明"的建议链（ADR 0005）。
 func TestLaneRequiredWithoutLane(t *testing.T) {
 	setupLaneTest(t)
-	newTestChannel(t, "channel-a", 10, "model-1")
-	newTestChannel(t, "channel-b", 20, "model-1", "model-2")
+	newTestChannel(t, "channel-a", "model-1")
+	newTestChannel(t, "channel-b", "model-1", "model-2")
 
 	route, err := ResolveRoute("model-1")
 	require.NoError(t, err)
 	assert.Equal(t, RouteSourceUnconfigured, route.Source)
 	assert.Empty(t, route.Members)
 
-	// 展示面：建议链按渠道 priority 降序。
+	// 展示面：候选链按渠道 id 升序（渠道 priority 已删除；仅供界面"添加成员"）。
 	display, err := ResolveRouteForDisplay("model-1")
 	require.NoError(t, err)
 	assert.Equal(t, RouteSourceUnconfigured, display.Source)
-	assert.Equal(t, []string{"channel-b", "channel-a"}, memberChannels(display))
+	assert.Equal(t, []string{"channel-a", "channel-b"}, memberChannels(display))
 	for _, m := range display.Members {
 		assert.Equal(t, "model-1", m.UpstreamModel)
 	}
@@ -79,8 +77,8 @@ func TestLaneRequiredWithoutLane(t *testing.T) {
 // 建议链相同 priority 时按渠道 id 升序，保证顺序确定（不随查询计划抖动）。
 func TestSuggestedMembersTieBreaksById(t *testing.T) {
 	setupLaneTest(t)
-	first := newTestChannel(t, "channel-first", 5, "model-1")
-	newTestChannel(t, "channel-second", 5, "model-1")
+	first := newTestChannel(t, "channel-first", "model-1")
+	newTestChannel(t, "channel-second", "model-1")
 
 	display, err := ResolveRouteForDisplay("model-1")
 	require.NoError(t, err)
@@ -91,8 +89,8 @@ func TestSuggestedMembersTieBreaksById(t *testing.T) {
 // 车道成员支持改名与成员级覆盖。
 func TestExplicitLaneOverridesMembers(t *testing.T) {
 	setupLaneTest(t)
-	channelA := newTestChannel(t, "channel-a", 10, "model-1")
-	newTestChannel(t, "channel-b", 20, "model-1")
+	channelA := newTestChannel(t, "channel-a", "model-1")
+	newTestChannel(t, "channel-b", "model-1")
 
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "model-1",
@@ -102,7 +100,6 @@ func TestExplicitLaneOverridesMembers(t *testing.T) {
 			ChannelId:     channelA.Id,
 			UpstreamModel: "vendor-real-name",
 			Priority:      1,
-			Weight:        3,
 			Overrides:     `{"member_max_attempts":1}`,
 		}},
 	}))
@@ -119,7 +116,7 @@ func TestExplicitLaneOverridesMembers(t *testing.T) {
 // 停用车道的模型不可调用（不再回落隐式链，ADR 0005）。
 func TestDisabledLaneIsNotRoutable(t *testing.T) {
 	setupLaneTest(t)
-	newTestChannel(t, "channel-a", 10, "model-1")
+	newTestChannel(t, "channel-a", "model-1")
 	require.NoError(t, UpsertLane(&Lane{Name: "model-1", Enabled: false, Mode: LaneModeFailover}))
 
 	route, err := ResolveRoute("model-1")
@@ -131,8 +128,8 @@ func TestDisabledLaneIsNotRoutable(t *testing.T) {
 // 成员别名点名：解析到所属车道，并记录被点名成员。
 func TestResolveByPublicAliasPinsMember(t *testing.T) {
 	setupLaneTest(t)
-	channelA := newTestChannel(t, "channel-a", 10)
-	channelB := newTestChannel(t, "channel-b", 5)
+	channelA := newTestChannel(t, "channel-a")
+	channelB := newTestChannel(t, "channel-b")
 
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "lane-alpha",
@@ -161,11 +158,9 @@ func TestChannelModelMappingResolvesUpstream(t *testing.T) {
 	setupLaneTest(t)
 	mapping, _ := json.Marshal(map[string]string{"model-1": "vendor-a/real-1"})
 	mappingJSON := string(mapping)
-	priority64 := int64(10)
 	channel := &Channel{
 		Name:         "channel-a",
 		Models:       "model-1",
-		Priority:     &priority64,
 		Status:       common.ChannelStatusEnabled,
 		Group:        "default",
 		Key:          "sk-test",
@@ -199,8 +194,8 @@ func TestChannelModelMappingResolvesUpstream(t *testing.T) {
 // SeedLanes：为渠道声明但无车道的模型生成 failover 车道；幂等。
 func TestSeedLanesCreatesMissingLanes(t *testing.T) {
 	setupLaneTest(t)
-	channelA := newTestChannel(t, "channel-a", 10, "model-1", "model-2")
-	newTestChannel(t, "channel-b", 20, "model-1")
+	channelA := newTestChannel(t, "channel-a", "model-1", "model-2")
+	newTestChannel(t, "channel-b", "model-1")
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "model-1",
 		Enabled: true,
@@ -226,7 +221,7 @@ func TestSeedLanesCreatesMissingLanes(t *testing.T) {
 
 func TestSeedLanesDryRun(t *testing.T) {
 	setupLaneTest(t)
-	newTestChannel(t, "channel-a", 10, "model-1")
+	newTestChannel(t, "channel-a", "model-1")
 
 	created, _, err := SeedLanes(true)
 	require.NoError(t, err)
@@ -264,7 +259,7 @@ func TestResolveFallsBackToNormalizedModelName(t *testing.T) {
 	if normalized == "" || normalized == requested {
 		t.Skipf("当前配置下 %q 不会被归一化，跳过", requested)
 	}
-	channelA := newTestChannel(t, "channel-a", 10, normalized)
+	channelA := newTestChannel(t, "channel-a", normalized)
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    normalized,
 		Enabled: true,
@@ -283,8 +278,8 @@ func TestResolveFallsBackToNormalizedModelName(t *testing.T) {
 // 路由键清单：已配车道 routable=true，渠道声明但未配车道 unconfigured/false。
 func TestListModelSummaries(t *testing.T) {
 	setupLaneTest(t)
-	channelA := newTestChannel(t, "channel-a", 10, "model-1", "model-2")
-	newTestChannel(t, "channel-b", 5, "model-1")
+	channelA := newTestChannel(t, "channel-a", "model-1", "model-2")
+	newTestChannel(t, "channel-b", "model-1")
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "lane-pool",
 		Enabled: true,

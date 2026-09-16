@@ -418,8 +418,8 @@ test('changing plugins preserves credentials and custom settings while applying 
     target: { value: 'My channel' },
   })
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
-  fireEvent.change(screen.getByLabelText('Priority'), {
-    target: { value: '7' },
+  fireEvent.change(screen.getByLabelText('Test Model'), {
+    target: { value: 'gpt-4o-mini' },
   })
   await user.click(screen.getByRole('button', { name: 'Change provider' }))
   await user.click(
@@ -436,7 +436,7 @@ test('changing plugins preserves credentials and custom settings while applying 
   await user.click(screen.getByRole('option', { name: /Video A/ }))
   expect(screen.getByDisplayValue('https://custom.example')).toBeVisible()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
-  expect(screen.getByLabelText('Priority')).toHaveValue(7)
+  expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
 })
 
 test('canceling provider selection or selecting the same provider preserves adjusted models', async () => {
@@ -476,8 +476,8 @@ test.each(['Cancel', 'Escape'])(
     render(<ConfigurationHarness currentRow={editingChannel} />)
     await screen.findByDisplayValue('Existing channel')
     await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
-    fireEvent.change(screen.getByLabelText('Priority'), {
-      target: { value: '8' },
+    fireEvent.change(screen.getByLabelText('Test Model'), {
+      target: { value: 'gpt-4o-mini' },
     })
     await user.click(screen.getByRole('button', { name: 'Change provider' }))
     if (action === 'Escape') {
@@ -489,7 +489,7 @@ test.each(['Cancel', 'Escape'])(
     expect(
       screen.getByRole('tab', { name: /Routing & Mapping/ })
     ).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByLabelText('Priority')).toHaveValue(8)
+    expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
     const providerControl = screen.getByRole('button', {
       name: 'Change provider',
     })
@@ -1177,7 +1177,7 @@ test('opening and reselecting an existing plugin preserves its saved configurati
     ...editingChannel,
     type: 61,
     setting: '{"task_plugin_key":"video-a"}',
-    priority: 7,
+    test_model: 'gpt-4o-mini',
   }
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
@@ -1203,7 +1203,7 @@ test('opening and reselecting an existing plugin preserves its saved configurati
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   expect(screen.getByText('video-b-1')).toBeVisible()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
-  expect(screen.getByLabelText('Priority')).toHaveValue(7)
+  expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
 })
 
 test('an unavailable plugin keeps its identifier and binding when other fields are updated', async () => {
@@ -1250,7 +1250,8 @@ test('a failed detail request blocks updating until retry loads the saved channe
 })
 
 test('restoring routing defaults clears the configured indicator for both the block and category', async () => {
-  editingChannel = { ...editingChannel, priority: 5 }
+  // 渠道 priority/weight 已删除：本用例改用路由策略块里仍然存在的 test_model 触发"已配置"。
+  editingChannel = { ...editingChannel, test_model: 'gpt-4o-mini' }
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -1266,16 +1267,16 @@ test('restoring routing defaults clears the configured indicator for both the bl
   const block = screen.getByRole('group', { name: 'Routing Strategy' })
   expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
   expect(block).toHaveClass('border-primary/35')
-  fireEvent.change(screen.getByLabelText('Priority'), {
-    target: { value: '0' },
+  fireEvent.change(screen.getByLabelText('Test Model'), {
+    target: { value: '' },
   })
   expect(tab).not.toHaveAccessibleName(/Configured/)
   expect(
     within(block).queryByRole('img', { name: 'Configured' })
   ).not.toBeInTheDocument()
   expect(block).not.toHaveClass('border-primary/35')
-  fireEvent.change(screen.getByLabelText('Priority'), {
-    target: { value: '5' },
+  fireEvent.change(screen.getByLabelText('Test Model'), {
+    target: { value: 'gpt-4o-mini' },
   })
   expect(tab).toHaveAccessibleName(/Configured/)
   expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
@@ -1697,12 +1698,15 @@ test('an operator without sensitive write permission can discover saved models a
   await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
   expect(screen.getByLabelText('Proxy Address')).toBeDisabled()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
-  fireEvent.change(screen.getByLabelText('Priority'), {
-    target: { value: '8' },
+  fireEvent.change(screen.getByLabelText('Test Model'), {
+    target: { value: 'gpt-4o-mini' },
   })
   await user.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
-  expect(put.mock.calls[0]?.[1]).toMatchObject({ id: 42, priority: 8 })
+  expect(put.mock.calls[0]?.[1]).toMatchObject({
+    id: 42,
+    test_model: 'gpt-4o-mini',
+  })
   expect(put.mock.calls[0]?.[1]).not.toHaveProperty('setting')
   expect(put.mock.calls[0]?.[1]).not.toHaveProperty('key')
 })
@@ -1867,14 +1871,16 @@ test('a background refresh updates untouched values without moving the selected 
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
-  editingChannel = { ...editingChannel, priority: 5 }
+  editingChannel = { ...editingChannel, test_model: 'gpt-4o-mini' }
   await act(async () => {
     await client.refetchQueries({ queryKey: ['channels'] })
   })
   expect(
     screen.getByRole('tab', { name: /Routing & Mapping/ })
   ).toHaveAttribute('aria-selected', 'true')
-  await waitFor(() => expect(screen.getByLabelText('Priority')).toHaveValue(5))
+  await waitFor(() =>
+    expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
+  )
 })
 
 test('closing an edited channel retains its left exit direction after the parent clears the row', async () => {

@@ -317,6 +317,10 @@ func migrateDB() error {
 	if err := migrateOptionPrimaryKey(DB); err != nil {
 		common.SysError("failed to migrate options primary key: " + err.Error())
 	}
+	// 渠道 priority/weight 列已废弃（路由顺序只在车道上）：删列失败不阻塞启动。
+	if err := migrateDropChannelPriorityWeight(DB); err != nil {
+		common.SysError("failed to drop legacy channel priority/weight columns: " + err.Error())
+	}
 
 	// W7（design-v1 §10.2.1）：计费/多用户相关表随多用户面物理删除，AutoMigrate
 	// 只保留 PBR 自有表与仍被保留管理面使用的基座表（User 仅作系统用户锚点）。
