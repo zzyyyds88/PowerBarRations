@@ -58,8 +58,6 @@ VOLUME ["/data"]
 
 ENV PORT=5700 \
     SQLITE_PATH="/data/pbr.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate" \
-    TLS_ENABLED=true \
-    TLS_DIR=/data/tls \
     GIN_MODE=release
 
 EXPOSE 5700
