@@ -41,6 +41,7 @@ export function ModelsDialogs() {
       <ModelRoutingDrawer
         open={open === 'model-routing'}
         onOpenChange={(v) => !v && setOpen(null)}
+        currentRow={currentRow}
       />
 
       {/* Missing Models Dialog */}

@@ -26,8 +26,8 @@ export interface PBRRouteMember {
   /** 成员级显式改名原值；为空表示"用渠道映射"。 */
   upstream_override?: string
   public_alias?: string
+  /** 车道内顺序：数字大者优先（保存时按数组位置生成）。 */
   priority: number
-  weight: number
   member_id?: number
 }
 
@@ -63,8 +63,8 @@ export async function getPBRRoute(model: string): Promise<PBRRouteDetail> {
 export interface PBRMemberInput {
   channel: string
   upstream_model?: string
+  /** 车道内顺序：数字大者优先；数组位置即顺序。 */
   priority: number
-  weight?: number
 }
 
 /**
@@ -142,7 +142,7 @@ export interface PBRSeedResult {
 }
 
 /**
- * 一键为所有"渠道已声明但无车道"的模型生成 failover 车道（按渠道 priority）。
+ * 一键为所有"渠道已声明但无车道"的模型生成 failover 车道（初始顺序按渠道 id 升序）。
  * `dryRun` 只返回将创建的车道名，不落库。
  */
 export async function seedPBRLanes(dryRun = false): Promise<PBRSeedResult> {

@@ -2,11 +2,21 @@
 PowerBarRations —— 模型成员链（故障切换）面板
 
 用户心智：渠道里填好上游与模型后，在**模型管理**里为每个模型定"优先打谁、再打谁"。
-本组件列出全部可路由模型，点开后展示/编辑成员顺序，保存即把成员链固化为
-显式 failover 车道（PUT /api/v1/lanes/{model}）。
+成员顺序即故障切换顺序：**顺序就是优先级**，界面不暴露 priority 数字输入，保存时按
+数组位置生成 priority（首位最大）。只保留 failover/manual 两种模式（weighted /
+round_robin 已删除）。保存即把成员链固化为显式 failover 车道
+（PUT /api/v1/lanes/{model}）；未配车道时成员列表为空，添加成员后保存即固化。
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, Loader2, Save, Trash2, Wand2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Loader2,
+  Plus,
+  Save,
+  Trash2,
+  Wand2,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -15,7 +25,6 @@ import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 
@@ -31,14 +40,18 @@ import {
 const modelsKey = ['pbr-routable-models'] as const
 const routeKey = (model: string) => ['pbr-route', model] as const
 
-export function ModelRoutingPanel() {
+export function ModelRoutingPanel(props: { initialModel?: string }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [selected, setSelected] = useState<string>('')
+  const [selected, setSelected] = useState<string>(props.initialModel ?? '')
 
   const modelsQuery = useQuery({ queryKey: modelsKey, queryFn: listPBRModels })
   const models: PBRModelSummary[] = modelsQuery.data ?? []
-  const active = selected || models[0]?.model || ''
+  const knownModels = models.map((m) => m.model)
+  const active =
+    selected && knownModels.includes(selected)
+      ? selected
+      : selected || models[0]?.model || ''
 
   // 一键固化：为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
   const seed = useMutation({
@@ -143,10 +156,11 @@ export function ModelRoutingPanel() {
 
 interface EditableMember {
   channel: string
-  /** 解析后的上游真名（仅展示）。 */
+  /** 解析后的上游真名（仅展示，添加时取渠道映射的默认值）。 */
   upstream_model: string
   /** 成员级显式改名原值；为空 = 用渠道映射。 */
   upstream_override: string
+  /** 车道内顺序：数字大者优先；由数组位置生成，界面不直接编辑。 */
   priority: number
 }
 
@@ -165,17 +179,24 @@ function RouteEditor({
     queryFn: () => getPBRRoute(model),
   })
 
-  const sourceMembers: EditableMember[] = (routeQuery.data?.members ?? []).map(
-    (m) => ({
-      channel: m.channel,
-      upstream_model: m.upstream_model,
-      upstream_override: m.upstream_override ?? '',
-      priority: m.priority,
-    })
+  const routable = routeQuery.data?.routable !== false
+  // 已配车道 → 用真实成员；未配车道 → 从空链开始（建议链只作候选）。
+  const sourceMembers: EditableMember[] = routable
+    ? (routeQuery.data?.members ?? []).map((m) => ({
+        channel: m.channel,
+        upstream_model: m.upstream_model,
+        upstream_override: m.upstream_override ?? '',
+        priority: m.priority,
+      }))
+    : []
+  // 未配车道时，建议链（带 channel_id）作为"可添加成员"候选。
+  const candidates = (routeQuery.data?.members ?? []).filter(
+    (m) => !sourceMembers.some((s) => s.channel === m.channel)
   )
+
   const members: EditableMember[] = [...(draft ?? sourceMembers)]
 
-  // 优先级按列表顺序重排：第一个最大。
+  // 顺序即优先级：按列表位置重排，第一个最大。
   const reorder = (next: EditableMember[]) => {
     setDraft(next.map((m, index) => ({ ...m, priority: next.length - index })))
   }
@@ -189,12 +210,30 @@ function RouteEditor({
     reorder(next)
   }
 
-  const setPriority = (index: number, value: string) => {
-    const parsed = Number.parseInt(value, 10)
+  const addMember = (candidate: { channel: string; upstream_model: string }) => {
+    if (members.some((m) => m.channel === candidate.channel)) return
+    reorder([
+      ...members,
+      {
+        channel: candidate.channel,
+        upstream_model: candidate.upstream_model,
+        upstream_override: '',
+        priority: 1,
+      },
+    ])
+  }
+
+  const removeMember = (index: number) => {
+    reorder(members.filter((_, i) => i !== index))
+  }
+
+  const renameUpstream = (index: number, value: string) => {
     const next = [...members]
-    next[index] = { ...next[index], priority: Number.isNaN(parsed) ? 0 : parsed }
+    next[index] = { ...next[index], upstream_override: value }
     setDraft(next)
   }
+
+  const emptyDraft = members.length === 0
 
   const save = useMutation({
     mutationFn: () =>
@@ -239,74 +278,109 @@ function RouteEditor({
         <Loader2 className='size-4 animate-spin' /> {t('Loading...')}
       </div>
     )
-  } else if (members.length === 0) {
-    body = (
-      <EmptyState
-        title={t('No members')}
-        description={t(
-          'No channel declares this model yet. Add it in Channels first.'
-        )}
-      />
-    )
   } else {
     body = (
-      <div className='space-y-2'>
-        {routeQuery.data?.routable === false && (
+      <div className='space-y-3'>
+        {!routable && (
           <p className='rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400'>
             {t(
-              'No lane configured yet — this model is not callable until you save the order below.'
+              'No lane configured yet — add members and save to make this model callable.'
             )}
           </p>
         )}
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Requests try members top-down by priority; on failure the router escapes to the next one.'
+            'Member order is the failover order: requests try the top member first and escape to the next on failure.'
           )}
         </p>
-        {members.map((m, index) => (
-          <div
-            key={`${m.channel}/${m.upstream_model}`}
-            className='flex items-center gap-2 rounded-md border p-2'
-          >
-            <span className='text-muted-foreground w-6 text-center text-xs'>
-              {index + 1}
-            </span>
-            <div className='min-w-0 flex-1'>
-              <div className='truncate text-sm font-medium'>{m.channel}</div>
-              <div className='text-muted-foreground truncate text-xs'>
-                {t('upstream model')}: {m.upstream_model}
+
+        {emptyDraft ? (
+          <EmptyState
+            title={t('No members yet')}
+            description={t(
+              'Add a member from the candidates below, then save to create the lane.'
+            )}
+          />
+        ) : (
+          <div className='space-y-2'>
+            {members.map((m, index) => (
+              <div
+                key={m.channel}
+                className='flex items-center gap-2 rounded-md border p-2'
+              >
+                <span className='text-muted-foreground w-6 text-center text-xs'>
+                  {index + 1}
+                </span>
+                <div className='min-w-0 flex-1'>
+                  <div className='truncate text-sm font-medium'>
+                    {m.channel}
+                  </div>
+                  <div className='text-muted-foreground truncate text-xs'>
+                    {t('Resolved upstream')}: {m.upstream_model}
+                  </div>
+                </div>
+                <Input
+                  className='h-8 w-44'
+                  aria-label={t('Upstream model for {{channel}}', {
+                    channel: m.channel,
+                  })}
+                  placeholder={t('Use channel mapping')}
+                  value={m.upstream_override}
+                  onChange={(event) =>
+                    renameUpstream(index, event.target.value)
+                  }
+                />
+                <Button
+                  size='icon'
+                  variant='ghost'
+                  aria-label={t('Move up')}
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                >
+                  <ArrowUp className='size-4' />
+                </Button>
+                <Button
+                  size='icon'
+                  variant='ghost'
+                  aria-label={t('Move down')}
+                  disabled={index === members.length - 1}
+                  onClick={() => move(index, 1)}
+                >
+                  <ArrowDown className='size-4' />
+                </Button>
+                <Button
+                  size='icon'
+                  variant='ghost'
+                  aria-label={t('Remove member')}
+                  onClick={() => removeMember(index)}
+                >
+                  <Trash2 className='size-4' />
+                </Button>
               </div>
-            </div>
-            <div className='flex items-center gap-1'>
-              <Label className='text-muted-foreground text-xs'>
-                {t('Priority')}
-              </Label>
-              <Input
-                className='h-8 w-20'
-                value={String(m.priority)}
-                onChange={(event) => setPriority(index, event.target.value)}
-              />
-            </div>
-            <Button
-              size='icon'
-              variant='ghost'
-              aria-label={t('Move up')}
-              disabled={index === 0}
-              onClick={() => move(index, -1)}
-            >
-              <ArrowUp className='size-4' />
-            </Button>
-            <Button
-              size='icon'
-              variant='ghost'
-              aria-label={t('Move down')}
-              disabled={index === members.length - 1}
-              onClick={() => move(index, 1)}
-            >
-              <ArrowDown className='size-4' />
-            </Button>
+            ))}
           </div>
-        ))}
+        )}
+
+        {candidates.length > 0 && (
+          <div className='space-y-2 rounded-md border border-dashed p-2'>
+            <p className='text-muted-foreground text-xs'>
+              {t('Candidate channels (declared in channels)')}
+            </p>
+            <div className='flex flex-wrap gap-2'>
+              {candidates.map((candidate) => (
+                <Button
+                  key={candidate.channel}
+                  size='sm'
+                  variant='outline'
+                  onClick={() => addMember(candidate)}
+                >
+                  <Plus className='size-4' />
+                  {candidate.channel}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -317,9 +391,7 @@ function RouteEditor({
         <CardTitle className='text-sm'>
           {t('Failover order for')} <code className='font-mono'>{model}</code>
           <span className='text-muted-foreground ml-2 text-xs font-normal'>
-            {routeQuery.data?.routable === false
-              ? t('No lane · not callable')
-              : t('Lane configured')}
+            {routable ? t('Lane configured') : t('No lane · not callable')}
           </span>
         </CardTitle>
         <div className='flex items-center gap-2'>
@@ -334,7 +406,7 @@ function RouteEditor({
           </Button>
           <Button
             size='sm'
-            disabled={!dirty || save.isPending}
+            disabled={!dirty || emptyDraft || save.isPending}
             onClick={() => save.mutate()}
           >
             {save.isPending ? (

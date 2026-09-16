@@ -30,6 +30,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
+import type { Model } from '../../types'
 import { ModelRoutingPanel } from '../model-routing-panel'
 
 /**
@@ -39,6 +40,8 @@ import { ModelRoutingPanel } from '../model-routing-panel'
 export function ModelRoutingDrawer(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** 从行内操作打开时点中的模型：面板据此预选该模型的成员链。 */
+  currentRow?: Model | null
 }) {
   const { t } = useTranslation()
 
@@ -49,11 +52,13 @@ export function ModelRoutingDrawer(props: {
           <SheetTitle>{t('Routing & Failover')}</SheetTitle>
           <SheetDescription>
             {t(
-              'Requests try members top-down by priority; on failure the router escapes to the next one.'
+              'Member order is the failover order: requests try the top member first and escape to the next on failure.'
             )}
           </SheetDescription>
         </SheetHeader>
-        <ModelRoutingPanel />
+        <ModelRoutingPanel
+          initialModel={props.open ? props.currentRow?.model_name : undefined}
+        />
       </SheetContent>
     </Sheet>
   )
