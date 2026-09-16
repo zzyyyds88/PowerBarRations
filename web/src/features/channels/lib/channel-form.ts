@@ -641,16 +641,26 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     system_prompt_override: formData.system_prompt_override || false,
   }
 
-  // 渠道级上游单价：去掉空模型名后写入 setting JSON（成本折算用）。
+  // 渠道级上游单价：仅保留仍在模型清单中、且至少填了一项价格的模型（成本折算用）。
+  // 后端按请求模型精确匹配渠道价；全空条目会命中并返回 0，从而覆盖全局默认价，故必须丢弃。
+  const channelModelSet = new Set(parseModels(formData.models))
   const channelPrices = (formData.pbr_prices ?? [])
+    .map((item) => ({ ...item, model: item.model.trim() }))
+    .filter((item) => channelModelSet.has(item.model))
+    .filter(
+      (item) =>
+        item.input !== undefined ||
+        item.output !== undefined ||
+        item.cache_read !== undefined ||
+        item.cache_write !== undefined
+    )
     .map((item) => ({
-      model: item.model.trim(),
+      model: item.model,
       input: item.input ?? 0,
       output: item.output ?? 0,
       cache_read: item.cache_read ?? 0,
       cache_write: item.cache_write ?? 0,
     }))
-    .filter((item) => item.model !== '')
   if (channelPrices.length > 0) {
     settingObj.pbr_prices = channelPrices
   }

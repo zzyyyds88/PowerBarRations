@@ -1593,6 +1593,7 @@ export function ChannelMutateDrawer({
           <FormControl>
             <ChannelPricesEditor
               value={field.value ?? []}
+              models={currentModelsArray}
               onChange={field.onChange}
               disabled={sensitiveLocked}
             />

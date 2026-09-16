@@ -1052,7 +1052,7 @@ test('model discovery discards a response for old credentials and retains manual
   expect(
     screen.getByRole('button', { name: 'current-upstream-model' })
   ).toBeVisible()
-  expect(screen.getByText('custom-model')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
 })
 
 test('model discovery reports failures inline and allows an empty result to fall back to manual models', async () => {
@@ -1154,7 +1154,7 @@ test('editing legacy channels retains the full provider list and saves the origi
   const legacy = screen.getByRole('option', { name: 'Sora Built-in #55' })
   expect(legacy).toHaveAttribute('aria-current', 'true')
   await user.click(legacy)
-  expect(screen.getByText('custom-model')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   fireEvent.change(screen.getByLabelText('Name *'), {
     target: { value: 'Renamed legacy channel' },
@@ -1186,25 +1186,25 @@ test('opening and reselecting an existing plugin preserves its saved configurati
   render(<ConfigurationHarness currentRow={editingChannel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
-  expect(screen.getByText('custom-model')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
   expect(screen.queryByLabelText('Task plugin *')).not.toBeInTheDocument()
   const providerControl = screen.getByRole('button', {
     name: 'Change provider',
   })
   await user.click(await within(providerControl).findByText('Video A'))
   await user.click(await screen.findByRole('option', { name: /Video A/ }))
-  expect(screen.getByText('custom-model')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Change provider' }))
   await user.click(
     screen.getByRole('button', { name: 'Back to configuration' })
   )
-  expect(screen.getByText('custom-model')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Change provider' }))
   await user.click(screen.getByRole('option', { name: /^Video B Plugin/ }))
   expect(screen.getByDisplayValue('Existing channel')).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
-  expect(screen.getByText('video-b-1')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'video-b-1' })).toBeVisible()
   await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
   expect(screen.getByLabelText('Test Model')).toHaveValue('gpt-4o-mini')
 })
