@@ -16,92 +16,32 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getRouteApi, useNavigate } from '@tanstack/react-router'
-import { useCallback, useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { ModelsDialogs } from './components/models-dialogs'
 import { ModelsPrimaryButtons } from './components/models-primary-buttons'
-import { ModelRoutingPanel } from './components/model-routing-panel'
-import { ModelsProvider, useModels } from './components/models-provider'
+import { ModelsProvider } from './components/models-provider'
 import { ModelsTable } from './components/models-table'
-import {
-  type ModelsSectionId,
-  MODELS_DEFAULT_SECTION,
-  MODELS_SECTION_IDS,
-} from './section-registry'
-
-const route = getRouteApi('/_authenticated/models/$section')
-
-const SECTION_META: Record<
-  ModelsSectionId,
-  { titleKey: string; tabKey: string }
-> = {
-  metadata: {
-    titleKey: 'Model management',
-    tabKey: 'Models',
-  },
-  routing: { titleKey: 'Routing & Failover', tabKey: 'Routing & Failover' },
-}
 
 function ModelsContent() {
   const { t } = useTranslation()
-  const navigate = useNavigate({ from: '/models/$section' })
-  const { tabCategory, setTabCategory } = useModels()
-  const params = route.useParams()
-  const activeSection = (params.section ??
-    MODELS_DEFAULT_SECTION) as ModelsSectionId
-
-  // keep context state in sync (for components that rely on it)
-  useEffect(() => {
-    if (tabCategory !== activeSection) {
-      setTabCategory(activeSection)
-    }
-  }, [activeSection, setTabCategory, tabCategory])
-
-  const handleSectionChange = useCallback(
-    (section: string) => {
-      void navigate({
-        to: '/models/$section',
-        params: { section: section as ModelsSectionId },
-        search: (previous) => previous,
-      })
-    },
-    [navigate]
-  )
-
-  const meta = SECTION_META[activeSection] ?? SECTION_META.metadata
-
-  let actions: ReactNode = <ModelsPrimaryButtons />
-  let content = <ModelsTable />
-  if (activeSection === 'routing') {
-    actions = null
-    content = <ModelRoutingPanel />
-  }
 
   return (
     <>
-      <SectionPageLayout
-        fixedContent
-        stackActionsOnMobile={activeSection === 'metadata'}
-      >
-        <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
-        <SectionPageLayout.Actions>{actions}</SectionPageLayout.Actions>
+      <SectionPageLayout fixedContent stackActionsOnMobile>
+        <SectionPageLayout.Title>
+          {t('Model management')}
+        </SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          <ModelsPrimaryButtons />
+        </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 flex-col gap-4'>
-            <Tabs value={activeSection} onValueChange={handleSectionChange}>
-              <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
-                {MODELS_SECTION_IDS.map((section) => (
-                  <TabsTrigger key={section} value={section}>
-                    {t(SECTION_META[section].tabKey)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            <div className='min-h-0 flex-1'>{content}</div>
+          <div className='flex h-full min-h-0 flex-col'>
+            <div className='min-h-0 flex-1'>
+              <ModelsTable />
+            </div>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>

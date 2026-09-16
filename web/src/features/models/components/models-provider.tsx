@@ -19,12 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState } from 'react'
 
-import type {
-  Model,
-  ModelTabCategory,
-  SyncLocale,
-  SyncSource,
-} from '../types'
+import type { Model, SyncLocale, SyncSource } from '../types'
 
 // ============================================================================
 // Types
@@ -38,6 +33,7 @@ type DialogType =
   | 'sync-wizard'
   | 'prefill-groups'
   | 'description'
+  | 'model-routing'
   | null
 
 type ModelsContextType = {
@@ -53,8 +49,6 @@ type ModelsContextType = {
   setSyncWizardOptions: React.Dispatch<
     React.SetStateAction<{ locale: SyncLocale; source: SyncSource }>
   >
-  tabCategory: ModelTabCategory
-  setTabCategory: (category: ModelTabCategory) => void
 }
 
 // ============================================================================
@@ -81,7 +75,6 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
     locale: 'zh',
     source: 'official',
   })
-  const [tabCategory, setTabCategory] = useState<ModelTabCategory>('metadata')
 
   return (
     <ModelsContext.Provider
@@ -94,8 +87,6 @@ export function ModelsProvider({ children }: { children: React.ReactNode }) {
         setDescriptionData,
         syncWizardOptions,
         setSyncWizardOptions,
-        tabCategory,
-        setTabCategory,
       }}
     >
       {children}

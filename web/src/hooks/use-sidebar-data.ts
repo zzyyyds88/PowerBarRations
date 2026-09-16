@@ -22,7 +22,6 @@ import {
   ClipboardList,
   FileText,
   FlaskConical,
-  GitBranch,
   Key,
   LayoutDashboard,
   ListTodo,
@@ -119,12 +118,6 @@ export function useSidebarData(): SidebarData {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,
-          },
-          {
-            // PBR 增补：模型成员链（故障切换）入口。
-            title: t('Routing & Failover'),
-            url: '/models/routing',
-            icon: GitBranch,
           },
           {
             title: t('System Info'),

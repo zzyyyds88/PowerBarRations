@@ -262,12 +262,3 @@ export type SyncLocale = 'zh' | 'zh-CN' | 'en' | 'ja'
  * Sync upstream source
  */
 export type SyncSource = 'official'
-
-// ============================================================================
-// Model Tab Types
-// ============================================================================
-
-/**
- * Model tab type
- */
-export type ModelTabCategory = 'metadata' | 'routing'

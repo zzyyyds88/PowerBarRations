@@ -21,6 +21,7 @@ import { MissingModelsDialog } from './dialogs/missing-models-dialog'
 import { PrefillGroupManagement } from './dialogs/prefill-group-management'
 import { SyncWizardDialog } from './dialogs/sync-wizard-dialog'
 import { ModelMutateDrawer } from './drawers/model-mutate-drawer'
+import { ModelRoutingDrawer } from './drawers/model-routing-drawer'
 import { useModels } from './models-provider'
 
 export function ModelsDialogs() {
@@ -39,6 +40,12 @@ export function ModelsDialogs() {
         initialSection={open === 'price-model' ? 'pricing' : 'metadata'}
         onOpenChange={(v) => !v && setOpen(null)}
         currentRow={currentRow}
+      />
+
+      {/* Member chain (routing & failover) Drawer */}
+      <ModelRoutingDrawer
+        open={open === 'model-routing'}
+        onOpenChange={(v) => !v && setOpen(null)}
       />
 
       {/* Missing Models Dialog */}
