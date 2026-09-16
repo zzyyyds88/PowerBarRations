@@ -41,6 +41,7 @@
   `POST /api/keys/{name}/rotate`
 - 观测：`GET /api/logs`、`GET /api/logs/{id}`、`POST /api/logs/prune`、
   `GET /api/stats`（`group_by=lane|channel|key|model|channel_model`）、`GET /api/route-events`（SSE）
+- Webhook 事件通知：`GET|PUT /api/webhooks`、`POST /api/webhooks/test`、`GET /api/webhooks/deliveries`（见 §5）
 - 系统：`GET|PUT /api/system/options`
 - 配置生命周期：`GET /api/export`、`POST /api/import?dry_run=true`
 - 审计：`GET /api/audit`
@@ -84,7 +85,52 @@ curl -s -H "Authorization: Bearer $KEY" "$BASE/v1/chat/completions" \
 3. `GET /api/logs?success=false&model={model}` 看 `attempts` 链。
 4. `POST /api/lanes/{name}/probe` 逐成员真实探活；必要时 `POST .../circuits/reset`。
 
-## 5. 错误模型与硬规则
+## 5. Webhook 事件通知（PBR → 你的接收端，出站推送）
+
+PBR 把路由运行态的故障事件（熔断/冷却/恢复）异步 POST 到你配置的 URL。
+**PBR 只负责投递与契约**；你的接收端自行验签、路由、呈现——本机对接（如推给某 agent 的通知通道）在该 agent 侧配置，PBR 不内置任何特定接收端。
+
+### 5.1 配置与端点
+
+- `GET /api/webhooks`：读配置，`targets` 数组（`secret` 只回显掩码 `****`+末 4 位）。
+- `PUT /api/webhooks`：写配置，同形状。每条 target：
+  `{"name":"notify","url":"http://127.0.0.1:8645/webhooks/xxx","secret":"<随机长串>","enabled":true,"events":[]}`
+  （`events` 为事件白名单，空 = 全部；`secret` 留空 = 保留原值。）
+- `POST /api/webhooks/test`：向指定 target 同步发一条测试事件，响应即投递结果。
+- `GET /api/webhooks/deliveries`：投递记录（cursor 分页，按 ts 倒序），排障用。
+
+### 5.2 请求体
+
+```json
+{
+  "type": "pbr",
+  "text": "[PBR] lane-a/ch-a:model-1 熔断打开（60s）：连续失败 hard_auth",
+  "event": {"ts":1789600000000,"type":"circuit_open","lane":"model-1",
+            "member":"ch-a:model-1","detail":"open_seconds=60 score=2"}
+}
+```
+
+`event.type`：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、
+`circuit_closed`（恢复）、`cooldown`（进入冷却）。`ts` 毫秒时间戳，`member` = `channelId:upstreamModel`。
+
+### 5.3 验签（接收端必做）
+
+请求头：`X-Webhook-Timestamp`（Unix 秒）、`X-Webhook-Signature-V2`（hex）。
+
+```
+expected = HMAC_SHA256(secret, "{X-Webhook-Timestamp}.{原始请求体字节}").hex
+```
+
+用常数时间比较；`X-Webhook-Timestamp` 与本地时间偏差 >±300s 拒收（防重放）。
+Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).hexdigest()`。
+
+### 5.4 投递语义
+
+- 超时 8s；非 2xx/超时按 5s/30s/120s 退避重试 3 次，耗尽记 `deliveries` 死信。
+- 防风暴：同一 (target, lane, member, event) 60s 窗口只发一条。
+- `2xx` 即送达，响应体不参与语义。
+
+## 6. 错误模型与硬规则
 
 - 错误体：`{"error":{"code":"...","message":"...","hint":"..."}}`；**按 `code` 分支**，不要解析 message。
 - 模型面 `503` = `No available channel for model <X>`（没有可用渠道）；
