@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { HOME_STATS } from '../../constants'
+
 interface CounterProps {
   end: number
   suffix?: string
@@ -97,12 +99,11 @@ interface StatItem {
 export function Stats(_props: StatsProps) {
   const { t } = useTranslation()
 
-  const stats: StatItem[] = [
-    { end: 40, suffix: '+', label: t('vendor adapters reused') },
-    { end: 3, suffix: '', label: t('protocols supported') },
-    { end: 2, suffix: '', label: t('lane modes') },
-    { end: 6, suffix: '', label: t('lane control keys') },
-  ]
+  const stats: StatItem[] = HOME_STATS.map((stat) => ({
+    end: stat.value,
+    suffix: stat.suffix,
+    label: t(stat.labelKey),
+  }))
 
   return (
     <div className='border-border/40 bg-muted/10 relative z-10 border-y'>

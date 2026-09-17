@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Settings, Zap, BarChart3 } from 'lucide-react'
+import { BarChart3, Plug, Route } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
@@ -27,24 +27,26 @@ export function HowItWorks() {
   const steps = [
     {
       num: '1',
-      title: t('Configure'),
+      title: t('Add a channel'),
       desc: t(
-        'Add your API keys, set up channels and configure access permissions'
+        'base_url + key + the model list, plus optional model_mapping for upstream renames.'
       ),
-      icon: <Settings className='size-6' strokeWidth={1.5} />,
+      icon: <Plug className='size-6' strokeWidth={1.5} />,
     },
     {
       num: '2',
-      title: t('Connect'),
+      title: t('Solidify the lanes'),
       desc: t(
-        'Connect through OpenAI, Claude, Gemini, and other compatible API routes'
+        'One call to POST /api/lanes/seed turns declared models into failover lanes — or order the members yourself.'
       ),
-      icon: <Zap className='size-6' strokeWidth={1.5} />,
+      icon: <Route className='size-6' strokeWidth={1.5} />,
     },
     {
       num: '3',
-      title: t('Monitor'),
-      desc: t('Track usage, costs and performance with real-time analytics'),
+      title: t('Send and observe'),
+      desc: t(
+        'Call /v1/* with a client key, then watch the attempts chain, cooldowns, and upstream cost.'
+      ),
       icon: <BarChart3 className='size-6' strokeWidth={1.5} />,
     },
   ]
