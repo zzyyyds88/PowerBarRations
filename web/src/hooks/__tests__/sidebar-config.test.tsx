@@ -180,3 +180,21 @@ describe('audit log sidebar entry', () => {
     expect(titles).toContain('Audit Logs')
   })
 })
+
+describe('system tasks sidebar entry', () => {
+  it('is controlled by the admin setting module, like System Settings', () => {
+    const visible = sidebarFor({ admin: { enabled: true, setting: true } })
+    expect(
+      visible.result.current
+        .flatMap((group) => group.items)
+        .map((item) => item.url)
+    ).toContain('/system-tasks')
+
+    const hidden = sidebarFor({ admin: { enabled: true, setting: false } })
+    expect(
+      hidden.result.current
+        .flatMap((group) => group.items)
+        .map((item) => item.url)
+    ).not.toContain('/system-tasks')
+  })
+})

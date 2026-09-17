@@ -242,7 +242,7 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
 
       toast.success(
         t(
-          'Upstream model detection task started. Track progress in System Info, then refresh to review staged updates.'
+          'Upstream model detection task started. Track progress in System Tasks, then refresh to review staged updates.'
         )
       )
       await refresh()

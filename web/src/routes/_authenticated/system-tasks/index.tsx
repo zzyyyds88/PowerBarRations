@@ -16,30 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { api } from '@/lib/api'
+import { createFileRoute } from '@tanstack/react-router'
 
-import type {
-  SystemInstanceDeleteResponse,
-  SystemInstanceListResponse,
-} from './types'
+import { SystemTasks } from '@/features/system-tasks'
 
-export async function listSystemInstances() {
-  const res = await api.get<SystemInstanceListResponse>(
-    '/api/system-info/instances'
-  )
-  return res.data
-}
-
-export async function deleteStaleSystemInstances() {
-  const res = await api.delete<SystemInstanceDeleteResponse>(
-    '/api/system-info/stale-instances'
-  )
-  return res.data
-}
-
-export async function deleteStaleSystemInstance(nodeName: string) {
-  const res = await api.delete<SystemInstanceDeleteResponse>(
-    `/api/system-info/instances/${encodeURIComponent(nodeName)}`
-  )
-  return res.data
-}
+export const Route = createFileRoute('/_authenticated/system-tasks/')({
+  component: SystemTasks,
+})

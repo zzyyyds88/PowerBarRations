@@ -24,16 +24,15 @@ import {
   FlaskConical,
   Key,
   LayoutDashboard,
+  ListChecks,
   MessageSquare,
   Radio,
-  ServerCog,
   Settings,
   Waypoints,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarData } from '@/components/layout/types'
-import { ROLE } from '@/lib/roles'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -42,7 +41,7 @@ import { ROLE } from '@/lib/roles'
  * registered in `layout/lib/sidebar-view-registry.ts`.
  *
  * PBR 保留范围（ui-spec §5）：模型/渠道/令牌/日志/仪表盘/试打/系统设置/
- * 系统信息/性能指标。多用户与计费（钱包/充值/订阅/兑换码/排名/个人中心/账号安全）
+ * 系统任务/性能指标。多用户与计费（钱包/充值/订阅/兑换码/排名/个人中心/账号安全）
  * 已随 W7 删除，此处不得再出现入口；任务插件/异步任务入口已随 T2 删除。
  */
 export function useSidebarData(): SidebarData {
@@ -117,10 +116,9 @@ export function useSidebarData(): SidebarData {
             icon: Waypoints,
           },
           {
-            title: t('System Info'),
-            url: '/system-info',
-            icon: ServerCog,
-            requiredRole: ROLE.SUPER_ADMIN,
+            title: t('System Tasks'),
+            url: '/system-tasks',
+            icon: ListChecks,
           },
           {
             title: t('System Settings'),

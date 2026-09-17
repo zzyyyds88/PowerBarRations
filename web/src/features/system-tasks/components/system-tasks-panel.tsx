@@ -86,8 +86,7 @@ const TYPE_LABEL: Record<string, string> = {
   async_task_poll: 'Async task polling',
 }
 
-const TYPE_DISPLAY_ID: Record<string, string> = {
-}
+const TYPE_DISPLAY_ID: Record<string, string> = {}
 
 function isActiveStatus(status: SystemTaskStatus) {
   return status === 'pending' || status === 'running'
@@ -206,7 +205,7 @@ function SystemTasksTable(props: SystemTasksTableProps) {
 export function SystemTasksPanel() {
   const { t } = useTranslation()
   const tasksQuery = useQuery({
-    queryKey: ['system-info', 'system-tasks'],
+    queryKey: ['system-tasks', 'list'],
     queryFn: async () => {
       const res = await listSystemTasks(TASK_LIMIT)
       if (!res.success || !Array.isArray(res.data)) {
@@ -240,9 +239,7 @@ export function SystemTasksPanel() {
             <div className='min-w-0'>
               <h3 className='text-sm font-semibold'>{t('System Tasks')}</h3>
               <p className='text-muted-foreground mt-0.5 text-xs'>
-                {t(
-                  'Recent maintenance tasks running across instances and their execution status.'
-                )}
+                {t('Recent maintenance tasks and their execution status.')}
               </p>
             </div>
           </div>
