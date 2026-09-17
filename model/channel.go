@@ -532,7 +532,35 @@ func (channel *Channel) GetBaseURL() string {
 	if url == "" {
 		url = constant.GetChannelBaseURL(channel.Type)
 	}
-	return url
+	return normalizeChannelBaseURL(channel.Type, url)
+}
+
+// channelVersionSegments 是 base_url 允许以之结尾的版本段（ui-spec §6.4 /
+// api-spec §4.1："API 地址只填到 /v1 即可"）。按长度降序匹配，避免 /v1 误吞
+// /v1beta 以外的更长后缀。
+var channelVersionSegments = []string{"/v1alpha", "/v1beta", "/v1"}
+
+// normalizeChannelBaseURL 去掉 base_url 结尾的版本段，使"填到 https://host/v1"与
+// "填到 https://host" 等价：各协议适配器随后会自行补全 /v1/chat/completions、
+// /v1/messages、/v1beta/models/{model}:generateContent，因此不会出现 /v1/v1。
+//
+// 只对自行拼接版本段的协议型渠道生效：OpenAI(1)、Anthropic(14)、Gemini(24)。
+// Custom(8) 有自己的 {model} 变量与完整端点补全规则，原样保留；其余厂商类型
+// （Azure 等）路径结构不同，也不改动。
+func normalizeChannelBaseURL(channelType int, raw string) string {
+	switch channelType {
+	case constant.ChannelTypeOpenAI, constant.ChannelTypeAnthropic, constant.ChannelTypeGemini:
+	default:
+		return raw
+	}
+	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
+	lower := strings.ToLower(trimmed)
+	for _, segment := range channelVersionSegments {
+		if strings.HasSuffix(lower, segment) {
+			return trimmed[:len(trimmed)-len(segment)]
+		}
+	}
+	return raw
 }
 
 func (channel *Channel) GetModelMapping() string {
@@ -1014,6 +1042,9 @@ func (channel *Channel) ValidateSettings() error {
 		}
 	}
 	if err := channelOtherSettings.ValidateToolLossPolicy(); err != nil {
+		return err
+	}
+	if err := channelOtherSettings.ValidateProtocol(); err != nil {
 		return err
 	}
 	if channel.Type == constant.ChannelTypeAdvancedCustom {

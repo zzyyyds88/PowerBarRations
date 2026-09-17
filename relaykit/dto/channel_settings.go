@@ -103,6 +103,36 @@ type ChannelOtherSettings struct {
 	// rejection. Empty follows the default allow policy. Accepted values:
 	// "", "allow", "safe", "strict".
 	ToolLossPolicy string `json:"tool_loss_policy,omitempty"`
+	// Protocol 是渠道的上游协议（ui-spec §6.4）：openai-chat / openai-responses /
+	// anthropic / gemini。空值=按渠道类型推断（旧行为）。它决定 base_url 自动补全
+	// 的上游路径与该渠道的默认端点；入站请求路径仍可覆盖（OpenAI 兼容渠道收到
+	// /v1/responses 时照常走 Responses）。
+	Protocol string `json:"protocol,omitempty"`
+}
+
+const (
+	// ChannelProtocolOpenAIChat 默认协议：/v1/chat/completions。
+	ChannelProtocolOpenAIChat = "openai-chat"
+	// ChannelProtocolOpenAIResponses：/v1/responses（适配器仍为 OpenAI）。
+	ChannelProtocolOpenAIResponses = "openai-responses"
+	// ChannelProtocolAnthropic：/v1/messages。
+	ChannelProtocolAnthropic = "anthropic"
+	// ChannelProtocolGemini：/v1beta/models/{model}:generateContent。
+	ChannelProtocolGemini = "gemini"
+)
+
+// ValidateProtocol 校验渠道级上游协议；空值表示沿用旧的"按类型推断"。
+func (s *ChannelOtherSettings) ValidateProtocol() error {
+	if s == nil {
+		return nil
+	}
+	switch s.Protocol {
+	case "", ChannelProtocolOpenAIChat, ChannelProtocolOpenAIResponses,
+		ChannelProtocolAnthropic, ChannelProtocolGemini:
+		return nil
+	default:
+		return fmt.Errorf("invalid protocol: %s", s.Protocol)
+	}
 }
 
 func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {

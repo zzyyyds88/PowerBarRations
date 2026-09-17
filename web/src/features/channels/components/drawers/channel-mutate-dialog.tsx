@@ -117,6 +117,7 @@ import {
 import {
   ADD_MODE_OPTIONS,
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
+  CHANNEL_PROTOCOL_OPTIONS,
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OPTIONS,
@@ -162,7 +163,11 @@ import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
 } from '../../lib/status-code-risk-guard'
-import type { Channel } from '../../types'
+import {
+  isChannelProtocol,
+  type Channel,
+  type ChannelProtocol,
+} from '../../types'
 import { ChannelPricesEditor } from '../channel-prices-editor'
 import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
@@ -572,30 +577,51 @@ export function ChannelMutateDialog({
     [currentModels]
   )
 
-  const selectChannelType = useCallback(
-    (value: number) => {
+  // 当前上游协议（ui-spec §6.4）：优先读 channel 级 protocol；旧数据按 type 推断。
+  const currentProtocol: ChannelProtocol | '' = useMemo(() => {
+    if (isChannelProtocol(formValues.protocol)) return formValues.protocol
+    if (currentType === 14) return 'anthropic'
+    if (currentType === 24) return 'gemini'
+    if (currentType === 1) return 'openai-chat'
+    return ''
+  }, [formValues.protocol, currentType])
+
+  const selectChannelProtocol = useCallback(
+    (protocol: ChannelProtocol) => {
       if (!canEditSensitive) return
-      if (!Number.isSafeInteger(value) || value <= 0) return
-      form.setValue('type', value, { shouldDirty: true })
+      const option = CHANNEL_PROTOCOL_OPTIONS.find(
+        (item) => item.value === protocol
+      )
+      if (!option) return
+      form.setValue('type', option.type, { shouldDirty: true })
+      form.setValue('protocol', protocol, { shouldDirty: true })
       if (!isEditing && !form.getValues('name').trim()) {
-        const label = CHANNEL_TYPE_OPTIONS.find(
-          (option) => option.value === value
-        )?.label
-        form.setValue('name', label ? t(label) : `#${value}`)
+        form.setValue('name', t(option.label))
       }
     },
     [canEditSensitive, isEditing, form, t]
   )
 
-  const channelTypeComboboxOptions = useMemo(
-    () =>
-      CHANNEL_TYPE_OPTIONS.map((option) => ({
-        value: `type:${option.value}`,
-        label: t(option.label),
-        icon: <ChannelTypeLogo type={option.value} size={16} />,
-      })),
-    [t]
-  )
+  // 下拉只给 4 个协议；编辑一个非协议型（旧厂商类型）渠道时，把当前类型作为
+  // "当前值"选项保留，避免保存时被静默改写（ui-spec §6.4）。
+  const channelProtocolComboboxOptions = useMemo(() => {
+    const options = CHANNEL_PROTOCOL_OPTIONS.map((option) => ({
+      value: `protocol:${option.value}`,
+      label: t(option.label),
+      icon: <ChannelTypeLogo type={option.type} size={16} />,
+    }))
+    if (currentProtocol === '' && currentType > 0) {
+      const legacyLabel =
+        CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
+          ?.label ?? `#${currentType}`
+      options.unshift({
+        value: `type:${currentType}`,
+        label: `${t(legacyLabel)} (${t('Current')})`,
+        icon: <ChannelTypeLogo type={currentType} size={16} />,
+      })
+    }
+    return options
+  }, [t, currentProtocol, currentType])
 
   const formErrors = form.formState.errors
   const configuration = getChannelConfigurationState(
@@ -1977,27 +2003,32 @@ export function ChannelMutateDialog({
             control={form.control}
             name='type'
             render={({ field }) => {
-              const comboboxValue = `type:${field.value ?? ''}`
+              // 协议已确定 → 显示协议；旧厂商类型 → 显示"当前值"选项。
+              const comboboxValue =
+                currentProtocol !== ''
+                  ? `protocol:${currentProtocol}`
+                  : `type:${field.value ?? ''}`
               return (
                 <FormItem>
-                  <FormLabel required>{t('Type')}</FormLabel>
+                  <FormLabel required>{t('Protocol')}</FormLabel>
                   <FormControl>
                     <Combobox
-                      options={channelTypeComboboxOptions}
+                      options={channelProtocolComboboxOptions}
                       value={comboboxValue}
                       onValueChange={(value) => {
                         if (!value) return
-                        if (value.startsWith('type:')) {
-                          const parsed = Number(value.slice('type:'.length))
-                          if (Number.isSafeInteger(parsed) && parsed > 0) {
-                            selectChannelType(parsed)
+                        if (value.startsWith('protocol:')) {
+                          const parsed = value.slice('protocol:'.length)
+                          if (isChannelProtocol(parsed)) {
+                            selectChannelProtocol(parsed)
                           }
                         }
+                        // `type:<n>` 是旧厂商类型的"当前值"选项：选中即保持原类型不变。
                       }}
                       disabled={sensitiveLocked || isSubmitting}
-                      placeholder={t('Type')}
+                      placeholder={t('Protocol')}
                       searchPlaceholder={t('Search...')}
-                      aria-label={t('Type')}
+                      aria-label={t('Protocol')}
                     />
                   </FormControl>
                   <FormMessage />
@@ -3336,13 +3367,17 @@ export function ChannelMutateDialog({
                 name='base_url'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Base URL')}</FormLabel>
+                    <FormLabel>
+                      {t(
+                        'Base URL (fill to /v1 and the gateway completes the rest)'
+                      )}
+                    </FormLabel>
                     <FormControl>
                       <Input placeholder={baseUrlPlaceholder} {...field} />
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
+                        'Fill up to the version segment — https://host/v1 for OpenAI/Anthropic, https://host/v1beta for Gemini. The gateway appends the protocol path (chat/completions, responses, messages, generateContent) automatically. Leave empty to use the provider default. Both with and without the version segment work.'
                       )}
                     </FormDescription>
                     <FormMessage />

@@ -6278,6 +6278,13 @@
     "Use this icon": "Utiliser cette icône",
     "You can still edit non-sensitive operations fields such as models and groups.": "Vous pouvez toujours modifier les champs d'exploitation non sensibles tels que les modèles et les groupes.",
     "{{count}} API entries deleted. Click \"Save Settings\" to apply.": "{{count}} entrées API supprimées. Cliquez sur « Enregistrer les paramètres » pour appliquer.",
-    "{{created}} models created, {{updated}} models updated.": "{{created}} modèles créés, {{updated}} modèles mis à jour."
+    "{{created}} models created, {{updated}} models updated.": "{{created}} modèles créés, {{updated}} modèles mis à jour.",
+    "Protocol": "Protocole",
+    "Base URL (fill to /v1 and the gateway completes the rest)": "URL de base (remplissez jusqu'à /v1, la passerelle complète le reste)",
+    "Fill up to the version segment — https://host/v1 for OpenAI/Anthropic, https://host/v1beta for Gemini. The gateway appends the protocol path (chat/completions, responses, messages, generateContent) automatically. Leave empty to use the provider default. Both with and without the version segment work.": "Remplissez jusqu'au segment de version — https://host/v1 pour OpenAI/Anthropic, https://host/v1beta pour Gemini. La passerelle ajoute automatiquement le chemin du protocole (chat/completions, responses, messages, generateContent). Laissez vide pour utiliser la valeur par défaut du fournisseur. Avec ou sans segment de version, les deux fonctionnent.",
+    "OpenAI compatible (/v1/chat/completions)": "Compatible OpenAI (/v1/chat/completions)",
+    "OpenAI Responses (/v1/responses)": "OpenAI Responses (/v1/responses)",
+    "Anthropic (/v1/messages)": "Anthropic (/v1/messages)",
+    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)"
   }
 }

@@ -97,6 +97,7 @@
 - **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
+- `base_url`：**允许带版本段结尾**。OpenAI/Anthropic 可填到 `https://host/v1`，Gemini 可填到 `https://host/v1beta`；网关在拼接上游路径前会**剥掉结尾的版本段**（`/v1`、`/v1beta`、`/v1alpha`），因此填 `https://host` 与填 `https://host/v1` 等价，不会出现 `/v1/v1`。旧数据（不含版本段）行为不变。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。**渠道未配价即不折算（0）——没有全局单价层**。省略该字段时保持原值。
 - `model_mapping`：**渠道模型映射**（JSON dict，路由键 → 上游真名），用于上游命名与路由键不一致的情况。车道成员解析上游名时：成员级 `upstream_model`（非空且≠路由键）> 本映射 > 路由键。省略该字段时保持原值。
 
@@ -668,6 +669,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 模型目录/元数据（描述、标签、厂商、同步上游） | `/api/console/models/**` |
 | 变更审计（控制台视图） | `/api/console/audit` |
 | 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
+| 渠道上游协议选择（`other_settings.protocol` = `openai-chat` \| `openai-responses` \| `anthropic` \| `gemini`，见 ui-spec §6.4） | `/api/channel/**`（随控制台实现变动，不属稳定契约） |
 | 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
 | 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
 | 管理员日志 | `/api/log/**` |

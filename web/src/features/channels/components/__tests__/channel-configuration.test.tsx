@@ -53,13 +53,34 @@ function deferredResponse<T>() {
 
 type UserEventInstance = ReturnType<typeof userEvent.setup>
 
-// Opens the Basic Information type combobox and picks one of its options
-// (built-in types render as "type:<n>").
-async function selectTypeOption(
+// 基本信息区现在只选 4 个上游协议（ui-spec §6.4）。下拉展示的是选项 label，
+// 因此先把「短协议名」映射到完整 i18n label，再按 label 选择。
+const PROTOCOL_OPTION_LABELS = {
+  'OpenAI compatible': 'OpenAI compatible (/v1/chat/completions)',
+  'OpenAI Responses': 'OpenAI Responses (/v1/responses)',
+  Anthropic: 'Anthropic (/v1/messages)',
+  Gemini: 'Gemini (/v1beta/models/{model}:generateContent)',
+} as const
+
+type ProtocolOptionName = keyof typeof PROTOCOL_OPTION_LABELS
+
+async function selectProtocolOption(
+  user: UserEventInstance,
+  name: ProtocolOptionName
+) {
+  await user.click(screen.getByRole('combobox', { name: 'Protocol' }))
+  await user.click(
+    await screen.findByRole('option', { name: PROTOCOL_OPTION_LABELS[name] })
+  )
+}
+
+// 编辑旧厂商类型渠道时，下拉额外保留唯一的「<原类型名> (Current)」选项；
+// 选中它保持 type 与 protocol 不变。
+async function selectLegacyTypeOption(
   user: UserEventInstance,
   name: string | RegExp
 ) {
-  await user.click(screen.getByRole('combobox', { name: 'Type' }))
+  await user.click(screen.getByRole('combobox', { name: 'Protocol' }))
   await user.click(await screen.findByRole('option', { name }))
 }
 
@@ -159,32 +180,32 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-test('changing built-in providers updates server-provided URL placeholders without replacing the draft address', async () => {
+test('changing protocols updates server-provided URL placeholders without replacing the draft address', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await selectTypeOption(user, 'DeepSeek')
-  const address = screen.getByRole('textbox', { name: 'Base URL' })
+  await selectProtocolOption(user, 'Gemini')
+  const address = screen.getByRole('textbox', { name: /^Base URL/ })
   await waitFor(() =>
     expect(address).toHaveAttribute(
       'placeholder',
-      'https://deepseek.server.example'
+      'https://gemini.server.example'
     )
   )
   expect(address).toHaveValue('')
   await user.type(address, 'https://custom.example')
 
-  await selectTypeOption(user, 'Gemini')
-  const geminiAddress = screen.getByRole('textbox', { name: 'Base URL' })
-  expect(geminiAddress).toHaveAttribute(
+  await selectProtocolOption(user, 'OpenAI compatible')
+  const openAIAddress = screen.getByRole('textbox', { name: /^Base URL/ })
+  expect(openAIAddress).toHaveAttribute(
     'placeholder',
-    'https://gemini.server.example'
+    'Leave empty to use default'
   )
-  expect(geminiAddress).toHaveValue('https://custom.example')
-  await user.clear(geminiAddress)
-  expect(geminiAddress).toHaveValue('')
+  expect(openAIAddress).toHaveValue('https://custom.example')
+  await user.clear(openAIAddress)
+  expect(openAIAddress).toHaveValue('')
 
-  await selectTypeOption(user, 'New API')
-  expect(screen.getByRole('textbox', { name: 'Base URL' })).toHaveAttribute(
+  await selectProtocolOption(user, 'Anthropic')
+  expect(screen.getByRole('textbox', { name: /^Base URL/ })).toHaveAttribute(
     'placeholder',
     'Leave empty to use default'
   )
@@ -193,25 +214,28 @@ test('changing built-in providers updates server-provided URL placeholders witho
 test.each([
   {
     type: 43,
-    label: /^Base URL$/,
+    label: /^Base URL/,
     url: 'https://deepseek.server.example',
     savedUrl: '',
+    legacyOption: 'DeepSeek (Current)',
   },
   {
     type: 22,
     label: /^Private Deployment URL$/,
     url: 'https://fastgpt.server.example/api/openapi',
     savedUrl: '',
+    legacyOption: 'FastGPT (Current)',
   },
   {
     type: 45,
     label: /^API Base URL/,
     url: 'https://volcengine.server.example',
     savedUrl: 'https://custom.example',
+    legacyOption: 'VolcEngine (Current)',
   },
 ])(
-  'editing type $type keeps the server URL placeholder out of the saved address',
-  async ({ type, label, url, savedUrl }) => {
+  'editing legacy type $type keeps the server URL placeholder out of the saved address and keeps the type',
+  async ({ type, label, url, savedUrl, legacyOption }) => {
     editingChannel.type = type
     const put = vi
       .spyOn(api, 'put')
@@ -219,6 +243,10 @@ test.each([
     const user = userEvent.setup()
     render(<ConfigurationHarness currentRow={editingChannel} />)
     await screen.findByDisplayValue('Existing channel')
+    const protocol = screen.getByRole('combobox', { name: 'Protocol' })
+    expect(protocol).toHaveValue(legacyOption)
+    // 旧渠道下拉只保留「当前类型」这一项厂商入口，重选它不改变 type。
+    await selectLegacyTypeOption(user, legacyOption)
     if (type === 45) {
       const addressLabel = screen.getByText('API Base URL')
       for (let click = 0; click < 10; click++) {
@@ -233,7 +261,11 @@ test.each([
     if (savedUrl) await user.type(address, savedUrl)
     await user.click(screen.getByRole('button', { name: 'Update Channel' }))
     await waitFor(() => expect(put).toHaveBeenCalled())
-    expect(put.mock.calls[0]?.[1]).toMatchObject({ id: 42, base_url: savedUrl })
+    expect(put.mock.calls[0]?.[1]).toMatchObject({
+      id: 42,
+      type,
+      base_url: savedUrl,
+    })
   }
 )
 
@@ -255,7 +287,7 @@ test('an unavailable default URL endpoint keeps the fallback placeholder and all
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
-  const address = screen.getByRole('textbox', { name: 'Base URL' })
+  const address = screen.getByRole('textbox', { name: /^Base URL/ })
   expect(address).toHaveAttribute('placeholder', 'Leave empty to use default')
   expect(address).toHaveValue('https://saved.example')
   await user.clear(address)
@@ -364,7 +396,9 @@ test.each(['Cancel', 'Escape'])(
     )
     await user.click(screen.getByRole('button', { name: 'Open channel' }))
     expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
-    expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
+    expect(screen.getByRole('combobox', { name: 'Protocol' })).toHaveValue(
+      PROTOCOL_OPTION_LABELS['OpenAI compatible']
+    )
     await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
     expect(screen.getByLabelText('Test Model')).toHaveValue('')
   }
@@ -386,7 +420,7 @@ test('configuration navigation retains its height when the form content overflow
 test('an invalid setting in another category is revealed and focused on submission', async () => {
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await selectTypeOption(user, 'DeepSeek')
+  await selectProtocolOption(user, 'Anthropic')
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'secret' },
   })
@@ -430,7 +464,7 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
     )
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
-  await selectTypeOption(user, 'DeepSeek')
+  await selectProtocolOption(user, 'Anthropic')
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'keep-secret' },
   })
@@ -458,7 +492,9 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
     expect(screen.getByRole('button', { name: 'Create Channel' })).toBeEnabled()
   )
   expect(screen.getByLabelText('API Key *')).toHaveValue('keep-secret')
-  expect(screen.getByLabelText('Name *')).toHaveValue('DeepSeek')
+  expect(screen.getByLabelText('Name *')).toHaveValue(
+    PROTOCOL_OPTION_LABELS['Anthropic']
+  )
 })
 
 test('model discovery discards a response for old credentials and retains manually selected models', async () => {
@@ -566,7 +602,9 @@ test('editing opens the shared configuration and omits an unchanged key on updat
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={channel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
-  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
+  expect(screen.getByRole('combobox', { name: 'Protocol' })).toHaveValue(
+    PROTOCOL_OPTION_LABELS['OpenAI compatible']
+  )
   expect(screen.getAllByRole('tab')).toHaveLength(4)
   expect(
     screen.getByRole('tab', { name: /Connection & Models/ })
@@ -585,7 +623,7 @@ test('editing opens the shared configuration and omits an unchanged key on updat
   expect(put.mock.calls[0]?.[1]).not.toHaveProperty('key')
 })
 
-test('editing legacy channels retains the full provider list and saves the original type', async () => {
+test('editing a legacy channel shows only its current type and does not rewrite type or protocol', async () => {
   editingChannel = { ...editingChannel, type: 55 }
   const put = vi
     .spyOn(api, 'put')
@@ -593,11 +631,15 @@ test('editing legacy channels retains the full provider list and saves the origi
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
-  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('Sora')
-  await user.click(screen.getByRole('combobox', { name: 'Type' }))
-  expect(screen.getByRole('option', { name: 'DoubaoVideo' })).toBeVisible()
-  // Re-selecting the saved built-in type keeps the channel values.
-  await user.click(screen.getByRole('option', { name: 'Sora' }))
+  const protocol = screen.getByRole('combobox', { name: 'Protocol' })
+  expect(protocol).toHaveValue('Sora (Current)')
+  // 新契约不再暴露约 50 个厂商类型；旧渠道只额外保留「当前类型」一个入口。
+  await user.click(protocol)
+  expect(
+    screen.queryByRole('option', { name: 'DoubaoVideo' })
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('option', { name: 'Sora (Current)' }))
+  // Re-selecting the saved type keeps the channel values.
   expect(modelsGroup().getByText('custom-model')).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   fireEvent.change(screen.getByLabelText('Name *'), {
@@ -614,6 +656,10 @@ test('editing legacy channels retains the full provider list and saves the origi
       }),
       expect.anything()
     )
+  )
+  const payload = put.mock.calls[0]?.[1] as Record<string, unknown>
+  expect(JSON.parse(String(payload.settings ?? '{}'))).not.toHaveProperty(
+    'protocol'
   )
 })
 
@@ -636,7 +682,7 @@ test('a failed detail request blocks updating until retry loads the saved channe
   // While the saved channel is missing, the form is replaced by the error
   // state, so no type editing is possible at all.
   expect(
-    screen.queryByRole('combobox', { name: 'Type' })
+    screen.queryByRole('combobox', { name: 'Protocol' })
   ).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Name *')).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Retry' }))
@@ -1058,7 +1104,7 @@ test('an operator without sensitive write permission can discover saved models a
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
-  expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
+  expect(screen.getByRole('combobox', { name: 'Protocol' })).toBeDisabled()
   expect(screen.getByLabelText('API Key *')).toBeDisabled()
   await user.click(
     await screen.findByRole('button', {
@@ -1251,11 +1297,17 @@ test('an unknown saved type remains editable without selecting a new provider', 
     .mockResolvedValue({ data: { success: true } })
   render(<ConfigurationHarness currentRow={editingChannel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
-  // Unknown saved types stay editable and display the raw type number.
-  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('type:999')
+  // Unknown saved types stay editable and keep their own "Current" option.
+  expect(screen.getByRole('combobox', { name: 'Protocol' })).toHaveValue(
+    '#999 (Current)'
+  )
   await userEvent.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
-  expect(put.mock.calls[0]?.[1]).toMatchObject({ id: 42, type: 999 })
+  const payload = put.mock.calls[0]?.[1] as Record<string, unknown>
+  expect(payload).toMatchObject({ id: 42, type: 999 })
+  expect(JSON.parse(String(payload.settings ?? '{}'))).not.toHaveProperty(
+    'protocol'
+  )
 })
 
 test('a background refresh updates untouched values without moving the selected category', async () => {
@@ -1293,7 +1345,9 @@ test('closing an edited channel clears the row so the next open starts a fresh c
   expect(
     await screen.findByRole('dialog', { name: 'Create Channel' })
   ).toBeVisible()
-  expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
+  expect(screen.getByRole('combobox', { name: 'Protocol' })).toHaveValue(
+    PROTOCOL_OPTION_LABELS['OpenAI compatible']
+  )
   expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toHaveValue('')
 })
 

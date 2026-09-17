@@ -118,6 +118,28 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   advanced_custom?: AdvancedCustomConfig
+  // 上游协议（ui-spec §6.4）：决定 base_url 自动补全路径与该渠道默认端点。
+  // 空值=按渠道类型推断（旧数据）。
+  protocol?: ChannelProtocol
+}
+
+/**
+ * 渠道上游协议（ui-spec §6.4）。控制台只暴露这 4 种；适配器 type 由协议决定
+ * （openai-* → 1，anthropic → 14，gemini → 24）。
+ */
+export type ChannelProtocol =
+  | 'openai-chat'
+  | 'openai-responses'
+  | 'anthropic'
+  | 'gemini'
+
+export function isChannelProtocol(value: unknown): value is ChannelProtocol {
+  return (
+    value === 'openai-chat' ||
+    value === 'openai-responses' ||
+    value === 'anthropic' ||
+    value === 'gemini'
+  )
 }
 
 export interface AdvancedCustomConfig {

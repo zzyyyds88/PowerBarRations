@@ -6278,6 +6278,13 @@
     "Use this icon": "Dùng biểu tượng này",
     "You can still edit non-sensitive operations fields such as models and groups.": "Bạn vẫn có thể chỉnh sửa các trường vận hành không nhạy cảm như mô hình và nhóm.",
     "{{count}} API entries deleted. Click \"Save Settings\" to apply.": "Đã xóa {{count}} mục API. Nhấp \"Lưu cài đặt\" để áp dụng.",
-    "{{created}} models created, {{updated}} models updated.": "Đã tạo {{created}} mô hình, cập nhật {{updated}} mô hình."
+    "{{created}} models created, {{updated}} models updated.": "Đã tạo {{created}} mô hình, cập nhật {{updated}} mô hình.",
+    "Protocol": "Giao thức",
+    "Base URL (fill to /v1 and the gateway completes the rest)": "Base URL (điền đến /v1, phần còn lại cổng sẽ bổ sung)",
+    "Fill up to the version segment — https://host/v1 for OpenAI/Anthropic, https://host/v1beta for Gemini. The gateway appends the protocol path (chat/completions, responses, messages, generateContent) automatically. Leave empty to use the provider default. Both with and without the version segment work.": "Điền đến đoạn phiên bản — https://host/v1 cho OpenAI/Anthropic, https://host/v1beta cho Gemini. Cổng sẽ tự động thêm đường dẫn giao thức (chat/completions, responses, messages, generateContent). Để trống để dùng mặc định của nhà cung cấp. Có hay không có đoạn phiên bản đều hoạt động.",
+    "OpenAI compatible (/v1/chat/completions)": "Tương thích OpenAI (/v1/chat/completions)",
+    "OpenAI Responses (/v1/responses)": "OpenAI Responses (/v1/responses)",
+    "Anthropic (/v1/messages)": "Anthropic (/v1/messages)",
+    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)"
   }
 }

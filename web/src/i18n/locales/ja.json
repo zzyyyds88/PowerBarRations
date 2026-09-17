@@ -6278,6 +6278,13 @@
     "Use this icon": "このアイコンを使用",
     "You can still edit non-sensitive operations fields such as models and groups.": "モデルやグループなど、機密性の低い運用フィールドは引き続き編集できます。",
     "{{count}} API entries deleted. Click \"Save Settings\" to apply.": "API エントリを {{count}} 件削除しました。適用するには「設定を保存」をクリックしてください。",
-    "{{created}} models created, {{updated}} models updated.": "モデルを {{created}} 件作成し、{{updated}} 件更新しました。"
+    "{{created}} models created, {{updated}} models updated.": "モデルを {{created}} 件作成し、{{updated}} 件更新しました。",
+    "Protocol": "プロトコル",
+    "Base URL (fill to /v1 and the gateway completes the rest)": "ベース URL（/v1 まで入力すれば残りはゲートウェイが補完します）",
+    "Fill up to the version segment — https://host/v1 for OpenAI/Anthropic, https://host/v1beta for Gemini. The gateway appends the protocol path (chat/completions, responses, messages, generateContent) automatically. Leave empty to use the provider default. Both with and without the version segment work.": "バージョンセグメントまで入力してください（OpenAI/Anthropic は https://host/v1、Gemini は https://host/v1beta）。プロトコルのパス（chat/completions、responses、messages、generateContent）はゲートウェイが自動で補完します。空欄の場合はプロバイダの既定値を使用します。バージョンセグメントの有無どちらでも動作します。",
+    "OpenAI compatible (/v1/chat/completions)": "OpenAI 互換（/v1/chat/completions）",
+    "OpenAI Responses (/v1/responses)": "OpenAI Responses（/v1/responses）",
+    "Anthropic (/v1/messages)": "Anthropic（/v1/messages）",
+    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini（/v1beta/models/{model}:generateContent）"
   }
 }

@@ -123,8 +123,11 @@
 type Channel struct {                 // 上游渠道
     ID        int
     Name      string   // 唯一
-    Type      string   // 协议族：openai|anthropic|gemini|ollama|...（映射 40 家适配器）
-    BaseURL   string   // 只存到版本根（如 https://host/v1），路径拼接交给适配器
+    Type      string   // 适配器/协议族：openai|anthropic|gemini|ollama|...（映射 40 家适配器）
+    Protocol  string   // 渠道级上游协议（other_settings.protocol）：openai-chat|openai-responses|anthropic|gemini；
+                       // 空=按 Type 推断（旧数据）。控制台只暴露这 4 个协议（ui-spec §6.4）
+    BaseURL   string   // 只存到版本根（如 https://host/v1），路径拼接交给适配器；
+                       // 网关读取时会剥掉结尾版本段，故填 /v1 与不填等价（api-spec §4.1）
     Models    []string // 本渠道提供哪些路由键（候选）；声明只是候选，必须固化成车道才可调用（ADR 0005）
     ModelMapping map[string]string // 路由键 → 上游真名；上游命名不一致时在渠道上配置一次（ADR 0005）
     Key       string   // 只写不读：响应脱敏；不打印进日志

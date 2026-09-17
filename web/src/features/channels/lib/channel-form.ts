@@ -27,7 +27,12 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
-import type { Channel, ChannelModelPrice } from '../types'
+import {
+  isChannelProtocol,
+  type Channel,
+  type ChannelModelPrice,
+  type ChannelProtocol,
+} from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -278,6 +283,11 @@ export const channelFormSchema = z
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
     azure_responses_version: z.string().optional(), // Azure specific
+    // 上游协议（ui-spec §6.4；存 settings JSON = other_settings.protocol）：
+    // 决定 base_url 自动补全的上游路径与该渠道默认端点。
+    protocol: z
+      .enum(['openai-chat', 'openai-responses', 'anthropic', 'gemini'])
+      .optional(),
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
     disable_store: z.boolean().optional(), // OpenAI only
@@ -526,11 +536,16 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  // 上游协议（ui-spec §6.4）：空值=按渠道类型推断（旧数据）。
+  let protocol: ChannelProtocol | undefined
 
   if (channel.settings) {
     try {
       const parsed = JSON.parse(channel.settings)
       vertexKeyType = parsed.vertex_key_type || 'json'
+      protocol = isChannelProtocol(parsed.protocol)
+        ? parsed.protocol
+        : undefined
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
@@ -588,6 +603,7 @@ export function transformChannelToFormDefaults(
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
+    protocol,
     aws_key_type: awsKeyType,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
@@ -685,6 +701,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.azure_responses_version = formData.azure_responses_version
   } else if ('azure_responses_version' in settingsObj) {
     delete settingsObj.azure_responses_version
+  }
+
+  // 上游协议（ui-spec §6.4）：只在选到协议型渠道时写入，旧厂商类型清掉。
+  if (formData.protocol) {
+    settingsObj.protocol = formData.protocol
+  } else if ('protocol' in settingsObj) {
+    delete settingsObj.protocol
   }
 
   // Add enterprise account setting for OpenRouter (type 20)

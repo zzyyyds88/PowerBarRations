@@ -6278,6 +6278,13 @@
     "Use this icon": "使用此圖示",
     "You can still edit non-sensitive operations fields such as models and groups.": "仍可編輯模型與群組等非敏感維運欄位。",
     "{{count}} API entries deleted. Click \"Save Settings\" to apply.": "已刪除 {{count}} 筆 API 記錄。點擊「儲存設定」以生效。",
-    "{{created}} models created, {{updated}} models updated.": "已建立 {{created}} 個模型，已更新 {{updated}} 個模型。"
+    "{{created}} models created, {{updated}} models updated.": "已建立 {{created}} 個模型，已更新 {{updated}} 個模型。",
+    "Protocol": "協定",
+    "Base URL (fill to /v1 and the gateway completes the rest)": "API 位址（填到 /v1 即可，其餘由閘道補全）",
+    "Fill up to the version segment — https://host/v1 for OpenAI/Anthropic, https://host/v1beta for Gemini. The gateway appends the protocol path (chat/completions, responses, messages, generateContent) automatically. Leave empty to use the provider default. Both with and without the version segment work.": "填到版本段即可——OpenAI/Anthropic 填到 https://host/v1，Gemini 填到 https://host/v1beta；閘道會自動補全協定路徑（chat/completions、responses、messages、generateContent）。留空則使用廠商預設位址。帶不帶版本段都可用。",
+    "OpenAI compatible (/v1/chat/completions)": "OpenAI 相容（/v1/chat/completions）",
+    "OpenAI Responses (/v1/responses)": "OpenAI Responses（/v1/responses）",
+    "Anthropic (/v1/messages)": "Anthropic（/v1/messages）",
+    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini（/v1beta/models/{model}:generateContent）"
   }
 }

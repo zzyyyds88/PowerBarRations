@@ -187,6 +187,37 @@ export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
 })()
 
 // ============================================================================
+// Channel Upstream Protocols (ui-spec §6.4)
+// 控制台只暴露 4 种上游协议；协议决定适配器 type 与 base_url 自动补全的路径。
+// label 为 i18n 键，组件中用 t(label) 渲染。
+// ============================================================================
+
+export const CHANNEL_PROTOCOL_OPTIONS = [
+  {
+    value: 'openai-chat',
+    type: 1,
+    label: 'OpenAI compatible (/v1/chat/completions)',
+  },
+  {
+    value: 'openai-responses',
+    type: 1,
+    label: 'OpenAI Responses (/v1/responses)',
+  },
+  { value: 'anthropic', type: 14, label: 'Anthropic (/v1/messages)' },
+  {
+    value: 'gemini',
+    type: 24,
+    label: 'Gemini (/v1beta/models/{model}:generateContent)',
+  },
+] as const satisfies ReadonlyArray<{
+  value: import('./types').ChannelProtocol
+  type: number
+  label: string
+}>
+
+export const DEFAULT_CHANNEL_PROTOCOL = 'openai-chat' as const
+
+// ============================================================================
 // Channel Status (label values are i18n keys; use t(config.label) in components)
 // ============================================================================
 
