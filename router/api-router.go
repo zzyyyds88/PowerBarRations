@@ -78,13 +78,6 @@ func SetApiRouter(router *gin.Engine) {
 			systemTaskRoute.GET("/current", controller.GetCurrentSystemTask)
 			systemTaskRoute.GET("/:task_id", controller.GetSystemTask)
 		}
-		systemInfoRoute := apiRouter.Group("/system-info")
-		systemInfoRoute.Use(middleware.PBRAuth())
-		{
-			systemInfoRoute.GET("/instances", controller.ListSystemInstances)
-			systemInfoRoute.DELETE("/stale-instances", controller.DeleteStaleSystemInstances)
-			systemInfoRoute.DELETE("/instances/:node_name", controller.DeleteStaleSystemInstance)
-		}
 
 		prefillGroupRoute := apiRouter.Group("/prefill_group")
 		prefillGroupRoute.Use(middleware.PBRAuth())

@@ -127,10 +127,6 @@ func main() {
 	// Codex credential auto-refresh check every 10 minutes, refresh when expires within 1 day
 	service.StartCodexCredentialAutoRefreshTask()
 
-	// Report this process as a system instance so the System Info page can show
-	// all currently alive nodes in multi-instance deployments.
-	service.StartSystemInstanceReporter()
-
 	// Register the periodic channel test and upstream model update jobs as
 	// scheduled system tasks (DB-lease dedup across masters + run history),
 	// then start the runner that schedules and executes them. Master-only
