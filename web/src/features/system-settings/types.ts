@@ -170,7 +170,6 @@ export type ModelSettings = {
   'channel_affinity_setting.max_entries': number
   'channel_affinity_setting.default_ttl_seconds': number
   'channel_affinity_setting.rules': string
-  PBRModelPrices: string
 }
 
 export type OperationsSettings = {

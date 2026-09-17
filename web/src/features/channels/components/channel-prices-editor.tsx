@@ -16,20 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus, X } from 'lucide-react'
-import { useState } from 'react'
+import { X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
+import type { ComboboxInputOption } from '@/components/ui/combobox-input'
 import { Input } from '@/components/ui/input'
 
 import type { ChannelModelPrice } from '../types'
 
-// 渠道级上游单价编辑器（人民币/百万 token）。
+// 渠道级上游单价编辑器（人民币/百万 token，单层单价：design-v1 §16.9#7）。
 //
-// 用于成本折算：同一模型在不同上游的采购价不同，故渠道价优先于全局默认单价表。
-// 计价键是**请求模型名**（路由键/车道名），不是上游真名——车道成员可引用清单
-// 之外的上游名，因此除渠道模型清单外还支持手动添加自定义计价行（可删除）。
+// 只用于成本折算：同一模型在不同上游的采购价不同，价格唯一来源就是渠道价，
+// 没有全局默认单价层。计价键是**请求模型名**（路由键/车道名），不是上游真名
+// ——车道成员可引用清单之外的上游名，因此除渠道模型清单外还支持添加清单外
+// 的自定义计价行（可删除）。添加行用可搜索下拉（allowCustomValue）：选项 =
+// 渠道模型清单中尚未出现在表格里的模型，也允许键入清单外的自定义名。
 // 保存时仅落库至少填了一项的模型；这里只负责编辑，写入 setting JSON 由
 // channel-form.buildSettingJSON 完成。
 
@@ -66,8 +70,42 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
   const [customDraft, setCustomDraft] = useState('')
   const [customModels, setCustomModels] = useState<string[]>([])
 
-  const rows = [...props.models, ...customModels]
+  // 已配价但不在模型清单里的模型（如独立车道名）也要可见、可删除，否则会变成
+  // 表格外的隐形价格行。它们与手动添加的自定义行一样按清单外行处理。
+  const pricedCustomModels = useMemo(
+    () =>
+      props.value
+        .map((item) => item.model)
+        .filter(
+          (model) =>
+            model !== '' &&
+            !props.models.includes(model) &&
+            !customModels.includes(model)
+        ),
+    [props.value, props.models, customModels]
+  )
+
+  const rows = useMemo(
+    () => [
+      ...new Set([...props.models, ...customModels, ...pricedCustomModels]),
+    ],
+    [props.models, customModels, pricedCustomModels]
+  )
   const isCustom = (model: string) => !props.models.includes(model)
+
+  // 可搜索下拉的选项：渠道模型清单中尚未出现在表格里的模型；allowCustomValue
+  // 允许键入清单外的自定义名（独立车道名等边缘场景）。
+  const addOptions = useMemo<ComboboxInputOption[]>(
+    () =>
+      props.models
+        .filter((model) => !rows.includes(model))
+        .map((model) => ({ value: model, label: model })),
+    [props.models, rows]
+  )
+  const addOptionValues = useMemo(
+    () => new Set(addOptions.map((option) => option.value)),
+    [addOptions]
+  )
 
   const update = (model: string, key: PriceField, raw: string) => {
     const value = toNumber(raw)
@@ -83,14 +121,32 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
     props.onChange([...props.value, createPrice(model, key, value)])
   }
 
-  const addCustomModel = () => {
-    const model = customDraft.trim()
+  const addCustomModel = (rawModel: string) => {
+    const model = rawModel.trim()
     if (!model || rows.includes(model)) {
       setCustomDraft('')
       return
     }
     setCustomModels([...customModels, model])
     setCustomDraft('')
+  }
+
+  // Combobox 的 onValueChange 在键入过程中逐字符触发（allowCustomValue 模式），
+  // 也会在"选中选项"与"对键入的自定义名按回车"时各触发一次：
+  // - 命中选项 → 直接添加该行；
+  // - 与当前草稿一致（即回车确认，而不是逐字符输入）→ 添加该行；
+  // - 其余情况只更新草稿。
+  const handleDraftChange = (value: string | null) => {
+    const model = (value ?? '').trim()
+    if (!model) {
+      setCustomDraft('')
+      return
+    }
+    if (addOptionValues.has(model) || model === customDraft.trim()) {
+      addCustomModel(model)
+      return
+    }
+    setCustomDraft(model)
   }
 
   const removeCustomModel = (model: string) => {
@@ -159,30 +215,23 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
         </div>
       )}
 
-      <div className='flex gap-2'>
-        <Input
+      {/* 敏感信息锁定时隐藏添加入口（组件不支持 disabled，锁定即不可加行）。 */}
+      {!props.disabled && (
+        <Combobox
+          options={addOptions}
+          allowCustomValue
           value={customDraft}
-          placeholder={t('Add a model to price (e.g. a lane name)')}
-          disabled={props.disabled}
-          onChange={(event) => setCustomDraft(event.target.value)}
+          placeholder={t('Select from channel models or type a model name')}
+          aria-label={t('Add a model to price')}
+          onValueChange={handleDraftChange}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
-              addCustomModel()
+              addCustomModel(customDraft)
             }
           }}
         />
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          disabled={props.disabled || !customDraft.trim()}
-          onClick={addCustomModel}
-        >
-          <Plus data-icon='inline-start' />
-          {t('Add')}
-        </Button>
-      </div>
+      )}
     </div>
   )
 }

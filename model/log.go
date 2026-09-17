@@ -376,28 +376,31 @@ type RecordConsumeLogParams struct {
 
 // estimateRequestCost 折算一次请求的上游花费（人民币）。
 //
-// 优先级：渠道级上游单价（channel.Setting.pbr_prices，按请求模型匹配）
-// > 全局默认单价表（PBRModelPrices）> 不折算（0）。渠道价允许同一模型在不同
-// 上游有不同采购价（design-v1 §16.9#7）。
+// 单层单价：只按**渠道级上游单价**（channel.Setting.pbr_prices，按请求模型匹配）
+// 折算；渠道未配价（含 channelId<=0 或渠道缓存 miss）→ 不折算（0）。
+// 没有全局默认单价表（design-v1 §16.9#7：单用户自用每渠道自己定价即可）。
 func estimateRequestCost(channelId int, priceModel string, prompt, completion, cacheRead, cacheWrite int) float64 {
-	priceModel = strings.TrimSpace(priceModel)
-	if channelId > 0 {
-		if channel, err := CacheGetChannel(channelId); err == nil && channel != nil {
-			for _, item := range channel.GetSetting().PBRPrices {
-				if strings.TrimSpace(item.Model) != priceModel {
-					continue
-				}
-				return pricing_setting.EstimateWithPrice(pricing_setting.ModelPrice{
-					Model:      item.Model,
-					Input:      item.Input,
-					Output:     item.Output,
-					CacheRead:  item.CacheRead,
-					CacheWrite: item.CacheWrite,
-				}, prompt, completion, cacheRead, cacheWrite)
-			}
-		}
+	if channelId <= 0 {
+		return 0
 	}
-	return pricing_setting.Estimate(priceModel, prompt, completion, cacheRead, cacheWrite)
+	priceModel = strings.TrimSpace(priceModel)
+	channel, err := CacheGetChannel(channelId)
+	if err != nil || channel == nil {
+		return 0
+	}
+	for _, item := range channel.GetSetting().PBRPrices {
+		if strings.TrimSpace(item.Model) != priceModel {
+			continue
+		}
+		return pricing_setting.EstimateWithPrice(pricing_setting.ModelPrice{
+			Model:      item.Model,
+			Input:      item.Input,
+			Output:     item.Output,
+			CacheRead:  item.CacheRead,
+			CacheWrite: item.CacheWrite,
+		}, prompt, completion, cacheRead, cacheWrite)
+	}
+	return 0
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {

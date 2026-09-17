@@ -178,7 +178,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
       .filter((vendor) => vendor.count > 0),
   ]
 
-  const groupOptions: FilterOption[] = [
+  const groupFilterOptions: FilterOption[] = [
     {
       value: FILTER_ALL,
       label: t('All Groups'),
@@ -275,7 +275,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
         <FilterSection
           title={t('Groups')}
           value={props.groupFilter}
-          options={groupOptions}
+          options={groupFilterOptions}
           onChange={props.onGroupChange}
         />
         <FilterSection

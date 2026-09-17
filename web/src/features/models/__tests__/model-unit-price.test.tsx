@@ -24,28 +24,17 @@ import { api } from '@/lib/api'
 
 import { ModelUnitPriceCell } from '../components/model-unit-price-cell'
 
-// token-spec/design-v1 §16#7：模型页「上游单价」列必须展示**有效价**——
-// 渠道价优先（多渠道不同价时显示区间），无渠道价才回退全局默认。此前该列只读
-// 全局默认，会让人误以为单价是全局配置的。
+// design-v1 §16.9#7：模型页「上游单价」列展示**渠道上游单价**（单层单价）——
+// 多渠道不同价时显示区间；没有渠道价即"未配置"（不折算），没有全局默认价。
 const clients: QueryClient[] = []
 
-function renderCell(channels: unknown[], globalPrices: unknown[]) {
+function renderCell(channels: unknown[]) {
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/channel/search') {
       return {
         data: {
           success: true,
           data: { items: channels, total: channels.length },
-        },
-      }
-    }
-    if (url === '/api/option/') {
-      return {
-        data: {
-          success: true,
-          data: [
-            { key: 'PBRModelPrices', value: JSON.stringify(globalPrices) },
-          ],
         },
       }
     }
@@ -80,49 +69,41 @@ afterEach(() => {
 })
 
 it('prefers channel prices and shows the range across channels', async () => {
-  renderCell(
-    [
-      channel(1, 'A', [{ model: 'model1', input: 3, output: 4 }]),
-      channel(2, 'B', [{ model: 'model1', input: 5, output: 9 }]),
-    ],
-    [{ model: 'model1', input: 1, output: 2 }]
-  )
+  renderCell([
+    channel(1, 'A', [{ model: 'model1', input: 3, output: 4 }]),
+    channel(2, 'B', [{ model: 'model1', input: 5, output: 9 }]),
+  ])
 
   expect(await screen.findByText('¥3–5 / ¥4–9')).toBeVisible()
   expect(screen.getByText('Channel price')).toBeVisible()
-  // 有渠道价时不得回退全局默认。
-  expect(screen.queryByText(/Global default/)).not.toBeInTheDocument()
 })
 
-it('falls back to the global default when no channel sets a price', async () => {
-  renderCell([channel(1, 'A', [])], [{ model: 'model1', input: 1, output: 2 }])
+it('shows a single channel price directly', async () => {
+  renderCell([channel(1, 'A', [{ model: 'model1', input: 1, output: 2 }])])
 
   expect(await screen.findByText('¥1 / ¥2')).toBeVisible()
-  expect(screen.getByText(/Global default/)).toBeVisible()
+  expect(screen.getByText('Channel price')).toBeVisible()
 })
 
-it('shows Not configured when neither channel nor global price exists', async () => {
-  renderCell([channel(1, 'A', [])], [])
+it('shows Not configured when no channel sets a price', async () => {
+  renderCell([channel(1, 'A', [])])
 
   expect(await screen.findByText('Not configured')).toBeVisible()
 })
 
 it('ignores channels that do not serve the model', async () => {
-  renderCell(
-    [
-      {
-        id: 9,
-        name: 'Unrelated',
-        type: 1,
-        models: 'other-model',
-        model_mapping: null,
-        setting: JSON.stringify({
-          pbr_prices: [{ model: 'other-model', input: 99, output: 99 }],
-        }),
-      },
-    ],
-    []
-  )
+  renderCell([
+    {
+      id: 9,
+      name: 'Unrelated',
+      type: 1,
+      models: 'other-model',
+      model_mapping: null,
+      setting: JSON.stringify({
+        pbr_prices: [{ model: 'other-model', input: 99, output: 99 }],
+      }),
+    },
+  ])
 
   expect(await screen.findByText('Not configured')).toBeVisible()
 })

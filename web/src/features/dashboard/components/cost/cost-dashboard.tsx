@@ -95,7 +95,7 @@ function statCard(label: string, value: string) {
 
 export function PbrAnalyticsDashboard(props: {
   defaultGroupBy?: PBRStatsGroupBy
-  groupOptions?: PBRStatsGroupBy[]
+  groupByOptions?: PBRStatsGroupBy[]
 }) {
   const { t } = useTranslation()
   const [rangeKey, setRangeKey] =
@@ -103,7 +103,7 @@ export function PbrAnalyticsDashboard(props: {
   const [groupBy, setGroupBy] = useState<PBRStatsGroupBy>(
     props.defaultGroupBy ?? 'channel'
   )
-  const allowedGroups = props.groupOptions ?? [
+  const allowedGroups = props.groupByOptions ?? [
     'channel',
     'model',
     'lane',
@@ -400,7 +400,7 @@ export function ModelAnalytics() {
   return (
     <PbrAnalyticsDashboard
       defaultGroupBy='model'
-      groupOptions={['model', 'channel', 'lane']}
+      groupByOptions={['model', 'channel', 'lane']}
     />
   )
 }

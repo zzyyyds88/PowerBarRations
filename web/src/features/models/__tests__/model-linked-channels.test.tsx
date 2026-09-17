@@ -47,27 +47,6 @@ async function renderAssociation(channels: unknown[]) {
         },
       }
     }
-    if (url === '/api/option/') {
-      return {
-        data: {
-          success: true,
-          data: [
-            {
-              key: 'PBRModelPrices',
-              value: JSON.stringify([
-                {
-                  model: 'model1',
-                  input: 1,
-                  output: 2,
-                  cache_read: 0,
-                  cache_write: 0,
-                },
-              ]),
-            },
-          ],
-        },
-      }
-    }
     return { data: { success: true, data: { items: [] } } }
   })
   const client = new QueryClient({
@@ -136,10 +115,10 @@ it('lists channels that declare the model and prefers the channel upstream price
   expect(screen.getByText('Default upstream')).toBeVisible()
   expect(screen.queryByText('Unrelated')).not.toBeInTheDocument()
 
+  // 渠道价（单层单价）：配了价的渠道显示金额，未配价的渠道显示"未配置"。
   expect(screen.getAllByText(/¥3 \/ ¥4/).length).toBeGreaterThan(0)
   expect(screen.getByText('Channel price')).toBeVisible()
-  expect(screen.getAllByText(/¥1 \/ ¥2/).length).toBeGreaterThan(0)
-  expect(screen.getByText('Global default')).toBeVisible()
+  expect(screen.getAllByText('Not configured').length).toBeGreaterThan(0)
 
   expect(screen.getAllByRole('button', { name: 'Edit channel' })).toHaveLength(
     2

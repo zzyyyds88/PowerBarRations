@@ -101,12 +101,13 @@ curl -s "${A[@]}" -X PUT -d '{
 CLIENT_PLAIN=$(curl -s "${A[@]}" -X POST -d '{"name":"client-w5"}' "$BASE/api/v1/keys" | jget 'd["key"]')
 [[ -n "$CLIENT_PLAIN" ]] || { echo "FAIL: 未取得客户端密钥"; exit 1; }
 
-# 单价表（design-v1 §16.9#7）：人民币/百万 token，只用于日志折算，不参与准入、不扣额度。
+# 渠道级上游单价（design-v1 §16.9#7，单层单价）：人民币/百万 token，只用于日志折算，
+# 不参与准入、不扣额度；没有全局默认单价表，渠道未配价即不折算。
 # 断言按"实际 usage × 单价 / 1e6"推导，而不是写死数字：假上游的 token 数变化时
 # 这条用例仍然验的是"折算公式对不对"，而不是"fixture 有没有变"。
-curl -s "${A[@]}" -X PUT -d '{"model_prices":[{"model":"w5-model","input":1000,"output":2000}]}' \
-  "$BASE/api/v1/system/options" > /dev/null
-OPTIONS_AFTER_PRICING=$(curl -s "${A[@]}" "$BASE/api/v1/system/options")
+curl -s "${A[@]}" -X PUT -d '{"prices":[{"model":"w5-model","input":1000,"output":2000}]}' \
+  "$BASE/api/v1/channels/channel-a" > /dev/null
+CHANNEL_AFTER_PRICING=$(curl -s "${A[@]}" "$BASE/api/v1/channels/channel-a")
 echo "  配置完成（管理密钥与客户端密钥均不打印）"
 
 chat() { # chat <model> [client-key]
@@ -213,14 +214,14 @@ assert_json "成功请求带 token 用量与折算金额" "$SUCCESS_DETAIL" \
 
 echo
 echo "=== 验收门：单价表只折算不扣费（design-v1 §16.9#7 / G7）==="
-assert_json "PUT 后回读单价表一致" "$OPTIONS_AFTER_PRICING" \
-  "len(d['model_prices'])==1 and d['model_prices'][0]['model']=='w5-model' and d['model_prices'][0]['input']==1000 and d['model_prices'][0]['output']==2000"
-assert_json "按单价表折算出的金额正确（usage × 单价 / 1e6）" "$SUCCESS_DETAIL" \
+assert_json "渠道 PUT 后回读单价一致" "$CHANNEL_AFTER_PRICING" \
+  "len(d['prices'])==1 and d['prices'][0]['model']=='w5-model' and d['prices'][0]['input']==1000 and d['prices'][0]['output']==2000"
+assert_json "按渠道单价折算出的金额正确（usage × 单价 / 1e6）" "$SUCCESS_DETAIL" \
   "abs(d['estimated_cost'] - (d['prompt_tokens']*1000 + d['completion_tokens']*2000)/1e6) < 1e-9 and d['estimated_cost'] > 0"
-# 未配置单价的模型不折算：请求模型名才是计价键，找不到就不给金额（不是回退到基座比例价）。
-curl -s "${A[@]}" -X PUT -d '{"model_prices":[]}' "$BASE/api/v1/system/options" > /dev/null
-CLEARED=$(curl -s "${A[@]}" "$BASE/api/v1/system/options")
-assert_json "清空单价表后回读为空" "$CLEARED" "d['model_prices']==[]"
+# 未配置单价的渠道不折算：请求模型名才是计价键，渠道没配价就不给金额（单层单价，无全局兜底）。
+curl -s "${A[@]}" -X PUT -d '{"prices":[]}' "$BASE/api/v1/channels/channel-a" > /dev/null
+CLEARED=$(curl -s "${A[@]}" "$BASE/api/v1/channels/channel-a")
+assert_json "清空渠道单价后回读为空" "$CLEARED" "d['prices']==[]"
 
 echo
 echo "=== 验收门：单条平均 < 2KB ==="

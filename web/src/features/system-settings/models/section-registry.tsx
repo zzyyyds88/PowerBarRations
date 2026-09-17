@@ -24,7 +24,6 @@ import { GeminiSettingsCard } from './gemini-settings-card'
 import { GlobalSettingsCard } from './global-settings-card'
 import { GrokSettingsCard } from './grok-settings-card'
 import { LaneDefaultsSection } from './lane-defaults-section'
-import { ModelPricesSection } from './model-prices-section'
 import { RoutingReliabilitySection } from './routing-reliability-section'
 
 function formatJsonForEditor(value: string, fallback: string) {
@@ -173,13 +172,6 @@ const MODELS_SECTIONS = [
             settings['channel_affinity_setting.rules'],
         }}
       />
-    ),
-  },
-  {
-    id: 'model-prices',
-    titleKey: 'Model prices',
-    build: (settings: ModelSettings) => (
-      <ModelPricesSection defaultValue={settings.PBRModelPrices ?? '[]'} />
     ),
   },
 ] as const

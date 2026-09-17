@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient, useIsFetching, useQuery } from '@tanstack/react-query'
+import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
@@ -25,7 +25,6 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
 import {
   Select,
   SelectContent,
@@ -39,10 +38,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { getGroups } from '@/lib/groups'
 import { useMediaQuery } from '@/hooks'
-import { getUserGroups } from '@/lib/api'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
@@ -126,25 +122,6 @@ export function CommonLogsFilterBar<TData>(
   const { isAdminView: isAdmin } = useLogsViewScope()
   const { sensitiveVisible, setSensitiveVisible } = useUsageLogsContext()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
-  const { data: adminGroups } = useQuery({
-    queryKey: ['groups'],
-    queryFn: async () => requireServerSuccess(await getGroups()),
-    enabled: isAdmin,
-  })
-  const { data: userGroups } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
-    enabled: !isAdmin,
-  })
-  const groupOptions = useMemo(() => {
-    const groups = isAdmin
-      ? (adminGroups?.data ?? [])
-      : Object.keys(userGroups?.data ?? {})
-    return groups
-      .filter((group) => group !== 'auto')
-      .map((group) => ({ label: group, value: group }))
-  }, [isAdmin, adminGroups, userGroups])
-
   const searchState = useMemo<CommonLogDraft>(() => {
     const { start, end } = getDefaultTimeRange()
     const sourceValues = {
@@ -270,7 +247,7 @@ export function CommonLogsFilterBar<TData>(
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
-    !!filters.model || !!filters.group || hasTypeFilter || hasExpandedFilters
+    !!filters.model || hasTypeFilter || hasExpandedFilters
 
   const expandedFilterCount = [
     filters.token,
@@ -339,21 +316,6 @@ export function CommonLogsFilterBar<TData>(
         placeholder={t('Model Name')}
         value={filters.model || ''}
         onChange={(e) => handleChange('model', e.target.value)}
-        onKeyDown={handleKeyDown}
-      />
-    </LogsFilterField>
-  )
-  const groupFilter = (
-    <LogsFilterField className={sensitiveInputClass}>
-      <Combobox
-        options={groupOptions}
-        allowCustomValue
-        aria-label={t('Group')}
-        emptyText={t('No group found.')}
-        placeholder={t('Group')}
-        className='h-8 min-w-0 text-sm leading-5'
-        value={filters.group || ''}
-        onValueChange={(value) => handleChange('group', value ?? '')}
         onKeyDown={handleKeyDown}
       />
     </LogsFilterField>
@@ -492,7 +454,6 @@ export function CommonLogsFilterBar<TData>(
         <>
           {dateRangeFilter}
           {modelFilter}
-          {groupFilter}
           {typeFilter}
         </>
       }
@@ -501,13 +462,12 @@ export function CommonLogsFilterBar<TData>(
       mobileFilters={
         <>
           {modelFilter}
-          {groupFilter}
           {typeFilter}
           {advancedFilters}
         </>
       }
       mobileFilterCount={
-        [filters.model, filters.group, hasTypeFilter].filter(Boolean).length +
+        [filters.model, hasTypeFilter].filter(Boolean).length +
         expandedFilterCount
       }
       hasAdvancedActiveFilters={hasExpandedFilters}

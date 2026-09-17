@@ -204,7 +204,6 @@ export const channelFormSchema = z
     key: z.string(),
     openai_organization: z.string().optional(),
     models: z.string().min(1, ERROR_MESSAGES.REQUIRED_MODELS),
-    group: z.array(z.string()).min(1, ERROR_MESSAGES.REQUIRED_GROUP),
     model_mapping: z
       .string()
       .optional()
@@ -417,7 +416,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   key: '',
   openai_organization: '',
   models: '',
-  group: ['default'],
   model_mapping: '',
   test_model: '',
   auto_ban: 1,
@@ -568,7 +566,6 @@ export function transformChannelToFormDefaults(
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
-    group: parseGroups(channel.group || 'default'),
     model_mapping: channel.model_mapping || '',
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
@@ -619,12 +616,13 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     system_prompt_override: formData.system_prompt_override || false,
   }
 
-  // 渠道级上游单价：仅保留仍在模型清单中、且至少填了一项价格的模型（成本折算用）。
-  // 后端按请求模型精确匹配渠道价；全空条目会命中并返回 0，从而覆盖全局默认价，故必须丢弃。
-  const channelModelSet = new Set(parseModels(formData.models))
+  // 渠道级上游单价（单层单价，design-v1 §16.9#7）：仅保留至少填了一项价格的模型
+  // （成本折算用）。计价键是**请求模型名**，允许是渠道模型清单之外的行（独立车道名等
+  // 自定义计价行），故不按清单过滤；全空条目落库后命中即返回 0，与"未配置"无法区分，
+  // 必须丢弃。
   const channelPrices = (formData.pbr_prices ?? [])
     .map((item) => ({ ...item, model: item.model.trim() }))
-    .filter((item) => channelModelSet.has(item.model))
+    .filter((item) => item.model !== '')
     .filter(
       (item) =>
         item.input !== undefined ||
@@ -817,7 +815,8 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     key: formData.key,
     openai_organization: formData.openai_organization || null,
     models: formData.models,
-    group: formatGroups(formData.group),
+    // PBR 无用户分组：后端渠道结构仍带 group 字段，固定送 'default'（design-v1 §16.9）。
+    group: 'default',
     model_mapping: formData.model_mapping || null,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
@@ -863,7 +862,8 @@ export function transformFormDataToUpdatePayload(
     base_url: normalizeBaseUrl(formData.base_url) || null,
     openai_organization: formData.openai_organization || null,
     models: formData.models,
-    group: formatGroups(formData.group),
+    // PBR 无用户分组：后端渠道结构仍带 group 字段，固定送 'default'（design-v1 §16.9）。
+    group: 'default',
     model_mapping: formData.model_mapping || null,
     test_model: formData.test_model || null,
     auto_ban: formData.auto_ban ?? 1,
@@ -940,26 +940,9 @@ export function parseModels(models: string): string[] {
 }
 
 /**
- * Parse groups string to array
- */
-export function parseGroups(groups: string): string[] {
-  if (!groups) return []
-  return groups
-    .split(',')
-    .map((g) => g.trim())
-    .filter((g) => g.length > 0)
-}
-
-/**
  * Format models array to string
  */
 export function formatModels(models: string[]): string {
   return models.join(',')
 }
 
-/**
- * Format groups array to string
- */
-export function formatGroups(groups: string[]): string {
-  return groups.join(',')
-}

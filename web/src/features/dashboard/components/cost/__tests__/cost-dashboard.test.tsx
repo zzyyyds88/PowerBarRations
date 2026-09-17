@@ -75,7 +75,7 @@ describe('cost dashboard channel x model dimension', () => {
     renderDashboard(
       <PbrAnalyticsDashboard
         defaultGroupBy='channel_model'
-        groupOptions={['channel_model']}
+        groupByOptions={['channel_model']}
       />
     )
 
@@ -107,7 +107,7 @@ describe('cost dashboard channel x model dimension', () => {
     renderDashboard(
       <PbrAnalyticsDashboard
         defaultGroupBy='channel_model'
-        groupOptions={['channel_model']}
+        groupByOptions={['channel_model']}
       />
     )
 
@@ -138,7 +138,7 @@ describe('cost dashboard channel x model dimension', () => {
     renderDashboard(
       <PbrAnalyticsDashboard
         defaultGroupBy='channel_model'
-        groupOptions={['channel_model']}
+        groupByOptions={['channel_model']}
       />
     )
 

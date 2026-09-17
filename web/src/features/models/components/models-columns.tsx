@@ -127,7 +127,7 @@ export function useModelsColumns(): ColumnDef<Model>[] {
           </TooltipTrigger>
           <TooltipContent role='tooltip'>
             {t(
-              'Channel price takes precedence; cost conversion only, never affects billing or admission.'
+              'Channel upstream price only; cost conversion only, never affects billing or admission.'
             )}
           </TooltipContent>
         </Tooltip>

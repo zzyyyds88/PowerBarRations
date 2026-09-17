@@ -12,8 +12,9 @@ import (
 
 // ChannelModelPrice 是渠道级上游单价（人民币/百万 token），用于成本折算。
 //
-// 与全局 PBRModelPrices 的关系：渠道价优先（上游实际采购价可能因渠道而异），
-// 未配置时回落到全局默认价，再没有就不折算（estimated_cost=0）。
+// 单层单价：唯一价格来源就是渠道价（同一模型在不同上游采购价可不同）；
+// 渠道未配置该模型时不折算（estimated_cost=0），没有全局默认单价层
+// （design-v1 §16.9#7）。
 type ChannelModelPrice struct {
 	Model      string  `json:"model"`
 	Input      float64 `json:"input,omitempty"`

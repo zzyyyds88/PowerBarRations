@@ -79,7 +79,8 @@ export type Channel = z.infer<typeof channelSchema>
 
 // ChannelModelPrice 渠道级上游单价（人民币/百万 token），用于成本折算。
 //
-// 渠道价优先于全局默认单价表（PBRModelPrices）：同一模型在不同上游的采购价不同。
+// 单层单价（design-v1 §16.9#7）：唯一价格来源就是渠道价（同一模型在不同上游的
+// 采购价不同）；渠道未配置该模型时不折算（0），没有全局默认单价层。
 export interface ChannelModelPrice {
   model: string
   input?: number
