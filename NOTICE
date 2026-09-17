@@ -24,6 +24,20 @@ https://github.com/QuantumNous/new-api
 Modified versions must not misrepresent the origin of the software and must
 mark their changes in accordance with AGPLv3 Section 7(c).
 
+==== Octopus Notices ====
+
+octopus
+https://github.com/bestruirui/octopus
+Copyright (c) octopus contributors.
+
+Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+
+This project's routing order, cooldown, affinity, and circuit-breaker semantics
+reference octopus. Where code or assets are derived from it, AGPL-3.0 terms and
+attribution notices are preserved. A second octopus fork
+(https://github.com/Hureru/octopus, AGPL-3.0) was used only as design reference
+for the three-state circuit breaker.
+
 ==== Third-Party Notices ====
 
 This product includes third-party open source software. Copyright notices and

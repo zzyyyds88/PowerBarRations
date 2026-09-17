@@ -8,8 +8,11 @@ Transitive dependencies should be audited before a final external release.
 
 ## Upstream Attribution
 
-Parts of the relay pipeline and vendor adapters are derived from [QuantumNous/new-api](https://github.com/QuantumNous/new-api) (AGPL-3.0).
-Routing order / cooldown / affinity / circuit-breaker semantics reference [bestruirui/octopus](https://github.com/bestruirui/octopus).
+This project is a **secondary development (modified version)** of two AGPL-3.0 upstream projects:
+
+- [QuantumNous/new-api](https://github.com/QuantumNous/new-api) (AGPL-3.0) — the relay pipeline, vendor adapters, and console frontend are derived from it.
+- [bestruirui/octopus](https://github.com/bestruirui/octopus) (AGPL-3.0) — routing order, cooldown, affinity, and circuit-breaker semantics reference it; [Hureru/octopus](https://github.com/Hureru/octopus) (AGPL-3.0) was used only as circuit-breaker design reference.
+
 Required attribution notices are reproduced in [`NOTICE`](NOTICE).
 
 ## Dependency Inventory

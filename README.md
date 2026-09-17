@@ -9,7 +9,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zzyyyds88/PowerBarRations/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/zzyyyds88/PowerBarRations/actions/workflows/ci.yml/badge.svg?branch=main" /></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue" /></a>
   <img alt="Go" src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white" />
   <img alt="Node" src="https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white" />
@@ -33,6 +32,10 @@
 >
 > 对下游协议零破坏：存量车道名与 `/v1/*` 协议、错误语义一律不变，下游只改 `base_url`。
 
+> **来源与二次开发**：本项目是对 [new-api](https://github.com/QuantumNous/new-api)（转发管道与厂商适配层、控制台前端）与
+> [octopus](https://github.com/bestruirui/octopus)（路由顺序、冷却、亲和、熔断语义参考）的**二次开发**，
+> 两者均为 **AGPL-3.0** 许可；署名与许可义务见 [`NOTICE`](NOTICE) 与 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
+
 **设计文档（唯一事实来源）**
 
 - 设计基线（架构与取舍）：[`docs/design-v1.md`](docs/design-v1.md)
@@ -55,6 +58,22 @@
 - **单节点极简**：单个二进制 + 单个 SQLite，无外部数据库 / 缓存 / 队列。
 - **上游成本可见**：按渠道 × 模型聚合请求数、token、成功率与上游折算花费（元）；只折算、非计费。
 - **可编排全部 HTTP**：管理面完整 API + OpenAPI，适合 AI/脚本无人值守运维；运行态（冷却/熔断）重启清空。
+
+---
+
+## 界面预览
+
+> 以下截图来自**临时演示实例**（假上游 + 演示渠道/车道），不含任何真实渠道或密钥。
+
+| 首页 | 数据看板 |
+|---|---|
+| ![首页](docs/screenshots/landing.png) | ![数据看板](docs/screenshots/dashboard.png) |
+| **渠道管理** | **路由与故障切换** |
+| ![渠道管理](docs/screenshots/channels.png) | ![路由与故障切换](docs/screenshots/routes.png) |
+| **模型管理** | **用量日志** |
+| ![模型管理](docs/screenshots/models.png) | ![用量日志](docs/screenshots/logs.png) |
+| **令牌与密钥** | **系统设置** |
+| ![令牌与密钥](docs/screenshots/keys.png) | ![系统设置](docs/screenshots/settings.png) |
 
 ---
 
@@ -410,7 +429,7 @@ verify/            分波次端到端验收证据
 
 ## 许可
 
-本项目是 [new-api](https://github.com/QuantumNous/new-api) 的二次开发，保留其 AGPL 版权头、
+本项目是对 [new-api](https://github.com/QuantumNous/new-api) 与 [octopus](https://github.com/bestruirui/octopus) 的**二次开发**（两者均为 AGPL-3.0），保留其 AGPL 版权头、
 [`LICENSE`](LICENSE)、[`NOTICE`](NOTICE) 与 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md)。
 品牌可替换，版权不可替换。路由顺序 / 冷却 / 亲和 / 熔断语义参考 [octopus](https://github.com/bestruirui/octopus)。
 
