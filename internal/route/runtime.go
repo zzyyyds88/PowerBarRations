@@ -3,10 +3,11 @@ package route
 import (
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 // 本文件实现成员级的运行态：冷却、熔断三态（含半开与指数退避）、亲和、单探测槽。
@@ -69,6 +70,10 @@ type CircuitSettings struct {
 	OpenSeconds int
 	// MaxOpenSeconds 指数退避的时长上限。
 	MaxOpenSeconds int
+	// RollingMinSamples 滚动窗口触发开断所需的最小样本数。
+	RollingMinSamples int
+	// RollingFailureRate 滚动窗口失败率达到该值即视为持续失败（0 < rate <= 1）。
+	RollingFailureRate float64
 }
 
 // 熔断参数的 system/options 键（design-v1 §7.5：阈值与时长经 system/options 配置）。
@@ -76,6 +81,10 @@ const (
 	OptionCircuitFailureThreshold = "PBRCircuitFailureThreshold"
 	OptionCircuitOpenSeconds      = "PBRCircuitOpenSeconds"
 	OptionCircuitMaxOpenSeconds   = "PBRCircuitMaxOpenSeconds"
+	// OptionCircuitRollingMinSamples / OptionCircuitRollingFailureRate 滚动窗口失败率证据
+	// （design-v1 §7.5：阈值经 system/options 可配）。
+	OptionCircuitRollingMinSamples  = "PBRCircuitRollingMinSamples"
+	OptionCircuitRollingFailureRate = "PBRCircuitRollingFailureRate"
 	// OptionLogRetentionDays 明细日志保留天数（design-v1 §16.5，默认 30）。
 	// 不引入 cron：仅作配置，实际清理由外部调 POST /logs/prune 触发。
 	OptionLogRetentionDays = "PBRLogRetentionDays"
@@ -90,10 +99,18 @@ const DefaultLogRetentionDays = 30
 // DefaultProbeConcurrency 探活默认并发上限（design-v1 §16.6）。
 const DefaultProbeConcurrency = 4
 
-// DefaultCircuitSettings 默认值。阈值取 2：两次硬故障、或约三次 5xx 即打开，
-// 对单用户网关足够敏感，又不会被偶发限流误触发（429 权重 0.2，需 10 次）。
+// DefaultCircuitSettings 默认值。累计阈值取 2：两次硬故障（权重 1.0）、或四次
+// 5xx（权重 0.6，0.6×4≥2；3 次只有 1.8）即打开；429 权重 0.2，单靠累计分需 10 次。
+// 另有滚动窗口失败率证据（默认 rollingFailureRateThreshold，可经
+// PBRCircuitRollingFailureRate/PBRCircuitRollingMinSamples 调整），两条取或。
 func DefaultCircuitSettings() CircuitSettings {
-	return CircuitSettings{FailureThreshold: 2, OpenSeconds: 0, MaxOpenSeconds: 1800}
+	return CircuitSettings{
+		FailureThreshold:   2,
+		OpenSeconds:        0,
+		MaxOpenSeconds:     1800,
+		RollingMinSamples:  rollingMinSamples,
+		RollingFailureRate: rollingFailureRateThreshold,
+	}
 }
 
 // Circuit 成员熔断器状态。
@@ -113,6 +130,21 @@ type Circuit struct {
 
 // rollingWindowSize 滚动成功率的窗口大小（定长环形缓冲，避免无界增长）。
 const rollingWindowSize = 20
+
+// 滚动窗口失败率触发开断的保守规则（design-v1 §7.5：除累计失败计分外，
+// "滚动窗口失败率"也是触发证据之一；文档未给具体阈值，故取"样本足够 +
+// 失败率很高"双条件，既能让持续不可用开断，又不被个位数抖动误触发）：
+//
+//   - 窗口内至少 rollingMinSamples 个样本，避免一两次失败就凭比率开断；
+//   - 失败率 >= rollingFailureRateThreshold（0.8），即最近 8~10 个结果里最多
+//     1~2 个成功，属持续不可用而非偶发抖动。
+//
+// 与累计 Score 规则取"或"（recordFailure 中判定）。min=8 保证个位数以内的
+// 短抖动（含 4 次低权重 429 的既有用例）不会仅凭窗口失败率开断。
+const (
+	rollingMinSamples           = 8
+	rollingFailureRateThreshold = 0.8
+)
 
 // recordOutcome 记一次结果进滚动窗口。
 func (c *Circuit) recordOutcome(success bool) {
@@ -135,6 +167,23 @@ func (c *Circuit) RollingSuccessRate() float64 {
 		}
 	}
 	return float64(ok) / float64(len(c.RecentOutcomes))
+}
+
+// RollingFailureRate 最近窗口内的失败率；无样本时返回 0。
+func (c *Circuit) RollingFailureRate() float64 {
+	if c == nil || len(c.RecentOutcomes) == 0 {
+		return 0
+	}
+	return 1 - c.RollingSuccessRate()
+}
+
+// rollingFailureTriggersOpen 判断滚动窗口是否已给出"持续失败"的开断证据。
+// 调用方持 Runtime 锁（recordFailure 内）。
+func (c *Circuit) rollingFailureTriggersOpen(settings CircuitSettings) bool {
+	if c == nil || len(c.RecentOutcomes) < settings.RollingMinSamples {
+		return false
+	}
+	return c.RollingFailureRate() >= settings.RollingFailureRate
 }
 
 // Event 运行态事件（带时间戳，作为验收与排障证据）。
@@ -167,6 +216,12 @@ type Runtime struct {
 	Cooldowns map[string]int64
 	Circuits  map[string]*Circuit
 	Events    []Event
+
+	// prunedInit/prunedSig/prunedVersion 记录最近一次成员集合变更的处理结果，
+	// 供 PruneStaleState 判定"是否需要清理"并拒绝过期配置的清理（routing-spec §1.3）。
+	prunedInit    bool
+	prunedSig     string
+	prunedVersion int64
 }
 
 func newRuntime() *Runtime {
@@ -233,6 +288,12 @@ func CurrentCircuitSettings() CircuitSettings {
 	}
 	if settings.MaxOpenSeconds <= 0 {
 		settings.MaxOpenSeconds = DefaultCircuitSettings().MaxOpenSeconds
+	}
+	if settings.RollingMinSamples <= 0 {
+		settings.RollingMinSamples = rollingMinSamples
+	}
+	if settings.RollingFailureRate <= 0 || settings.RollingFailureRate > 1 {
+		settings.RollingFailureRate = rollingFailureRateThreshold
 	}
 	return settings
 }
@@ -321,7 +382,7 @@ const (
 	availSkip                           // 冷却中或熔断打开，跳过
 )
 
-func (r *Runtime) availabilityOf(key string, memberCooldownSeconds int, settings CircuitSettings) availability {
+func (r *Runtime) availabilityOf(key string, settings CircuitSettings) availability {
 	now := nowMs()
 	if circuit := r.Circuits[key]; circuit != nil {
 		switch circuit.State {
@@ -425,7 +486,9 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 		r.appendEvent(EventCooldown, key, "cooldown_until="+strconv.FormatInt(until, 10))
 	}
 
-	if circuit.State != CircuitOpen && circuit.Score >= settings.FailureThreshold {
+	// 开断证据取"或"：累计失败分达阈值，或滚动窗口失败率达标（design-v1 §7.5）。
+	if circuit.State != CircuitOpen &&
+		(circuit.Score >= settings.FailureThreshold || circuit.rollingFailureTriggersOpen(settings)) {
 		r.openCircuit(key, circuit, now, memberCooldownSeconds, settings)
 	}
 }
@@ -558,15 +621,64 @@ func (r *Runtime) Reset() int {
 // 新成员会**直接继承**旧成员的冷却与熔断计分——表现为"刚加回来的成员
 // 立刻被判为熔断/冷却中"。探测槽与 CurrentMember 同理需要收敛。
 //
-// 注意只在"解析出的成员集合非空"时清理：模型暂时没有可用渠道（例如渠道被
+// 只在"解析出的成员集合非空"时清理：模型暂时没有可用渠道（例如渠道被
 // 禁用/删除）时解析结果本就为空，此时清空全部状态会把仍有意义的冷却记录
 // 一并抹掉，等渠道恢复后失去退避保护。
-func (r *Runtime) PruneStaleState(valid map[string]bool) {
+//
+// 并发与热更新安全：NewState 每次请求都会用本请求解析到的成员集合调用本函数。
+// 若请求 A（旧配置，成员 {ch1}）与 B（新配置，成员 {ch1,ch2}）并发，B 先写入
+// ch2 的冷却/熔断、A 再用 {ch1} 清理，就会误删 B 刚写入的状态。因此增加
+// laneVersion（Lane.UpdatedAt）判定：版本比上次处理过的更旧的请求一律不动
+// 运行态（等价于忽略过期配置的解析结果）；只有"版本不旧、且成员集合签名确实
+// 变化"时才真正清理一次。laneVersion==0 表示来源无法提供版本（测试夹具/历史
+// 数据），退回按签名变化清理。
+func (r *Runtime) PruneStaleState(valid map[string]bool, laneVersion int64) {
 	if len(valid) == 0 {
 		return
 	}
+	sig := memberSetSignature(valid)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.prunedInit {
+		// 首次观测：只登记，未清理（此时没有可比对的旧状态）。
+		r.prunedInit = true
+		r.prunedSig = sig
+		r.prunedVersion = laneVersion
+		return
+	}
+	// 过期配置的并发请求：版本更旧 → 不得用旧成员集合裁剪新配置刚写入的状态。
+	if laneVersion != 0 && r.prunedVersion != 0 && laneVersion < r.prunedVersion {
+		return
+	}
+	if sig == r.prunedSig {
+		// 成员集合未变：无需清理；版本只允许前进，绝不回退。
+		if laneVersion > r.prunedVersion {
+			r.prunedVersion = laneVersion
+		}
+		return
+	}
+	// 成员集合真正变化（且非过期解析）：清理一次并登记新集合。
+	r.pruneStaleLocked(valid)
+	r.prunedSig = sig
+	if laneVersion > r.prunedVersion {
+		r.prunedVersion = laneVersion
+	}
+}
+
+// memberSetSignature 成员集合的稳定签名（排序后拼接），用于判定"集合是否变化"。
+func memberSetSignature(valid map[string]bool) string {
+	keys := make([]string, 0, len(valid))
+	for key := range valid {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "\x00")
+}
+
+// pruneStaleLocked 真正执行残留清理。调用方持 r.mu。
+func (r *Runtime) pruneStaleLocked(valid map[string]bool) {
 	for key := range r.Cooldowns {
 		if !valid[key] {
 			delete(r.Cooldowns, key)
@@ -622,7 +734,6 @@ type HealthSnapshot struct {
 func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings) HealthSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cooldownSeconds := resolved.Config.Normalize().MemberCooldownSeconds
 	snapshot := HealthSnapshot{
 		Lane:          resolved.Model,
 		Source:        resolved.Source,
@@ -652,7 +763,7 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 			item.LastErrorKind = circuit.LastErrorKind
 		}
 		item.CooldownUntil = r.Cooldowns[key]
-		item.Available = r.availabilityOf(key, cooldownSeconds, settings) != availSkip
+		item.Available = r.availabilityOf(key, settings) != availSkip
 		snapshot.Members = append(snapshot.Members, item)
 	}
 	return snapshot

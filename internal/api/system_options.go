@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/common"
-	"pbr/internal/apierr"
-	"pbr/internal/route"
-	"pbr/model"
-	"pbr/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -23,29 +23,33 @@ import (
 // 关键词条目属部署数据，只经 API 读写，不进仓库（design-v1 §7.6）。
 
 type systemOptions struct {
-	CircuitFailureThreshold  float64  `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds       int      `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds    int      `json:"circuit_max_open_seconds"`
-	LogRetentionDays         int      `json:"log_retention_days"`
-	ProbeConcurrency         int      `json:"probe_concurrency"`
-	AutomaticEnableChannel   bool     `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel  bool     `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords []string `json:"automatic_disable_keywords"`
+	CircuitFailureThreshold   float64  `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds        int      `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds     int      `json:"circuit_max_open_seconds"`
+	CircuitRollingMinSamples  int      `json:"circuit_rolling_min_samples"`
+	CircuitRollingFailureRate float64  `json:"circuit_rolling_failure_rate"`
+	LogRetentionDays          int      `json:"log_retention_days"`
+	ProbeConcurrency          int      `json:"probe_concurrency"`
+	AutomaticEnableChannel    bool     `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel   bool     `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords  []string `json:"automatic_disable_keywords"`
 	// LaneDefaults 默认六键：新建/一键固化车道写入的初值，也是车道未显式配置时的回落值。
 	// 指针用于区分"配置文件里没有这个字段"（保持原值）与"显式给了值"。
 	LaneDefaults *model.LaneRelayConfig `json:"lane_defaults,omitempty"`
 }
 
 type systemOptionsPatch struct {
-	CircuitFailureThreshold  *float64               `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds       *int                   `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds    *int                   `json:"circuit_max_open_seconds"`
-	LogRetentionDays         *int                   `json:"log_retention_days"`
-	ProbeConcurrency         *int                   `json:"probe_concurrency"`
-	AutomaticEnableChannel   *bool                  `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel  *bool                  `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords *[]string              `json:"automatic_disable_keywords"`
-	LaneDefaults             *model.LaneRelayConfig `json:"lane_defaults"`
+	CircuitFailureThreshold   *float64               `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds        *int                   `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds     *int                   `json:"circuit_max_open_seconds"`
+	CircuitRollingMinSamples  *int                   `json:"circuit_rolling_min_samples"`
+	CircuitRollingFailureRate *float64               `json:"circuit_rolling_failure_rate"`
+	LogRetentionDays          *int                   `json:"log_retention_days"`
+	ProbeConcurrency          *int                   `json:"probe_concurrency"`
+	AutomaticEnableChannel    *bool                  `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel   *bool                  `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords  *[]string              `json:"automatic_disable_keywords"`
+	LaneDefaults              *model.LaneRelayConfig `json:"lane_defaults"`
 }
 
 // validateLaneDefaults 校验默认六键：四个"必须为正"的时长/预算、两个允许为 0 的间隔。
@@ -105,15 +109,17 @@ func currentSystemOptions() systemOptions {
 	}
 	laneDefaults := model.DefaultLaneRelayConfig()
 	return systemOptions{
-		CircuitFailureThreshold:  settings.FailureThreshold,
-		CircuitOpenSeconds:       settings.OpenSeconds,
-		CircuitMaxOpenSeconds:    settings.MaxOpenSeconds,
-		LogRetentionDays:         CurrentLogRetentionDays(),
-		ProbeConcurrency:         CurrentProbeConcurrency(),
-		AutomaticEnableChannel:   common.AutomaticEnableChannelEnabled,
-		AutomaticDisableChannel:  common.AutomaticDisableChannelEnabled,
-		AutomaticDisableKeywords: keywords,
-		LaneDefaults:             &laneDefaults,
+		CircuitFailureThreshold:   settings.FailureThreshold,
+		CircuitOpenSeconds:        settings.OpenSeconds,
+		CircuitMaxOpenSeconds:     settings.MaxOpenSeconds,
+		CircuitRollingMinSamples:  settings.RollingMinSamples,
+		CircuitRollingFailureRate: settings.RollingFailureRate,
+		LogRetentionDays:          CurrentLogRetentionDays(),
+		ProbeConcurrency:          CurrentProbeConcurrency(),
+		AutomaticEnableChannel:    common.AutomaticEnableChannelEnabled,
+		AutomaticDisableChannel:   common.AutomaticDisableChannelEnabled,
+		AutomaticDisableKeywords:  keywords,
+		LaneDefaults:              &laneDefaults,
 	}
 }
 
@@ -204,6 +210,20 @@ func PutSystemOptions(c *gin.Context) {
 			return
 		}
 		updates[route.OptionCircuitMaxOpenSeconds] = strconv.Itoa(*patch.CircuitMaxOpenSeconds)
+	}
+	if patch.CircuitRollingMinSamples != nil {
+		if *patch.CircuitRollingMinSamples <= 0 {
+			apierr.Validation(c, "circuit_rolling_min_samples must be > 0")
+			return
+		}
+		updates[route.OptionCircuitRollingMinSamples] = strconv.Itoa(*patch.CircuitRollingMinSamples)
+	}
+	if patch.CircuitRollingFailureRate != nil {
+		if *patch.CircuitRollingFailureRate <= 0 || *patch.CircuitRollingFailureRate > 1 {
+			apierr.Validation(c, "circuit_rolling_failure_rate must be in (0, 1]")
+			return
+		}
+		updates[route.OptionCircuitRollingFailureRate] = strconv.FormatFloat(*patch.CircuitRollingFailureRate, 'f', -1, 64)
 	}
 	if patch.LogRetentionDays != nil {
 		if *patch.LogRetentionDays <= 0 {

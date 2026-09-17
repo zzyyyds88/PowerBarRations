@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"pbr/model"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -102,12 +102,17 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		return KindSoftRateLimit
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
 		return KindHardAuth
+	case code == http.StatusBadRequest || code == http.StatusUnprocessableEntity:
+		// routing-spec §4.1：只有 400/422（且未命中欠费关键词）才是"请求本身不合法"
+		// 的 client_error。401/403/408/429 已在上方分流。
+		return KindClientError
 	case code == http.StatusRequestTimeout, code == http.StatusServiceUnavailable, code >= 500:
 		return KindSoftTransient
-	case code >= 400 && code < 500:
-		return KindClientError
 	default:
-		// 状态码 0/异常：按传输故障处理。
+		// 其余 4xx（404 成员无此模型、405/409 等）与状态码 0/异常：一律按可逃逸的
+		// 瞬时失败处理（routing-spec §4.1 只把 400/422 定义为 client_error）。
+		// 若把 404 这类"上游确实没有该模型"的失败归成 client_error，请求会不换人、
+		// 不冷却，直接撞死在第一个成员上。
 		return KindSoftTransient
 	}
 }
@@ -147,14 +152,13 @@ type State struct {
 	Route   *model.ResolvedRoute
 	Runtime *Runtime
 
-	mu              sync.Mutex
-	order           []int // Route.Members 的下标，按尝试顺序
-	current         int   // 当前成员在 Route.Members 中的下标；-1 表示尚未选过
-	attempts        map[int]int
-	history         []Attempt
-	maxPerMem       int
+	mu       sync.Mutex
+	order    []int // Route.Members 的下标，按尝试顺序
+	current  int   // 当前成员在 Route.Members 中的下标；-1 表示尚未选过
+	attempts map[int]int
+	history  []Attempt
+	// cooldownSeconds 车道级冷却时长（写入运行态时用；成员级覆盖在 configFor）。
 	cooldownSeconds int
-	affinitySeconds int
 	// attemptStartedAt 本轮尝试的开始时刻，用于 attempts[].duration_ms
 	// （routing-spec §9 / api-spec §4.4）。此前该字段声明了却从不赋值，
 	// 带 omitempty 导致响应里根本不出现，排障时无法定位"哪个成员慢"。
@@ -216,12 +220,7 @@ func NewState(resolved *model.ResolvedRoute) *State {
 		Runtime:         runtime,
 		current:         -1,
 		attempts:        map[int]int{},
-		maxPerMem:       cfg.MemberMaxAttempts,
 		cooldownSeconds: cfg.MemberCooldownSeconds,
-		affinitySeconds: cfg.MemberAffinitySeconds,
-	}
-	if s.maxPerMem <= 0 {
-		s.maxPerMem = 1
 	}
 	order := make([]int, 0, len(resolved.Members))
 	if resolved.PinnedMemberId != 0 {
@@ -250,7 +249,9 @@ func NewState(resolved *model.ResolvedRoute) *State {
 	for i := range resolved.Members {
 		valid[memberKeyOf(&resolved.Members[i])] = true
 	}
-	s.Runtime.PruneStaleState(valid)
+	// 传入车道版本：只有"比上次处理过的版本更新、且成员集合确实变化"时才清理一次，
+	// 避免旧配置的并发请求用旧成员集合删掉新配置刚写入的成员运行态（routing-spec §1.3）。
+	s.Runtime.PruneStaleState(valid, resolved.LaneVersion)
 	return s
 }
 
@@ -368,10 +369,6 @@ func (s *State) recordSkipLocked(key, member string) {
 	})
 }
 
-func failedAttempt(num int, member string, kind ErrorKind, err *types.NewAPIError) Attempt {
-	return failedAttemptWithDuration(num, member, kind, err, 0)
-}
-
 func failedAttemptWithDuration(num int, member string, kind ErrorKind, err *types.NewAPIError, durationMs int64) Attempt {
 	return Attempt{
 		AttemptNum: num,
@@ -395,26 +392,29 @@ func (s *State) pickLocked() (*model.RouteMember, bool) {
 
 // pickFailoverLocked 按 priority 降序遍历，取第一个可用成员（routing-spec §2.2）。
 func (s *State) pickFailoverLocked() (*model.RouteMember, bool) {
-	chosen, probe := s.chooseFailoverLocked()
+	chosen := s.chooseFailoverLocked()
 	if chosen < 0 {
 		return nil, false
 	}
 	s.attempts[chosen]++
 	s.markCurrentLocked(chosen)
-	_ = probe
 	return &s.Route.Members[chosen], true
 }
 
-func (s *State) chooseFailoverLocked() (int, bool) {
+// chooseFailoverLocked 选出本轮成员并处理探测槽。调用方持 s.mu；
+// Runtime.mu 由内部获取。返回 -1 表示无可选成员。
+func (s *State) chooseFailoverLocked() int {
 	chosen := -1
-	probe := false
 	s.Runtime.withLock(func() {
 		// 亲和期内沿用当前成员（§6：不提前切回高优先级成员）。
 		if s.Runtime.HasCurrent && s.Runtime.AffinityUntil > nowMs() {
 			if idx := s.indexOfKey(s.Runtime.CurrentMember); idx >= 0 {
 				key := memberKeyOf(&s.Route.Members[idx])
 				if s.attempts[idx] < s.budgetFor(idx) &&
-					s.Runtime.availabilityOf(key, s.cooldownSeconds, CurrentCircuitSettings()) != availSkip {
+					s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availSkip {
+					// 亲和绕过的高优先级成员必须留痕，否则 attempts 链无法解释
+					// "为什么没用 P1"（routing-spec §6/§9）。
+					s.recordAffinitySkipsLocked(idx)
 					chosen = idx
 					return
 				}
@@ -425,7 +425,7 @@ func (s *State) chooseFailoverLocked() (int, bool) {
 				continue
 			}
 			key := memberKeyOf(&s.Route.Members[idx])
-			switch s.Runtime.availabilityOf(key, s.cooldownSeconds, CurrentCircuitSettings()) {
+			switch s.Runtime.availabilityOf(key, CurrentCircuitSettings()) {
 			case availSkip:
 				// 记录"为什么没用这个成员"（routing-spec §9）：cooldown / circuit_break。
 				s.recordSkipLocked(key, memberLabel(&s.Route.Members[idx]))
@@ -438,7 +438,7 @@ func (s *State) chooseFailoverLocked() (int, bool) {
 				}
 				s.claimedProbe = key
 				s.Runtime.recordProbeStart(key, s.Runtime.circuitOpen(key))
-				chosen, probe = idx, true
+				chosen = idx
 				return
 			default:
 				chosen = idx
@@ -446,7 +446,22 @@ func (s *State) chooseFailoverLocked() (int, bool) {
 			}
 		}
 	})
-	return chosen, probe
+	return chosen
+}
+
+// recordAffinitySkipsLocked 为亲和期内被绕过、且本轮仍有预算的高优先级成员
+// （按 s.order 排在 affinityIdx 之前者）补一条"被跳过"记录。调用方持 s.mu
+// **且持 Runtime 锁**（本函数从 chooseFailoverLocked 的 withLock 块内调用）。
+func (s *State) recordAffinitySkipsLocked(affinityIdx int) {
+	for _, idx := range s.order {
+		if idx == affinityIdx {
+			return
+		}
+		if s.attempts[idx] >= s.budgetFor(idx) {
+			continue
+		}
+		s.recordSkipLocked(memberKeyOf(&s.Route.Members[idx]), memberLabel(&s.Route.Members[idx]))
+	}
 }
 
 // pickManualLocked 只用手工指定的成员；不可用即"无可用"，不静默换人（routing-spec §2.1）。
@@ -485,85 +500,6 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 	s.attempts[idx]++
 	s.markCurrentLocked(idx)
 	return &s.Route.Members[idx], true
-}
-
-type memberCandidate struct {
-	idx   int
-	key   string
-	probe bool
-}
-
-// availableCandidatesLocked 收集当前可用成员；无正常可用成员时回落到"到期可探测"的成员
-// （探测槽单槽，因此最多一个）。
-// availableCandidatesLocked 收集候选。"冷却/熔断到期"的成员同样是候选（按规范应被放行探测），
-// 但**此时不占探测槽**——只有真正选中它时才占；否则"筛候选时占槽、最后选了别人"会让槽永久泄漏。
-func (s *State) availableCandidatesLocked() []memberCandidate {
-	var candidates []memberCandidate
-	s.Runtime.withLock(func() {
-		for _, idx := range s.order {
-			if s.attempts[idx] >= s.budgetFor(idx) {
-				continue
-			}
-			member := &s.Route.Members[idx]
-			key := memberKeyOf(member)
-			switch s.Runtime.availabilityOf(key, s.cooldownSeconds, CurrentCircuitSettings()) {
-			case availSkip:
-				continue
-			case availProbeReady:
-				candidates = append(candidates, memberCandidate{idx: idx, key: key, probe: true})
-			default:
-				candidates = append(candidates, memberCandidate{idx: idx, key: key})
-			}
-		}
-	})
-	return candidates
-}
-
-// claimProbe 为"探测候选"占用单槽；已被占用时返回 false。
-func (s *State) claimProbe(c memberCandidate) bool {
-	claimed := false
-	s.Runtime.withLock(func() {
-		if !s.Runtime.takeProbe(c.key) {
-			return
-		}
-		s.claimedProbe = c.key
-		s.Runtime.recordProbeStart(c.key, s.Runtime.circuitOpen(c.key))
-		claimed = true
-	})
-	return claimed
-}
-
-func (s *State) commitCandidateLocked(c memberCandidate) (*model.RouteMember, bool) {
-	if c.probe && !s.claimProbe(c) {
-		// 探测位已被其他请求占用：退回正常可用成员，本请求不做探测
-		fallback, ok := s.firstHealthyCandidateLocked()
-		if !ok {
-			return nil, false
-		}
-		c = fallback
-	}
-	s.attempts[c.idx]++
-	s.markCurrentLocked(c.idx)
-	return &s.Route.Members[c.idx], true
-}
-
-func (s *State) firstHealthyCandidateLocked() (memberCandidate, bool) {
-	found := false
-	var candidate memberCandidate
-	s.Runtime.withLock(func() {
-		for _, idx := range s.order {
-			if s.attempts[idx] >= s.budgetFor(idx) {
-				continue
-			}
-			key := memberKeyOf(&s.Route.Members[idx])
-			if s.Runtime.availabilityOf(key, s.cooldownSeconds, CurrentCircuitSettings()) == availOK {
-				candidate = memberCandidate{idx: idx, key: key}
-				found = true
-				return
-			}
-		}
-	})
-	return candidate, found
 }
 
 // markCurrentLocked 记录当前成员；发生故障切换时武装亲和（§6：切换后首次成功才启动）。
@@ -817,12 +753,4 @@ func WriteNoAvailableChannel(c *gin.Context, modelName string) {
 // IsNoAvailable 判定错误是否为"无可用成员"。
 func IsNoAvailable(err *types.NewAPIError) bool {
 	return err != nil && err.GetErrorCode() == ErrorCodeNoAvailableChannel
-}
-
-// LooksCanceled 兜底识别被上游/客户端中断的请求（状态码缺失且文案含 canceled）。
-func LooksCanceled(err *types.NewAPIError) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
 }

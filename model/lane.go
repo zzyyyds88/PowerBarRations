@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"pbr/common"
-	"pbr/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -227,6 +227,10 @@ type ResolvedRoute struct {
 	// PinnedMemberId 非 0 表示请求点名了某个成员别名，选路时应先尝试该成员。
 	PinnedMemberId int           `json:"pinned_member_id,omitempty"`
 	Members        []RouteMember `json:"members"`
+	// LaneVersion 车道配置版本（Lane.UpdatedAt，秒级）。选路运行态（route.PruneStaleState）
+	// 用它判断"本次解析是否比上次处理过的更新"，避免旧配置的并发请求用旧成员集合
+	// 误删新配置刚写入的成员运行态。0 表示来源无法提供版本（测试夹具/历史数据）。
+	LaneVersion int64 `json:"-"`
 }
 
 // EffectiveConfig 返回某成员生效的六键（车道默认 + 成员级覆盖）。
@@ -457,6 +461,7 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	route.RouteKey = lane.Name
 	route.Config = ParseLaneRelayConfig(lane.Config)
 	route.ActiveMember = lane.ActiveMember
+	route.LaneVersion = lane.UpdatedAt
 	if pinned != nil {
 		route.PinnedMemberId = pinned.Id
 	}

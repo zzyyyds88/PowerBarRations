@@ -197,11 +197,12 @@ type LaneRuntime struct {
 ### 5.2 转换
 
 - `closed`：累计失败。达阈值 `circuit_failure_threshold` 打开。**硬故障计数权重高；软故障（429）权重低**，使持续限流不会像硬故障那样快速打开。
+- **滚动窗口失败率证据**（design-v1 §7.5）：窗口内样本数 ≥ `circuit_rolling_min_samples`（默认 8）且失败率 ≥ `circuit_rolling_failure_rate`（默认 0.8）时同样打开；与累计阈值**取或**，避免"持续 429 累计分涨得慢"导致长期不熔断。
 - `open`：持续 `circuit_open_seconds`（默认取该成员冷却时长）。期间该成员等价于"冷却中"，被选择算法跳过。
 - `half_open`：到期后放开**一个**探测请求（复用 `ProbeMemberID` 单槽，与冷却探测共用机制）。
   - 成功 → `closed`，写一条恢复事件日志，并解除冷却；
   - 失败 → 回到 `open`，且退避时长按次数指数增长（`open_seconds × 2^k`，设上限）。
-- 阈值与时长经 `system/options` 配置，可用 `POST /api/lanes/{n}/circuits/reset` 手动清除。
+- 阈值与时长经 `system/options` 配置：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`；可用 `POST /api/lanes/{n}/circuits/reset` 手动清除。
 
 ### 5.3 与冷却的关系
 

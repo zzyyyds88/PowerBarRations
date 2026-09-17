@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/common"
-	"pbr/internal/route"
-	"pbr/model"
-	"pbr/service"
-	"pbr/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 )
 
 // PBR 运行态的两处外部依赖在此注入：欠费关键词判定与熔断参数来源。
@@ -57,6 +57,16 @@ func init() {
 		if raw, ok := common.OptionMap[route.OptionCircuitMaxOpenSeconds]; ok {
 			if parsed, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && parsed > 0 {
 				settings.MaxOpenSeconds = parsed
+			}
+		}
+		if raw, ok := common.OptionMap[route.OptionCircuitRollingMinSamples]; ok {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && parsed > 0 {
+				settings.RollingMinSamples = parsed
+			}
+		}
+		if raw, ok := common.OptionMap[route.OptionCircuitRollingFailureRate]; ok {
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil && parsed > 0 && parsed <= 1 {
+				settings.RollingFailureRate = parsed
 			}
 		}
 		return settings
