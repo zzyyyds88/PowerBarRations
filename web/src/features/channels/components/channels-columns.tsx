@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /* eslint-disable react-refresh/only-export-components */
-import { useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   AlertTriangle,
@@ -29,7 +28,6 @@ import {
 } from 'lucide-react'
 import { useState, useMemo, useContext } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { BadgeListCell } from '@/components/data-table'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
@@ -54,7 +52,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError } from '@/lib/server-error-message'
 import { truncateText } from '@/lib/utils'
 
-import { getCodexUsage, updateChannelBalance } from '../api'
+import { getCodexUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   formatRelativeTime,
@@ -64,7 +62,6 @@ import {
   isMultiKeyChannel,
   parseModelsList,
   parseChannelSettings,
-  channelsQueryKeys,
   isTagAggregateRow,
   type TagRow,
 } from '../lib'
@@ -74,7 +71,6 @@ import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
-import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import {
   CodexUsageDialog,
   type CodexUsageDialogData,
@@ -152,20 +148,17 @@ const MAX_INLINE_BALANCE_CHARS = 8
 const SENSITIVE_MASK = '••••'
 
 /**
- * Balance cell component with click to update
+ * Balance/usage cell. Codex channels open their account usage dialog from the
+ * remaining badge; other channels render read-only values.
  */
 export function BalanceCell({ channel }: { channel: Channel }) {
   const { t, i18n } = useTranslation()
-  const queryClient = useQueryClient()
   const layout = useContext(ChannelRowActionsLayoutContext)
-  const { sensitiveVisible, setCurrentRow } = useChannels()
+  const { sensitiveVisible } = useChannels()
   const isTagRow = isTagAggregateRow(channel)
   const balance = channel.balance || 0
   const usedQuota = channel.used_quota || 0
   const [isUpdating, setIsUpdating] = useState(false)
-  const [rawBalanceResponse, setRawBalanceResponse] = useState<string | null>(
-    null
-  )
   const [codexUsageOpen, setCodexUsageOpen] = useState(false)
   const [codexUsageResponse, setCodexUsageResponse] =
     useState<CodexUsageDialogData | null>(null)
@@ -247,54 +240,26 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     )
   }
 
-  // Regular channel row: show used and remaining with click to update
+  // Regular channel row: show used and remaining; Codex channels can open
+  // their account usage dialog from the remaining badge.
   const variant = getBalanceVariant(balance)
+  const isCodexChannel = channel.type === 57
 
-  const handleClickUpdate = async () => {
-    if (isUpdating) {
+  const handleOpenCodexUsage = async () => {
+    if (!isCodexChannel || isUpdating) {
       return
     }
 
     setIsUpdating(true)
-    if (channel.type === 57) {
-      try {
-        const res = await getCodexUsage(channel.id)
-        if (!res.success) {
-          throw createServerError(res, t('Failed to fetch usage'))
-        }
-        setCodexUsageResponse(res)
-        setCodexUsageOpen(true)
-      } catch (error) {
-        handleServerError(error, t('Failed to fetch usage'))
-      } finally {
-        setIsUpdating(false)
-      }
-      return
-    }
-
     try {
-      const response = await updateChannelBalance(channel.id)
-      if (response.success && response.balance !== undefined) {
-        toast.success(
-          t('Balance updated: {{balance}}', {
-            balance: formatCurrencyFromUSD(response.balance, {
-              digitsLarge: 2,
-              digitsSmall: 4,
-              abbreviate: false,
-            }),
-          })
-        )
-        void queryClient.invalidateQueries({
-          queryKey: channelsQueryKeys.lists(),
-        })
-      } else if (response.success && response.raw_response !== undefined) {
-        setCurrentRow(channel)
-        setRawBalanceResponse(response.raw_response)
-      } else {
-        handleServerError(response, t('Failed to update balance'))
+      const res = await getCodexUsage(channel.id)
+      if (!res.success) {
+        throw createServerError(res, t('Failed to fetch usage'))
       }
-    } catch (error: unknown) {
-      handleServerError(error, t('Failed to update balance'))
+      setCodexUsageResponse(res)
+      setCodexUsageOpen(true)
+    } catch (error) {
+      handleServerError(error, t('Failed to fetch usage'))
     } finally {
       setIsUpdating(false)
     }
@@ -347,14 +312,13 @@ export function BalanceCell({ channel }: { channel: Channel }) {
                 size='sm'
                 copyable={false}
                 showDot={false}
-                className='cursor-pointer'
-                onClick={handleClickUpdate}
+                className={isCodexChannel ? 'cursor-pointer' : undefined}
+                onClick={isCodexChannel ? handleOpenCodexUsage : undefined}
               />
             }
           />
           <TooltipContent>
             <p>{remainingTooltipLabel}</p>
-            {channel.type !== 57 && <p>{t('Click to update balance')}</p>}
           </TooltipContent>
         </Tooltip>
       </div>
@@ -386,17 +350,6 @@ export function BalanceCell({ channel }: { channel: Channel }) {
         }}
         isRefreshing={isUpdating}
       />
-      {rawBalanceResponse !== null && (
-        <BalanceQueryDialog
-          initialRawResponse={rawBalanceResponse}
-          open
-          onOpenChange={(open) => {
-            if (!open) {
-              setRawBalanceResponse(null)
-            }
-          }}
-        />
-      )}
     </TooltipProvider>
   )
 }
