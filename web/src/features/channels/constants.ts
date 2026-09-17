@@ -361,7 +361,6 @@ export const DEFAULT_CHANNEL_VALUES = {
   base_url: '',
   key: '',
   models: '',
-  group: 'default',
   status: CHANNEL_STATUS.ENABLED,
   auto_ban: 1,
   remark: '',

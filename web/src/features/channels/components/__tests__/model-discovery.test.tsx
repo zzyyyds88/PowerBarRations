@@ -102,7 +102,6 @@ beforeEach(() => {
     response_time: 0,
     balance_updated_time: 0,
     models: 'manual-model',
-    group: 'default',
     base_url: 'https://saved.example',
   })
   useAuthStore.setState({

@@ -116,7 +116,7 @@ describe('security sidebar visibility', () => {
       .map((item) => item.title)
     expect(titles).toContain('Overview')
     expect(titles).toContain('API Keys')
-    expect(titles).toContain('Channels')
+    expect(titles).toContain('Channel management')
   })
 })
 

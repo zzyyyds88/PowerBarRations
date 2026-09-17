@@ -97,7 +97,6 @@ beforeEach(() => {
     response_time: 0,
     balance_updated_time: 0,
     models: 'custom-model',
-    group: 'default',
     base_url: 'https://saved.example',
   })
   client = new QueryClient({
@@ -363,9 +362,11 @@ test('configuration navigation retains its height when the form content overflow
     name: 'Channel configuration',
   })
   expect(navigation.parentElement).toHaveClass('shrink-0')
-  expect(screen.getByRole('dialog', { name: 'Create Channel' })).toHaveClass(
-    'sm:max-w-5xl'
-  )
+  // ui-spec 6.9: the centered dialog uses the shared lg bucket; the outer
+  // frame size is fixed and no longer scales with form content.
+  const dialog = screen.getByRole('dialog', { name: 'Create Channel' })
+  expect(dialog).toHaveClass('w-[min(94vw,960px)]')
+  expect(dialog).toHaveClass('h-[min(82vh,640px)]')
 })
 
 test('an invalid setting in another category is revealed and focused on submission', async () => {
@@ -533,7 +534,6 @@ test('editing opens the shared configuration and omits an unchanged key on updat
     response_time: 0,
     balance_updated_time: 0,
     models: 'custom-model',
-    group: 'default',
   })
   const originalGet = vi.mocked(api.get).getMockImplementation()
   vi.mocked(api.get).mockImplementation(async (url, config) => {

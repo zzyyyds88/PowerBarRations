@@ -102,7 +102,7 @@ export function useSidebarData(): SidebarData {
         title: t('Admin'),
         items: [
           {
-            title: t('Channels'),
+            title: t('Channel management'),
             url: '/channels',
             icon: Radio,
           },

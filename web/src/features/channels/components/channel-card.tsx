@@ -20,11 +20,10 @@ import { flexRender, type Row } from '@tanstack/react-table'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { GroupBadge } from '@/components/group-badge'
 import { cn } from '@/lib/utils'
 
 import { CHANNEL_STATUS } from '../constants'
-import { isTagAggregateRow, parseGroupsList } from '../lib'
+import { isTagAggregateRow } from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
@@ -35,7 +34,7 @@ const SENSITIVE_MASK = '••••'
  * Bespoke channel card for the card view. Reuses every column's existing cell
  * renderer via `flexRender`, so the table's information and interactions are
  * preserved: row selection, provider/multi-key/IO.NET type badge, id,
- * name/remark + warning icons, status (with tooltips), groups, balance
+ * name/remark + warning icons, status (with tooltips), balance
  * refresh, response/test times, tag expand-collapse, and the per-row
  * (or per-tag) actions menu.
  */
@@ -64,8 +63,6 @@ function ChannelCardComponent({
     response_time: t('Response'),
     test_time: t('Last Tested'),
   }
-
-  const groups = parseGroupsList(row.original.group ?? '')
 
   const selectCell = renderCell('select')
   const typeCell = renderCell('type')
@@ -144,24 +141,6 @@ function ChannelCardComponent({
               {testCell ?? <span className='text-muted-foreground'>-</span>}
             </div>
           </div>
-        </div>
-
-        {/* Last row: groups span the full width, showing every group (no label) */}
-        <div className='min-w-0'>
-          {groups.length > 0 ? (
-            <div className='-ml-1.5 flex flex-wrap gap-1'>
-              {groups.map((g) => (
-                <GroupBadge
-                  key={g}
-                  group={g}
-                  label={sensitiveVisible ? undefined : SENSITIVE_MASK}
-                  size='sm'
-                />
-              ))}
-            </div>
-          ) : (
-            <span className='text-muted-foreground text-sm'>-</span>
-          )}
         </div>
       </div>
     </ChannelRowActionsLayoutContext.Provider>

@@ -50,7 +50,6 @@ export const channelSchema = z.object({
   balance: z.number().default(0), // in USD
   balance_updated_time: z.number(),
   models: z.string().default(''),
-  group: z.string().default('default'),
   used_quota: z.number().default(0),
   model_mapping: z.string().nullish(),
   status_code_mapping: z.string().nullish(),
@@ -280,7 +279,6 @@ export interface GetChannelsParams {
   page_size?: number
   status?: string // 'enabled', 'disabled', or empty for all
   type?: number
-  group?: string
   id_sort?: boolean
   tag_mode?: boolean
   sort_by?: ChannelSortBy
@@ -289,7 +287,6 @@ export interface GetChannelsParams {
 
 export interface SearchChannelsParams {
   keyword?: string
-  group?: string
   model?: string
   status?: string
   type?: number
@@ -340,7 +337,6 @@ export interface TagOperationParams {
   new_tag?: string
   model_mapping?: string
   models?: string
-  groups?: string
 }
 
 // ============================================================================
@@ -354,7 +350,6 @@ export interface ChannelFormData {
   key: string
   openai_organization?: string
   models: string
-  group: string
   model_mapping?: string
   test_model?: string
   auto_ban?: number
