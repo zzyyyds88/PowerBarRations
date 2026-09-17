@@ -66,8 +66,9 @@ function collectSourceFiles(dir: string): string[] {
       out.push(...collectSourceFiles(full))
       continue
     }
-    if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name))
+    if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) {
       continue
+    }
     out.push(full)
   }
   return out
