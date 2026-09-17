@@ -24,11 +24,11 @@ import {
   type ChannelFormValues,
 } from '../channel-form'
 
-// 渠道级上游单价（design-v1 §16#7）的序列化口径。
+// 渠道级上游单价（design-v1 §16.9#7，单层单价）的序列化口径。
 //
 // 后端 `model/log.go estimateRequestCost` 按**请求模型精确匹配**渠道价，命中即用该价、
-// **不回退**全局默认单价表。因此若把"只选了模型、没填价格"的空条目也落库，该渠道的
-// 折算成本会变成 0，而不是使用全局默认价——这是必须锁住的正确性缺陷。
+// 不命中即不折算（0），没有全局默认单价表。因此若把"只选了模型、没填价格"的空条目也
+// 落库，该模型的折算成本会变成 0，而不是保持"未配置"——这是必须锁住的正确性缺陷。
 function build(pbr_prices: unknown[], models: string): Record<string, unknown> {
   const json = buildSettingJSON({
     ...CHANNEL_FORM_DEFAULT_VALUES,
@@ -56,16 +56,19 @@ describe('渠道级上游单价序列化', () => {
     ])
   })
 
-  test('全空价目不得落库（否则成本被算成 0 而非回退全局默认）', () => {
+  test('全空价目不得落库（否则该模型成本被算成 0 而非"未配置"）', () => {
     const setting = build([{ model: 'gpt-4o' }], 'gpt-4o')
 
     expect(setting.pbr_prices).toBeUndefined()
   })
 
-  test('已从模型清单移除的模型价格会被丢弃', () => {
-    const setting = build([{ model: 'removed', input: 1 }], 'kept')
+  test('清单外的自定义计价行（独立车道名等）保留', () => {
+    // 计价键是请求模型名，允许是清单之外的行（如车道成员引用的上游名/独立车道名）。
+    const setting = build([{ model: 'my-lane', input: 1 }], 'kept')
 
-    expect(setting.pbr_prices).toBeUndefined()
+    expect(setting.pbr_prices).toEqual([
+      { model: 'my-lane', input: 1, output: 0, cache_read: 0, cache_write: 0 },
+    ])
   })
 
   test('显式填 0 视为已配置，仍予保留', () => {

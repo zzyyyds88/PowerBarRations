@@ -16,29 +16,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Loader2, AlertCircle } from 'lucide-react'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
-import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import {
-  getTagModels,
-  editTagChannels,
-  getAllModels,
-  getGroups,
-} from '../../api'
+import { getTagModels, editTagChannels, getAllModels } from '../../api'
 import { channelsQueryKeys } from '../../lib'
 import type { TagOperationParams } from '../../types'
 import { useChannels } from '../channels-provider'
@@ -63,23 +56,6 @@ export function TagBatchEditDialog({
   const [newTag, setNewTag] = useState('')
   const [models, setModels] = useState('')
   const [modelMapping, setModelMapping] = useState('')
-  const [groups, setGroups] = useState<string[]>([])
-
-  // Fetch available groups
-  const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups'],
-    queryFn: async () => requireServerSuccess(await getGroups()),
-  })
-
-  // Transform groups to multi-select options
-  const groupOptions = useMemo(() => {
-    if (!groupsData?.data) return []
-    const allGroups = new Set([...groupsData.data, ...groups])
-    return [...allGroups].map((group) => ({
-      value: group,
-      label: group,
-    }))
-  }, [groupsData, groups])
 
   useEffect(() => {
     if (open && currentTag) {
@@ -146,10 +122,6 @@ export function TagBatchEditDialog({
         params.model_mapping = modelMapping
       }
 
-      if (groups.length > 0) {
-        params.groups = groups.join(',')
-      }
-
       // Check if there are any changes
       if (Object.keys(params).length === 1) {
         toast.warning(t('No changes made'))
@@ -177,7 +149,6 @@ export function TagBatchEditDialog({
     setNewTag('')
     setModels('')
     setModelMapping('')
-    setGroups([])
     onOpenChange(false)
   }
 
@@ -271,24 +242,6 @@ export function TagBatchEditDialog({
               onChange={setModelMapping}
               disabled={isSaving}
             />
-          </div>
-
-          {/* Groups */}
-          <div className='space-y-2'>
-            <Label htmlFor='groups'>{t('Groups')}</Label>
-            {isLoadingGroups ? (
-              <Skeleton className='h-10 w-full' />
-            ) : (
-              <MultiSelect
-                options={groupOptions}
-                selected={groups}
-                onChange={setGroups}
-                placeholder={t('Select groups (leave empty to keep current)')}
-              />
-            )}
-            <p className='text-muted-foreground text-xs'>
-              {t('User groups that can access channels with this tag')}
-            </p>
           </div>
         </div>
       )}

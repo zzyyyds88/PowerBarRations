@@ -72,9 +72,6 @@ function mockChannelGet(override?: GetOverride) {
     if (url === '/api/channel/default_base_urls') {
       return { data: { success: true, data: {} } }
     }
-    if (url === '/api/group/') {
-      return { data: { success: true, data: ['default'] } }
-    }
     if (url === '/api/channel/models') {
       return { data: { success: true, data: [{ id: 'manual-model' }] } }
     }

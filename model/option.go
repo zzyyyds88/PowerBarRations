@@ -12,7 +12,6 @@ import (
 	"pbr/setting/config"
 	"pbr/setting/operation_setting"
 	"pbr/setting/performance_setting"
-	"pbr/setting/pricing_setting"
 	"pbr/setting/ratio_setting"
 	"pbr/setting/system_setting"
 )
@@ -92,7 +91,6 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableKeywords"] = operation_setting.AutomaticDisableKeywordsToString()
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
-	common.OptionMap[pricing_setting.OptionKeyModelPrices] = pricing_setting.ToString()
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -123,10 +121,6 @@ func SyncOptions(frequency int) {
 func validateOptionValue(key string, value string) error {
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
-	}
-	if key == pricing_setting.OptionKeyModelPrices {
-		_, err := pricing_setting.Parse(value)
-		return err
 	}
 	if key == operation_setting.ChannelTestConcurrencyOptionKey {
 		return operation_setting.ValidateChannelTestConcurrency(value)
@@ -320,8 +314,6 @@ func updateOptionMap(key string, value string) (err error) {
 		err = operation_setting.AutomaticDisableStatusCodesFromString(value)
 	case "AutomaticRetryStatusCodes":
 		err = operation_setting.AutomaticRetryStatusCodesFromString(value)
-	case pricing_setting.OptionKeyModelPrices:
-		err = pricing_setting.FromString(value)
 	case "StreamCacheQueueLength":
 		setting.StreamCacheQueueLength, _ = strconv.Atoi(value)
 	}

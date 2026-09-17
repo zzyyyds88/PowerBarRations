@@ -33,10 +33,9 @@ import {
   findChannelPrice,
   matchesName,
 } from '../lib/channel-price'
-import { usePBRModelPrices } from '../pbr-model-prices'
 
 // 模型抽屉「渠道关联」：列出声明该模型（或经 model_mapping 映射它）的渠道，
-// 展示每个渠道的上游单价（渠道 pbr_prices 优先，否则回退全局 PBRModelPrices），
+// 展示每个渠道的上游单价（渠道 pbr_prices，单层单价：无渠道价即"未配置"），
 // 并给出跳转到渠道编辑的入口。此处只读，仅用于成本展示。
 const PAGE_SIZE = 100
 
@@ -50,7 +49,6 @@ export function ModelLinkedChannels(props: {
 }) {
   const { t } = useTranslation()
   const nameRule = props.nameRule ?? 0
-  const priceQuery = usePBRModelPrices()
   const channelsQuery = useQuery({
     queryKey: channelsQueryKeys.list({
       model: props.modelName,
@@ -68,7 +66,6 @@ export function ModelLinkedChannels(props: {
     enabled: Boolean(props.modelName),
     staleTime: 60 * 1000,
   })
-  const globalPrice = priceQuery.data?.get(props.modelName)
   const channels = useMemo(() => {
     const items = channelsQuery.data?.data?.items ?? []
     return items.filter((channel) =>
@@ -84,7 +81,7 @@ export function ModelLinkedChannels(props: {
         <h3 className='text-sm font-semibold'>{t('Channel association')}</h3>
         <p className='text-muted-foreground text-xs'>
           {t(
-            'Channel price takes precedence; cost conversion only, never affects billing or admission.'
+            'Channel upstream price only; cost conversion only, never affects billing or admission.'
           )}
         </p>
       </div>
@@ -118,12 +115,9 @@ export function ModelLinkedChannels(props: {
               props.modelName,
               nameRule
             )
-            const effective = channelPrice ?? globalPrice
             let priceLabel = t('Not configured')
             if (channelPrice) {
               priceLabel = t('Channel price')
-            } else if (globalPrice) {
-              priceLabel = t('Global default')
             }
             return (
               <li
@@ -138,8 +132,10 @@ export function ModelLinkedChannels(props: {
                 </div>
                 <div className='min-w-0 text-end'>
                   <p className='font-mono text-xs tabular-nums'>
-                    {effective ? formatPrice(effective) : t('Not configured')}
-                    {effective ? (
+                    {channelPrice
+                      ? formatPrice(channelPrice)
+                      : t('Not configured')}
+                    {channelPrice ? (
                       <span className='text-muted-foreground'> · 1M</span>
                     ) : null}
                   </p>

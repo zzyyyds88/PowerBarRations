@@ -87,7 +87,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -114,7 +113,6 @@ import {
   getAllModels,
   getChannel,
   getChannelDefaultBaseURLs,
-  getGroups,
   refreshCodexCredential,
 } from '../../api'
 import {
@@ -425,13 +423,6 @@ export function ChannelMutateDialog({
     meta: { errorToast: false },
   })
 
-  // Fetch available groups
-  const { data: groupsData, isLoading: isLoadingGroups } = useQuery({
-    queryKey: ['groups'],
-    queryFn: async () => requireServerSuccess(await getGroups()),
-    enabled: open,
-  })
-
   // Fetch all available models
   const { data: allModelsData } = useQuery({
     queryKey: ['channel_models'],
@@ -456,7 +447,6 @@ export function ChannelMutateDialog({
   const multiKeyMode = formValues.multi_key_mode
   const multiKeyType = formValues.multi_key_type
   const keyMode = formValues.key_mode
-  const currentGroups = formValues.group
   const currentType = formValues.type
   const baseUrlPlaceholder =
     defaultBaseURLs?.[currentType] || t(FIELD_PLACEHOLDERS.BASE_URL)
@@ -589,16 +579,6 @@ export function ChannelMutateDialog({
     () => allModelsData?.data?.map((model) => model.id).filter(Boolean) || [],
     [allModelsData]
   )
-
-  // Transform groups to multi-select options
-  const groupOptions = useMemo(() => {
-    if (!groupsData?.data) return []
-    const allGroups = new Set([...groupsData.data, ...(currentGroups || [])])
-    return [...allGroups].map((group) => ({
-      value: group,
-      label: group,
-    }))
-  }, [groupsData, currentGroups])
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -1373,7 +1353,7 @@ export function ChannelMutateDialog({
           </FormControl>
           <FormDescription>
             {t(
-              'CNY per 1M tokens, used for cost accounting only. A channel price overrides the global default price.'
+              'CNY per 1M tokens, used for cost accounting only. Models without a channel price are not converted.'
             )}
           </FormDescription>
           <FormMessage />
@@ -2521,82 +2501,10 @@ export function ChannelMutateDialog({
       <ChannelModelsSection>
         <div className='space-y-5'>
           <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
-            <FormField
-              control={form.control}
-              name='models'
-              render={() => (
-                <FormItem
-                  role='group'
-                  aria-label={t('Models')}
-                  className='space-y-3'
-                >
-                  <div className='flex items-start justify-between gap-3'>
-                    <div className='min-w-0 space-y-1'>
-                      <FormLabel required>{t('Models')}</FormLabel>
-                      <FormDescription>
-                        {t(FIELD_DESCRIPTIONS.MODELS)}
-                      </FormDescription>
-                    </div>
-                    <Button
-                      type='button'
-                      variant='outline'
-                      size='sm'
-                      onClick={() => setModelConfiguration({})}
-                      disabled={currentModelsArray.length === 0}
-                    >
-                      <Settings className='mr-2 h-4 w-4' aria-hidden='true' />
-                      {t('Configure Models')}
-                    </Button>
-                  </div>
-                  <FormControl>
-                    <MultiSelect
-                      options={modelOptions}
-                      selected={currentModelsArray}
-                      onChange={handleModelsChange}
-                      placeholder={t('Select models or add custom ones')}
-                      allowCreate
-                      createLabel='Add custom model "{{value}}"'
-                      maxVisibleChips={8}
-                      copyChipOnClick
-                    />
-                  </FormControl>
-                  {modelMappingGuardrail.exposedTargetModels.length > 0 && (
-                    <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
-                      <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-                        <span>
-                          {t('The mapped upstream model(s)')}{' '}
-                          {formatModelNames(
-                            modelMappingGuardrail.exposedTargetModels
-                          )}{' '}
-                          {t(
-                            'are also listed here. Remove them from Models to keep the `/v1/models` response user-friendly and hide vendor-specific names.'
-                          )}
-                        </span>
-                        <Button
-                          type='button'
-                          variant='outline'
-                          size='sm'
-                          onClick={() => {
-                            const hiddenTargets = new Set(
-                              modelMappingGuardrail.exposedTargetModels
-                            )
-                            updateModels(
-                              currentModelsArray.filter(
-                                (model) => !hiddenTargets.has(model)
-                              )
-                            )
-                          }}
-                        >
-                          {t('Remove mapped targets')}
-                        </Button>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
+            <div className='space-y-2'>
+              <h3 className='text-sm font-semibold'>
+                {t('Fetch models from upstream')}
+              </h3>
             {MODEL_FETCHABLE_TYPES.has(currentType) &&
               discovery.status === 'error' && (
                 <ErrorState
@@ -2720,6 +2628,83 @@ export function ChannelMutateDialog({
                   )}
                 </div>
               )}
+            </div>
+
+            <FormField
+              control={form.control}
+              name='models'
+              render={() => (
+                <FormItem
+                  role='group'
+                  aria-label={t('Models')}
+                  className='space-y-3'
+                >
+                  <div className='flex items-start justify-between gap-3'>
+                    <div className='min-w-0 space-y-1'>
+                      <FormLabel required>{t('Models')}</FormLabel>
+                      <FormDescription>
+                        {t(FIELD_DESCRIPTIONS.MODELS)}
+                      </FormDescription>
+                    </div>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      onClick={() => setModelConfiguration({})}
+                      disabled={currentModelsArray.length === 0}
+                    >
+                      <Settings className='mr-2 h-4 w-4' aria-hidden='true' />
+                      {t('Configure Models')}
+                    </Button>
+                  </div>
+                  <FormControl>
+                    <MultiSelect
+                      options={modelOptions}
+                      selected={currentModelsArray}
+                      onChange={handleModelsChange}
+                      placeholder={t('Select models or add custom ones')}
+                      allowCreate
+                      createLabel='Add custom model "{{value}}"'
+                      maxVisibleChips={8}
+                      copyChipOnClick
+                    />
+                  </FormControl>
+                  {modelMappingGuardrail.exposedTargetModels.length > 0 && (
+                    <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
+                      <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                        <span>
+                          {t('The mapped upstream model(s)')}{' '}
+                          {formatModelNames(
+                            modelMappingGuardrail.exposedTargetModels
+                          )}{' '}
+                          {t(
+                            'are also listed here. Remove them from Models to keep the `/v1/models` response user-friendly and hide vendor-specific names.'
+                          )}
+                        </span>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          onClick={() => {
+                            const hiddenTargets = new Set(
+                              modelMappingGuardrail.exposedTargetModels
+                            )
+                            updateModels(
+                              currentModelsArray.filter(
+                                (model) => !hiddenTargets.has(model)
+                              )
+                            )
+                          }}
+                        >
+                          {t('Remove mapped targets')}
+                        </Button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <Separator className='my-4' />
 
@@ -2747,35 +2732,6 @@ export function ChannelMutateDialog({
             </div>
           </div>
 
-          <div className='border-border/60 rounded-lg border p-4'>
-            <FormField
-              control={form.control}
-              name='group'
-              render={({ field }) => (
-                <FormItem className='space-y-3'>
-                  <div className='space-y-1'>
-                    <FormLabel required>{t('Groups')}</FormLabel>
-                    <FormDescription>
-                      {t(FIELD_DESCRIPTIONS.GROUP)}
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    {isLoadingGroups ? (
-                      <Skeleton className='h-10 w-full' />
-                    ) : (
-                      <MultiSelect
-                        options={groupOptions}
-                        selected={field.value}
-                        onChange={field.onChange}
-                        placeholder={t(FIELD_PLACEHOLDERS.GROUP)}
-                      />
-                    )}
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
         </div>
       </ChannelModelsSection>
     </div>

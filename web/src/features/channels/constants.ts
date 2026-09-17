@@ -318,7 +318,6 @@ export const ERROR_MESSAGES = {
   REQUIRED_TYPE: 'Channel type is required',
   REQUIRED_KEY: 'API key is required',
   REQUIRED_MODELS: 'Models are required',
-  REQUIRED_GROUP: 'Group is required',
   INVALID_JSON: 'Invalid JSON format',
   INVALID_MODEL_MAPPING: 'Invalid model mapping format',
   INVALID_PROXY:
@@ -423,7 +422,6 @@ export const FIELD_PLACEHOLDERS = {
   BASE_URL: 'Leave empty to use default',
   KEY: 'API Key (one per line for batch mode)',
   MODELS: 'Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo',
-  GROUP: 'Please Select user groups that can access this channel.',
   MODEL_MAPPING: '{"request_model": "actual_model"}',
   TEST_MODEL: 'Model to use for testing',
   TAG: 'Optional tag for grouping channels',
@@ -439,8 +437,7 @@ export const FIELD_DESCRIPTIONS = {
   BASE_URL: 'Custom API base URL. Leave empty to use provider default.',
   KEY: 'API key from the provider',
   MODELS:
-    'List of models supported by this channel. Use comma to separate multiple models.',
-  GROUP: 'User groups that can access this channel. ',
+    'Manually fine-tune the model list. Upstream discovery above is the primary source; edit here as a fallback.',
   MODEL_MAPPING:
     'For this channel, map the model name in client requests to the model name sent upstream.',
   TEST_MODEL: 'Model to use when testing channel connectivity',

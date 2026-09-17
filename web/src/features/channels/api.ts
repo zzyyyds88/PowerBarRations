@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { getGroups as getUserGroups } from '@/lib/groups'
 import { api, type ApiRequestConfig } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -637,25 +636,3 @@ export async function getOllamaVersion(
 // Group Management
 // ============================================================================
 
-/**
- * Get all available groups (re-exported from users API for convenience)
- */
-export const getGroups = getUserGroups
-
-// ============================================================================
-// Prefill Groups (Model Groups)
-// ============================================================================
-
-/**
- * Get prefill groups for quick model selection
- */
-export async function getPrefillGroups(
-  type: 'model' | 'group' = 'model'
-): Promise<{
-  success: boolean
-  message?: string
-  data?: Array<{ id: number; name: string; items: string | string[] }>
-}> {
-  const res = await api.get('/api/prefill_group', { params: { type } })
-  return res.data
-}

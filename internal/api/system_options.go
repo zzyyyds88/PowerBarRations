@@ -13,7 +13,6 @@ import (
 	"pbr/internal/route"
 	"pbr/model"
 	"pbr/setting/operation_setting"
-	"pbr/setting/pricing_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,31 +23,29 @@ import (
 // 关键词条目属部署数据，只经 API 读写，不进仓库（design-v1 §7.6）。
 
 type systemOptions struct {
-	CircuitFailureThreshold  float64                      `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds       int                          `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds    int                          `json:"circuit_max_open_seconds"`
-	LogRetentionDays         int                          `json:"log_retention_days"`
-	ProbeConcurrency         int                          `json:"probe_concurrency"`
-	AutomaticEnableChannel   bool                         `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel  bool                         `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords []string                     `json:"automatic_disable_keywords"`
-	ModelPrices              []pricing_setting.ModelPrice `json:"model_prices"`
+	CircuitFailureThreshold  float64  `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds       int      `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds    int      `json:"circuit_max_open_seconds"`
+	LogRetentionDays         int      `json:"log_retention_days"`
+	ProbeConcurrency         int      `json:"probe_concurrency"`
+	AutomaticEnableChannel   bool     `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel  bool     `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords []string `json:"automatic_disable_keywords"`
 	// LaneDefaults 默认六键：新建/一键固化车道写入的初值，也是车道未显式配置时的回落值。
 	// 指针用于区分"配置文件里没有这个字段"（保持原值）与"显式给了值"。
 	LaneDefaults *model.LaneRelayConfig `json:"lane_defaults,omitempty"`
 }
 
 type systemOptionsPatch struct {
-	CircuitFailureThreshold  *float64                      `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds       *int                          `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds    *int                          `json:"circuit_max_open_seconds"`
-	LogRetentionDays         *int                          `json:"log_retention_days"`
-	ProbeConcurrency         *int                          `json:"probe_concurrency"`
-	AutomaticEnableChannel   *bool                         `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel  *bool                         `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords *[]string                     `json:"automatic_disable_keywords"`
-	ModelPrices              *[]pricing_setting.ModelPrice `json:"model_prices"`
-	LaneDefaults             *model.LaneRelayConfig        `json:"lane_defaults"`
+	CircuitFailureThreshold  *float64                 `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds       *int                     `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds    *int                     `json:"circuit_max_open_seconds"`
+	LogRetentionDays         *int                     `json:"log_retention_days"`
+	ProbeConcurrency         *int                     `json:"probe_concurrency"`
+	AutomaticEnableChannel   *bool                    `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel  *bool                    `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords *[]string                `json:"automatic_disable_keywords"`
+	LaneDefaults             *model.LaneRelayConfig   `json:"lane_defaults"`
 }
 
 // validateLaneDefaults 校验默认六键：四个"必须为正"的时长/预算、两个允许为 0 的间隔。
@@ -116,7 +113,6 @@ func currentSystemOptions() systemOptions {
 		AutomaticEnableChannel:   common.AutomaticEnableChannelEnabled,
 		AutomaticDisableChannel:  common.AutomaticDisableChannelEnabled,
 		AutomaticDisableKeywords: keywords,
-		ModelPrices:              pricing_setting.List(),
 		LaneDefaults:             &laneDefaults,
 	}
 }
@@ -165,15 +161,6 @@ func applySystemOptions(options systemOptions) error {
 		}
 	}
 	updates["AutomaticDisableKeywords"] = strings.Join(keywords, "\n")
-	normalizedPrices, priceErr := pricing_setting.Normalize(options.ModelPrices)
-	if priceErr != nil {
-		return priceErr
-	}
-	encodedPrices, marshalErr := json.Marshal(normalizedPrices)
-	if marshalErr != nil {
-		return marshalErr
-	}
-	updates[pricing_setting.OptionKeyModelPrices] = string(encodedPrices)
 	for key, value := range updates {
 		if err := model.UpdateOption(key, value); err != nil {
 			return err
@@ -246,20 +233,6 @@ func PutSystemOptions(c *gin.Context) {
 			}
 		}
 		updates["AutomaticDisableKeywords"] = strings.Join(keywords, "\n")
-	}
-	if patch.ModelPrices != nil {
-		// 整表替换：单价表是"当前生效的一份列表"，传空数组即清空（此后不折算）。
-		normalized, err := pricing_setting.Normalize(*patch.ModelPrices)
-		if err != nil {
-			apierr.Validation(c, err.Error())
-			return
-		}
-		encoded, err := json.Marshal(normalized)
-		if err != nil {
-			apierr.BadRequest(c, "invalid model_prices")
-			return
-		}
-		updates[pricing_setting.OptionKeyModelPrices] = string(encoded)
 	}
 	if patch.LaneDefaults != nil {
 		encoded, err := encodeLaneDefaults(patch.LaneDefaults)
