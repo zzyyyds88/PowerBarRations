@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
@@ -24,6 +25,7 @@ import { BadgeListCell } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { listPBRModels, pbrModelsQueryKey } from '@/features/routes/api'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
 import { parseModelTags, resolveModelIconKey } from '../lib'
@@ -39,6 +41,14 @@ import { useModels } from './models-provider'
 export function useModelsColumns(): ColumnDef<Model>[] {
   const { t } = useTranslation()
   const { setCurrentRow, setOpen } = useModels()
+  // 可调用性由车道决定（ADR 0005）：复用路由页的查询与缓存键，写操作会一并失效。
+  const { data: routableModels } = useQuery({
+    queryKey: pbrModelsQueryKey,
+    queryFn: listPBRModels,
+  })
+  const routableByName = new Map(
+    (routableModels ?? []).map((item) => [item.model, item.routable])
+  )
   return [
     {
       id: 'select',
@@ -95,11 +105,26 @@ export function useModelsColumns(): ColumnDef<Model>[] {
                   className='size-6 shrink-0'
                 />
               </div>
-              {model.id <= 0 && (
-                <div className='text-muted-foreground mt-1 text-xs'>
-                  {t('Missing metadata')}
-                </div>
-              )}
+              <div className='mt-1 flex flex-wrap items-center gap-1.5'>
+                {routableByName.get(model.model_name) === true ? (
+                  <StatusBadge
+                    label={t('Callable')}
+                    variant='success'
+                    size='sm'
+                  />
+                ) : (
+                  <StatusBadge
+                    label={t('Not callable')}
+                    variant='danger'
+                    size='sm'
+                  />
+                )}
+                {model.id <= 0 && (
+                  <span className='text-muted-foreground text-xs'>
+                    {t('Missing metadata')}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         )
