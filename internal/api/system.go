@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -123,17 +124,23 @@ func Login(c *gin.Context) {
 		apierr.Write(c, http.StatusConflict, apierr.CodeNotInitialized, "gateway is not initialized", "POST /api/v1/setup first")
 		return
 	}
-	if delay := loginBackoff.wait(); delay > 0 {
-		// 本地退避（token-spec §2.3）：连续失败后指数延迟，上限 30s；只延迟不锁号。
-		time.Sleep(delay)
+	// 本地退避（token-spec §2.3）：按来源连续失败后指数退避，上限 30s；只退避不锁号。
+	// 命中退避直接返回 429 + Retry-After，绝不用 time.Sleep 占住 goroutine
+	// （旧实现每个被退避的请求都 sleep，可被用来堆积登录 goroutine）。
+	source := c.ClientIP()
+	if wait := loginBackoff.retryAfter(source); wait > 0 {
+		c.Header("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+		apierr.Write(c, http.StatusTooManyRequests, "rate_limited",
+			"too many failed login attempts, retry later", "")
+		return
 	}
 	adminKey := model.DeriveAdminKey(req.Password)
 	if !middleware.VerifyPBRAdminKey(adminKey) {
-		loginBackoff.fail()
+		loginBackoff.fail(source)
 		apierr.Write(c, http.StatusUnauthorized, apierr.CodeUnauthorized, "invalid password", "")
 		return
 	}
-	loginBackoff.succeed()
+	loginBackoff.succeed(source)
 	// 签发 HttpOnly 会话 Cookie（浏览器用）；同时返回管理密钥供 AI/脚本直接取用。
 	middleware.IssueAdminSession(c)
 	c.JSON(http.StatusOK, gin.H{"token": adminKey, "admin_key": adminKey})
@@ -218,23 +225,41 @@ const (
 	maxLoginDelay          = 30 * time.Second
 )
 
-// loginBackoff 登录失败退避：连续失败 2^(n-1) 秒，上限 30s。进程内状态，重启清空。
-type loginBackoffState struct {
-	mu           sync.Mutex
+// loginBackoff 登录失败退避：按来源（ClientIP）维护，连续失败 2^(n-1) 秒，上限 30s。
+//
+// 按来源隔离而不是进程全局：一个 IP 的爆破不应拖慢其它管理员的正常登录；
+// 失败时由调用方返回 429 + Retry-After，不再 sleep。进程内状态，重启清空。
+type loginBackoffEntry struct {
 	failures     int
 	blockedUntil time.Time
+	lastSeen     time.Time
 }
 
-var loginBackoff loginBackoffState
+const (
+	// maxLoginBackoffEntries 与 idleTTL 只是内存兜底：来源键理论上可被伪造/代理
+	// 放大，条目不能无界增长。
+	maxLoginBackoffEntries = 10000
+	loginBackoffIdleTTL    = 30 * time.Minute
+)
 
-func (l *loginBackoffState) wait() time.Duration {
+type loginBackoffState struct {
+	mu      sync.Mutex
+	entries map[string]*loginBackoffEntry
+}
+
+var loginBackoff = loginBackoffState{entries: map[string]*loginBackoffEntry{}}
+
+// retryAfter 返回该来源还需退避的时长；0 表示可立即尝试。
+func (l *loginBackoffState) retryAfter(source string) time.Duration {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.blockedUntil.IsZero() {
+	entry := l.entries[source]
+	if entry == nil {
 		return 0
 	}
-	remaining := time.Until(l.blockedUntil)
+	remaining := time.Until(entry.blockedUntil)
 	if remaining <= 0 {
+		delete(l.entries, source)
 		return 0
 	}
 	if remaining > maxLoginDelay {
@@ -243,20 +268,42 @@ func (l *loginBackoffState) wait() time.Duration {
 	return remaining
 }
 
-func (l *loginBackoffState) fail() {
+func (l *loginBackoffState) fail(source string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.failures++
-	delay := time.Second << uint(min(l.failures-1, 5))
+	if l.entries == nil {
+		l.entries = map[string]*loginBackoffEntry{}
+	}
+	entry := l.entries[source]
+	if entry == nil {
+		entry = &loginBackoffEntry{}
+		l.entries[source] = entry
+	}
+	now := time.Now()
+	entry.failures++
+	entry.lastSeen = now
+	delay := time.Second << uint(min(entry.failures-1, 5))
 	if delay > maxLoginDelay {
 		delay = maxLoginDelay
 	}
-	l.blockedUntil = time.Now().Add(delay)
+	entry.blockedUntil = now.Add(delay)
+	l.pruneLocked(now)
 }
 
-func (l *loginBackoffState) succeed() {
+func (l *loginBackoffState) succeed(source string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.failures = 0
-	l.blockedUntil = time.Time{}
+	delete(l.entries, source)
+}
+
+// pruneLocked 清理长时间未活动或已过退避窗口的来源条目，保证 map 有界。
+func (l *loginBackoffState) pruneLocked(now time.Time) {
+	if len(l.entries) <= maxLoginBackoffEntries {
+		return
+	}
+	for source, entry := range l.entries {
+		if now.Sub(entry.lastSeen) > loginBackoffIdleTTL || !entry.blockedUntil.After(now) {
+			delete(l.entries, source)
+		}
+	}
 }

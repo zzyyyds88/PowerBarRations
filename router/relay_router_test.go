@@ -36,6 +36,7 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 		headerName     string
 		expectedObject string
 		expectedField  string
+		wantStatus     int
 	}{
 		{
 			name:           "OpenAI bearer token",
@@ -43,17 +44,20 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 			headerName:     "Authorization",
 			expectedObject: "list",
 			expectedField:  "data",
+			wantStatus:     http.StatusOK,
 		},
 		{
 			name:          "Gemini API key header",
 			path:          "/v1/models",
 			headerName:    "x-goog-api-key",
 			expectedField: "models",
+			wantStatus:    http.StatusOK,
 		},
 		{
-			name:          "Gemini API key query",
-			path:          "/v1/models?key=modelstestkey",
-			expectedField: "models",
+			// token-spec §3.4：查询串不再是凭据来源，?key= 单独出现必须 401。
+			name:       "query key no longer authenticates",
+			path:       "/v1/models?key=modelstestkey",
+			wantStatus: http.StatusUnauthorized,
 		},
 	}
 
@@ -71,7 +75,10 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 
 			engine.ServeHTTP(recorder, request)
 
-			require.Equal(t, http.StatusOK, recorder.Code)
+			require.Equal(t, test.wantStatus, recorder.Code)
+			if test.wantStatus != http.StatusOK {
+				return
+			}
 			var payload map[string]any
 			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
 			assert.Contains(t, payload, test.expectedField)

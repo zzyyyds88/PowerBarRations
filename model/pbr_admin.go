@@ -2,6 +2,7 @@ package model
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -100,7 +101,9 @@ func VerifyPBRAdminKey(adminKey string) bool {
 	if err != nil || cred == nil || cred.AdminKeySha256 == "" {
 		return false
 	}
-	return cred.AdminKeySha256 == HashAdminKey(adminKey)
+	expected := HashAdminKey(adminKey)
+	// 常量时间比较，避免按字节短路泄漏摘要前缀信息（与 middleware/pbr_auth.go 口径一致）。
+	return subtle.ConstantTimeCompare([]byte(cred.AdminKeySha256), []byte(expected)) == 1
 }
 
 // ResetPBRAdminCredential 清除库内凭据，使网关回到未初始化状态（CLI `pbr auth reset` 用）。

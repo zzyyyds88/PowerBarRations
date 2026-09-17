@@ -5,10 +5,14 @@ import (
 	"io"
 	"net/http"
 
-	"pbr/common"
 	"github.com/gin-gonic/gin"
+	"pbr/common"
 )
 
+// AnonymousRequestBodyLimit 限制非模型面请求体大小（管理面 /api 与 PBR 管理 API）。
+//
+// 模型面（/v1/**）有自己的 128MB 上限（common.GetRequestBody / DecompressRequestMiddleware），
+// 不走这里；本中间件只服务管理面，防止免鉴权的 setup/login 被超大 JSON 撑爆内存。
 func AnonymousRequestBodyLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		maxBytes := common.GetAnonymousRequestBodyLimitBytes()

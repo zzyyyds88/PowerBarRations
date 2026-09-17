@@ -1,6 +1,12 @@
 package middleware
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
 
 // 限流器记账口径（token-spec §3.4 第 6 步）：
 // 只有被放行的请求才允许写入 RPM 窗口与并发计数；被拒的请求不得占用配额。
@@ -98,4 +104,20 @@ func TestDropPBRKeyLimiterEvictsEntry(t *testing.T) {
 		t.Fatalf("recreated limiter not reset: recent=%d inflight=%d", len(fresh.recent), fresh.inflight)
 	}
 	DropPBRKeyLimiter(987654)
+}
+
+// token-spec §3.4：凭据只从 Authorization / X-Api-Key / x-goog-api-key 取，
+// 查询串 ?key= 不再被当作凭据（否则凭据会随日志/Referer 泄漏）。
+func TestModelFaceCredentialIgnoresQueryKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions?key=query-secret", nil)
+	if got := modelFaceCredential(c); got != "" {
+		t.Fatalf("query key must not be accepted as credential, got %q", got)
+	}
+
+	c.Request.Header.Set("X-Api-Key", "header-secret")
+	if got := modelFaceCredential(c); got != "header-secret" {
+		t.Fatalf("X-Api-Key should still work, got %q", got)
+	}
 }

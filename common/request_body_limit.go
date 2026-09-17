@@ -2,7 +2,7 @@ package common
 
 import "pbr/constant"
 
-const defaultAnonymousRequestBodyLimitKB = 512
+const defaultAnonymousRequestBodyLimitKB = 2048
 
 func GetAnonymousRequestBodyLimitBytes() int64 {
 	limitKB := constant.AnonymousRequestBodyLimitKB

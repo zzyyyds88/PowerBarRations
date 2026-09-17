@@ -14,6 +14,7 @@ import (
 	"pbr/common"
 	"pbr/logger"
 	"pbr/relaykit/dto"
+	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"pbr/relaykit/types"
 )
 
@@ -79,12 +80,16 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	CloseResponseBodyGracefully(resp)
 	var errResponse dto.GeneralErrorResponse
 	responseBodyText := string(responseBody)
-	responseBodyPreview := common.LocalLogPreview(responseBodyText)
+	// 上游错误体可能回显请求里的 URL（含 ?key=/?api_key=）或密钥明文。
+	// 在进入日志与错误之前统一脱敏，避免凭据随日志/错误响应外泄。
+	maskedBody := kitutil.MaskSensitiveInfo(responseBodyText)
+	responseBodyPreview := common.LocalLogPreview(maskedBody)
 	buildErrWithBody := func(message string) error {
+		message = kitutil.MaskSensitiveInfo(message)
 		if message == "" {
-			return fmt.Errorf("bad response status code %d, body: %s", resp.StatusCode, responseBodyText)
+			return fmt.Errorf("bad response status code %d, body: %s", resp.StatusCode, maskedBody)
 		}
-		return fmt.Errorf("bad response status code %d, message: %s, body: %s", resp.StatusCode, message, responseBodyText)
+		return fmt.Errorf("bad response status code %d, message: %s, body: %s", resp.StatusCode, message, maskedBody)
 	}
 
 	err = common.Unmarshal(responseBody, &errResponse)
@@ -102,6 +107,8 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		// General format error (OpenAI, Anthropic, Gemini, etc.)
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
+			// 上游 message 也可能带凭据，先脱敏再入 Err/RelayError（日志会直接读 Err）。
+			oaiError.Message = kitutil.MaskSensitiveInfo(oaiError.Message)
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
@@ -115,6 +122,7 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		// raw body so the upstream failure remains diagnosable.
 		logger.LogError(ctx, fmt.Sprintf("bad response status code %d with empty error message, body: %s", resp.StatusCode, responseBodyPreview))
 	}
+	message = kitutil.MaskSensitiveInfo(message)
 	newApiErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
@@ -189,4 +197,3 @@ func parseStatusCodeMappingValue(value any) (int, bool) {
 		return 0, false
 	}
 }
-

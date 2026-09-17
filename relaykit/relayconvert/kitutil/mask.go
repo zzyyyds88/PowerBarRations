@@ -12,6 +12,13 @@ var (
 	maskIPPattern     = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
 	// maskApiKeyPattern matches patterns like 'api_key:xxx' or "api_key:xxx" to mask the API key value
 	maskApiKeyPattern = regexp.MustCompile(`(['"]?)api_key:([^\s'"]+)(['"]?)`)
+	// 常见密钥前缀形态：即使没有 URL/字段名包裹，也不应把明文留在日志里。
+	maskOpenAIKeyPattern = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{6,}\b`)
+	maskXaiKeyPattern    = regexp.MustCompile(`\bxai-[A-Za-z0-9_-]{6,}\b`)
+	maskPBRKeyPattern    = regexp.MustCompile(`\bpbr-[A-Za-z0-9]{6,}\b`)
+	maskGoogleKeyPattern = regexp.MustCompile(`\bAIza[A-Za-z0-9_-]{10,}\b`)
+	// Bearer <token>：保留 scheme，只脱敏令牌本体。
+	maskBearerTokenPattern = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}`)
 )
 
 // maskHostTail returns the tail parts of a domain/host that should be preserved.
@@ -63,6 +70,14 @@ func maskHostForPlainDomain(domain string) string {
 // www.openai.com -> ***.***.com
 // api.openai.com -> ***.***.com
 func MaskSensitiveInfo(str string) string {
+	// 先脱敏裸密钥形态（Bearer/sk-/xai-/AIza/pbr-），再做 URL/域名掩码：
+	// 否则 JWT 这类带点的令牌会被域名规则先撕碎，令牌尾部可能残留。
+	str = maskBearerTokenPattern.ReplaceAllString(str, "Bearer ***")
+	str = maskOpenAIKeyPattern.ReplaceAllString(str, "sk-***")
+	str = maskXaiKeyPattern.ReplaceAllString(str, "xai-***")
+	str = maskPBRKeyPattern.ReplaceAllString(str, "pbr-***")
+	str = maskGoogleKeyPattern.ReplaceAllString(str, "AIza***")
+
 	// Mask URLs
 	str = maskURLPattern.ReplaceAllStringFunc(str, func(urlStr string) string {
 		u, err := url.Parse(urlStr)

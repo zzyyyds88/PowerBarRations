@@ -22,6 +22,8 @@ import (
 func SetApiRouter(router *gin.Engine) {
 	apiRouter := router.Group("/api")
 	apiRouter.Use(middleware.RouteTag("api"))
+	// 管理面统一请求体上限（默认 2MB），先于其它中间件读取请求体前生效。
+	apiRouter.Use(middleware.AnonymousRequestBodyLimit())
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())

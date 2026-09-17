@@ -219,7 +219,10 @@ func modelFaceCredential(c *gin.Context) string {
 	if key := strings.TrimSpace(c.GetHeader("x-goog-api-key")); key != "" {
 		return key
 	}
-	return strings.TrimSpace(c.Query("key"))
+	// 查询串 `?key=` 不再作为凭据来源（token-spec §3.4 只承诺 Authorization /
+	// X-Api-Key；x-goog-api-key 为 Gemini 兼容保留）。凭据进 query 会随访问日志、
+	// Referer、浏览器历史与代理日志泄漏。
+	return ""
 }
 
 func abortPBRModelFace(c *gin.Context, status int, code, message string) {

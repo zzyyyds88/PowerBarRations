@@ -27,7 +27,10 @@ func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dt
 
 func (a *Adaptor) ConvertClaudeRequest(*gin.Context, *relaycommon.RelayInfo, *dto.ClaudeRequest) (any, error) {
 	//TODO implement me
-	panic("implement me")
+	// 受控错误：管理面仍可创建这些类型的历史渠道，而 /v1/messages 会把请求交给
+	// 任意已配置渠道；这里绝不能 panic（会被 recover 兜成 500，也可能被用来触发
+	// panic 路径）。与同文件其它未实现方法的返回口径一致。
+	return nil, errors.New("not implemented")
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {

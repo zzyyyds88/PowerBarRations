@@ -32,6 +32,9 @@ func SetPBRRouter(router *gin.Engine) {
 }
 
 func registerPBRAPIRoutes(group *gin.RouterGroup) {
+	// 管理面统一请求体上限（默认 2MB）：免鉴权的 setup/login 也在其中，
+	// 必须在读取请求体之前挂上。模型面 /v1/** 不经过这里，不受影响。
+	group.Use(middleware.AnonymousRequestBodyLimit())
 	// 免鉴权：健康检查、版本、初始化状态与首启设口令。
 	group.GET("/health", api.Health)
 	group.GET("/version", api.Version)
