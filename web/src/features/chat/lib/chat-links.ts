@@ -160,9 +160,11 @@ export function resolveChatUrl({
 
   const safeApiKey = normalizeApiKey(apiKey || '')
 
+  // 注意：以下配置里会带客户端密钥（apiKey）。保留该功能，但只应填入
+  // 用户信任的本地客户端；密钥不可写入日志或第三方存储。
   if (url.includes('{cherryConfig}')) {
     const payload = {
-      id: 'new-api',
+      id: 'pbr',
       baseUrl: safeServerAddress,
       apiKey: safeApiKey,
     }
@@ -172,7 +174,7 @@ export function resolveChatUrl({
 
   if (url.includes('{aionuiConfig}')) {
     const payload = {
-      platform: 'new-api',
+      platform: 'pbr',
       baseUrl: safeServerAddress,
       apiKey: safeApiKey,
     }
@@ -182,7 +184,7 @@ export function resolveChatUrl({
 
   if (url.includes('{deepchatConfig}')) {
     const payload = {
-      id: 'new-api',
+      id: 'pbr',
       baseUrl: safeServerAddress,
       apiKey: safeApiKey,
     }
@@ -192,7 +194,7 @@ export function resolveChatUrl({
 
   if (url.includes('{aqbotConfig}')) {
     const query = [
-      `name=${encodeURIComponent('New API')}`,
+      `name=${encodeURIComponent('PBR')}`,
       `baseurl=${encodeURIComponent(safeServerAddress)}`,
       `apikey=${encodeURIComponent(safeApiKey)}`,
       'type=openai',

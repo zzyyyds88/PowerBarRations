@@ -480,6 +480,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const isConsume = props.log.type === 2
   const isTopup = props.log.type === 1
   const isManage = props.log.type === 3
+  // legacy：仅识别旧上游订阅日志；PBR 正常日志不会携带 billing_source。
   const isSubscription = other?.billing_source === 'subscription'
   const isTieredBilling =
     isConsume &&
@@ -870,7 +871,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         ) : null}
 
-        {/* Top-up audit info (type=1, admin only) */}
+        {/*
+          Top-up audit info (type=1, admin only).
+          legacy：PBR 无充值/钱包体系，此区块只用于解析迁移前的旧上游日志。
+        */}
         {showTopupAuditSection && (
           <DetailSection
             icon={<ShieldCheck className='size-3.5' aria-hidden='true' />}
@@ -1167,7 +1171,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
-        {/* Subscription billing details */}
+        {/*
+          Subscription billing details.
+          legacy：PBR 无订阅计费，此区块只用于解析迁移前的旧上游日志。
+        */}
         {isSubscription && other && (
           <DetailSection label={t('Subscription Billing')}>
             {other.subscription_plan_id && (

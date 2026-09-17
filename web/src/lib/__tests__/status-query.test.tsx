@@ -235,8 +235,10 @@ describe('module guard status freshness', () => {
     })
     expect(statusRequests).toHaveLength(0)
     await queryClient.invalidateQueries({ queryKey: STATUS_QUERY_KEY })
+    // PBR 无定价页，pricing 默认关闭；刷新后仍取默认值，但请求计数证明
+    // 失效缓存确实重新拉取了一次 status。
     expect(await getModuleAccessForGuard(queryClient, 'pricing')).toEqual({
-      enabled: true,
+      enabled: false,
       requireAuth: false,
     })
     expect(statusRequests).toHaveLength(1)

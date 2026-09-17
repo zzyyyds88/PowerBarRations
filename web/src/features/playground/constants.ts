@@ -68,6 +68,8 @@ export const STORAGE_KEYS = {
   CONFIG: 'pbr_playground_config',
   MESSAGES: 'pbr_playground_messages',
   PARAMETER_ENABLED: 'pbr_playground_parameter_enabled',
+  // clientKey 是模型面的客户端密钥，只存 sessionStorage，见 storage.ts。
+  CLIENT_KEY: 'pbr_playground_client_key',
 } as const
 
 // Error messages

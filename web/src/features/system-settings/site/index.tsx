@@ -25,7 +25,7 @@ import {
 } from './section-registry.tsx'
 
 const defaultSiteSettings: SiteSettings = {
-  SystemName: 'New API',
+  SystemName: 'PowerBarRations',
   Logo: '',
   Footer: '',
   About: '',

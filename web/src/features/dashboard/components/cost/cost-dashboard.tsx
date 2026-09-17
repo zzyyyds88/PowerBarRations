@@ -45,30 +45,30 @@ import {
 const RANGE_OPTIONS = [
   {
     value: '24h',
-    label: '最近 24 小时',
+    label: 'Last 24 hours',
     seconds: 24 * 3600,
     granularity: 'hour',
   },
   {
     value: '7d',
-    label: '最近 7 天',
+    label: 'Last 7 days',
     seconds: 7 * 24 * 3600,
     granularity: 'day',
   },
   {
     value: '30d',
-    label: '最近 30 天',
+    label: 'Last 30 days',
     seconds: 30 * 24 * 3600,
     granularity: 'day',
   },
 ] as const
 
 const GROUP_OPTIONS: { value: PBRStatsGroupBy; label: string }[] = [
-  { value: 'channel', label: '按渠道' },
-  { value: 'model', label: '按模型' },
-  { value: 'lane', label: '按车道' },
-  { value: 'key', label: '按密钥' },
-  { value: 'channel_model', label: '渠道 × 模型' },
+  { value: 'channel', label: 'By channel' },
+  { value: 'model', label: 'By model' },
+  { value: 'lane', label: 'By lane' },
+  { value: 'key', label: 'By key' },
+  { value: 'channel_model', label: 'Channel × Model' },
 ]
 
 const EMPTY_BUCKETS: PBRStatBucket[] = []
@@ -192,7 +192,7 @@ export function PbrAnalyticsDashboard(props: {
       { cost: number; requests: number; tokens: number }
     >()
     for (const item of items) {
-      const key = item.group || '(未记录)'
+      const key = item.group || t('Not recorded')
       const current = byGroup.get(key) ?? { cost: 0, requests: 0, tokens: 0 }
       current.cost += item.estimated_cost || 0
       current.requests += item.requests || 0
@@ -203,7 +203,7 @@ export function PbrAnalyticsDashboard(props: {
     return [...byGroup.entries()]
       .map(([key, value]) => ({ key, ...value }))
       .sort((a, b) => b.cost - a.cost)
-  }, [items])
+  }, [items, t])
 
   // 「渠道 × 模型」模式把 group 拆成渠道与模型两列；distribution 已按成本倒序。
   const channelModelRows = useMemo(() => {
@@ -212,14 +212,14 @@ export function PbrAnalyticsDashboard(props: {
       const [channel, model] = row.key.split(PBR_CHANNEL_MODEL_SEPARATOR)
       return {
         key: row.key,
-        channel: channel || '(未记录)',
+        channel: channel || t('Not recorded'),
         model: model ?? '',
         cost: row.cost,
         requests: row.requests,
         tokens: row.tokens,
       }
     })
-  }, [distribution, groupBy])
+  }, [distribution, groupBy, t])
 
   const successRate =
     totals.requests > 0 ? (totals.successes / totals.requests) * 100 : 0
@@ -398,10 +398,10 @@ export function PbrAnalyticsDashboard(props: {
       </div>
 
       <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
-        {statCard('上游花费', formatCost(totals.cost))}
-        {statCard('请求数', formatNumber(totals.requests))}
-        {statCard('成功率', `${successRate.toFixed(1)}%`)}
-        {statCard('Token 数', formatNumber(totals.tokens))}
+        {statCard(t('Upstream spend'), formatCost(totals.cost))}
+        {statCard(t('Requests'), formatNumber(totals.requests))}
+        {statCard(t('Success rate'), `${successRate.toFixed(1)}%`)}
+        {statCard(t('Token count'), formatNumber(totals.tokens))}
       </div>
 
       {body}

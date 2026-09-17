@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { t as i18nT } from 'i18next'
 import { Loader2 } from 'lucide-react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -60,11 +61,15 @@ import { submitSetup } from './api'
  */
 const setupSchema = z
   .object({
-    password: z.string().min(1, '请设置登录口令'),
-    confirmPassword: z.string().min(1, '请再次输入登录口令'),
+    password: z.string().min(1, {
+      error: () => i18nT('Please set a login password'),
+    }),
+    confirmPassword: z.string().min(1, {
+      error: () => i18nT('Please enter the login password again'),
+    }),
   })
   .refine((values) => values.password === values.confirmPassword, {
-    message: '两次输入的口令不一致',
+    error: () => i18nT('The two passwords do not match'),
     path: ['confirmPassword'],
   })
 

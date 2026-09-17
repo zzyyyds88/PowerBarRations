@@ -16,31 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export function sendToFluent(apiKey: string, serverAddress?: string): boolean {
-  if (typeof window === 'undefined') {
-    return false
-  }
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
-  // 容器 id 是与 Fluent 宿主约定的注入点：优先新 id，同时兼容历史 id，
-  // 避免宿主仍注入旧 id 时 prefill 静默失效。
-  const container =
-    document.querySelector('#fluent-pbr-container') ??
-    document.querySelector('#fluent-new-api-container')
-  if (!container) {
-    return false
-  }
+import { UpstreamAttribution } from '../upstream-attribution'
 
-  const payload = {
-    id: 'pbr',
-    baseUrl: serverAddress || window.location.origin,
-    apiKey: `sk-${apiKey}`,
-  }
+// AGPLv3 §7(b)/NOTICE：署名句与原始项目链接必须始终对用户可见。
+describe('AGPL §7(b) upstream attribution', () => {
+  it('renders the required attribution sentence and source link', () => {
+    render(<UpstreamAttribution />)
 
-  container.dispatchEvent(
-    new CustomEvent('fluent:prefill', {
-      detail: payload,
-    })
-  )
-
-  return true
-}
+    expect(
+      screen.getByText(
+        'Frontend design and development by New API contributors.'
+      )
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', {
+        name: 'https://github.com/QuantumNous/new-api',
+      })
+    ).toHaveAttribute('href', 'https://github.com/QuantumNous/new-api')
+  })
+})

@@ -121,7 +121,9 @@ describe('cost dashboard channel x model dimension', () => {
     renderDashboard(<CostDashboard />)
 
     await user.click(await screen.findByRole('combobox'))
-    await user.click(await screen.findByRole('option', { name: '渠道 × 模型' }))
+    await user.click(
+      await screen.findByRole('option', { name: 'Channel × Model' })
+    )
 
     expect(
       await screen.findByRole('columnheader', { name: 'Channel' })

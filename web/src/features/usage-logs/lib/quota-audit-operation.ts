@@ -20,6 +20,8 @@ import { formatLogQuota } from '@/lib/format'
 
 type Translate = (key: string, opts?: Record<string, unknown>) => string
 
+// legacy：这些操作来自迁移前的多用户上游审计日志。PBR 单用户没有
+// 用户额度/钱包概念，这里仅用于渲染历史记录，不作为正常界面语义。
 const QUOTA_OPERATIONS: Record<string, { label: string; named: string }> = {
   'user.quota_add': {
     label: 'Increase user quota',
@@ -111,7 +113,7 @@ export function buildQuotaAuditOperation(
       invalid_parameters: t('Invalid adjustment parameters'),
       permission_denied: t('Insufficient permission to adjust this user'),
       target_not_found: t('Target user not found'),
-      quota_limit_exceeded: t('Wallet quota limit exceeded'),
+      quota_limit_exceeded: t('Quota limit exceeded'),
       database_error: t('Quota update failed'),
     }
     const reason =

@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { t as i18nT } from 'i18next'
 import { z } from 'zod'
 
 // ============================================================================
@@ -24,7 +25,12 @@ import { z } from 'zod'
 
 // PBR：无账号体系，只有登录口令（token-spec §2）。
 // username 保留在 schema 里（表单默认填固定占位、界面隐藏）以维持上游 RHF 类型契约。
+// zod 校验信息通过惰性函数在**校验时**取当前语言，避免模块加载时锁定文案。
 export const loginFormSchema = z.object({
-  username: z.string().min(1, 'Please enter your username or email'),
-  password: z.string().min(1, '请输入登录口令'),
+  username: z.string().min(1, {
+    error: () => i18nT('Please enter your username or email'),
+  }),
+  password: z.string().min(1, {
+    error: () => i18nT('Please enter your login password'),
+  }),
 })

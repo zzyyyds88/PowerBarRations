@@ -841,7 +841,7 @@ export function ChannelMutateDialog({
     const timer = setTimeout(() => {
       toast.warning(
         t(
-          'Warning: Base URL should not end with /v1. New API will handle it automatically. This may cause request failures.'
+          'Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.'
         ),
         { duration: 5000 }
       )

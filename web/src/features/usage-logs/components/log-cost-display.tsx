@@ -92,6 +92,8 @@ function QuotaBadge(props: { quota: number }) {
   )
 }
 
+// 旧上游日志专用：PBR 无订阅计费。该徽标只在解析历史/迁移日志且
+// other.billing_source === 'subscription' 时出现，不得用于新日志或普通界面语义。
 function SubscriptionBadge(props: { quota: number }) {
   const { t } = useTranslation()
 
@@ -118,6 +120,7 @@ function SubscriptionBadge(props: { quota: number }) {
 }
 
 export function LogCostDisplay(props: LogCostDisplayProps) {
+  // legacy：仅识别旧上游订阅日志；PBR 正常日志不会携带 billing_source。
   const isSubscription = props.other?.billing_source === 'subscription'
   const showToolSurcharge = hasToolSurcharge(props.other)
 

@@ -37,8 +37,10 @@ export type HeaderNavModules = {
 const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   home: true,
   console: true,
-  pricing: { enabled: true, requireAuth: false },
-  rankings: { enabled: true, requireAuth: false },
+  // PBR 已删除公开定价页/排行页。保留下游契约字段供历史 status 解析，
+  // 但默认关闭，避免误判为存在对应入口。
+  pricing: { enabled: false, requireAuth: false },
+  rankings: { enabled: false, requireAuth: false },
   docs: true,
   about: true,
 }

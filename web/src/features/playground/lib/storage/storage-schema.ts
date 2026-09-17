@@ -26,6 +26,7 @@ export const MAX_LOADED_MESSAGE_CHARS = 40_000
 
 export const playgroundConfigSchema = z.object({
   model: z.string().optional(),
+  // 仅用于内存/sessionStorage 传输；saveConfig 会把它从 localStorage 中剔除。
   clientKey: z.string().optional(),
   temperature: z.number().optional(),
   top_p: z.number().optional(),

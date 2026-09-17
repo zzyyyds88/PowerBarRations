@@ -86,6 +86,29 @@ function writeStoredValue<T>(key: string, data: T): void {
   localStorage.setItem(key, JSON.stringify(payload))
 }
 
+// clientKey 是调用模型面（/v1/chat/completions）的客户端密钥。为避免密钥
+// 长期留在 localStorage，它只写 sessionStorage：关闭标签页即清除，也不与
+// 其它可持久化配置混在一起。
+function readSessionClientKey(): string | null {
+  try {
+    return sessionStorage.getItem(STORAGE_KEYS.CLIENT_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeSessionClientKey(clientKey: string | undefined): void {
+  try {
+    if (clientKey) {
+      sessionStorage.setItem(STORAGE_KEYS.CLIENT_KEY, clientKey)
+    } else {
+      sessionStorage.removeItem(STORAGE_KEYS.CLIENT_KEY)
+    }
+  } catch {
+    // sessionStorage 不可用（如隐私模式）时降级为不持久化。
+  }
+}
+
 function trimMessages(messages: Message[]): Message[] {
   if (messages.length <= MAX_STORED_MESSAGES) {
     return messages
@@ -281,9 +304,21 @@ function trimMessagesByContentSize(messages: Message[]): Message[] {
 export function loadConfig(): Partial<PlaygroundConfig> {
   try {
     const saved = readStoredValue(STORAGE_KEYS.CONFIG)
-    if (!saved) return {}
+    const parsed = saved
+      ? playgroundConfigSchema.parse(unwrapStoredValue(saved))
+      : {}
 
-    return playgroundConfigSchema.parse(unwrapStoredValue(saved))
+    // 迁移：旧版本曾把 clientKey 写进 localStorage。这里主动剔除，只从
+    // sessionStorage 恢复，缺失时退回空串。
+    const persisted: Partial<PlaygroundConfig> = { ...parsed }
+    const legacyClientKey = persisted.clientKey
+    delete persisted.clientKey
+    if (legacyClientKey) {
+      writeStoredValue(STORAGE_KEYS.CONFIG, persisted)
+    }
+
+    const sessionClientKey = readSessionClientKey()
+    return { ...persisted, clientKey: sessionClientKey ?? '' }
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to load config:', error)
@@ -297,7 +332,10 @@ export function loadConfig(): Partial<PlaygroundConfig> {
 export function saveConfig(config: Partial<PlaygroundConfig>): void {
   try {
     const parsed = playgroundConfigSchema.parse(config)
-    writeStoredValue(STORAGE_KEYS.CONFIG, parsed)
+    // clientKey 只进 sessionStorage；其余配置继续持久化到 localStorage。
+    const { clientKey, ...persisted } = parsed
+    writeStoredValue(STORAGE_KEYS.CONFIG, persisted)
+    writeSessionClientKey(clientKey)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to save config:', error)
