@@ -21,9 +21,9 @@ import { expect, it } from 'vitest'
 
 import { useSidebarData } from '../use-sidebar-data'
 
-// ui-spec §6.3：「路由与故障切换」是侧边栏独立页（/routes），紧跟在「模型管理」之后；
+// ui-spec §6.3/§5：侧边栏「模型管理」排在「系统任务」之后（用户指定的菜单顺序）；
 // 模型入口仍只有一个，标题与模型页标题同键（'Model management'）。
-it('exposes one models entry followed by the routing & failover page', () => {
+it('exposes a single models entry placed right after system tasks', () => {
   const { result } = renderHook(() => useSidebarData())
   const adminItems = result.current.navGroups.find(
     (group) => group.id === 'admin'
@@ -35,10 +35,10 @@ it('exposes one models entry followed by the routing & failover page', () => {
     '/models/metadata',
   ])
 
-  const routingIndex = urls.indexOf('/routes')
-  expect(routingIndex).toBeGreaterThan(-1)
-  expect(urls[routingIndex - 1]).toBe('/models/metadata')
-  expect(adminItems?.[routingIndex]?.title).toBe('Routing & Failover')
+  const tasksIndex = urls.indexOf('/system-tasks')
+  const modelsIndex = urls.indexOf('/models/metadata')
+  expect(tasksIndex).toBeGreaterThan(-1)
+  expect(modelsIndex).toBe(tasksIndex + 1)
 
   // 侧边栏「模型管理」标题与模型页标题共用同一 i18n 键，两处显示严格一致。
   const modelsEntry = adminItems?.find((item) =>

@@ -108,19 +108,31 @@ it('keeps only the basic information and channel association sections', async ()
   }
 })
 
-it('offers the icon detected from the model name and adopts it on click', async () => {
+it('auto-applies the icon detected from the model name', async () => {
   renderDialog()
   await waitFor(() =>
     expect(screen.getByLabelText('Model Name *')).toHaveValue(
       'deepseek-v4-flash'
     )
   )
-  expect(screen.getByText('Detected from the model name')).toBeVisible()
-  expect(screen.getAllByText('DeepSeek.Color').length).toBeGreaterThan(0)
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Use this icon' }))
+  // ui-spec §6.3：识别到就自动采用，不再需要点「生效图标」。
   const icon = screen.getByRole('combobox', { name: 'Icon' })
-  expect(icon).toHaveValue('DeepSeek.Color')
+  await waitFor(() => expect(icon).toHaveValue('DeepSeek.Color'))
+  expect(screen.getByText('Effective icon')).toBeVisible()
+  expect(screen.getAllByText('DeepSeek.Color').length).toBeGreaterThan(0)
+})
+
+it('re-detects and re-applies the icon when the model name changes', async () => {
+  renderDialog()
+  const user = userEvent.setup()
+  const nameInput = await screen.findByLabelText('Model Name *')
+  await waitFor(() => expect(nameInput).toHaveValue('deepseek-v4-flash'))
+  const icon = screen.getByRole('combobox', { name: 'Icon' })
+  await waitFor(() => expect(icon).toHaveValue('DeepSeek.Color'))
+
+  await user.clear(nameInput)
+  await user.type(nameInput, 'qwen3.8-flash')
+  await waitFor(() => expect(icon).toHaveValue('Qwen.Color'))
 })
 
 it('discards unsaved drafts only after confirmation when closing', async () => {

@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -43,6 +43,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { resolveModelProvider } from '@/lib/model-provider'
 import {
   createServerError,
   getServerErrorMessage,
@@ -56,7 +57,6 @@ import {
   transformFormDataToModelPayload,
   type ModelFormValues,
 } from '../../lib/model-form'
-import { resolveModelIconKey } from '../../lib/model-icon'
 import type { Model } from '../../types'
 import { ModelLinkedChannels } from '../model-linked-channels'
 
@@ -184,10 +184,33 @@ export function ModelMutateDrawer(props: {
     }
     props.onOpenChange(open)
   }
-  const suggestedIcon = resolveModelIconKey({
-    model_name: watchedModelName ?? '',
-    icon: '',
-  })
+  // 只取"真实命中的厂商图标"：resolveModelIconKey 的"首字母兜底"只用于渲染，
+  // 不能自动写库（否则 example-model 会存下一个无意义的 "e"）。
+  const suggestedIcon = useMemo(
+    () => resolveModelProvider(watchedModelName ?? '')?.icon ?? '',
+    [watchedModelName]
+  )
+
+  // ui-spec §6.3：模型名能识别出厂商图标时**自动采用**，用户不必再点「生效图标」。
+  // 只在"用户还没手动改过图标"时自动写；一旦手动改过就尊重显式选择，不再覆盖。
+  // 采用时 shouldDirty:false：仅凭识别不应把"打开即关闭"标成未保存改动。
+  const iconManuallyEdited = useRef(false)
+  const lastAutoAppliedIcon = useRef('')
+  useEffect(() => {
+    if (!props.open) {
+      iconManuallyEdited.current = false
+      lastAutoAppliedIcon.current = ''
+      return
+    }
+    if (iconManuallyEdited.current) return
+    const current = (form.getValues('icon') ?? '').trim()
+    if (current && current !== lastAutoAppliedIcon.current) return
+    if (!suggestedIcon) return
+    if (current !== suggestedIcon) {
+      form.setValue('icon', suggestedIcon, { shouldDirty: false })
+    }
+    lastAutoAppliedIcon.current = suggestedIcon
+  }, [props.open, suggestedIcon, form])
 
   return (
     <>
@@ -308,7 +331,10 @@ export function ModelMutateDrawer(props: {
                             <LobeIconField
                               key={`${currentRow?.id ?? 'new'}-${props.open}`}
                               value={field.value ?? ''}
-                              onChange={field.onChange}
+                              onChange={(value) => {
+                                iconManuallyEdited.current = true
+                                field.onChange(value)
+                              }}
                               suggestedIcon={suggestedIcon}
                             />
                           </FormControl>

@@ -106,11 +106,6 @@ export function useSidebarData(): SidebarData {
             icon: Radio,
           },
           {
-            title: t('Model management'),
-            url: '/models/metadata',
-            icon: Box,
-          },
-          {
             title: t('Routing & Failover'),
             url: '/routes',
             icon: Waypoints,
@@ -119,6 +114,11 @@ export function useSidebarData(): SidebarData {
             title: t('System Tasks'),
             url: '/system-tasks',
             icon: ListChecks,
+          },
+          {
+            title: t('Model management'),
+            url: '/models/metadata',
+            icon: Box,
           },
           {
             title: t('System Settings'),
