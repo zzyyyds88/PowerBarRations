@@ -24,8 +24,10 @@ func testRoute(lane string, members int, maxAttempts int) *model.ResolvedRoute {
 	cfg.MemberMaxAttempts = maxAttempts
 	cfg.MemberRetryIntervalSeconds = 0
 	resolved := &model.ResolvedRoute{
-		Model:  lane,
-		Source: model.RouteSourceImplicit,
+		Model: lane,
+		// 测试夹具对齐生产形态：只有显式且成员非空的车道才会登记运行态
+		// （NewState 的注册表门禁）。
+		Source: model.RouteSourceExplicit,
 		Mode:   model.LaneModeFailover,
 		Config: cfg,
 	}

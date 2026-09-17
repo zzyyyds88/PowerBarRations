@@ -7,15 +7,16 @@ import (
 	"strings"
 
 	"pbr/internal/apierr"
+	"pbr/internal/route"
 	"pbr/model"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// 显式车道是**可选的覆盖层**：绝大多数模型靠渠道 Models 声明形成的隐式链路由，
-// 只有需要"自定义顺序 / 成员改名 / 池化不同上游的不同模型名"时才建车道。
-// 见 docs/routing-spec-v1.md §1.1。
+// 车道是**唯一路由入口**（ADR 0005，见 docs/routing-spec-v1.md §1.1）：渠道
+// Models 只是候选成员的来源，未固化成同名启用车道前该模型不可调用（503）。
+// 自定义顺序 / 成员改名 / 池化不同上游的不同模型名都通过车道表达。
 
 type laneMemberPayload struct {
 	Channel       string          `json:"channel"`
@@ -67,7 +68,7 @@ func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 
 // ListLanes GET /api/v1/lanes
 //
-// 只列显式车道。隐式车道按定义不存在对象，见 GET /api/v1/models。
+// 只列车道；渠道声明但未配车道的模型不是车道对象，见 GET /api/v1/models。
 func ListLanes(c *gin.Context) {
 	limit, cursor, err := pageParams(c)
 	if err != nil {
@@ -198,6 +199,10 @@ func DeleteLane(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	// 清理进程内运行态（冷却/熔断/探测槽/亲和）：运行态以车道名为键，车道删除后
+	// 不移除会让 SnapshotLanes 一直保留已不存在的车道，SSE 快照每轮为它多解析一次
+	// （routing-spec §1.3）。
+	route.Default.Remove(name)
 	writeAudit(c, "delete", "lane", name)
 	c.JSON(http.StatusOK, gin.H{"deleted": true, "name": name})
 }

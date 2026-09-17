@@ -21,11 +21,12 @@ import (
 // W2 观测与管理面：车道运行态快照、逐成员探活、熔断/冷却清除、单渠道探活。
 // 契约见 docs/api-spec-v1.md §5.2/§5.3、docs/routing-spec-v1.md §7。
 
-// resolveRuntimeRoute 把 {name} 解析为运行态路由：显式车道优先（含被禁用车道的快照），
-// 否则按模型名解析隐式链。返回的 key 必须与转发链路的运行态 key 一致（route.laneKeyOf）。
+// resolveRuntimeRoute 把 {name} 解析为运行态路由：先按车道名（含被禁用车道的快照），
+// 再按成员别名点名（解析到所属车道）。返回的 key 必须与转发链路的运行态 key 一致
+// （route.laneKeyOf）。
 //
-// 关键：PBR 的默认路由是"模型名即路由键"的隐式链，运行态同样按模型名聚合；因此健康/探活/
-// 熔断清除不能只认显式车道行，否则最常用的隐式模型没有任何观测入口。
+// 关键：车道是唯一路由入口，运行态按车道键聚合；健康/探活/熔断清除因此都以车道
+// （或别名解析出的车道）为入口，不存在"按请求模型名直接聚合"的隐式通道。
 // 解析不到任何成员时返回 (nil, "", nil) 由调用方给 404。
 func resolveRuntimeRoute(name string) (*model.ResolvedRoute, string, error) {
 	if lane, err := model.GetLaneByName(name); err == nil && lane != nil {

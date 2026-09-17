@@ -195,7 +195,7 @@ type LaneMember struct {
 	ChannelId     int    `json:"channel_id" gorm:"not null"`
 	UpstreamModel string `json:"upstream_model" gorm:"not null"`
 	PublicAlias   string `json:"public_alias" gorm:"type:varchar(128);index"`
-	Priority      int    `json:"priority"` // 车道内顺序：数字大者优先
+	Priority      int    `json:"priority"`                   // 车道内顺序：数字大者优先
 	Overrides     string `json:"overrides" gorm:"type:text"` // 成员级六键覆盖 JSON
 }
 
@@ -461,11 +461,18 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 		route.PinnedMemberId = pinned.Id
 	}
 	for _, m := range lane.Members {
-		var ch *Channel
+		ch, chErr := GetChannelById(m.ChannelId, false)
+		if chErr != nil {
+			if !errors.Is(chErr, gorm.ErrRecordNotFound) {
+				// 渠道查询的真实 DB 错误必须上抛：把数据库故障静默降级成"渠道不存在"的
+				// 空名成员，会让路由在故障期间看似可用、实际无从排障。
+				return nil, chErr
+			}
+			ch = nil
+		}
 		name := ""
-		if got, err := GetChannelById(m.ChannelId, false); err == nil && got != nil {
-			ch = got
-			name = got.Name
+		if ch != nil {
+			name = ch.Name
 		}
 		route.Members = append(route.Members, RouteMember{
 			ChannelId:        m.ChannelId,
@@ -521,12 +528,16 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 		return cands[i].Id < cands[j].Id
 	})
 	members := make([]RouteMember, 0, len(cands))
-	for _, c := range cands {
+	total := len(cands)
+	for i, c := range cands {
 		members = append(members, RouteMember{
 			ChannelId:     c.Id,
 			Channel:       c.Name,
 			UpstreamModel: effectiveUpstreamModel(c, modelName, ""),
-			Priority:      c.Id,
+			// priority 数字大者优先：渠道 id 升序 → priority 递减，
+			// 使落库后 resolveExactRoute（按 priority 降序）得到的实际顺序
+			// 仍是渠道 id 升序（routing-spec §1.1 / design-v1 §7.7 的 seed 语义）。
+			Priority: total - i,
 		})
 	}
 	return members, nil

@@ -219,6 +219,47 @@ func TestSeedLanesCreatesMissingLanes(t *testing.T) {
 	assert.Empty(t, created2)
 }
 
+// SeedLanes 的初始顺序必须与文档一致：按渠道 id 升序（routing-spec §1.1、
+// design-v1 §7.7）。resolveExactRoute 按 priority 降序排序，若 seed 直接写
+// Priority=c.Id，落库后实际会先打渠道 id 最大者——与文档相反。seed 必须让
+// priority 随渠道 id 升序递减，使"排序后的实际顺序"仍是 id 升序。
+func TestSeedLanesOrderFollowsChannelIdAscending(t *testing.T) {
+	setupLaneTest(t)
+	first := newTestChannel(t, "channel-first", "model-seed-order")
+	second := newTestChannel(t, "channel-second", "model-seed-order")
+	third := newTestChannel(t, "channel-third", "model-seed-order")
+	require.Less(t, first.Id, second.Id)
+	require.Less(t, second.Id, third.Id)
+
+	created, _, err := SeedLanes(false)
+	require.NoError(t, err)
+	require.Contains(t, created, "model-seed-order")
+
+	// 落库顺序（GetLaneByName 按 priority desc 读取）必须是 id 升序。
+	lane, err := GetLaneByName("model-seed-order")
+	require.NoError(t, err)
+	require.Len(t, lane.Members, 3)
+	assert.Equal(t, []int{first.Id, second.Id, third.Id}, laneMemberChannelIds(lane))
+	assert.Greater(t, lane.Members[0].Priority, lane.Members[1].Priority,
+		"priority 必须随渠道 id 升序递减（数字大者优先）")
+	assert.Greater(t, lane.Members[1].Priority, lane.Members[2].Priority)
+
+	// 运行期解析顺序（resolveExactRoute 按 priority 降序）同样必须是 id 升序。
+	resolved, err := ResolveRoute("model-seed-order")
+	require.NoError(t, err)
+	require.Len(t, resolved.Members, 3)
+	assert.Equal(t, []string{"channel-first", "channel-second", "channel-third"},
+		memberChannels(resolved), "seed 后实际先打渠道 id 最小者")
+}
+
+func laneMemberChannelIds(lane *Lane) []int {
+	out := make([]int, 0, len(lane.Members))
+	for _, m := range lane.Members {
+		out = append(out, m.ChannelId)
+	}
+	return out
+}
+
 func TestSeedLanesDryRun(t *testing.T) {
 	setupLaneTest(t)
 	newTestChannel(t, "channel-a", "model-1")

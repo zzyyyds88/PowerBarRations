@@ -256,6 +256,26 @@ func (r *Registry) For(lane string) *Runtime {
 	return rt
 }
 
+// Get 只查询已登记的运行态；未登记时返回 nil（**不创建**）。
+//
+// 未配车道的模型名不得经注册表永久堆积：否则任何已鉴权请求用一个任意模型名
+// 都会新增 Runtime，SnapshotLanes 随"请求过的模型名数"线性增长，SSE 快照
+// （buildRouteStateSnapshot 按 SnapshotLanes 逐车道 ResolveRoute）退化为
+// O(请求过的模型名数) 次 DB 查询（routing-spec §1.3）。
+func (r *Registry) Get(lane string) *Runtime {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.lanes[lane]
+}
+
+// Remove 删除某车道的运行态（车道被删除时清理其冷却/熔断/探测槽/亲和残留，
+// routing-spec §1.3）。幂等：键不存在时无操作。
+func (r *Registry) Remove(lane string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.lanes, lane)
+}
+
 // SnapshotLanes 返回全部有运行态的车道键（供重启后清空语义与调试）。
 func (r *Registry) SnapshotLanes() []string {
 	r.mu.RLock()

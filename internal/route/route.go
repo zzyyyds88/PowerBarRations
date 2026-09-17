@@ -195,11 +195,25 @@ func (s *State) configFor(idx int) model.LaneRelayConfig {
 }
 
 // NewState 基于解析结果建立请求态。运行态取自进程级注册表（按路由键分车道）。
+//
+// 只有**真实存在且成员非空的显式车道**才登记运行态：未配车道的模型名
+// （Source=unconfigured）在请求里出现任意多次都不得永久新增 Runtime，否则
+// SnapshotLanes 会随"请求过的模型名数"无界增长，SSE 快照退化成每个模型名
+// 一次 DB 查询（routing-spec §1.3）。空链请求不会选中成员，给一个不登记的
+// 临时运行态即可，既避免 nil 解引用又不污染注册表。
 func NewState(resolved *model.ResolvedRoute) *State {
 	cfg := resolved.Config.Normalize()
+	routeKey := laneKeyOf(resolved)
+	var runtime *Runtime
+	if resolved.Source == model.RouteSourceExplicit && len(resolved.Members) > 0 {
+		runtime = Default.For(routeKey)
+	} else {
+		runtime = newRuntime()
+		runtime.laneName = routeKey
+	}
 	s := &State{
 		Route:           resolved,
-		Runtime:         Default.For(laneKeyOf(resolved)),
+		Runtime:         runtime,
 		current:         -1,
 		attempts:        map[int]int{},
 		maxPerMem:       cfg.MemberMaxAttempts,

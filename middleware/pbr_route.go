@@ -98,6 +98,8 @@ func PBRServe(c *gin.Context) bool {
 		carrier.ErrorKind = string(route.KindSoftTransient)
 		carrier.ErrorSummary = route.NoAvailableMessage(modelName)
 		model.WritePBRLog(c)
+		// 快抛路径不得残留 X-Served-By（本路径尚未选中成员时为无操作）。
+		ClearServedByHeader(c)
 		route.WriteNoAvailableChannel(c, modelName)
 		return true
 	}
@@ -194,4 +196,18 @@ func SetServedByHeader(c *gin.Context, channel *model.Channel, member *model.Rou
 	value := fmt.Sprintf("channel=%d:%s, model=%s", channel.Id, channel.Name, member.UpstreamModel)
 	c.Header("X-Served-By", value)
 	common.SetContextKey(c, constant.ContextKeyPBRServedBy, value)
+}
+
+// ClearServedByHeader 清除"实际服务者"标记：失败/503/快抛收尾时调用，保证
+// X-Served-By 只出现在成功响应上（design-v1 §4.1）。
+//
+// 选中成员即写头，若错误收尾不清，失败响应的下游会看到一个实际并未成功服务的
+// channel/model 组合，误判"这次到底走的谁"。上下文记录一并清除，避免下游把它
+// 当成"本次确实被该成员服务过"。
+func ClearServedByHeader(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	c.Writer.Header().Del("X-Served-By")
+	delete(c.Keys, string(constant.ContextKeyPBRServedBy))
 }

@@ -137,6 +137,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
+			// 失败/503 收尾不得残留 X-Served-By：它描述"实际成功服务的成员"，
+			// 只有成功响应才应保留（design-v1 §4.1）。任何重试过程中最后选中的
+			// 成员都不能代表"本次请求被谁服务"。
+			middleware.ClearServedByHeader(c)
 			if pbrroute.IsNoAvailable(newAPIError) {
 				// 成员链耗尽的固定 body（routing-spec §4.2）：下游 fallback 分类依赖它，
 				// 因此不走通用错误序列化，也不加请求 id 后缀。
@@ -549,4 +553,3 @@ func RelayNotFound(c *gin.Context) {
 		"error": err,
 	})
 }
-

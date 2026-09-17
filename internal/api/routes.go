@@ -9,8 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// 模型路由是"零配置即可用"的观察面：渠道声明 Models 就自动出现在这里，
-// 无需先建车道（routing-spec §1.1、api-spec §5.7）。
+// 模型路由是观察面：渠道声明的 Models 会以 source=unconfigured、routable=false
+// 出现在这里，但只有固化了同名启用车道（source=explicit）才真正可调用
+// （ADR 0005、routing-spec §1.1、api-spec §5.7）。
 
 // ListModels GET /api/v1/models
 //
