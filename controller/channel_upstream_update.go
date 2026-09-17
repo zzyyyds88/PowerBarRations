@@ -891,6 +891,11 @@ func ApplyChannelUpstreamModelUpdates(c *gin.Context) {
 		req.RemoveModels,
 	)
 	if err != nil {
+		var laneErr *model.LaneReferenceError
+		if errors.As(err, &laneErr) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "code": "conflict", "message": "上游同步会移除仍被车道引用的模型，已取消", "data": gin.H{"blocked": laneErr.Blocked}})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -986,6 +991,17 @@ func applyChannelUpstreamModelUpdates(
 	originModels := normalizeModelNames(channel.GetModels())
 	nextModels := applySelectedModelChanges(originModels, addModels, removeModels)
 	modelsChanged = !slices.Equal(originModels, nextModels)
+	// 上游同步移除模型同样要过车道引用守卫：被移除路由键若命中同名车道且该车道有
+	// 该渠道成员，返回 LaneReferenceError，绝不静默让车道失去成员来源。
+	if modelsChanged && len(removeModels) > 0 {
+		refs, refErr := model.RemovedModelLaneRefs(channel.Id, removeModels)
+		if refErr != nil {
+			return nil, nil, nil, nil, false, refErr
+		}
+		if len(refs) > 0 {
+			return nil, nil, nil, nil, false, &model.LaneReferenceError{Blocked: map[string][]string{channel.Name: refs}}
+		}
+	}
 	if modelsChanged {
 		channel.Models = strings.Join(nextModels, ",")
 	}
