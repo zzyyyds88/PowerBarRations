@@ -43,6 +43,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          # 仓库根没有 package.json，action 读不到 web/package.json 的 packageManager，
+          # 因此这里显式指定；与 web/package.json 的 packageManager 保持一致。
+          version: 11.7.0
       - uses: actions/setup-node@v4
         with:
           node-version-file: web/.node-version
