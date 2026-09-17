@@ -41,16 +41,32 @@ import {
 const modelsKey = pbrModelsQueryKey
 const routeKey = (model: string) => ['pbr-route', model] as const
 
-export function ModelRoutingPanel(props: { initialModel?: string }) {
+export function ModelRoutingPanel(props: {
+  initialModel?: string
+  /**
+   * 固定模型模式（行内「编辑成员链」弹窗）：只渲染该模型的成员链编辑，
+   * 隐藏模型选择器与一键固化按钮；不传时保持完整面板模式。
+   */
+  fixedModel?: string
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [selected, setSelected] = useState<string>(props.initialModel ?? '')
+  const [selected, setSelected] = useState<string>(
+    props.initialModel ?? props.fixedModel ?? ''
+  )
+  const fixed = props.fixedModel
 
-  const modelsQuery = useQuery({ queryKey: modelsKey, queryFn: listPBRModels })
+  const modelsQuery = useQuery({
+    queryKey: modelsKey,
+    queryFn: listPBRModels,
+    // 固定模型模式只编辑单条车道，无需拉取全模型列表。
+    enabled: !fixed,
+  })
   const models: PBRModelSummary[] = modelsQuery.data ?? []
   const knownModels = models.map((m) => m.model)
-  const active =
-    selected && knownModels.includes(selected)
+  const active = fixed
+    ? fixed
+    : selected && knownModels.includes(selected)
       ? selected
       : selected || models[0]?.model || ''
 
@@ -110,27 +126,34 @@ export function ModelRoutingPanel(props: { initialModel?: string }) {
   }
 
   return (
-    <div className='grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]'>
-      <Card className='min-h-0 overflow-hidden'>
-        <CardHeader className='flex-row items-center justify-between gap-2 py-3'>
-          <CardTitle className='text-sm'>
-            {t('Routable models')} ({models.length})
-          </CardTitle>
-          <Button
-            size='sm'
-            variant='outline'
-            disabled={seed.isPending}
-            onClick={() => seed.mutate()}
-          >
-            <Wand2 className='size-4' />
-            {t('Generate missing lanes')}
-          </Button>
-        </CardHeader>
-        <Separator />
-        <CardContent className='min-h-0 overflow-auto p-2'>
-          {listContent}
-        </CardContent>
-      </Card>
+    <div
+      className={cn(
+        'min-h-0 flex-1 gap-4',
+        fixed ? 'flex flex-col' : 'grid lg:grid-cols-[320px_1fr]'
+      )}
+    >
+      {!fixed && (
+        <Card className='min-h-0 overflow-hidden'>
+          <CardHeader className='flex-row items-center justify-between gap-2 py-3'>
+            <CardTitle className='text-sm'>
+              {t('Routable models')} ({models.length})
+            </CardTitle>
+            <Button
+              size='sm'
+              variant='outline'
+              disabled={seed.isPending}
+              onClick={() => seed.mutate()}
+            >
+              <Wand2 className='size-4' />
+              {t('Generate missing lanes')}
+            </Button>
+          </CardHeader>
+          <Separator />
+          <CardContent className='min-h-0 overflow-auto p-2'>
+            {listContent}
+          </CardContent>
+        </Card>
+      )}
 
       {active ? (
         <RouteEditor

@@ -1289,7 +1289,7 @@ function FailureDetailsSheet({
       >
         {details && (
           <>
-            <SheetHeader className={sideDrawerHeaderClassName('sm:px-5')}>
+            <SheetHeader className={sideDrawerHeaderClassName('sm:px-5 pr-12')}>
               <SheetTitle className='pr-10'>{t('Details')}</SheetTitle>
               <SheetDescription className='pr-10 wrap-break-word'>
                 {details.model}

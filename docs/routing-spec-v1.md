@@ -44,7 +44,7 @@
 ```go
 type Channel struct {
     Name         string
-    Models       []string          // 本渠道提供的路由键；可从上游自动探测或手工维护
+    Models       []string          // 本渠道提供的路由键；可经 sync-models 从上游拉取或手工维护（探测是手动按钮动作，不自动拉取）
     ModelMapping map[string]string // 路由键 → 上游真名（上游命名不一致时配置一次）
     // base_url/key/type/param_override/enabled/proxy 见 design-v1 §3.4
 }
@@ -66,6 +66,7 @@ type LaneMember struct {
 ```
 
 - **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
+- **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建/一键固化车道与未显式配置六键的车道。
 - **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则成员级显式改名会被渠道映射悄悄反向覆盖（优先级倒挂）。非 PBR 链路（显式渠道 pin）不受此约束。
 - 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。
 - 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。**
@@ -115,11 +116,10 @@ type LaneRuntime struct {
 
 ### 2.3 已删除的模式：weighted / round_robin
 
-- 本规格 v1 早期曾定义 `weighted`（按成员 `weight` 加权随机）与 `round_robin`（环形轮询）两种模式，**现均已删除**，成员 `weight` 字段一并删除。
-- 理由：本项目是单用户自用网关，随机/轮询会让"这次为什么走了另一个上游"无法解释，排障成本远大于收益。需要打散负载时，正确做法是拆车道（不同模型名各自成链）或调整成员顺序。
+- `weighted`（按成员 `weight` 加权随机）与 `round_robin`（环形轮询）**已删除**，成员 `weight` 字段一并删除（删除理由见 design-v1 §7.2；与线上的差异总表见 §10）。
 - 兼容：`PUT /api/lanes/{name}` 遇到 `mode` 不在 `failover|manual` 时返回既有 `422 invalid_mode`；导入旧配置里的 `weighted`/`round_robin` 与成员 `weight` 会被忽略（不报错）。
 
-> 两种模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同。
+> 两种现存模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同。
 
 ---
 
@@ -129,7 +129,7 @@ type LaneRuntime struct {
 
 1. 读取客户端请求体一次；解析 `model`（车道名或成员别名）与 `stream`。
 2. 校验该请求所用客户端密钥对该车道/别名是否有权限（令牌规格见 token-spec）；无权 → `403 forbidden_scope`。
-3. 车道不存在 → `404 lane_not_found`（模型面按 §4.1 语义返回，不是 400 静默）。
+3. 车道不存在 → **`503` 快速失败**（与"成员全部耗尽"同形错误体，见 §1.1 与 §4.2；模型面没有"车道 404"语义，下游无需分支）。
 4. 进入尝试循环（每轮重新读取车道配置，支持热更新）：
    1. 选择成员（§2）。无可用 → **直接快抛 503**（见 §4.2，与线上"轮询等待"不同）。
    2. 解析渠道；渠道被禁用或不存在 → 记为该成员的一次失败（计入冷却/熔断），继续循环。

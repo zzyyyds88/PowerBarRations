@@ -21,8 +21,8 @@ import { expect, it } from 'vitest'
 
 import { useSidebarData } from '../use-sidebar-data'
 
-// ui-spec §6.3：「路由与故障切换」是侧边栏独立页（/routes），紧跟在「模型」之后；
-// 模型入口仍只有一个。
+// ui-spec §6.3：「路由与故障切换」是侧边栏独立页（/routes），紧跟在「模型管理」之后；
+// 模型入口仍只有一个，标题与模型页标题同键（'Model management'）。
 it('exposes one models entry followed by the routing & failover page', () => {
   const { result } = renderHook(() => useSidebarData())
   const adminItems = result.current.navGroups.find(
@@ -39,4 +39,10 @@ it('exposes one models entry followed by the routing & failover page', () => {
   expect(routingIndex).toBeGreaterThan(-1)
   expect(urls[routingIndex - 1]).toBe('/models/metadata')
   expect(adminItems?.[routingIndex]?.title).toBe('Routing & Failover')
+
+  // 侧边栏「模型管理」标题与模型页标题共用同一 i18n 键，两处显示严格一致。
+  const modelsEntry = adminItems?.find((item) =>
+    item.url?.startsWith('/models')
+  )
+  expect(modelsEntry?.title).toBe('Model management')
 })

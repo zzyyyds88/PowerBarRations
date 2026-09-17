@@ -216,7 +216,7 @@ export function ModelMutateDrawer(props: {
           className={sideDrawerContentClassName('sm:max-w-[1280px]')}
         >
           <SheetHeader className={sideDrawerHeaderClassName()}>
-            <SheetTitle className='pr-6 break-all'>
+            <SheetTitle className='pr-12 break-all'>
               {hasModelName ? currentRow?.model_name : t('Create Model')}
             </SheetTitle>
             <SheetDescription>
@@ -496,6 +496,7 @@ export function ModelMutateDrawer(props: {
                       <ModelLinkedChannels
                         modelName={currentRow.model_name}
                         nameRule={currentRow.name_rule}
+                        icon={currentRow.icon}
                       />
                     ) : null}
                   </form>

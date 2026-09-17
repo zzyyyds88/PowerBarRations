@@ -272,7 +272,7 @@ export function PBRLaneLogsSection() {
         open={detailId !== null}
       >
         <DialogContent className='max-w-3xl'>
-          <DialogHeader>
+          <DialogHeader className='pr-12'>
             <DialogTitle>{t('Request detail')}</DialogTitle>
             <DialogDescription>
               {t(

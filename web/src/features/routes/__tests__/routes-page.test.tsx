@@ -19,11 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 /*
 「路由与故障切换」独立页（ui-spec §6.3）：
 - 集中列出全部路由键（explicit 可调用 / unconfigured 不可调用）与成员顺序摘要；
-- 行内「编辑成员链」打开成员链抽屉。
+- 行内「编辑成员链」打开居中弹窗（固定模型模式，只显示该车道成员）。
 测试资源为空表，i18n 文案即 key 本身。
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
@@ -134,7 +134,7 @@ describe('路由与故障切换页', () => {
     expect(screen.getByText('1 candidate channels')).toBeInTheDocument()
   })
 
-  test('行内「编辑成员链」打开该模型的成员链抽屉', async () => {
+  test('行内「编辑成员链」打开居中弹窗，只显示该车道成员', async () => {
     mockRouteKeys()
     renderPage()
 
@@ -146,9 +146,18 @@ describe('路由与故障切换页', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toBeVisible()
-    // 抽屉内是成员链编辑面板，且预选了点中的模型。
-    expect(await screen.findByText(/Routable models/)).toBeVisible()
-    expect(await screen.findByText('channel-a')).toBeVisible()
+    // 固定模型模式：隐藏模型选择器与一键固化按钮，只渲染该模型成员链。
+    expect(
+      within(dialog).queryByText(/Routable models/)
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('Generate missing lanes')
+    ).not.toBeInTheDocument()
+    // 弹窗标题与成员链编辑只含点中的模型（model-1），不含其他车道。
+    expect(within(dialog).getAllByText('model-1').length).toBeGreaterThan(0)
+    expect(within(dialog).queryByText('model-2')).not.toBeInTheDocument()
+    expect(await within(dialog).findByText('channel-a')).toBeVisible()
+    expect(within(dialog).getByText('channel-b')).toBeVisible()
   })
 
   test('空态：没有路由键时给出引导文案', async () => {

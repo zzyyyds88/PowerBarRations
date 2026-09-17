@@ -13,30 +13,9 @@
 | 管理面 | `/api/*` | **二选一**：`Authorization: Bearer <管理密钥>`（AI/脚本）或 HttpOnly 会话 Cookie（浏览器，登录后自动携带） |
 | 模型面 | `/v1/*` | `Authorization: Bearer <客户端密钥>`（同时兼容 `X-Api-Key`） |
 
-> **前缀说明**：`/api` 是规范前缀；`/api/v1` 保留为**兼容别名**（注册完全相同的处理器），既有脚本无需改动。
-> 与 AI 契约冲突的两个控制台内部资源收在 `/api/console/*`（`/api/console/models`、`/api/console/audit`）；其余控制台内部接口仍在 `/api/*` 下，可用同一管理密钥调用，但**不属于**本契约（§5 表内才是稳定契约）。
-> 面向 AI 的手册：`GET /doc`（`text/markdown`，见 §5.1）、`GET /llms.txt`（`text/plain`）；交互式 OpenAPI UI：`GET /doc/ui`。
+**管理密钥 = `Base64(SHA256(登录口令))`**（无账号体系），由调用方自行计算，服务端只存其哈希；首次使用先 `POST /api/setup` 设置口令（未初始化时除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`）；浏览器登录 `POST /api/auth/login` 换 HttpOnly Cookie（不写 localStorage），AI/脚本走 Bearer，两通道等价。派生规则、会话属性、失败退避与恢复手段（`PBR_ADMIN_KEY(S)`、`pbr auth reset`、`PBR_BIND` 与明文 HTTP 边界）详见 [`token-spec-v1.md`](token-spec-v1.md) §2；认证失败的响应形态见 §3（401 `unauthorized`）。
 
-**管理密钥由登录口令派生**（无账号体系，详见 [`token-spec-v1.md`](token-spec-v1.md) §2）：
-
-```
-管理密钥 = Base64( SHA256( 登录口令 ) )
-```
-
-- 首次启动时未初始化，必须先 `POST /api/setup` 设置口令；否则除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`。
-- 服务端只存 `sha256(管理密钥)`；口令与管理密钥明文都不落库。
-- **浏览器走会话 Cookie**：`POST /api/auth/login` 成功后签发 HttpOnly Cookie，控制台**不再把管理密钥写进 localStorage**；`POST /api/auth/logout` 清除。
-- **AI/脚本走 Bearer**：管理密钥 = `Base64(SHA256(登录口令))`，由调用方自行计算，无需人工复制（见 token-spec §2.1）。
-- 两条通道等价：任一通过即鉴权成功。口令变更后旧 Cookie 与新签名不匹配，自动失效。
-- **监听 `0.0.0.0` 对局域网开放**（模型面与管理面同端口），凭凭据鉴权、不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。局域网为明文 HTTP，故口令须为长随机串。
-- 可用 `PBR_ADMIN_KEY` 环境变量显式覆盖（无头/AI 部署）；客户端密钥只存哈希，明文仅在创建/轮换响应出现一次。
-
-**认证失败响应**
-
-```json
-HTTP/1.1 401 Unauthorized
-{ "error": { "code": "unauthorized", "message": "missing or invalid bearer token" } }
-```
+> 前缀说明：`/api` 是规范前缀；`/api/v1` 保留为**兼容别名**（注册完全相同的处理器），既有脚本无需改动。控制台内部资源的边界见 §9。面向 AI 的手册：`GET /doc`（`text/markdown`）、`GET /llms.txt`（`text/plain`）、交互式文档 `GET /doc/ui`（§5.1）。
 
 ---
 
@@ -114,11 +93,11 @@ HTTP/1.1 401 Unauthorized
 }
 ```
 
-- `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游自动探测。
+- `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游拉取模型清单（渠道编辑器内手动触发）。
 - **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
-- `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。折算优先级：渠道价 > 全局默认单价表（`system/options.model_prices`）> 不折算。省略该字段时保持原值。
+- `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。**渠道未配价即不折算（0）——没有全局单价层**。省略该字段时保持原值。
 - `model_mapping`：**渠道模型映射**（JSON dict，路由键 → 上游真名），用于上游命名与路由键不一致的情况。车道成员解析上游名时：成员级 `upstream_model`（非空且≠路由键）> 本映射 > 路由键。省略该字段时保持原值。
 
 ### 4.2 Lane
@@ -219,6 +198,7 @@ HTTP/1.1 401 Unauthorized
 | POST | `/api/setup` | 首次设置登录口令，**签发会话 Cookie** 并返回派生管理密钥（仅未初始化时可用） |
 | POST | `/api/auth/login` | 口令校验通过→**签发会话 Cookie**，并返回派生管理密钥 |
 | POST | `/api/auth/logout` | 清除会话 Cookie |
+| GET | `/api/auth/session` | 查询会话状态（**免鉴权**）：`{authenticated, stale}`；`stale=true` 表示携带了已失效的会话 Cookie（口令已变更），服务端同时下发清除 Cookie（详见 token-spec §2.5.1） |
 | POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签）。**`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时返回 409 `conflict`**：环境变量管理密钥优先，口令变更不影响实际生效的密钥 |
 | GET | `/api/capabilities` | 适配器、模式、能力枚举 |
 | GET | `/api/openapi.json` | OpenAPI 3 文档（**免鉴权**） |
@@ -226,7 +206,7 @@ HTTP/1.1 401 Unauthorized
 | GET | `/llms.txt` | 与 `/doc` 同源的纯文本手册（**免鉴权**） |
 | GET | `/doc/ui` | 交互式 OpenAPI 文档（复用 Scalar，指向 `/api/openapi.json`。**免鉴权**） |
 | GET | `/api/system/options` | 全局选项 |
-| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、`model_prices`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建/一键固化车道与未显式配置的车道） |
+| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建/一键固化车道与未显式配置的车道） |
 
 ### 5.2 车道
 
@@ -301,8 +281,8 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
   "model": "model-1",
   "source": "explicit",
   "members": [
-    { "channel": "channel-a", "upstream_model": "model-1", "priority": 1 },
-    { "channel": "channel-b", "upstream_model": "model-1", "priority": 2 }
+    { "channel": "channel-a", "upstream_model": "model-1", "priority": 2 },
+    { "channel": "channel-b", "upstream_model": "model-1", "priority": 1 }
   ]
 }
 ```
@@ -501,9 +481,6 @@ curl -s -X PUT $PBR/api/system/options \
     "circuit_max_open_seconds": 1800,
     "log_retention_days": 30,
     "probe_concurrency": 4,
-    "model_prices": [
-      {"model": "model-1", "input": 2.5, "output": 10, "cache_read": 1.25, "cache_write": 3}
-    ],
     "lane_defaults": {
       "member_max_attempts": 2,
       "member_retry_interval_seconds": 3,
@@ -520,17 +497,12 @@ curl -s -X PUT $PBR/api/system/options \
   不会把关键词表清空。
 - 车道六键（`member_max_attempts` 等）默认是**车道级**配置，在
   `PUT /api/lanes/{name}` 的 `config` 里设置。`lane_defaults` 是它们的**全局默认值**
-  （选项键 `PBRLaneDefaults`，内置于 2/3/120/30/60/0）：作用于新建与一键固化的车道，
+  （选项键 `PBRLaneDefaults`，数值默认值单处规范见 routing-spec §1.2）：作用于新建与一键固化的车道，
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
 - `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
 - `probe_concurrency`（默认 4）限制 `POST /lanes/{name}/probe` 对上游的并发压力。
-- `model_prices`（design-v1 §16.9#7）是**单价表**，单位**人民币 / 百万 token**，
-  四个价格字段（`input` / `output` / `cache_read` / `cache_write`）可留空或为 0。
-  键语义：**整表替换**（传 `[]` 即清空），模型不在表里就完全不折算。
-  这张表**只用于日志 `estimated_cost` 的折算展示**——不参与准入、不扣任何额度
-  （design-v1 G7「只看不扣」）。计价键是**请求模型名**（不是被改写的上游模型名）。
-  校验：`model` 非空、不重复，价格非负；否则 400。
+- **没有全局单价选项**：成本折算只用渠道级 `prices`（§4.1），渠道未配价即不折算（0）。
 
 ### 6.10 导出 / 导入（取代拷库备份）
 
@@ -621,8 +593,8 @@ curl -sfX PUT $PBR/api/channels/channel-b -H "Authorization: Bearer $ADMIN_KEY" 
 curl -sfX PUT $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"enabled":true,"mode":"failover","members":[
-        {"channel":"channel-a","upstream_model":"model-x","priority":1},
-        {"channel":"channel-b","upstream_model":"model-y","priority":2}]}'
+        {"channel":"channel-a","upstream_model":"model-x","priority":2},
+        {"channel":"channel-b","upstream_model":"model-y","priority":1}]}'
 
 # 3) 回读确认（写接口自带回读，但首次接入仍建议显式 GET）
 curl -sf $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY"
@@ -686,7 +658,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
 | 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
 | 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
-| 管理员日志 | `/api/log/**`、`/api/mj/` |
+| 管理员日志 | `/api/log/**` |
 | 系统任务 / 系统信息 / 性能 | `/api/system-task/**`、`/api/system-info/**`、`/api/performance/**`、`/api/perf-metrics/**` |
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
