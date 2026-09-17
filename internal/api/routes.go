@@ -42,9 +42,10 @@ func GetRoute(c *gin.Context) {
 	members := make([]gin.H, 0, len(resolved.Members))
 	for _, m := range resolved.Members {
 		item := gin.H{
-			"channel":        m.Channel,
-			"upstream_model": m.UpstreamModel,
-			"priority":       m.Priority,
+			"channel":         m.Channel,
+			"channel_enabled": m.ChannelEnabled,
+			"upstream_model":  m.UpstreamModel,
+			"priority":        m.Priority,
 		}
 		if m.UpstreamOverride != "" && m.UpstreamOverride != m.UpstreamModel {
 			item["upstream_override"] = m.UpstreamOverride
@@ -54,12 +55,37 @@ func GetRoute(c *gin.Context) {
 		}
 		members = append(members, item)
 	}
+	// 已配车道的模型也要能看到"声明了该模型但不在成员链里"的候选渠道，
+	// 否则新增渠道声明后只能删车道重建（ui-spec §6.3）。
+	candidates := make([]gin.H, 0)
+	if resolved.Source == model.RouteSourceExplicit {
+		memberChannels := map[int]bool{}
+		for _, m := range resolved.Members {
+			memberChannels[m.ChannelId] = true
+		}
+		suggested, suggestedErr := model.SuggestedMembers(resolved.RouteKey)
+		if suggestedErr != nil {
+			writeAPIError(c, suggestedErr)
+			return
+		}
+		for _, m := range suggested {
+			if memberChannels[m.ChannelId] {
+				continue
+			}
+			candidates = append(candidates, gin.H{
+				"channel":        m.Channel,
+				"upstream_model": m.UpstreamModel,
+				"priority":       m.Priority,
+			})
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"model":    resolved.Model,
-		"source":   resolved.Source,
-		"routable": resolved.Source == model.RouteSourceExplicit,
-		"mode":     resolved.Mode,
-		"config":   resolved.Config,
-		"members":  members,
+		"model":      resolved.Model,
+		"source":     resolved.Source,
+		"routable":   resolved.Source == model.RouteSourceExplicit,
+		"mode":       resolved.Mode,
+		"config":     resolved.Config,
+		"members":    members,
+		"candidates": candidates,
 	})
 }

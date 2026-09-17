@@ -201,9 +201,12 @@ type LaneMember struct {
 
 // RouteMember 一次解析出的成员（对外展示与选路共用）。
 type RouteMember struct {
-	ChannelId     int    `json:"channel_id"`
-	Channel       string `json:"channel"`
-	UpstreamModel string `json:"upstream_model"`
+	ChannelId int    `json:"channel_id"`
+	Channel   string `json:"channel"`
+	// ChannelEnabled 该成员渠道当前是否启用；停用渠道成员在控制台应可见地标灰
+	// （否则同一渠道在模型页有停用徽章、路由页却是绿色"可调用"）。
+	ChannelEnabled bool   `json:"channel_enabled"`
+	UpstreamModel  string `json:"upstream_model"`
 	// UpstreamOverride 是成员级显式改名（数据库原值，可能为空）。为空表示"用渠道映射"。
 	UpstreamOverride string `json:"upstream_override,omitempty"`
 	PublicAlias      string `json:"public_alias,omitempty"`
@@ -586,6 +589,7 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 		route.Members = append(route.Members, RouteMember{
 			ChannelId:        m.ChannelId,
 			Channel:          name,
+			ChannelEnabled:   ch != nil && ch.Status == common.ChannelStatusEnabled,
 			UpstreamModel:    effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
 			UpstreamOverride: m.UpstreamModel,
 			PublicAlias:      m.PublicAlias,
@@ -640,9 +644,10 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 	total := len(cands)
 	for i, c := range cands {
 		members = append(members, RouteMember{
-			ChannelId:     c.Id,
-			Channel:       c.Name,
-			UpstreamModel: effectiveUpstreamModel(c, modelName, ""),
+			ChannelId:      c.Id,
+			Channel:        c.Name,
+			ChannelEnabled: true, // listEnabledChannels 只含启用渠道
+			UpstreamModel:  effectiveUpstreamModel(c, modelName, ""),
 			// priority 数字大者优先：渠道 id 升序 → priority 递减，
 			// 使落库后 resolveExactRoute（按 priority 降序）得到的实际顺序
 			// 仍是渠道 id 升序（routing-spec §1.1 / design-v1 §7.7 的 seed 语义）。
@@ -650,6 +655,12 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 		})
 	}
 	return members, nil
+}
+
+// SuggestedMembers 导出 suggestedMembers：供管理面生成"可添加的候选渠道"
+// （已配车道的模型也能看到新声明该模型的渠道，避免只能删车道重建）。
+func SuggestedMembers(modelName string) ([]RouteMember, error) {
+	return suggestedMembers(modelName)
 }
 
 // ResolveRouteForDisplay 供管理面展示：没有车道时返回"建议成员链"（渠道声明，
