@@ -57,11 +57,9 @@ import {
   aggregateChannelsByTag,
   getChannelTableRowId,
   isTagAggregateRow,
-  getChannelTypeLabel,
 } from '../lib'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
-import { ChannelTypeLogo } from './channel-type-badge'
 import { useChannelsColumns } from './channels-columns'
 import { useChannels } from './channels-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
@@ -154,10 +152,6 @@ export function ChannelsTable() {
   // Extract filters from column filters
   const statusFilter =
     (columnFilters.find((f) => f.id === 'status')?.value as string[]) || []
-  const typeFilter = useMemo(
-    () => (columnFilters.find((f) => f.id === 'type')?.value as string[]) || [],
-    [columnFilters]
-  )
   const {
     value: modelFilter,
     inputValue: modelFilterInput,
@@ -209,10 +203,6 @@ export function ChannelsTable() {
         statusFilter.length > 0 && !statusFilter.includes('all')
           ? statusFilter[0]
           : undefined,
-      type:
-        typeFilter.length > 0 && !typeFilter.includes('all')
-          ? Number(typeFilter[0])
-          : undefined,
       tag_mode: enableTagMode,
       id_sort: idSort,
       ...sortParams,
@@ -229,10 +219,6 @@ export function ChannelsTable() {
               statusFilter.length > 0 && !statusFilter.includes('all')
                 ? statusFilter[0]
                 : undefined,
-            type:
-              typeFilter.length > 0 && !typeFilter.includes('all')
-                ? Number(typeFilter[0])
-                : undefined,
             tag_mode: enableTagMode,
             id_sort: idSort,
             ...sortParams,
@@ -246,10 +232,6 @@ export function ChannelsTable() {
             status:
               statusFilter.length > 0 && !statusFilter.includes('all')
                 ? statusFilter[0]
-                : undefined,
-            type:
-              typeFilter.length > 0 && !typeFilter.includes('all')
-                ? Number(typeFilter[0])
                 : undefined,
             tag_mode: enableTagMode,
             id_sort: idSort,
@@ -275,7 +257,6 @@ export function ChannelsTable() {
   }, [data, enableTagMode])
 
   const totalCount = data?.data?.total || 0
-  const typeCounts = data?.data?.type_counts
 
   // Columns configuration
   const columns = useChannelsColumns({ enableSelection: batchMode })
@@ -320,57 +301,6 @@ export function ChannelsTable() {
     }
   }, [batchMode, table])
 
-  // Prepare filter options from existing channel types only.
-  const typeFilterOptions = useMemo(() => {
-    const counts = typeCounts || {}
-    const typeIds = Object.entries(counts)
-      .map(([type, count]) => ({
-        type: Number(type),
-        count: Number(count) || 0,
-      }))
-      .filter((item) => item.type > 0 && item.count > 0)
-      .sort((a, b) => {
-        const labelA = t(getChannelTypeLabel(a.type))
-        const labelB = t(getChannelTypeLabel(b.type))
-        return labelA.localeCompare(labelB)
-      })
-
-    const selectedType = typeFilter.find((value) => value !== 'all')
-    if (selectedType) {
-      const selectedTypeId = Number(selectedType)
-      const alreadyIncluded = typeIds.some(
-        (item) => item.type === selectedTypeId
-      )
-      if (selectedTypeId > 0 && !alreadyIncluded) {
-        typeIds.push({
-          type: selectedTypeId,
-          count: Number(counts[selectedType]) || 0,
-        })
-      }
-    }
-
-    const totalTypes = Object.values(counts).reduce(
-      (sum, count) => sum + (Number(count) || 0),
-      0
-    )
-
-    return [
-      {
-        label: 'All Types',
-        value: 'all',
-        count: totalTypes,
-      },
-      ...typeIds.map((item) => {
-        return {
-          label: getChannelTypeLabel(item.type),
-          value: String(item.type),
-          count: item.count,
-          iconNode: <ChannelTypeLogo type={item.type} size={16} />,
-        }
-      }),
-    ]
-  }, [t, typeCounts, typeFilter])
-
   return (
     <DataTablePage
       table={table}
@@ -411,12 +341,6 @@ export function ChannelsTable() {
             columnId: 'status',
             title: t('Status'),
             options: [...CHANNEL_STATUS_OPTIONS],
-            singleSelect: true,
-          },
-          {
-            columnId: 'type',
-            title: t('Type'),
-            options: typeFilterOptions,
             singleSelect: true,
           },
         ],

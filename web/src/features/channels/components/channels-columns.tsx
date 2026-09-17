@@ -32,7 +32,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { BadgeListCell } from '@/components/data-table'
-import { ProviderBadge } from '@/components/provider-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
@@ -61,8 +60,6 @@ import {
   formatRelativeTime,
   formatResponseTime,
   getBalanceVariant,
-  getChannelTypeIcon,
-  getChannelTypeLabel,
   getResponseTimeConfig,
   isMultiKeyChannel,
   parseModelsList,
@@ -518,6 +515,16 @@ export function useChannelsColumns(
           const settings = parseChannelSettings(channel.setting)
           const isPassThrough = settings.pass_through_body_enabled === true
           const hasParamOverride = Boolean(channel.param_override?.trim())
+          // 多密钥轮询模式标记：原在「类型」列，该列移除后移到名称单元格，
+          // 避免丢掉"随机/轮询"这一运维信号。
+          const isMultiKey = isMultiKeyChannel(channel)
+          const multiKeyMode = channel.channel_info?.multi_key_mode ?? 'random'
+          const MultiKeyModeIcon =
+            multiKeyMode === 'random' ? Shuffle : ListOrdered
+          const multiKeyTooltip =
+            multiKeyMode === 'random'
+              ? t('Multi-key: Random rotation')
+              : t('Multi-key: Polling rotation')
 
           return (
             <div className='flex max-w-full min-w-0 items-center gap-2'>
@@ -559,6 +566,22 @@ export function useChannelsColumns(
                     </TooltipProvider>
                   )}
                   <UpstreamUpdateTags channel={channel} />
+                  {isMultiKey && (
+                    <TooltipProvider delay={100}>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <span className='border-border bg-muted text-primary inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border' />
+                          }
+                        >
+                          <MultiKeyModeIcon className='h-3 w-3' />
+                        </TooltipTrigger>
+                        <TooltipContent side='top'>
+                          {multiKeyTooltip}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 </div>
                 {channel.remark && (
                   <TooltipProvider delay={200}>
@@ -582,90 +605,6 @@ export function useChannelsColumns(
         },
         size: 260,
         minSize: 200,
-      },
-
-      // Type column
-      {
-        accessorKey: 'type',
-        header: t('Type'),
-        cell: ({ row }) => {
-          const isTagRow = isTagAggregateRow(row.original)
-
-          if (isTagRow) {
-            return (
-              <StatusBadge
-                label={t('Tag Aggregate')}
-                variant='blue'
-                size='sm'
-                copyable={false}
-                className='-ml-1.5'
-              />
-            )
-          }
-
-          const type = row.getValue('type') as number
-          const typeNameKey = getChannelTypeLabel(type)
-          const typeName = t(typeNameKey)
-          const iconName = getChannelTypeIcon(type)
-          const channel = row.original as Channel
-          const isMultiKey = isMultiKeyChannel(channel)
-          const multiKeyMode = channel.channel_info?.multi_key_mode ?? 'random'
-          const MultiKeyModeIcon =
-            multiKeyMode === 'random' ? Shuffle : ListOrdered
-          const multiKeyTooltip =
-            multiKeyMode === 'random'
-              ? t('Multi-key: Random rotation')
-              : t('Multi-key: Polling rotation')
-
-          return (
-            <div className='flex max-w-full min-w-0 items-center gap-2 overflow-hidden'>
-              {isMultiKey && (
-                <TooltipProvider delay={100}>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className='border-border bg-muted text-primary inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border' />
-                      }
-                    >
-                      <MultiKeyModeIcon className='h-3 w-3' />
-                    </TooltipTrigger>
-                    <TooltipContent side='top'>
-                      {multiKeyTooltip}
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
-              <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <div className='max-w-full min-w-0 overflow-hidden' />
-                    }
-                  >
-                    <ProviderBadge
-                      iconKey={`${iconName}.Color`}
-                      iconSize={18}
-                      label={typeName}
-                      colorText={false}
-                      copyable={false}
-                      showDot={false}
-                      className='max-w-full min-w-0 overflow-hidden'
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side='top'>{typeName}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-          )
-        },
-        filterFn: (row, id, value) => {
-          if (!value || value.length === 0 || value.includes('all')) {
-            return true
-          }
-          return value.includes(String(row.getValue(id)))
-        },
-        size: 220,
-        enableSorting: false,
       },
 
       // Status column
