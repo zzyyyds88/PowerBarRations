@@ -27,9 +27,9 @@ export const apiKeySchema = z.object({
   name: z.string(),
   key: z.string(),
   status: z.number(), // 1: enabled, 2: disabled, 3: expired, 4: exhausted
-  remain_quota: z.number(),
-  used_quota: z.number(),
-  unlimited_quota: z.boolean(),
+  // 只读统计：该令牌的上游折算花费（元），来自 GET /api/keys（api-spec §5.4）。
+  // cost 不参与任何鉴权或限额。
+  cost: z.number(),
   expired_time: z.number(), // -1 for never expires
   created_time: z.number(),
   accessed_time: z.number(),
@@ -75,9 +75,7 @@ export interface SearchApiKeysParams {
 
 export interface ApiKeyFormData {
   name: string
-  remain_quota: number
   expired_time: number
-  unlimited_quota: boolean
   model_limits_enabled: boolean
   model_limits: string
   allow_ips: string

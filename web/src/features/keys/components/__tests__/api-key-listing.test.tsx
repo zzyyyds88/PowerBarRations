@@ -44,13 +44,8 @@ import { Toaster, toast } from 'sonner'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
-import {
-  DEFAULT_CURRENCY_CONFIG,
-  useSystemConfigStore,
-} from '@/stores/system-config-store'
 
 import { apiKeySchema, type ApiKey } from '../../types'
-import { ApiKeyQuotaCell } from '../api-key-quota-cell'
 import { useApiKeysColumns } from '../api-keys-columns'
 import { ApiKeysProvider } from '../api-keys-provider'
 import { ApiKeysTable } from '../api-keys-table'
@@ -61,9 +56,7 @@ const key = apiKeySchema.parse({
   name: 'production',
   key: 'demo********1234',
   status: 1,
-  remain_quota: 40_000_000,
-  used_quota: 60_000_000,
-  unlimited_quota: false,
+  cost: 0,
   expired_time: -1,
   created_time: 0,
   accessed_time: 0,
@@ -77,9 +70,9 @@ await i18n.init({
 })
 const clients: QueryClient[] = []
 
-function QuotaTable(props: { apiKey: ApiKey }) {
+function CostTable(props: { apiKey: ApiKey }) {
   const columns = useApiKeysColumns(now).filter(
-    (column) => column.id === 'quota'
+    (column) => column.id === 'cost'
   )
   // eslint-disable-next-line react/incompatible-library -- test fixture only
   const table = useReactTable({
@@ -118,7 +111,7 @@ function QuotaTable(props: { apiKey: ApiKey }) {
   )
 }
 
-function renderQuota(apiKey: ApiKey = key) {
+function renderCost(apiKey: ApiKey = key) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, enabled: false } },
   })
@@ -126,7 +119,7 @@ function renderQuota(apiKey: ApiKey = key) {
   return render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
-        <QuotaTable apiKey={apiKey} />
+        <CostTable apiKey={apiKey} />
       </QueryClientProvider>
     </I18nextProvider>
   )
@@ -135,9 +128,6 @@ function renderQuota(apiKey: ApiKey = key) {
 beforeEach(() => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   localStorage.clear()
-  useSystemConfigStore
-    .getState()
-    .setConfig({ currency: { ...DEFAULT_CURRENCY_CONFIG } })
   vi.spyOn(api, 'get').mockResolvedValue({ data: { success: true, data: {} } })
 })
 afterEach(() => {
@@ -145,152 +135,37 @@ afterEach(() => {
   toast.dismiss()
   localStorage.clear()
   clients.splice(0).forEach((client) => client.clear())
-  useSystemConfigStore
-    .getState()
-    .setConfig({ currency: { ...DEFAULT_CURRENCY_CONFIG } })
 })
 
-it('shows desktop remaining and used amounts side by side without labels, with the currency only in the header', () => {
-  renderQuota()
+it('shows the consumed amount under a single Consumed (¥) header', () => {
+  renderCost({ ...key, cost: 120.5 })
   expect(
-    screen.getByRole('columnheader', { name: 'Quota ($)' })
+    screen.getByRole('columnheader', { name: 'Consumed (¥)' })
   ).toBeInTheDocument()
-  const trigger = screen.getByRole('button', {
-    name: /Remaining 80; Remaining percentage 40%; Used amount 120/,
-  })
-  expect(trigger).toHaveTextContent('80120')
-  expect(trigger).not.toHaveTextContent(/Remaining|Used amount/)
-  expect(
-    trigger.querySelector('[data-slot="api-key-quota-values"]')
-  ).toHaveClass('grid-cols-2')
-  expect(within(trigger).getByText('80')).toHaveClass('text-left')
-  expect(within(trigger).getByText('120')).toHaveClass('text-right')
-  expect(trigger.parentElement).toHaveClass('max-w-45')
-  expect(trigger).not.toHaveTextContent('$')
-  expect(trigger.querySelector('svg')).toBeNull()
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
-})
-
-it.each([
-  ['unused', 500000, 0, 100, 'text-emerald-500'],
-  ['low remaining', 150000, 350000, 30, 'text-amber-500'],
-  ['critical remaining', 50000, 450000, 10, 'text-rose-500'],
-  ['exhausted', 0, 500000, 0, null],
-  ['overdrawn', -50000, 500000, 0, null],
-  ['zero total', 0, 0, 0, null],
-  ['negative total', -500000, 100000, 0, null],
-])(
-  'renders the %s progress without invalid values or hiding negative balances',
-  (_label, remaining, used, percentage, color) => {
-    renderQuota({ ...key, remain_quota: remaining, used_quota: used })
-    const button = screen.getByRole('button')
-    const progress = screen.getByRole('progressbar')
-    expect(progress).toHaveAttribute('aria-valuenow', String(percentage))
-    if (color) expect(progress).toHaveClass(color)
-    if (remaining < 0) {
-      expect(
-        within(button).getByText(remaining === -500000 ? '-1' : '-0.1')
-      ).toHaveClass('text-destructive')
-    }
-  }
-)
-
-it('shows unlimited with cumulative usage and explains it on demand', async () => {
-  renderQuota({ ...key, unlimited_quota: true })
-  const button = screen.getByRole('button', { name: /Unlimited/ })
-  expect(button).toHaveTextContent('Unlimited')
-  expect(button).toHaveTextContent('Unlimited120')
-  expect(button).not.toHaveTextContent(/Remaining|Used amount/)
-  expect(within(button).getByText('Unlimited')).toHaveClass('text-left')
+  const cell = screen.getByText('¥120.50')
+  expect(cell).toHaveClass('tabular-nums')
   expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
-  await userEvent.click(button)
-  const detail = await screen.findByRole('dialog')
-  expect(within(detail).getByText('120')).toBeInTheDocument()
-  expect(detail).toHaveTextContent(
-    'This API key has no quota limit. Requests still require available wallet or subscription quota.'
-  )
 })
 
-it('keeps small custom-currency amounts exact and shows full values in the detail', async () => {
-  useSystemConfigStore.getState().setConfig({
-    currency: {
-      ...DEFAULT_CURRENCY_CONFIG,
-      quotaDisplayType: 'CUSTOM',
-      customCurrencySymbol: '🐱',
-    },
-  })
-  renderQuota({ ...key, remain_quota: 1900, used_quota: 1100 })
-  expect(
-    screen.getByRole('columnheader', { name: 'Quota (🐱)' })
-  ).toBeInTheDocument()
-  const button = screen.getByRole('button')
-  expect(button).toHaveTextContent('0.0038')
-  expect(button).not.toHaveTextContent('🐱')
-  await userEvent.click(button)
-  const detail = await screen.findByRole('dialog')
-  expect(within(detail).getByText('0.0022')).toBeInTheDocument()
-  expect(within(detail).getByText('0.006')).toBeInTheDocument()
+it('renders zero and sub-cent consumed amounts without quota phrasing', () => {
+  renderCost({ ...key, cost: 0 })
+  expect(screen.getByText('¥0')).toBeVisible()
+  cleanup()
+  renderCost({ ...key, cost: 0.0042 })
+  expect(screen.getByText('¥0.0042')).toBeVisible()
+  expect(screen.queryByText(/quota/i)).not.toBeInTheDocument()
 })
 
-it.each([
-  ['disabled', { status: 2 }],
-  ['expired status', { status: 3 }],
-  ['exhausted status', { status: 4 }],
-  ['expired timestamp', { expired_time: now / 1000 - 1 }],
-])('renders the %s progress bar in a neutral color', (_label, overrides) => {
-  renderQuota({ ...key, ...overrides })
-  expect(screen.getByRole('progressbar')).toHaveClass(
-    'text-muted-foreground/60'
-  )
+it('shows the read-only cost returned by GET /api/keys', async () => {
+  await renderKeysPage({ cost: 42.75 })
+  expect(screen.getByRole('cell', { name: '¥42.75' })).toBeInTheDocument()
 })
 
-it('recalculates the progress when remaining quota is edited', () => {
-  const { rerender } = render(
-    <I18nextProvider i18n={i18n}>
-      <ApiKeyQuotaCell apiKey={key} now={now} />
-    </I18nextProvider>
-  )
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '40')
-  rerender(
-    <I18nextProvider i18n={i18n}>
-      <ApiKeyQuotaCell
-        apiKey={{ ...key, remain_quota: 90_000_000 }}
-        now={now}
-      />
-    </I18nextProvider>
-  )
-  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '60')
-  expect(screen.getByText('180')).toBeInTheDocument()
-})
-
-it('opens details with the keyboard and restores focus when Escape closes them', async () => {
-  renderQuota()
-  const user = userEvent.setup()
-  const button = screen.getByRole('button')
-  act(() => button.focus())
-  await user.keyboard('{Enter}')
-  const detail = await screen.findByRole('dialog')
-  expect(within(detail).getByText('80')).toBeInTheDocument()
-  expect(within(detail).getByText('120')).toBeInTheDocument()
-  expect(within(detail).getByText('200')).toBeInTheDocument()
-  expect(within(detail).getByText('Remaining percentage')).toBeInTheDocument()
-  expect(within(detail).getByText('40%')).toBeInTheDocument()
-  await user.keyboard('{Escape}')
-  await waitFor(() =>
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  )
-  expect(button).toHaveFocus()
-})
-
-it('keeps a long amount within its column while showing the full amount in details', async () => {
-  renderQuota({ ...key, remain_quota: 123456789000000, used_quota: 0 })
-  const button = screen.getByRole('button')
-  expect(button).toHaveClass('w-full', 'min-w-0')
-  expect(within(button).getByText('246,913,578')).toHaveClass('truncate')
-  await userEvent.click(button)
-  expect(
-    within(await screen.findByRole('dialog')).getAllByText('246,913,578')
-  ).toHaveLength(2)
+it('does not render any quota, wallet or subscription wording on the keys page', async () => {
+  await renderKeysPage()
+  for (const pattern of [/quota/i, /wallet/i, /subscription/i, /remaining/i]) {
+    expect(screen.queryByText(pattern)).not.toBeInTheDocument()
+  }
 })
 
 function KeysPage() {
@@ -315,6 +190,7 @@ type PbrKeyOverrides = {
   ip_allowlist?: string[]
   expires_at?: string | null
   last_used_at?: string | null
+  cost?: number
 }
 
 async function renderKeysPage(overrides: PbrKeyOverrides = {}) {

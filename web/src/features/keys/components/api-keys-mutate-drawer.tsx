@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, KeyRound, Settings2, WalletCards } from 'lucide-react'
+import { ChevronDown, KeyRound, Settings2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -32,7 +32,6 @@ import {
   sideDrawerFooterClassName,
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
-  sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
 import { MultiSelect } from '@/components/multi-select'
 import { Button } from '@/components/ui/button'
@@ -60,11 +59,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useStatus } from '@/hooks/use-status'
 import { getUserModels } from '@/lib/api'
-import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
@@ -89,6 +86,11 @@ type ApiKeyMutateDrawerProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   currentRow?: ApiKey
+}
+
+/** 批量创建时的随机后缀；放在模块作用域，避免在渲染路径里调用 Math.random。 */
+function randomNameSuffix(): string {
+  return Math.random().toString(36).slice(2, 8)
 }
 
 export function ApiKeysMutateDrawer({
@@ -138,6 +140,7 @@ export function ApiKeysMutateDrawer({
   // Load existing data when updating
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInitializedTarget(null)
       return
     }
@@ -199,7 +202,7 @@ export function ApiKeysMutateDrawer({
             name:
               i === 0 && data.name
                 ? data.name
-                : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
+                : `${data.name || 'default'}-${randomNameSuffix()}`,
           })
           if (result.success) {
             successCount++
@@ -243,15 +246,6 @@ export function ApiKeysMutateDrawer({
 
     form.setValue('expired_time', now)
   }
-
-  const { meta: currencyMeta } = getCurrencyDisplay()
-  const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
-  const quotaLabel = t('Quota ({{currency}})', { currency: currencyLabel })
-  const quotaPlaceholder = tokensOnly
-    ? t('Enter quota in tokens')
-    : t('Enter quota in {{currency}}', { currency: currencyLabel })
-  const unlimitedQuota = form.watch('unlimited_quota')
 
   return (
     <Sheet
@@ -394,70 +388,6 @@ export function ApiKeysMutateDrawer({
                   )}
                 />
               )}
-            </SideDrawerSection>
-
-            <SideDrawerSection>
-              <SideDrawerSectionHeader
-                title={t('Quota Settings')}
-                description={t('Set quota amount and limits')}
-                icon={<WalletCards className='size-4' />}
-                iconTone='success'
-              />
-              {!unlimitedQuota && (
-                <FormField
-                  control={form.control}
-                  name='remain_quota_dollars'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{quotaLabel}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          step={tokensOnly ? 1 : 0.01}
-                          placeholder={quotaPlaceholder}
-                          onChange={(e) =>
-                            field.onChange(
-                              Number.parseFloat(e.target.value) || 0
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {tokensOnly
-                          ? t('Enter the quota amount in tokens')
-                          : t('Enter the quota amount in {{currency}}', {
-                              currency: currencyLabel,
-                            })}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
-              <FormField
-                control={form.control}
-                name='unlimited_quota'
-                render={({ field }) => (
-                  <FormItem className={sideDrawerSwitchItemClassName()}>
-                    <div className='flex flex-col gap-0.5'>
-                      <FormLabel className='text-sm'>
-                        {t('Unlimited Quota')}
-                      </FormLabel>
-                      <FormDescription className='text-xs'>
-                        {t('Enable unlimited quota for this API key')}
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
             </SideDrawerSection>
 
             <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
