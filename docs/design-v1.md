@@ -421,7 +421,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 - `relay/channel/**`：40 家厂商适配器**原样复用**。
 - `relay/` 转发管道：协议转换、SSE 流式、`relay/helper`（价格相关函数除外）、`relaykit/`、`dto/`、`constant/`、`common/`（必要部分）、`i18n/`。
 - `web/**`：**直接搬迁 new-api 上游前端**（见 §2.8 / ui-spec-v1.md），全量替换品牌；删除计费/多用户页面，其余保留。
-- WS 池代码：保留，不删。任务插件/异步任务子系统与 JS 插件基座已整体移除；Midjourney（独立任务系统）保留。
+- WS 池代码：保留，不删。任务插件/异步任务子系统与 JS 插件基座已整体移除；**Midjourney 全链路（/mj 转发、/api/mj 管理端点、Drawing 日志分节、轮询 handler）已移除**（个人自用不接文生图服务）。
 
 ### 10.2 三段式减脂
 
@@ -722,7 +722,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | # | 项 | 决定 |
 |---|---|---|
 | 1 | SSE 鉴权 | 管理面 SSE 走会话 Cookie（`fetch` + `ReadableStream`，`credentials: same-origin`；**不用 `EventSource`**，以便统一错误处理与中断）；密钥不进 URL，也不放查询串 |
-| 2 | ~~图像/视频/任务路由~~ | **已随任务插件子系统移除**；Midjourney（独立 MJ 任务系统）不受影响 |
+| 2 | ~~图像/视频/任务路由~~ | **已随任务插件子系统移除**；Midjourney 全链路随后一并移除（个人自用不接文生图服务） |
 | 3 | 车道粘滞 | 车道级共享当前成员（照搬线上）；每个模型一条车道，模型之间互不影响 |
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
 | 5 | Playground | **保留**（控制台内，排障用）。模型面只认客户端密钥，因此试打台由使用者填入客户端密钥，直连 `/v1/chat/completions`（不新增管理面转发端点） |
