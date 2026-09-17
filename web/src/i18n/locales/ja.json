@@ -2995,6 +2995,19 @@
     "Channel × Model": "チャネル × モデル",
     "Quota limit exceeded": "クォータ上限を超えました",
     "View details about the actor associated with this log entry.": "このログに関連する操作者の情報を表示します。",
-    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "警告: Base URL は /v1 で終わってはいけません。ゲートウェイが自動的に正規化します。これによりリクエストが失敗する可能性があります。"
+    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "警告: Base URL は /v1 で終わってはいけません。ゲートウェイが自動的に正規化します。これによりリクエストが失敗する可能性があります。",
+    "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.": "このチャンネルを {{cleaned}} 件のレーンから削除し、空のレーンを {{deleted}} 件削除しました。これらのモデルは呼び出せなくなります。",
+    "Draft cleared. Save the channel to apply the change.": "下書きをクリアしました。保存すると反映されます。",
+    "Models still referenced by lanes": "レーンから参照されているモデルがあります",
+    "These models are still referenced by the following lanes:": "以下のレーンがこれらのモデルを参照しています：",
+    "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.": "続行すると、これらのレーンからこのチャンネルのメンバーを削除し、メンバーが空になったレーンは削除されます。新しいメンバーを設定するまで、これらのモデルは呼び出せません。",
+    "Remove and save": "削除して保存",
+    "Clear all models?": "すべてのモデルをクリアしますか？",
+    "This only clears the draft model list. The channel is not updated until you save.": "下書きのモデル一覧のみをクリアします。保存するまでチャンネルは更新されません。",
+    "Clear draft": "下書きをクリア",
+    "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.": "選択した {{count}} 件のチャンネルを削除しますか？この操作は元に戻せません。",
+    "Channels to delete:": "削除するチャンネル：",
+    "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.": "これらのモデルを参照するレーンからこのチャンネルのメンバーが削除されます。メンバーがいなくなったレーンは削除され、これらのモデルは呼び出せなくなります。",
+    "These models are still referenced by lanes on the following channels:": "以下のチャンネルでは、これらのモデルがまだレーンから参照されています："
   }
 }

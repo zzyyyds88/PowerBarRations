@@ -48,6 +48,7 @@ import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DIALOG_SIZE_CLASS } from '@/components/dialog-size'
 import { sideDrawerSwitchItemClassName } from '@/components/drawer-layout'
 import { ErrorState } from '@/components/error-state'
@@ -382,6 +383,15 @@ export function ChannelMutateDialog({
   const missingModelsResolveRef = useRef<
     ((action: MissingModelsAction) => void) | null
   >(null)
+  const [referencedModelsDialogOpen, setReferencedModelsDialogOpen] =
+    useState(false)
+  const [referencedModelsLanes, setReferencedModelsLanes] = useState<string[]>(
+    []
+  )
+  const referencedModelsResolveRef = useRef<
+    ((confirmed: boolean) => void) | null
+  >(null)
+  const [clearModelsConfirmOpen, setClearModelsConfirmOpen] = useState(false)
   const channelFormRef = useRef<HTMLFormElement>(null)
   const [modelDiscoveryDialogOpen, setModelDiscoveryDialogOpen] =
     useState(false)
@@ -1070,8 +1080,13 @@ export function ChannelMutateDialog({
 
   // Handle model operations
   const handleClearModels = useCallback(() => {
+    setClearModelsConfirmOpen(true)
+  }, [])
+
+  const handleConfirmClearModels = useCallback(() => {
     form.setValue('models', '')
-    toast.success(t('Cleared all models'))
+    setClearModelsConfirmOpen(false)
+    toast.success(t('Draft cleared. Save the channel to apply the change.'))
   }, [form, t])
 
   const handleCopyModels = useCallback(async () => {
@@ -1165,6 +1180,26 @@ export function ChannelMutateDialog({
     []
   )
 
+  // 移除的模型仍被车道引用时，弹确认框；确认后由 hook 以 cleanup_models:true 重试。
+  const confirmReferencedModels = useCallback(
+    (lanes: string[]): Promise<boolean> =>
+      new Promise((resolve) => {
+        referencedModelsResolveRef.current = resolve
+        setReferencedModelsLanes(lanes)
+        setReferencedModelsDialogOpen(true)
+      }),
+    []
+  )
+
+  const handleReferencedModelsAction = useCallback((confirmed: boolean) => {
+    setReferencedModelsDialogOpen(false)
+    setReferencedModelsLanes([])
+    if (referencedModelsResolveRef.current) {
+      referencedModelsResolveRef.current(confirmed)
+      referencedModelsResolveRef.current = null
+    }
+  }, [])
+
   const confirmStatusCodeRisk = useCallback(
     (detailItems: string[]): Promise<boolean> =>
       new Promise((resolve) => {
@@ -1190,6 +1225,10 @@ export function ChannelMutateDialog({
         statusCodeRiskResolveRef.current(false)
         statusCodeRiskResolveRef.current = null
       }
+      if (referencedModelsResolveRef.current) {
+        referencedModelsResolveRef.current(false)
+        referencedModelsResolveRef.current = null
+      }
     }
   }, [])
 
@@ -1198,6 +1237,7 @@ export function ChannelMutateDialog({
     isEditing,
     isMultiKeyChannel,
     onSuccess: handleSuccess,
+    onReferencedModels: confirmReferencedModels,
   })
 
   const isSubmitting = channelMutation.isPending || form.formState.isSubmitting
@@ -4057,6 +4097,47 @@ export function ChannelMutateDialog({
         }}
         detailItems={statusCodeRiskDetailItems}
         onConfirm={() => handleStatusCodeRiskAction(true)}
+      />
+
+      {/* 移除模型仍被车道引用时的清理确认（PBR 车道守卫） */}
+      <ConfirmDialog
+        open={referencedModelsDialogOpen}
+        onOpenChange={(v) => {
+          if (!v) handleReferencedModelsAction(false)
+        }}
+        title={t('Models still referenced by lanes')}
+        desc={
+          <div className='space-y-2'>
+            <p>
+              {t('These models are still referenced by the following lanes:')}
+            </p>
+            <ul className='list-disc space-y-1 ps-5'>
+              {referencedModelsLanes.map((lane) => (
+                <li key={lane}>{lane}</li>
+              ))}
+            </ul>
+            <p>
+              {t(
+                'If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.'
+              )}
+            </p>
+          </div>
+        }
+        confirmText={t('Remove and save')}
+        destructive
+        handleConfirm={() => handleReferencedModelsAction(true)}
+      />
+
+      {/* Clear All 是草稿操作，先确认并说明保存后才生效 */}
+      <ConfirmDialog
+        open={clearModelsConfirmOpen}
+        onOpenChange={setClearModelsConfirmOpen}
+        title={t('Clear all models?')}
+        desc={t(
+          'This only clears the draft model list. The channel is not updated until you save.'
+        )}
+        confirmText={t('Clear draft')}
+        handleConfirm={handleConfirmClearModels}
       />
     </>
   )

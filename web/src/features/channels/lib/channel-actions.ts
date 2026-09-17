@@ -20,7 +20,9 @@ import type { QueryClient } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { toast } from 'sonner'
 
+import { pbrModelsQueryKey } from '@/features/routes/api'
 import { handleServerError } from '@/lib/handle-server-error'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import {
   copyChannel,
@@ -52,6 +54,44 @@ export const channelsQueryKeys = {
     [...channelsQueryKeys.lists(), params] as const,
   details: () => [...channelsQueryKeys.all, 'detail'] as const,
   detail: (id: number) => [...channelsQueryKeys.details(), id] as const,
+}
+
+/** 删除/批量删除被车道引用时的冲突信息，供确认框内联展示与跳转处理。 */
+export interface ChannelActionFailure {
+  code?: string
+  message?: string
+  /** 单条删除冲突：引用该渠道的车道名。 */
+  lanes: string[]
+  /** 批量删除冲突：渠道名 -> 引用它的车道名。 */
+  blocked: Record<string, string[]>
+}
+
+function toChannelActionFailure(
+  code: string | undefined,
+  message: string | undefined,
+  data:
+    | { lanes?: string[]; blocked?: Record<string, string[]> }
+    | number
+    | undefined
+): ChannelActionFailure {
+  if (data && typeof data === 'object') {
+    return {
+      code,
+      message,
+      lanes: data.lanes ?? [],
+      blocked: data.blocked ?? {},
+    }
+  }
+  return { code, message, lanes: [], blocked: {} }
+}
+
+/**
+ * 渠道写操作成功后统一失效缓存：渠道列表之外，路由页的 pbr-routable-models
+ * 也依赖渠道成员/状态，必须一起失效，否则路由与故障切换仍显示旧的可调用状态。
+ */
+function invalidateChannelCaches(queryClient?: QueryClient): void {
+  queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+  queryClient?.invalidateQueries({ queryKey: pbrModelsQueryKey })
 }
 
 function getChannelTestResponseTime(
@@ -124,7 +164,7 @@ export async function handleEnableChannel(
     const response = await updateChannelStatus(id, CHANNEL_STATUS.ENABLED)
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.ENABLED))
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
@@ -149,7 +189,7 @@ export async function handleDisableChannel(
     )
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.DISABLED))
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t(ERROR_MESSAGES.UPDATE_FAILED))
@@ -176,24 +216,38 @@ export async function handleToggleChannelStatus(
 }
 
 /**
- * Delete a channel
+ * Delete a channel.
+ *
+ * 成功返回 null（已提示并失效缓存）；被车道引用等失败时返回描述符，调用方据此
+ * 保持确认框打开并展示引用车道清单，只有成功才关闭。
  */
 export async function handleDeleteChannel(
   id: number,
   queryClient?: QueryClient,
   onSuccess?: () => void
-): Promise<void> {
+): Promise<ChannelActionFailure | null> {
   try {
     const response = await deleteChannel(id)
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.DELETED))
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
-    } else {
-      handleServerError(response, i18next.t(ERROR_MESSAGES.DELETE_FAILED))
+      return null
     }
+    return toChannelActionFailure(
+      response.code,
+      response.message,
+      response.data
+    )
   } catch (error) {
-    handleServerError(error, i18next.t(ERROR_MESSAGES.DELETE_FAILED))
+    return {
+      message: getServerErrorMessage(
+        error,
+        i18next.t(ERROR_MESSAGES.DELETE_FAILED)
+      ),
+      lanes: [],
+      blocked: {},
+    }
   }
 }
 
@@ -286,7 +340,7 @@ export async function handleCopyChannel(
     const response = await copyChannel(id, params)
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.COPIED))
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.(response.data?.id ?? 0)
     } else {
       handleServerError(response, i18next.t('Failed to copy channel'))
@@ -307,27 +361,38 @@ export async function handleBatchDelete(
   ids: number[],
   queryClient?: QueryClient,
   onSuccess?: (deletedCount: number) => void
-): Promise<void> {
+): Promise<ChannelActionFailure | null> {
   if (ids.length === 0) {
     toast.error(i18next.t('No channels selected'))
-    return
+    return null
   }
 
   try {
     const response = await batchDeleteChannels({ ids })
     if (response.success) {
+      const deletedCount =
+        typeof response.data === 'number' ? response.data : ids.length
       toast.success(
-        i18next.t('{{count}} channel(s) deleted', {
-          count: response.data || ids.length,
-        })
+        i18next.t('{{count}} channel(s) deleted', { count: deletedCount })
       )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      onSuccess?.(response.data || ids.length)
-    } else {
-      handleServerError(response, i18next.t(ERROR_MESSAGES.DELETE_FAILED))
+      invalidateChannelCaches(queryClient)
+      onSuccess?.(deletedCount)
+      return null
     }
+    return toChannelActionFailure(
+      response.code,
+      response.message,
+      response.data
+    )
   } catch (error) {
-    handleServerError(error, i18next.t(ERROR_MESSAGES.DELETE_FAILED))
+    return {
+      message: getServerErrorMessage(
+        error,
+        i18next.t(ERROR_MESSAGES.DELETE_FAILED)
+      ),
+      lanes: [],
+      blocked: {},
+    }
   }
 }
 
@@ -338,34 +403,29 @@ export async function handleBatchEnable(
   ids: number[],
   queryClient?: QueryClient,
   onSuccess?: () => void
-): Promise<void> {
+): Promise<boolean> {
   if (ids.length === 0) {
     toast.error(i18next.t('No channels selected'))
-    return
+    return false
   }
 
   try {
     const response = await batchUpdateChannelStatus(ids, CHANNEL_STATUS.ENABLED)
-    const successCount = response.success ? response.data || 0 : 0
-    const failCount = ids.length - successCount
-
-    if (successCount > 0) {
-      toast.success(
-        i18next.t('{{count}} channel(s) enabled', { count: successCount })
-      )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      onSuccess?.()
-    }
-
     if (!response.success) {
       handleServerError(response, i18next.t('Failed to enable channels'))
-    } else if (failCount > 0) {
-      toast.error(
-        i18next.t('{{count}} channel(s) failed to enable', { count: failCount })
-      )
+      return false
     }
+    const successCount =
+      response.data && response.data > 0 ? response.data : ids.length
+    toast.success(
+      i18next.t('{{count}} channel(s) enabled', { count: successCount })
+    )
+    invalidateChannelCaches(queryClient)
+    onSuccess?.()
+    return true
   } catch (error) {
     handleServerError(error, i18next.t('Failed to enable channels'))
+    return false
   }
 }
 
@@ -376,10 +436,10 @@ export async function handleBatchDisable(
   ids: number[],
   queryClient?: QueryClient,
   onSuccess?: () => void
-): Promise<void> {
+): Promise<boolean> {
   if (ids.length === 0) {
     toast.error(i18next.t('No channels selected'))
-    return
+    return false
   }
 
   try {
@@ -387,28 +447,21 @@ export async function handleBatchDisable(
       ids,
       CHANNEL_STATUS.MANUAL_DISABLED
     )
-    const successCount = response.success ? response.data || 0 : 0
-    const failCount = ids.length - successCount
-
-    if (successCount > 0) {
-      toast.success(
-        i18next.t('{{count}} channel(s) disabled', { count: successCount })
-      )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      onSuccess?.()
-    }
-
     if (!response.success) {
       handleServerError(response, i18next.t('Failed to disable channels'))
-    } else if (failCount > 0) {
-      toast.error(
-        i18next.t('{{count}} channel(s) failed to disable', {
-          count: failCount,
-        })
-      )
+      return false
     }
+    const successCount =
+      response.data && response.data > 0 ? response.data : ids.length
+    toast.success(
+      i18next.t('{{count}} channel(s) disabled', { count: successCount })
+    )
+    invalidateChannelCaches(queryClient)
+    onSuccess?.()
+    return true
   } catch (error) {
     handleServerError(error, i18next.t('Failed to disable channels'))
+    return false
   }
 }
 
@@ -430,7 +483,7 @@ export async function handleBatchSetTag(
     const response = await batchSetChannelTag({ ids, tag })
     if (response.success) {
       toast.success(i18next.t(SUCCESS_MESSAGES.TAG_SET))
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t('Failed to set tag'))
@@ -458,7 +511,7 @@ export async function handleEnableTagChannels(
       toast.success(
         i18next.t('Enabled all channels with tag: {{tag}}', { tag })
       )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t('Failed to enable tag channels'))
@@ -482,7 +535,7 @@ export async function handleDisableTagChannels(
       toast.success(
         i18next.t('Disabled all channels with tag: {{tag}}', { tag })
       )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
     } else {
       handleServerError(response, i18next.t('Failed to disable tag channels'))
@@ -502,25 +555,34 @@ export async function handleDisableTagChannels(
 export async function handleDeleteAllDisabled(
   queryClient?: QueryClient,
   onSuccess?: (deletedCount: number) => void
-): Promise<void> {
+): Promise<ChannelActionFailure | null> {
   try {
     const response = await deleteDisabledChannels()
     if (response.success) {
+      const deletedCount = typeof response.data === 'number' ? response.data : 0
       toast.success(
         i18next.t('{{count}} disabled channel(s) deleted', {
-          count: response.data || 0,
+          count: deletedCount,
         })
       )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      onSuccess?.(response.data || 0)
-    } else {
-      handleServerError(
-        response,
-        i18next.t('Failed to delete disabled channels')
-      )
+      invalidateChannelCaches(queryClient)
+      onSuccess?.(deletedCount)
+      return null
     }
+    return toChannelActionFailure(
+      response.code,
+      response.message,
+      response.data
+    )
   } catch (error) {
-    handleServerError(error, i18next.t('Failed to delete disabled channels'))
+    return {
+      message: getServerErrorMessage(
+        error,
+        i18next.t('Failed to delete disabled channels')
+      ),
+      lanes: [],
+      blocked: {},
+    }
   }
 }
 
@@ -543,7 +605,7 @@ export async function handleFixAbilities(
           }
         )
       )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.(response.data)
     } else {
       handleServerError(
@@ -571,7 +633,7 @@ export async function handleTestAllChannels(
           'Testing all enabled channels started. Please refresh to see results.'
         )
       )
-      queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      invalidateChannelCaches(queryClient)
       onSuccess?.()
     } else {
       handleServerError(

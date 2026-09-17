@@ -2995,6 +2995,19 @@
     "Channel × Model": "Канал × модель",
     "Quota limit exceeded": "Превышен лимит квоты",
     "View details about the actor associated with this log entry.": "Просмотр сведений о субъекте, связанном с этой записью журнала.",
-    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Предупреждение: базовый URL не должен заканчиваться на /v1. Шлюз нормализует его автоматически. Это может привести к сбоям запросов."
+    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Предупреждение: базовый URL не должен заканчиваться на /v1. Шлюз нормализует его автоматически. Это может привести к сбоям запросов.",
+    "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.": "Канал удалён из {{cleaned}} полос; удалено пустых полос: {{deleted}}. Эти модели станут недоступны.",
+    "Draft cleared. Save the channel to apply the change.": "Черновик очищен. Изменения вступят в силу после сохранения.",
+    "Models still referenced by lanes": "Модели всё ещё используются полосами",
+    "These models are still referenced by the following lanes:": "Следующие полосы всё ещё ссылаются на эти модели:",
+    "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.": "При продолжении канал будет удалён из этих полос, а пустые полосы — удалены. Эти модели станут недоступны, пока не настроен новый участник полосы.",
+    "Remove and save": "Удалить и сохранить",
+    "Clear all models?": "Очистить все модели?",
+    "This only clears the draft model list. The channel is not updated until you save.": "Очищается только черновик списка моделей. Канал не изменится до сохранения.",
+    "Clear draft": "Очистить черновик",
+    "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.": "Удалить выбранные каналы ({{count}})? Это действие нельзя отменить.",
+    "Channels to delete:": "Каналы для удаления:",
+    "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.": "Полосы, ссылающиеся на эти модели, потеряют участника этого канала; полосы без участников будут удалены, и эти модели станут недоступны.",
+    "These models are still referenced by lanes on the following channels:": "На следующих каналах эти модели всё ещё используются полосами:"
   }
 }

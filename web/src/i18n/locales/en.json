@@ -2995,6 +2995,19 @@
     "Channel × Model": "Channel × Model",
     "Quota limit exceeded": "Quota limit exceeded",
     "View details about the actor associated with this log entry.": "View details about the actor associated with this log entry.",
-    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures."
+    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.",
+    "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.": "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.",
+    "Draft cleared. Save the channel to apply the change.": "Draft cleared. Save the channel to apply the change.",
+    "Models still referenced by lanes": "Models still referenced by lanes",
+    "These models are still referenced by the following lanes:": "These models are still referenced by the following lanes:",
+    "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.": "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.",
+    "Remove and save": "Remove and save",
+    "Clear all models?": "Clear all models?",
+    "This only clears the draft model list. The channel is not updated until you save.": "This only clears the draft model list. The channel is not updated until you save.",
+    "Clear draft": "Clear draft",
+    "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.": "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.",
+    "Channels to delete:": "Channels to delete:",
+    "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.": "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.",
+    "These models are still referenced by lanes on the following channels:": "These models are still referenced by lanes on the following channels:"
   }
 }

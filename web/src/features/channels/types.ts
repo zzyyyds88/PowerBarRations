@@ -238,6 +238,45 @@ export interface CopyChannelResponse {
 }
 
 // ============================================================================
+// Lane Reference Conflict Types (PBR 车道守卫)
+// ============================================================================
+
+/** 渠道被车道引用时的冲突明细：单条删除给 lanes，批量删除给 blocked。 */
+export interface ChannelReferenceInfo {
+  /** 单条删除冲突：引用该渠道的车道名。 */
+  lanes?: string[]
+  /** 批量删除冲突：渠道名 -> 引用它的车道名。 */
+  blocked?: Record<string, string[]>
+}
+
+/** DELETE /api/channel/:id：被车道引用时返回 code=conflict。 */
+export interface ChannelDeleteResponse {
+  success: boolean
+  code?: string
+  message?: string
+  data?: ChannelReferenceInfo
+}
+
+/** POST /api/channel/batch 与 DELETE /api/channel/disabled：整批拒绝时返回 blocked。 */
+export interface ChannelBatchDeleteResponse {
+  success: boolean
+  code?: string
+  message?: string
+  data?: number | ChannelReferenceInfo
+}
+
+/** PUT /api/channel/：收窄模型命中车道时返回 code=models_referenced_by_lanes。 */
+export interface ChannelUpdateResponse {
+  success: boolean
+  code?: string
+  message?: string
+  data?: (Channel & ChannelReferenceInfo) | ChannelReferenceInfo
+  /** 成功清理后返回：被移除成员但保留的车道 / 成员清空被删除的车道。 */
+  cleaned_lanes?: string[]
+  deleted_lanes?: string[]
+}
+
+// ============================================================================
 // Multi-Key Management Types
 // ============================================================================
 

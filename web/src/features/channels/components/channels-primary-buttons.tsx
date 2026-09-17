@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   Plus,
   MoreHorizontal,
@@ -33,6 +34,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -58,6 +60,7 @@ import {
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  type ChannelActionFailure,
   handleDeleteAllDisabled,
   handleFixAbilities,
   handleTestAllChannels,
@@ -81,6 +84,9 @@ export function ChannelsPrimaryButtons() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showConsistencyDialog, setShowConsistencyDialog] = useState(false)
   const [isRepairingConsistency, setIsRepairingConsistency] = useState(false)
+  const [isDeletingDisabled, setIsDeletingDisabled] = useState(false)
+  const [deleteDisabledFailure, setDeleteDisabledFailure] =
+    useState<ChannelActionFailure | null>(null)
   const currentUser = useAuthStore((s) => s.auth.user)
   const canEditSensitive = hasPermission(
     currentUser,
@@ -258,6 +264,7 @@ export function ChannelsPrimaryButtons() {
               onSelect={(e) => {
                 e.preventDefault()
                 if (!canEditSensitive) return
+                setDeleteDisabledFailure(null)
                 setShowDeleteDialog(true)
               }}
               disabled={!canEditSensitive}
@@ -274,21 +281,65 @@ export function ChannelsPrimaryButtons() {
 
       <ConfirmDialog
         open={showDeleteDialog}
-        onOpenChange={setShowDeleteDialog}
+        onOpenChange={(nextOpen) => {
+          setShowDeleteDialog(nextOpen)
+          if (!nextOpen) setDeleteDisabledFailure(null)
+        }}
         title={t('Delete All Disabled Channels?')}
         desc={t(
           'This will permanently delete all manually and automatically disabled channels. This action cannot be undone.'
         )}
         destructive
-        handleConfirm={() => {
+        isLoading={isDeletingDisabled}
+        handleConfirm={async () => {
           if (!canEditSensitive) return
-          handleDeleteAllDisabled(queryClient, (_count) => {
-            // eslint-disable-next-line no-console
-            console.log(`Deleted ${_count} channels`)
-          })
-          setShowDeleteDialog(false)
+          setIsDeletingDisabled(true)
+          try {
+            const failure = await handleDeleteAllDisabled(queryClient)
+            if (failure) {
+              // 被车道引用：整批拒绝，保留确认框并列出被引用渠道与车道。
+              setDeleteDisabledFailure(failure)
+            } else {
+              setDeleteDisabledFailure(null)
+              setShowDeleteDialog(false)
+            }
+          } finally {
+            setIsDeletingDisabled(false)
+          }
         }}
-      />
+      >
+        {deleteDisabledFailure &&
+          Object.entries(deleteDisabledFailure.blocked).length > 0 && (
+            <Alert variant='destructive'>
+              <AlertDescription>
+                <p>
+                  {deleteDisabledFailure.message ||
+                    t('Failed to delete disabled channels')}
+                </p>
+                <ul className='mt-2 space-y-2'>
+                  {Object.entries(deleteDisabledFailure.blocked).map(
+                    ([name, lanes]) => (
+                      <li key={name}>
+                        <span className='font-medium'>{name}</span>
+                        <ul className='list-disc space-y-1 ps-5'>
+                          {lanes.map((lane) => (
+                            <li key={lane}>{lane}</li>
+                          ))}
+                        </ul>
+                      </li>
+                    )
+                  )}
+                </ul>
+                <Link
+                  to='/routes'
+                  className='mt-3 inline-block font-medium underline underline-offset-2'
+                >
+                  {t('Routing & Failover')}
+                </Link>
+              </AlertDescription>
+            </Alert>
+          )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={showConsistencyDialog}

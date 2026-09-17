@@ -2995,6 +2995,19 @@
     "Channel × Model": "Kênh × mô hình",
     "Quota limit exceeded": "Vượt quá giới hạn hạn mức",
     "View details about the actor associated with this log entry.": "Xem thông tin chi tiết về chủ thể liên quan đến mục nhật ký này.",
-    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Cảnh báo: URL cơ sở không nên kết thúc bằng /v1. Gateway sẽ tự động chuẩn hóa. Điều này có thể gây ra lỗi yêu cầu."
+    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Cảnh báo: URL cơ sở không nên kết thúc bằng /v1. Gateway sẽ tự động chuẩn hóa. Điều này có thể gây ra lỗi yêu cầu.",
+    "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.": "Đã xóa kênh này khỏi {{cleaned}} làn và xóa {{deleted}} làn trống. Các mô hình này sẽ không còn gọi được.",
+    "Draft cleared. Save the channel to apply the change.": "Đã xóa bản nháp. Thay đổi chỉ có hiệu lực sau khi lưu.",
+    "Models still referenced by lanes": "Một số mô hình vẫn được làn tham chiếu",
+    "These models are still referenced by the following lanes:": "Các làn sau vẫn tham chiếu các mô hình này:",
+    "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.": "Nếu tiếp tục, kênh này sẽ bị xóa khỏi các làn đó và các làn trống sẽ bị xóa. Các mô hình này sẽ không gọi được cho đến khi cấu hình thành viên làn mới.",
+    "Remove and save": "Xóa và lưu",
+    "Clear all models?": "Xóa tất cả mô hình?",
+    "This only clears the draft model list. The channel is not updated until you save.": "Chỉ xóa danh sách mô hình trong bản nháp. Kênh không được cập nhật cho đến khi bạn lưu.",
+    "Clear draft": "Xóa bản nháp",
+    "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.": "Xóa {{count}} kênh đã chọn? Thao tác này không thể hoàn tác.",
+    "Channels to delete:": "Các kênh sẽ xóa:",
+    "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.": "Các làn tham chiếu các mô hình này sẽ mất thành viên thuộc kênh này; các làn không còn thành viên sẽ bị xóa và các mô hình đó sẽ không gọi được.",
+    "These models are still referenced by lanes on the following channels:": "Các mô hình này vẫn được làn tham chiếu trên các kênh sau:"
   }
 }

@@ -2995,6 +2995,19 @@
     "Channel × Model": "Canal × modèle",
     "Quota limit exceeded": "Limite de quota dépassée",
     "View details about the actor associated with this log entry.": "Afficher les détails de l’acteur associé à cette entrée de journal.",
-    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Avertissement : L'URL de base ne doit pas se terminer par /v1. La passerelle la normalisera automatiquement. Cela peut causer des échecs de requêtes."
+    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "Avertissement : L'URL de base ne doit pas se terminer par /v1. La passerelle la normalisera automatiquement. Cela peut causer des échecs de requêtes.",
+    "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.": "Ce canal a été retiré de {{cleaned}} voie(s) ; {{deleted}} voie(s) vide(s) supprimée(s). Ces modèles ne seront plus appelables.",
+    "Draft cleared. Save the channel to apply the change.": "Brouillon effacé. La modification prend effet après l'enregistrement.",
+    "Models still referenced by lanes": "Modèles encore référencés par des voies",
+    "These models are still referenced by the following lanes:": "Ces modèles sont encore référencés par les voies suivantes :",
+    "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.": "Si vous continuez, ce canal sera retiré de ces voies et les voies vides seront supprimées. Ces modèles ne seront plus appelables tant qu'un nouveau membre de voie n'est pas configuré.",
+    "Remove and save": "Retirer et enregistrer",
+    "Clear all models?": "Effacer tous les modèles ?",
+    "This only clears the draft model list. The channel is not updated until you save.": "Efface uniquement la liste de modèles du brouillon. Le canal n'est mis à jour qu'après l'enregistrement.",
+    "Clear draft": "Effacer le brouillon",
+    "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.": "Supprimer les {{count}} canaux sélectionnés ? Cette action est irréversible.",
+    "Channels to delete:": "Canaux à supprimer :",
+    "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.": "Les voies référençant ces modèles perdront le membre de ce canal ; les voies sans membre seront supprimées et ces modèles ne seront plus appelables.",
+    "These models are still referenced by lanes on the following channels:": "Ces modèles sont encore référencés par des voies sur les canaux suivants :"
   }
 }

@@ -17,13 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Power, PowerOff, Tag, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
+import { DIALOG_SIZE_CLASS } from '@/components/dialog-size'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -41,6 +45,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  type ChannelActionFailure,
   handleBatchDelete,
   handleBatchDisable,
   handleBatchEnable,
@@ -59,6 +64,9 @@ export function DataTableBulkActions<TData>({
   const queryClient = useQueryClient()
   const [showTagDialog, setShowTagDialog] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleteFailure, setDeleteFailure] =
+    useState<ChannelActionFailure | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [tagValue, setTagValue] = useState('')
   const currentUser = useAuthStore((s) => s.auth.user)
   const canEditSensitive = hasPermission(
@@ -68,6 +76,9 @@ export function DataTableBulkActions<TData>({
   )
 
   const selectedRows = table.getFilteredSelectedRowModel().rows
+  const selectedNames = selectedRows.map(
+    (row) => (row.original as Channel).name
+  )
   const selectedIds = selectedRows.reduce<number[]>((ids, row) => {
     const id = (row.original as Channel).id
 
@@ -77,6 +88,9 @@ export function DataTableBulkActions<TData>({
 
     return ids
   }, [])
+  const blockedEntries = deleteFailure
+    ? Object.entries(deleteFailure.blocked)
+    : []
 
   const handleClearSelection = () => {
     table.resetRowSelection()
@@ -90,12 +104,22 @@ export function DataTableBulkActions<TData>({
     handleBatchDisable(selectedIds, queryClient, handleClearSelection)
   }
 
-  const handleDeleteAll = () => {
+  const handleDeleteAll = async () => {
     if (!canEditSensitive) return
-    handleBatchDelete(selectedIds, queryClient, () => {
-      setShowDeleteConfirm(false)
-      handleClearSelection()
-    })
+    setIsDeleting(true)
+    try {
+      const failure = await handleBatchDelete(selectedIds, queryClient)
+      if (failure) {
+        // 整批被拒：保留确认框与选择，展示被引用清单供用户处理后重试。
+        setDeleteFailure(failure)
+      } else {
+        setDeleteFailure(null)
+        setShowDeleteConfirm(false)
+        handleClearSelection()
+      }
+    } finally {
+      setIsDeleting(false)
+    }
   }
 
   const handleSetTag = () => {
@@ -182,6 +206,7 @@ export function DataTableBulkActions<TData>({
                 size='icon'
                 onClick={() => {
                   if (!canEditSensitive) return
+                  setDeleteFailure(null)
                   setShowDeleteConfirm(true)
                 }}
                 aria-disabled={!canEditSensitive}
@@ -253,39 +278,64 @@ export function DataTableBulkActions<TData>({
         </div>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        size='md'
+      {/* Delete Confirmation Dialog：项目 ConfirmDialog（sm 档），失败保留选择 */}
+      <ConfirmDialog
         open={showDeleteConfirm}
-        onOpenChange={setShowDeleteConfirm}
+        onOpenChange={(nextOpen) => {
+          setShowDeleteConfirm(nextOpen)
+          if (!nextOpen) setDeleteFailure(null)
+        }}
+        className={cn(DIALOG_SIZE_CLASS.sm, 'max-w-[min(92vw,480px)]')}
         title={t('Delete Channels?')}
-        description={
-          <>
-            {t('Are you sure you want to delete')}
-            {selectedIds.length}{' '}
-            {t('channel(s)? This action cannot be undone.')}
-          </>
-        }
-        footer={
-          <>
-            <Button
-              variant='outline'
-              onClick={() => setShowDeleteConfirm(false)}
-            >
-              {t('Cancel')}
-            </Button>
-            <Button
-              variant='destructive'
-              onClick={handleDeleteAll}
-              disabled={!canEditSensitive}
-            >
-              {t('Delete')}
-            </Button>
-          </>
-        }
+        desc={t(
+          'Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.',
+          { count: selectedIds.length }
+        )}
+        confirmText={t('Delete')}
+        destructive
+        isLoading={isDeleting}
+        handleConfirm={handleDeleteAll}
       >
-        {' '}
-      </Dialog>
+        <div className='space-y-3'>
+          <div>
+            <p className='text-sm font-medium'>{t('Channels to delete:')}</p>
+            <ul className='text-muted-foreground mt-1 max-h-40 list-disc space-y-1 overflow-y-auto ps-5 text-sm'>
+              {selectedNames.map((name) => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+          </div>
+          {deleteFailure && (
+            <Alert variant='destructive'>
+              <AlertDescription>
+                <p>{deleteFailure.message || t('Failed to delete channel')}</p>
+                {blockedEntries.length > 0 && (
+                  <ul className='mt-2 space-y-2'>
+                    {blockedEntries.map(([name, lanes]) => (
+                      <li key={name}>
+                        <span className='font-medium'>{name}</span>
+                        <ul className='list-disc space-y-1 ps-5'>
+                          {lanes.map((lane) => (
+                            <li key={lane}>{lane}</li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {blockedEntries.length > 0 && (
+                  <Link
+                    to='/routes'
+                    className='mt-3 inline-block font-medium underline underline-offset-2'
+                  >
+                    {t('Routing & Failover')}
+                  </Link>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      </ConfirmDialog>
     </>
   )
 }

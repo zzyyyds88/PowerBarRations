@@ -2995,6 +2995,19 @@
     "Channel × Model": "渠道 × 模型",
     "Quota limit exceeded": "已超出配额上限",
     "View details about the actor associated with this log entry.": "查看与此日志关联的操作者信息。",
-    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "警告：基础 URL 不应以 /v1 结尾。网关会自动归一化处理。这可能会导致请求失败。"
+    "Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.": "警告：基础 URL 不应以 /v1 结尾。网关会自动归一化处理。这可能会导致请求失败。",
+    "Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.": "已从 {{cleaned}} 条车道移除此渠道成员；删除了 {{deleted}} 条空车道。这些模型将变为不可调用。",
+    "Draft cleared. Save the channel to apply the change.": "草稿已清空。保存渠道后才会生效。",
+    "Models still referenced by lanes": "部分模型仍被车道引用",
+    "These models are still referenced by the following lanes:": "以下车道仍引用这些模型：",
+    "If you continue, this channel will be removed from those lanes and empty lanes will be deleted. Those models become uncallable until a new lane member is configured.": "继续后将从这些车道移除此渠道成员，成员清空的空车道会被删除；这些模型在重新配置车道成员前将不可调用。",
+    "Remove and save": "移除并保存",
+    "Clear all models?": "清空全部模型？",
+    "This only clears the draft model list. The channel is not updated until you save.": "仅清空草稿中的模型列表，保存渠道后才会生效。",
+    "Clear draft": "清空草稿",
+    "Are you sure you want to delete {{count}} selected channel(s)? This action cannot be undone.": "确定要删除选中的 {{count}} 个渠道吗？此操作无法撤销。",
+    "Channels to delete:": "将删除的渠道：",
+    "Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.": "引用这些模型的车道会移除本渠道成员；成员清空的空车道会被删除，这些模型将变为不可调用。",
+    "These models are still referenced by lanes on the following channels:": "以下渠道中的这些模型仍被车道引用："
   }
 }

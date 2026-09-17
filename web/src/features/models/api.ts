@@ -111,7 +111,7 @@ export async function deleteModel(
   id: number,
   removeFromChannels = false,
   removePricing = false
-): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
+): Promise<ModelDeleteResponse> {
   const res = await api.delete(`/api/console/models/${id}`, {
     params: {
       remove_from_channels: removeFromChannels,
@@ -176,11 +176,23 @@ export interface ModelDeleteResult {
   updated_channels: number
 }
 
+/** 删除模型被车道引用时（code=conflict）返回：渠道名 -> 引用车道名。 */
+export interface ModelDeleteConflict {
+  blocked?: Record<string, string[]>
+}
+
+export interface ModelDeleteResponse {
+  success: boolean
+  code?: string
+  message?: string
+  data?: ModelDeleteResult & ModelDeleteConflict
+}
+
 export async function deleteModels(
   modelIds: number[],
   removeFromChannels = false,
   removePricing = false
-): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
+): Promise<ModelDeleteResponse> {
   const res = await api.post('/api/console/models/delete', {
     model_ids: modelIds,
     remove_from_channels: removeFromChannels,

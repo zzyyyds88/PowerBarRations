@@ -1403,3 +1403,89 @@ test('upstream unit price editor sits with the model list in the default section
   ).toHaveAttribute('aria-selected', 'true')
   expect(screen.getByText('Upstream unit prices')).toBeVisible()
 })
+
+test('removing a model still referenced by a lane confirms and retries with cleanup_models', async () => {
+  editingChannel.models = 'custom-model,keep-model'
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValueOnce({
+      data: {
+        success: false,
+        code: 'models_referenced_by_lanes',
+        message: '以下模型仍被车道引用：custom-model',
+        data: { lanes: ['custom-model'] },
+      },
+    })
+    .mockResolvedValueOnce({
+      data: {
+        success: true,
+        cleaned_lanes: ['custom-model'],
+        deleted_lanes: [],
+      },
+    })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    modelsGroup().getByRole('button', { name: 'Remove custom-model' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+
+  const confirm = await screen.findByRole('alertdialog', {
+    name: 'Models still referenced by lanes',
+  })
+  expect(within(confirm).getByText('custom-model')).toBeVisible()
+  await user.click(
+    within(confirm).getByRole('button', { name: 'Remove and save' })
+  )
+
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+  expect(put.mock.calls[1]?.[1]).toMatchObject({
+    id: 42,
+    models: 'keep-model',
+    cleanup_models: true,
+  })
+})
+
+test('cancelling the referenced-model cleanup keeps the draft and the save dialog open', async () => {
+  editingChannel.models = 'custom-model,keep-model'
+  const put = vi.spyOn(api, 'put').mockResolvedValue({
+    data: {
+      success: false,
+      code: 'models_referenced_by_lanes',
+      message: '以下模型仍被车道引用：custom-model',
+      data: { lanes: ['custom-model'] },
+    },
+  })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    modelsGroup().getByRole('button', { name: 'Remove custom-model' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  const confirm = await screen.findByRole('alertdialog', {
+    name: 'Models still referenced by lanes',
+  })
+  await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  )
+  expect(put).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('dialog', { name: 'Edit Channel' })).toBeVisible()
+  expect(modelsGroup().getByText('keep-model')).toBeVisible()
+})
+
+test('Clear All asks for confirmation and only clears the draft', async () => {
+  editingChannel.models = 'gpt-one,gpt-two'
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(screen.getByRole('button', { name: 'Clear All' }))
+  const confirm = await screen.findByRole('alertdialog', {
+    name: 'Clear all models?',
+  })
+  await user.click(within(confirm).getByRole('button', { name: 'Clear draft' }))
+  expect(modelsGroup().queryByText('gpt-one')).not.toBeInTheDocument()
+  expect(modelsGroup().queryByText('gpt-two')).not.toBeInTheDocument()
+})

@@ -43,7 +43,23 @@ type UseChannelMutateFormParams = {
   isEditing: boolean
   isMultiKeyChannel: boolean
   onSuccess: () => void
+  /**
+   * 更新时若移除了仍被车道引用的模型，后端返回 code=models_referenced_by_lanes。
+   * 调用方（channel-mutate-dialog）据此弹出确认框；resolve true 表示用户确认
+   * "同时从这些车道移除本渠道成员"，此时以 cleanup_models:true 重试。
+   */
+  onReferencedModels?: (lanes: string[]) => Promise<boolean>
 }
+
+/** mutateAsync 的结果：cancelled 表示用户在确认框里取消，调用方应保留草稿。 */
+export type ChannelMutateOutcome =
+  | {
+      status: 'success'
+      messageKey: string
+      cleanedLanes?: string[]
+      deletedLanes?: string[]
+    }
+  | { status: 'cancelled' }
 
 const SENSITIVE_UPDATE_FIELDS = [
   'type',
@@ -67,12 +83,12 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
   )
 
   return useMutation({
-    mutationFn: async (data: ChannelFormValues): Promise<string> => {
+    mutationFn: async (
+      data: ChannelFormValues
+    ): Promise<ChannelMutateOutcome> => {
       if (props.isEditing && props.currentRow) {
-        const payload = transformFormDataToUpdatePayload(
-          data,
-          props.currentRow.id
-        )
+        const currentRow = props.currentRow
+        const payload = transformFormDataToUpdatePayload(data, currentRow.id)
         if (!data.key?.trim()) {
           delete payload.key
         }
@@ -91,17 +107,44 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
                 key_mode: data.key_mode,
               }
             : payload
-
-        const response = await updateChannel(props.currentRow.id, {
+        const updatePayload = {
           ...payloadWithKeyMode,
           ...(canEditSensitive && props.isMultiKeyChannel
             ? { multi_key_mode: data.multi_key_type }
             : {}),
-        })
+        }
+
+        const response = await updateChannel(currentRow.id, updatePayload)
+        if (
+          !response.success &&
+          response.code === 'models_referenced_by_lanes'
+        ) {
+          const lanes = response.data?.lanes ?? []
+          const confirmed = props.onReferencedModels
+            ? await props.onReferencedModels(lanes)
+            : false
+          if (!confirmed) {
+            // 用户取消：不报错、不保存，保留草稿与保存对话框。
+            return { status: 'cancelled' }
+          }
+          const cleaned = await updateChannel(currentRow.id, {
+            ...updatePayload,
+            cleanup_models: true,
+          })
+          if (!cleaned.success) {
+            throw createServerError(cleaned, t(ERROR_MESSAGES.UPDATE_FAILED))
+          }
+          return {
+            status: 'success',
+            messageKey: SUCCESS_MESSAGES.UPDATED,
+            cleanedLanes: cleaned.cleaned_lanes ?? [],
+            deletedLanes: cleaned.deleted_lanes ?? [],
+          }
+        }
         if (!response.success) {
           throw createServerError(response, t(ERROR_MESSAGES.UPDATE_FAILED))
         }
-        return SUCCESS_MESSAGES.UPDATED
+        return { status: 'success', messageKey: SUCCESS_MESSAGES.UPDATED }
       }
 
       const payload = transformFormDataToCreatePayload(data)
@@ -109,10 +152,23 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
       if (!response.success) {
         throw createServerError(response, t(ERROR_MESSAGES.CREATE_FAILED))
       }
-      return SUCCESS_MESSAGES.CREATED
+      return { status: 'success', messageKey: SUCCESS_MESSAGES.CREATED }
     },
-    onSuccess: (messageKey) => {
-      toast.success(t(messageKey))
+    onSuccess: (outcome) => {
+      if (outcome.status === 'cancelled') return
+      const message = t(outcome.messageKey)
+      const cleanedCount = outcome.cleanedLanes?.length ?? 0
+      const deletedCount = outcome.deletedLanes?.length ?? 0
+      if (cleanedCount > 0 || deletedCount > 0) {
+        toast.success(message, {
+          description: t(
+            'Removed this channel from {{cleaned}} lane(s); deleted {{deleted}} empty lane(s). Those models are no longer callable.',
+            { cleaned: cleanedCount, deleted: deletedCount }
+          ),
+        })
+      } else {
+        toast.success(message)
+      }
       props.onSuccess()
     },
     onError: (error: unknown) => {

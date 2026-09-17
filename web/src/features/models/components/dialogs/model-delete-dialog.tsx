@@ -17,19 +17,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { pbrModelsQueryKey } from '@/features/routes/api'
 import { ROLE } from '@/lib/roles'
 import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { deleteModel, deleteModels } from '../../api'
+import { deleteModel, deleteModels, type ModelDeleteResult } from '../../api'
 import { modelsQueryKeys } from '../../lib'
 import type { Model } from '../../types'
 
@@ -51,10 +54,15 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
   )
   const [removePricing, setRemovePricing] = useState(false)
   const [removeFromChannels, setRemoveFromChannels] = useState(false)
+  const [laneConflict, setLaneConflict] = useState<Record<
+    string,
+    string[]
+  > | null>(null)
   const client = useQueryClient()
   const mutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ModelDeleteResult> => {
       const ids = props.models.map((model) => model.id)
+      setLaneConflict(null)
       const response =
         ids.length === 1
           ? await deleteModel(
@@ -68,12 +76,21 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
               removePricing && canEditPricing
             )
       if (!response.success) {
+        // 被车道引用：后端返回 code=conflict + data.blocked，弹窗内列出受影响渠道/车道。
+        if (response.code === 'conflict' && response.data?.blocked) {
+          setLaneConflict(response.data.blocked)
+        }
+        throw createServerError(response, t('Failed to delete model'))
+      }
+      if (!response.data) {
         throw createServerError(response, t('Failed to delete model'))
       }
       return response.data
     },
     onSuccess: async (result) => {
       await client.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
+      // 路由页的可调用状态由车道/渠道成员决定，删除模型后必须失效，否则仍显示可调用。
+      await client.invalidateQueries({ queryKey: pbrModelsQueryKey })
       if (removePricing) {
         await client.invalidateQueries({ queryKey: ['system-options'] })
       }
@@ -131,6 +148,13 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
             )}
           </Label>
         </div>
+        {removeFromChannels && supportsChannelRemoval && (
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Lanes that reference these models will have this channel member removed; lanes left without members are deleted, and those models become uncallable.'
+            )}
+          </p>
+        )}
         <div className='flex items-start gap-2'>
           <Checkbox
             id={pricingCheckboxId}
@@ -150,7 +174,36 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
               : t('Model pricing is managed by a super administrator.')}
           </p>
         )}
-        {mutation.isError && (
+        {laneConflict && Object.keys(laneConflict).length > 0 && (
+          <Alert variant='destructive'>
+            <AlertDescription>
+              <p>
+                {t(
+                  'These models are still referenced by lanes on the following channels:'
+                )}
+              </p>
+              <ul className='mt-2 space-y-2'>
+                {Object.entries(laneConflict).map(([name, lanes]) => (
+                  <li key={name}>
+                    <span className='font-medium'>{name}</span>
+                    <ul className='list-disc space-y-1 ps-5'>
+                      {lanes.map((lane) => (
+                        <li key={lane}>{lane}</li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to='/routes'
+                className='mt-3 inline-block font-medium underline underline-offset-2'
+              >
+                {t('Routing & Failover')}
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+        {mutation.isError && !laneConflict && (
           <p role='alert' className='text-destructive text-sm'>
             {errorMessage || t('Failed to delete model')}
           </p>

@@ -17,6 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
@@ -130,6 +137,10 @@ describe('model deletion', () => {
       remove_pricing: false,
     })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['channels'] })
+    // 路由页缓存必须一起失效，否则删除模型后仍显示可调用。
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: ['pbr-routable-models'],
+    })
   })
 
   it('disables dismissal and repeated submission while a single removal is pending', async () => {
@@ -225,3 +236,54 @@ it.each([1, 2, 3])(
     expect(screen.getByText('Only available for exact matching')).toBeVisible()
   }
 )
+
+it('surfaces referenced lanes and a routing link when model removal is blocked', async () => {
+  const post = vi.spyOn(api, 'post').mockResolvedValue({
+    data: {
+      success: false,
+      code: 'conflict',
+      message: '模型仍被车道引用，已取消删除',
+      data: { blocked: { alpha: ['m-1'] } },
+    },
+  })
+  const root = createRootRoute()
+  const authenticated = createRoute({
+    getParentRoute: () => root,
+    id: '_authenticated',
+  })
+  const index = createRoute({
+    getParentRoute: () => authenticated,
+    path: 'models',
+    component: () => <Fixture batch />,
+  })
+  const routing = createRoute({
+    getParentRoute: () => authenticated,
+    path: 'routes',
+    component: () => null,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([authenticated.addChildren([index, routing])]),
+    history: createMemoryHistory({ initialEntries: ['/models'] }),
+  })
+  await router.load()
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Also remove from all channels' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+  expect(await screen.findByText('alpha')).toBeVisible()
+  expect(screen.getByText('m-1')).toBeVisible()
+  expect(
+    screen.getByRole('link', { name: 'Routing & Failover' })
+  ).toHaveAttribute('href', '/routes')
+  expect(post).toHaveBeenCalled()
+})

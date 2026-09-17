@@ -36,6 +36,7 @@ import { useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -59,6 +60,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { MODEL_FETCHABLE_TYPES } from '../constants'
 import {
+  type ChannelActionFailure,
   channelsQueryKeys,
   handleDeleteChannel,
   handleTestChannel,
@@ -85,6 +87,9 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteFailure, setDeleteFailure] =
+    useState<ChannelActionFailure | null>(null)
 
   const isEnabled = isChannelEnabled(channel)
   const isMultiKey = isMultiKeyChannel(channel)
@@ -140,6 +145,23 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       await handleToggleChannelStatus(channel.id, channel.status, queryClient)
     } finally {
       setIsTogglingStatus(false)
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!canEditSensitive) return
+    setIsDeleting(true)
+    try {
+      const failure = await handleDeleteChannel(channel.id, queryClient)
+      if (failure) {
+        // 被车道引用等失败：保留确认框并展示原因/清单，不静默关闭。
+        setDeleteFailure(failure)
+      } else {
+        setDeleteFailure(null)
+        setDeleteConfirmOpen(false)
+      }
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -356,7 +378,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
 
       <ConfirmDialog
         open={deleteConfirmOpen}
-        onOpenChange={setDeleteConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          setDeleteConfirmOpen(nextOpen)
+          if (!nextOpen) setDeleteFailure(null)
+        }}
         title={t('Delete Channel')}
         desc={t(
           'Are you sure you want to delete channel "{{name}}"? This action cannot be undone.',
@@ -364,12 +389,24 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         )}
         confirmText={t('Delete')}
         destructive
-        handleConfirm={() => {
-          if (!canEditSensitive) return
-          handleDeleteChannel(channel.id, queryClient)
-          setDeleteConfirmOpen(false)
-        }}
-      />
+        isLoading={isDeleting}
+        handleConfirm={handleConfirmDelete}
+      >
+        {deleteFailure && (
+          <Alert variant='destructive'>
+            <AlertDescription>
+              <p>{deleteFailure.message || t('Failed to delete channel')}</p>
+              {deleteFailure.lanes.length > 0 && (
+                <ul className='mt-2 list-disc space-y-1 ps-5'>
+                  {deleteFailure.lanes.map((lane) => (
+                    <li key={lane}>{lane}</li>
+                  ))}
+                </ul>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+      </ConfirmDialog>
     </div>
   )
 }

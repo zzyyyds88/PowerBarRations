@@ -24,8 +24,11 @@ import type {
   BatchDeleteParams,
   BatchSetTagParams,
   Channel,
+  ChannelBatchDeleteResponse,
+  ChannelDeleteResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
+  ChannelUpdateResponse,
   CopyChannelParams,
   CopyChannelResponse,
   FetchModelsResponse,
@@ -138,8 +141,8 @@ export async function createChannel(
  */
 export async function updateChannel(
   id: number,
-  data: Partial<Channel>
-): Promise<{ success: boolean; message?: string; data?: Channel }> {
+  data: Partial<Channel> & { cleanup_models?: boolean }
+): Promise<ChannelUpdateResponse> {
   const res = await api.put(
     '/api/channel/',
     { id, ...data },
@@ -183,7 +186,7 @@ export async function batchUpdateChannelStatus(
  */
 export async function deleteChannel(
   id: number
-): Promise<{ success: boolean; message?: string }> {
+): Promise<ChannelDeleteResponse> {
   const res = await api.delete(`/api/channel/${id}`, channelActionConfig())
   return res.data
 }
@@ -193,7 +196,7 @@ export async function deleteChannel(
  */
 export async function batchDeleteChannels(
   data: BatchDeleteParams
-): Promise<{ success: boolean; message?: string; data?: number }> {
+): Promise<ChannelBatchDeleteResponse> {
   const res = await api.post('/api/channel/batch', data, channelActionConfig())
   return res.data
 }
@@ -277,11 +280,7 @@ export async function fixChannelAbilities(): Promise<{
 /**
  * Delete all disabled channels
  */
-export async function deleteDisabledChannels(): Promise<{
-  success: boolean
-  message?: string
-  data?: number
-}> {
+export async function deleteDisabledChannels(): Promise<ChannelBatchDeleteResponse> {
   const res = await api.delete('/api/channel/disabled', channelActionConfig())
   return res.data
 }
