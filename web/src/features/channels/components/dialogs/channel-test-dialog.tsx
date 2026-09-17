@@ -959,7 +959,7 @@ function ChannelTestDialogContent({
 
   return (
     <>
-      <Dialog
+      <Dialog size='lg'
         open={open}
         onOpenChange={handleDialogOpenChange}
         title={
@@ -969,7 +969,6 @@ function ChannelTestDialogContent({
           </span>
         }
         contentClassName='max-h-[90vh] overflow-hidden sm:max-w-4xl'
-        contentHeight='auto'
         bodyClassName='space-y-4'
         footer={
           <Button variant='outline' onClick={handleClose}>

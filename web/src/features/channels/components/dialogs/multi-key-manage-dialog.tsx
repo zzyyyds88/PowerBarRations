@@ -234,7 +234,7 @@ export function MultiKeyManageDialog({
 
   return (
     <>
-      <Dialog
+      <Dialog size='xl'
         open={open}
         onOpenChange={onOpenChange}
         title={
@@ -263,7 +263,6 @@ export function MultiKeyManageDialog({
         )}
         contentClassName='flex max-h-[90vh] max-w-5xl flex-col'
         titleClassName='flex items-center gap-2'
-        contentHeight='min(72vh, 720px)'
         bodyClassName='space-y-4'
       >
         <div className='flex min-h-0 flex-1 flex-col space-y-4 overflow-hidden'>

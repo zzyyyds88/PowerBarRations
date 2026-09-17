@@ -84,7 +84,7 @@ export function StatusCodeRiskDialog({
   }
 
   return (
-    <Dialog
+    <Dialog size='sm'
       open={open}
       onOpenChange={onOpenChange}
       title={
@@ -95,7 +95,6 @@ export function StatusCodeRiskDialog({
       }
       contentClassName='sm:max-w-3xl'
       titleClassName='text-destructive flex items-center gap-2'
-      contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <>

@@ -55,6 +55,7 @@ export function AuditLogDetailsDialog(props: { entry: AuditLog }) {
   )
   return (
     <Dialog
+      size='lg'
       title={t('Log Details')}
       description={t('View the complete details for this log entry')}
       descriptionClassName='sr-only'
@@ -65,7 +66,6 @@ export function AuditLogDetailsDialog(props: { entry: AuditLog }) {
       }
       contentClassName='min-w-0 sm:max-w-lg max-sm:max-h-[calc(100dvh-1.5rem)] max-sm:w-[calc(100vw-1.5rem)] max-sm:max-w-[calc(100vw-1.5rem)]'
       titleClassName='text-base'
-      contentHeight='auto'
       bodyClassName='space-y-3'
     >
       <div className='min-w-0 space-y-1.5'>

@@ -384,7 +384,7 @@ export function PrefillGroupManagementDialog({
 
   return (
     <>
-      <Dialog
+      <Dialog size='lg'
         open={open}
         onOpenChange={onOpenChange}
         title={
@@ -402,7 +402,6 @@ export function PrefillGroupManagementDialog({
         )}
         titleClassName='flex flex-wrap items-center gap-2 text-lg'
         descriptionClassName='text-sm leading-relaxed'
-        contentHeight='auto'
         bodyClassName={cn(
           'space-y-3',
           isMobile && 'pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]'

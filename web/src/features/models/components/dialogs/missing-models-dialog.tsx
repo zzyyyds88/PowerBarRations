@@ -120,7 +120,7 @@ export function MissingModelsDialog({
   const showPagination = totalItems > pageSize
 
   return (
-    <Dialog
+    <Dialog size='lg'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Missing Models')}
@@ -129,7 +129,6 @@ export function MissingModelsDialog({
       )}
       contentClassName='flex max-h-[85vh] max-w-2xl flex-col gap-3 p-4'
       headerClassName='flex-shrink-0 text-start'
-      contentHeight='min(74vh, 760px)'
       bodyClassName='space-y-4'
       initialFocus={!isMobile}
       footer={

@@ -69,7 +69,7 @@ export function CopyChannelDialog({
   }
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Copy Channel')}
@@ -79,7 +79,6 @@ export function CopyChannelDialog({
           <strong>{currentRow.name}</strong>
         </>
       }
-      contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <>

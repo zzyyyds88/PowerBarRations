@@ -142,12 +142,11 @@ export function CacheStatsDialog(props: Props) {
   }, [stats, props.target, t])
 
   return (
-    <Dialog
+    <Dialog size='lg'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Channel Affinity: Upstream Cache Hit')}
       contentClassName='sm:max-w-lg'
-      contentHeight='auto'
       bodyClassName='space-y-4'
     >
       <p className='text-muted-foreground text-xs'>

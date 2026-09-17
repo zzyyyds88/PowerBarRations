@@ -115,12 +115,11 @@ export function UpstreamUpdateDialog(props: UpstreamUpdateDialogProps) {
 
   return (
     <>
-      <Dialog
+      <Dialog size='lg'
         open={props.open}
         onOpenChange={(v) => !v && props.onCancel()}
         title={t('Upstream Model Updates')}
         contentClassName='sm:max-w-lg'
-        contentHeight='auto'
         bodyClassName='space-y-4'
         footer={
           <>

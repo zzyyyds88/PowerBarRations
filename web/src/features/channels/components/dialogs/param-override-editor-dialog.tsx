@@ -1740,7 +1740,7 @@ export function ParamOverrideEditorDialog(
   // ---------------------------------------------------------------------------
 
   return (
-    <Dialog
+    <Dialog size='xl'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Parameter Override')}
@@ -1750,7 +1750,6 @@ export function ParamOverrideEditorDialog(
       contentClassName='flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-5xl'
       headerClassName='border-b px-6 py-4'
       footerClassName='border-t px-6 py-4'
-      contentHeight='min(72vh, 720px)'
       bodyClassName='space-y-4'
       footer={
         <>

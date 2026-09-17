@@ -78,7 +78,7 @@ export function UserInfoDialog({
   }, [open, userId, fetchUserInfo])
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={t('User Information')}
@@ -86,7 +86,6 @@ export function UserInfoDialog({
         'View detailed information about this user including balance, usage statistics, and invitation details.'
       )}
       contentClassName='sm:max-w-lg'
-      contentHeight='auto'
       bodyClassName='space-y-4'
     >
       {isLoading && (

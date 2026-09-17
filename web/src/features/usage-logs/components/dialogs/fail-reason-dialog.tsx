@@ -40,13 +40,12 @@ export function FailReasonDialog({
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Fail Reason Details')}
       description={t('View the complete error message and details')}
       contentClassName='sm:max-w-lg'
-      contentHeight='auto'
       bodyClassName='space-y-4'
     >
       <ScrollArea className='max-h-[500px] pr-4'>

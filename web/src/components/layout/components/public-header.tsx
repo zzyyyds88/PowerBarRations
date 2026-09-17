@@ -407,7 +407,7 @@ export function PublicHeader(props: PublicHeaderProps) {
         </div>
       </div>
 
-      <Dialog
+      <Dialog size='md'
         open={!!authPromptTarget}
         onOpenChange={(open) => {
           if (!open) {
@@ -419,7 +419,6 @@ export function PublicHeader(props: PublicHeaderProps) {
           module: authPromptTarget?.title || '',
         })}
         contentClassName='sm:max-w-md'
-        contentHeight='auto'
         footer={
           <>
             <Button variant='outline' onClick={closeAuthPrompt}>

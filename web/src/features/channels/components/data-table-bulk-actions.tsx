@@ -212,7 +212,7 @@ export function DataTableBulkActions<TData>({
       </BulkActionsToolbar>
 
       {/* Set Tag Dialog */}
-      <Dialog
+      <Dialog size='md'
         open={showTagDialog}
         onOpenChange={setShowTagDialog}
         title={t('Set Tag')}
@@ -223,7 +223,6 @@ export function DataTableBulkActions<TData>({
             {t('selected channel(s). Leave empty to remove tag.')}
           </>
         }
-        contentHeight='auto'
         bodyClassName='space-y-4'
         footer={
           <>
@@ -254,7 +253,7 @@ export function DataTableBulkActions<TData>({
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog
+      <Dialog size='md'
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
         title={t('Delete Channels?')}
@@ -265,7 +264,6 @@ export function DataTableBulkActions<TData>({
             {t('channel(s)? This action cannot be undone.')}
           </>
         }
-        contentHeight='auto'
         footer={
           <>
             <Button

@@ -147,12 +147,11 @@ export function CCSwitchDialog(props: Props) {
   }
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Import to CC Switch')}
       contentClassName='sm:max-w-md'
-      contentHeight='auto'
       bodyClassName={
         currentConfig.modelFields.length === 1 ? 'space-y-4 pb-52' : 'space-y-4'
       }
