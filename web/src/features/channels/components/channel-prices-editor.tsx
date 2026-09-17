@@ -16,8 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Plus, X } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 import type { ChannelModelPrice } from '../types'
@@ -25,8 +28,10 @@ import type { ChannelModelPrice } from '../types'
 // 渠道级上游单价编辑器（人民币/百万 token）。
 //
 // 用于成本折算：同一模型在不同上游的采购价不同，故渠道价优先于全局默认单价表。
-// 表格跟随渠道模型清单：每个模型一行、模型名只读，保存时仅落库至少填了一项的模型。
-// 这里只负责编辑，写入 setting JSON 由 channel-form.buildSettingJSON 完成。
+// 计价键是**请求模型名**（路由键/车道名），不是上游真名——车道成员可引用清单
+// 之外的上游名，因此除渠道模型清单外还支持手动添加自定义计价行（可删除）。
+// 保存时仅落库至少填了一项的模型；这里只负责编辑，写入 setting JSON 由
+// channel-form.buildSettingJSON 完成。
 
 const PRICE_FIELDS = ['input', 'output', 'cache_read', 'cache_write'] as const
 
@@ -58,6 +63,11 @@ function createPrice(
 
 export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
   const { t } = useTranslation()
+  const [customDraft, setCustomDraft] = useState('')
+  const [customModels, setCustomModels] = useState<string[]>([])
+
+  const rows = [...props.models, ...customModels]
+  const isCustom = (model: string) => !props.models.includes(model)
 
   const update = (model: string, key: PriceField, raw: string) => {
     const value = toNumber(raw)
@@ -73,50 +83,106 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
     props.onChange([...props.value, createPrice(model, key, value)])
   }
 
-  if (props.models.length === 0) {
-    return (
-      <p className='text-muted-foreground text-sm'>
-        {t('Add models first, then set their upstream prices.')}
-      </p>
-    )
+  const addCustomModel = () => {
+    const model = customDraft.trim()
+    if (!model || rows.includes(model)) {
+      setCustomDraft('')
+      return
+    }
+    setCustomModels([...customModels, model])
+    setCustomDraft('')
+  }
+
+  const removeCustomModel = (model: string) => {
+    setCustomModels(customModels.filter((item) => item !== model))
+    props.onChange(props.value.filter((item) => item.model !== model))
   }
 
   return (
-    <div className='overflow-x-auto'>
-      <table className='w-full min-w-[560px] text-sm'>
-        <thead>
-          <tr className='text-muted-foreground border-b text-left'>
-            <th className='py-2 pr-2 font-medium'>{t('Model')}</th>
-            <th className='py-2 pr-2 font-medium'>{t('Input')}</th>
-            <th className='py-2 pr-2 font-medium'>{t('Output')}</th>
-            <th className='py-2 pr-2 font-medium'>{t('Cache read')}</th>
-            <th className='py-2 pr-2 font-medium'>{t('Cache write')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.models.map((model) => {
-            const price = props.value.find((item) => item.model === model)
-            return (
-              <tr key={model} className='border-b last:border-0'>
-                <td className='py-1.5 pr-2 break-all'>{model}</td>
-                {PRICE_FIELDS.map((field) => (
-                  <td key={field} className='py-1.5 pr-2'>
-                    <Input
-                      aria-label={`${model} ${field}`}
-                      inputMode='decimal'
-                      value={price?.[field] ?? ''}
-                      disabled={props.disabled}
-                      onChange={(event) =>
-                        update(model, field, event.target.value)
-                      }
-                    />
-                  </td>
-                ))}
+    <div className='space-y-3'>
+      {rows.length === 0 ? (
+        <p className='text-muted-foreground text-sm'>
+          {t('Add models first, then set their upstream prices.')}
+        </p>
+      ) : (
+        <div className='overflow-x-auto'>
+          <table className='w-full min-w-[560px] text-sm'>
+            <thead>
+              <tr className='text-muted-foreground border-b text-left'>
+                <th className='py-2 pr-2 font-medium'>{t('Model')}</th>
+                <th className='py-2 pr-2 font-medium'>{t('Input')}</th>
+                <th className='py-2 pr-2 font-medium'>{t('Output')}</th>
+                <th className='py-2 pr-2 font-medium'>{t('Cache read')}</th>
+                <th className='py-2 pr-2 font-medium'>{t('Cache write')}</th>
+                <th className='w-8 py-2' aria-hidden='true' />
               </tr>
-            )
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {rows.map((model) => {
+                const price = props.value.find((item) => item.model === model)
+                const custom = isCustom(model)
+                return (
+                  <tr key={model} className='border-b last:border-0'>
+                    <td className='py-1.5 pr-2 break-all'>{model}</td>
+                    {PRICE_FIELDS.map((field) => (
+                      <td key={field} className='py-1.5 pr-2'>
+                        <Input
+                          aria-label={`${model} ${field}`}
+                          inputMode='decimal'
+                          value={price?.[field] ?? ''}
+                          disabled={props.disabled}
+                          onChange={(event) =>
+                            update(model, field, event.target.value)
+                          }
+                        />
+                      </td>
+                    ))}
+                    <td className='py-1.5'>
+                      {custom && (
+                        <Button
+                          type='button'
+                          variant='ghost'
+                          size='icon-sm'
+                          aria-label={t('Remove {{model}}', { model })}
+                          disabled={props.disabled}
+                          onClick={() => removeCustomModel(model)}
+                        >
+                          <X className='size-4' aria-hidden='true' />
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className='flex gap-2'>
+        <Input
+          value={customDraft}
+          placeholder={t('Add a model to price (e.g. a lane name)')}
+          disabled={props.disabled}
+          onChange={(event) => setCustomDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              addCustomModel()
+            }
+          }}
+        />
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          disabled={props.disabled || !customDraft.trim()}
+          onClick={addCustomModel}
+        >
+          <Plus data-icon='inline-start' />
+          {t('Add')}
+        </Button>
+      </div>
     </div>
   )
 }

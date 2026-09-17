@@ -6295,6 +6295,8 @@
     "请再次输入登录口令": "请再次输入登录口令",
     "两次输入的口令不一致": "两次输入的口令不一致",
     "请输入登录口令": "请输入登录口令",
-    "Initialize PowerBarRations": "初始化 PowerBarRations"
+    "Initialize PowerBarRations": "初始化 PowerBarRations",
+    "Add a model to price (e.g. a lane name)": "添加要计价的模型（如车道名）",
+    "Remove {{model}}": "移除 {{model}}"
   }
 }

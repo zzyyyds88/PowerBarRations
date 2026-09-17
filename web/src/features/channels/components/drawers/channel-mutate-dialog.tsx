@@ -1198,7 +1198,7 @@ export function ChannelMutateDialog({
             }
           )
           form.setError('status_code_mapping', { type: 'manual', message })
-          setConfigurationSection('request')
+          setConfigurationSection('other')
           setPendingErrorFocus('status_code_mapping')
           toast.error(message)
           return
@@ -3752,10 +3752,6 @@ export function ChannelMutateDialog({
         models={
           <>
             {modelsSection}
-            {/* 上游单价紧跟模型清单：每个模型在不同渠道的采购价不同（design-v1 §16#7）。 */}
-            <div className='border-border/60 bg-muted/10 mt-5 rounded-lg border p-4'>
-              {pbrPricesFields}
-            </div>
           </>
         }
         routing={
@@ -3764,9 +3760,13 @@ export function ChannelMutateDialog({
             {routingFields}
           </>
         }
-        request={
+        prices={
+          <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
+            {pbrPricesFields}
+          </div>
+        }
+        other={
           <>
-            {overrideFields}
             <div
               role='group'
               aria-label={t('Request processing')}
@@ -3791,11 +3791,8 @@ export function ChannelMutateDialog({
                 {systemPromptOverrideFields}
               </fieldset>
             </div>
+            {overrideFields}
             {fieldPassthroughFields}
-          </>
-        }
-        other={
-          <>
             <div
               role='group'
               aria-label={t('Channel Extra Settings')}
