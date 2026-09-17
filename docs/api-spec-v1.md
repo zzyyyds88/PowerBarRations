@@ -231,10 +231,10 @@
 |---|---|---|
 | GET | `/api/channels` | 列表 |
 | GET | `/api/channels/{name}` | 详情 |
-| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict |
+| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时若被移除的路由键命中同名车道且该车道有本渠道成员**：默认 409 `conflict`（message 给出车道清单）；`?force=1` 继续，并在落库后把这些车道上的本渠道成员移除（成员清空的空车道整条删除）。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
 | DELETE | `/api/channels/{name}` | 删除（被车道引用时 409） |
 | POST | `/api/channels/{name}/test` | 单渠道探活 |
-| POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；若被移除的路由键正是某条车道的名字、且该车道有本渠道成员，则返回 409 并给出车道清单（同样需 `?force=1` 覆盖） |
+| POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；若被移除的路由键正是某条车道的名字、且该车道有本渠道成员，则返回 409 并给出车道清单。`?force=1` 覆盖时**同样执行成员清理**（从命中车道移除本渠道成员，空车道删除），响应附带 `cleaned_lanes` / `deleted_lanes` |
 
 ### 5.4 客户端密钥
 
@@ -282,9 +282,9 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured, routable: bool, member_count}`。`unconfigured` = 渠道声明了但没有车道，**当前不可调用** |
-| GET | `/api/routes/{model}` | 该模型的成员链（含来源、顺序与解析后的上游真名）。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用 |
+| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（声明了该模型但不在成员链里的渠道），让新增渠道声明后无需删车道重建 |
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
-| POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 id 升序生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射） |
+| POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 id 升序生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射）。**控制台不再暴露该入口**——路由页只手动手动增删成员与删除车道；端点保留供 AI/脚本使用（`?dry_run=true` 预览） |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
 
