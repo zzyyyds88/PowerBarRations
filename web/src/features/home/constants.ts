@@ -25,6 +25,15 @@ import type { TFunction } from 'i18next'
 // Layout - Main base classes
 export const MAIN_BASE_CLASSES = 'bg-background text-foreground w-full'
 
+// Stats section - PBR 真实能力口径（ui-spec §6.0）
+// 协议数必须与控制台实际暴露的上游协议数一致，回归测试见 __tests__/content.test.ts。
+export const HOME_STATS = [
+  { value: 40, suffix: '+', labelKey: 'vendor adapters reused' },
+  { value: 4, suffix: '', labelKey: 'protocols supported' },
+  { value: 2, suffix: '', labelKey: 'lane modes' },
+  { value: 6, suffix: '', labelKey: 'lane control keys' },
+] as const
+
 // Hero section - AI Applications (Left side)
 export const AI_APPLICATIONS = [
   'LobeHub.Color',

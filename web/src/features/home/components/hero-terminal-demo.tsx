@@ -33,6 +33,7 @@ interface ApiDemoConfig {
   responseHighlights: string[]
   tokens: number
   latency: number
+  servedBy: string
   accent: AccentTone
 }
 
@@ -91,6 +92,7 @@ const API_DEMOS: ApiDemoConfig[] = [
     ],
     responseHighlights: ['<text>', '<tokens>'],
     tokens: 27,
+    servedBy: 'gpt-4o ← vendor-openai',
     latency: 142,
     accent: 'emerald',
   },
@@ -109,6 +111,7 @@ const API_DEMOS: ApiDemoConfig[] = [
     ],
     responseHighlights: ['<text>', '<tokens>'],
     tokens: 31,
+    servedBy: 'gpt-4o ← vendor-openai',
     latency: 168,
     accent: 'amber',
   },
@@ -133,6 +136,7 @@ const API_DEMOS: ApiDemoConfig[] = [
     ],
     responseHighlights: ['<text>', '<in>', '<out>'],
     tokens: 29,
+    servedBy: 'claude-sonnet ← vendor-anthropic',
     latency: 156,
     accent: 'blue',
   },
@@ -156,6 +160,7 @@ const API_DEMOS: ApiDemoConfig[] = [
     ],
     responseHighlights: ['<text>', '<tokens>'],
     tokens: 25,
+    servedBy: 'gemini-2.5-pro ← vendor-google',
     latency: 93,
     accent: 'violet',
   },
@@ -304,7 +309,7 @@ export function HeroTerminalDemo(props: HeroTerminalDemoProps) {
             <span className='flex items-center gap-1'>
               <span className='tracking-wider uppercase'>cost</span>
               <span className='font-mono'>
-                ${(demo.tokens * 0.00003).toFixed(5)}
+                ¥{(demo.tokens * 0.0002).toFixed(5)}
               </span>
             </span>
           </div>
@@ -373,6 +378,9 @@ function ResponseBlock(props: { demo: ApiDemoConfig; transitioning: boolean }) {
           transitioning ? 'opacity-0' : 'opacity-100'
         )}
       >
+        <CodeLine>
+          <Muted># X-Served-By: {demo.servedBy}</Muted>
+        </CodeLine>
         {demo.response.map((line) => (
           <CodeLine key={line}>{renderResponseLine(line, demo)}</CodeLine>
         ))}

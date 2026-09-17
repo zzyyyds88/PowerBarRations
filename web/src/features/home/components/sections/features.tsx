@@ -17,14 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
-  Zap,
-  Shield,
-  Globe,
-  Code,
-  Gauge,
-  DollarSign,
-  Users,
-  HeartHandshake,
+  Activity,
+  Coins,
+  ListOrdered,
+  Network,
+  Route,
+  Server,
+  ShieldCheck,
+  UserRound,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -39,120 +39,106 @@ export function Features(_props: FeaturesProps) {
 
   const features = [
     {
-      id: 'fast',
+      id: 'route-key',
       num: '01',
-      title: t('Lightning Fast'),
+      title: t('Model Is the Route Key'),
       desc: t(
-        'Optimized network architecture ensures millisecond response times'
+        'The model name in the request selects a same-named lane. No lane, no call — the gateway returns 503 instead of hitting an upstream directly.'
       ),
       span: 'md:col-span-2',
-      icon: <Zap className='size-4 text-blue-400' />,
+      icon: <Route className='size-4 text-blue-400' />,
       visual: (
-        <div className='mt-4 grid grid-cols-3 gap-2'>
-          {['OpenAI', 'Claude', 'Gemini', 'DeepSeek', 'Qwen', 'Llama'].map(
-            (name) => (
-              <div
-                key={name}
-                className='border-border/30 bg-muted/20 text-muted-foreground flex items-center justify-center rounded-lg border px-3 py-2 text-xs transition-colors duration-300 hover:border-blue-500/30 hover:bg-blue-500/5'
-              >
-                {name}
-              </div>
-            )
-          )}
+        <div className='mt-4 flex flex-wrap items-center gap-2 font-mono text-[11px]'>
+          <span className='border-border/40 bg-muted/20 text-muted-foreground rounded-lg border px-3 py-1.5'>
+            model: gpt-4o
+          </span>
+          <span className='text-muted-foreground/40'>→</span>
+          <span className='rounded-lg border border-blue-500/30 bg-blue-500/5 px-3 py-1.5 text-blue-600 dark:text-blue-400'>
+            lane: gpt-4o
+          </span>
         </div>
       ),
     },
     {
-      id: 'secure',
+      id: 'failover',
       num: '02',
-      title: t('Secure & Reliable'),
+      title: t('Priority Failover'),
       desc: t(
-        'Passphrase-derived admin key; client keys are hashed and never returned'
+        'Members are tried in priority order; failures retry within the attempt budget, then cool down and escape to the next member.'
       ),
       span: 'md:col-span-1',
-      icon: <Shield className='size-4 text-emerald-400' />,
+      icon: <ListOrdered className='size-4 text-emerald-400' />,
       visual: (
-        <div className='mt-4 flex items-center justify-center'>
-          <div className='relative'>
-            <div className='flex size-16 items-center justify-center rounded-2xl border border-emerald-500/20 bg-emerald-500/5'>
-              <Shield
-                className='size-7 text-emerald-500/70'
-                strokeWidth={1.5}
-              />
-            </div>
-            <div className='absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-emerald-500'>
-              <svg
-                className='size-2.5 text-white'
-                fill='none'
-                viewBox='0 0 24 24'
-                stroke='currentColor'
-                strokeWidth={3}
-              >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  d='m4.5 12.75 6 6 9-13.5'
-                />
-              </svg>
-            </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: 'global',
-      num: '03',
-      title: t('Single-node Simplicity'),
-      desc: t('One binary and SQLite; no external database, cache, or queue'),
-      span: 'md:col-span-1',
-      icon: <Globe className='size-4 text-violet-400' />,
-      visual: (
-        <div className='mt-4 space-y-2'>
+        <div className='mt-4 space-y-2 font-mono text-[11px]'>
           {[
-            t('Lane Failover'),
-            t('Cooldown & Affinity'),
-            t('Circuit Breaker'),
-          ].map((step, i) => (
-            <div key={step} className='flex items-center gap-2'>
-              <div
-                className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold ${
-                  i === 1
-                    ? 'border border-blue-500/30 bg-blue-500/20 text-blue-500'
-                    : 'border-border/40 bg-muted text-muted-foreground border'
-                }`}
-              >
-                {i + 1}
-              </div>
-              <div className='bg-border/40 h-px flex-1' />
-              <span className='text-muted-foreground text-xs'>{step}</span>
+            {
+              name: 'ch-a',
+              tone: 'text-amber-600 dark:text-amber-400',
+              state: 'cooldown',
+            },
+            {
+              name: 'ch-b',
+              tone: 'text-emerald-600 dark:text-emerald-400',
+              state: 'served',
+            },
+            {
+              name: 'ch-c',
+              tone: 'text-muted-foreground',
+              state: 'standby',
+            },
+          ].map((member) => (
+            <div
+              key={member.name}
+              className='border-border/30 bg-muted/15 flex items-center justify-between rounded-lg border px-3 py-1.5'
+            >
+              <span className={member.tone}>{member.name}</span>
+              <span className='text-muted-foreground text-[10px] tracking-wider uppercase'>
+                {member.state}
+              </span>
             </div>
           ))}
         </div>
       ),
     },
     {
-      id: 'developer',
-      num: '04',
-      title: t('Developer Friendly'),
-      desc: t('Compatible API routes for common AI application workflows'),
-      span: 'md:col-span-2',
-      icon: <Code className='size-4 text-amber-400' />,
+      id: 'circuit',
+      num: '03',
+      title: t('Cooldown · Affinity · Circuit Breaker'),
+      desc: t(
+        'Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.'
+      ),
+      span: 'md:col-span-1',
+      icon: <Activity className='size-4 text-violet-400' />,
       visual: (
-        <div className='mt-4 flex items-center gap-3'>
-          <div className='flex -space-x-2'>
-            {['API', 'SDK', 'CLI', 'Docs'].map((n) => (
-              <div
-                key={n}
-                className='border-background from-muted to-muted/60 text-muted-foreground flex size-8 items-center justify-center rounded-full border-2 bg-gradient-to-br text-[9px] font-bold'
-              >
-                {n}
-              </div>
-            ))}
-          </div>
-          <div className='text-muted-foreground flex items-center gap-1.5 text-xs'>
-            <Code className='size-3.5 text-blue-500' />
-            {t('Multi-protocol Compatible')}
-          </div>
+        <div className='mt-4 flex flex-wrap items-center gap-1.5'>
+          {['closed', 'open', 'half-open'].map((state) => (
+            <span
+              key={state}
+              className='border-border/40 bg-muted/20 text-muted-foreground rounded-md border px-2 py-1 font-mono text-[10px]'
+            >
+              {state}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      id: 'security',
+      num: '04',
+      title: t('Secure by Design'),
+      desc: t(
+        'The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.'
+      ),
+      span: 'md:col-span-2',
+      icon: <ShieldCheck className='size-4 text-amber-400' />,
+      visual: (
+        <div className='mt-4 flex flex-wrap items-center gap-2 font-mono text-[11px]'>
+          <span className='border-border/40 bg-muted/20 text-muted-foreground rounded-lg border px-3 py-1.5'>
+            passphrase → admin key
+          </span>
+          <span className='border-border/40 bg-muted/20 text-muted-foreground rounded-lg border px-3 py-1.5'>
+            client key → hash only
+          </span>
         </div>
       ),
     },
@@ -160,24 +146,26 @@ export function Features(_props: FeaturesProps) {
 
   const additionalFeatures = [
     {
-      icon: <Gauge className='size-5' strokeWidth={1.5} />,
-      title: t('Failover & Cooldown'),
-      desc: t('Member failover with cooldown, affinity, and circuit breaker'),
+      icon: <Server className='size-5' strokeWidth={1.5} />,
+      title: t('Single-node Simplicity'),
+      desc: t('One binary and SQLite; no external database, cache, or queue'),
     },
     {
-      icon: <DollarSign className='size-5' strokeWidth={1.5} />,
+      icon: <Coins className='size-5' strokeWidth={1.5} />,
       title: t('Upstream Cost Visibility'),
       desc: t('Upstream spend in CNY, derived from hourly aggregates'),
     },
     {
-      icon: <Users className='size-5' strokeWidth={1.5} />,
+      icon: <UserRound className='size-5' strokeWidth={1.5} />,
       title: t('Single-user by Design'),
       desc: t('One operator, one node — no user groups or wallet'),
     },
     {
-      icon: <HeartHandshake className='size-5' strokeWidth={1.5} />,
-      title: t('Open Source'),
-      desc: t('Community driven, self-hosted, and extensible'),
+      icon: <Network className='size-5' strokeWidth={1.5} />,
+      title: t('Four Protocols In & Out'),
+      desc: t(
+        'OpenAI Chat, Responses, Anthropic, and Gemini are translated on both the inbound and upstream sides.'
+      ),
     },
   ]
 
@@ -189,50 +177,51 @@ export function Features(_props: FeaturesProps) {
             {t('Core Features')}
           </p>
           <h2 className='text-2xl leading-tight font-bold tracking-tight md:text-3xl'>
-            {t('Built for developers,')}
+            {t('Built for one operator,')}
             <br />
-            {t('designed for scale')}
+            {t('tuned for routing')}
           </h2>
         </AnimateInView>
 
         {/* Bento grid */}
         <div className='border-border/40 bg-border/40 grid gap-px overflow-hidden rounded-xl border md:grid-cols-3'>
-          {features.map((f, i) => (
+          {features.map((feature, index) => (
             <AnimateInView
-              key={f.id}
-              delay={i * 100}
+              key={feature.id}
+              delay={index * 100}
               animation='scale-in'
-              className={`bg-background group hover:bg-muted/20 p-7 transition-colors duration-300 md:p-8 ${f.span}`}
+              className={`bg-background group hover:bg-muted/20 p-7 transition-colors duration-300 md:p-8 ${feature.span}`}
             >
               <div className='mb-3 flex items-center gap-3'>
                 <span className='border-border/40 bg-muted text-muted-foreground flex size-7 items-center justify-center rounded-md border text-[10px] font-semibold tabular-nums'>
-                  {f.num}
+                  {feature.num}
                 </span>
-                <h3 className='text-sm font-semibold'>{f.title}</h3>
+                {feature.icon}
+                <h3 className='text-sm font-semibold'>{feature.title}</h3>
               </div>
               <p className='text-muted-foreground text-sm leading-relaxed'>
-                {f.desc}
+                {feature.desc}
               </p>
-              {f.visual}
+              {feature.visual}
             </AnimateInView>
           ))}
         </div>
 
         {/* Additional features row */}
         <div className='mt-12 grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12'>
-          {additionalFeatures.map((f, i) => (
+          {additionalFeatures.map((feature, index) => (
             <AnimateInView
-              key={f.title}
-              delay={i * 100}
+              key={feature.title}
+              delay={index * 100}
               animation='fade-up'
               className='flex flex-col items-center text-center'
             >
               <div className='text-muted-foreground border-border/50 bg-muted/30 group-hover:text-foreground mb-3 flex size-12 items-center justify-center rounded-xl border transition-colors'>
-                {f.icon}
+                {feature.icon}
               </div>
-              <h3 className='mb-1.5 text-sm font-semibold'>{f.title}</h3>
+              <h3 className='mb-1.5 text-sm font-semibold'>{feature.title}</h3>
               <p className='text-muted-foreground max-w-[200px] text-xs leading-relaxed'>
-                {f.desc}
+                {feature.desc}
               </p>
             </AnimateInView>
           ))}
