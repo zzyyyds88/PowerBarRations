@@ -86,7 +86,7 @@ export function DataTableRowActions<TData>({
     setCurrentRow,
     triggerRefresh,
     setResolvedKey,
-    resolveRealKey,
+    rotateKey,
     loadingKeys,
   } = useApiKeys()
   const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED
@@ -99,7 +99,7 @@ export function DataTableRowActions<TData>({
 
   const handleOpenChatPreset = useCallback(
     async (preset: ChatPreset) => {
-      const realKey = await resolveRealKey(apiKey.id)
+      const realKey = await rotateKey(apiKey.id)
       if (!realKey) return
 
       if (preset.type === 'fluent') {
@@ -135,7 +135,7 @@ export function DataTableRowActions<TData>({
         window.location.href = resolvedUrl
       }
     },
-    [resolveRealKey, apiKey.id, serverAddress, t]
+    [rotateKey, apiKey.id, serverAddress, t]
   )
 
   const handleToggleStatus = async (
@@ -223,7 +223,7 @@ export function DataTableRowActions<TData>({
         <DropdownMenuItem
           disabled={isRealKeyLoading}
           onClick={async () => {
-            const realKey = await resolveRealKey(apiKey.id)
+            const realKey = await rotateKey(apiKey.id)
             if (!realKey) return
             const ok = await copyToClipboard(realKey)
             if (ok) toast.success(t('Copied'))
@@ -237,7 +237,7 @@ export function DataTableRowActions<TData>({
         <DropdownMenuItem
           disabled={isRealKeyLoading}
           onClick={async () => {
-            const realKey = await resolveRealKey(apiKey.id)
+            const realKey = await rotateKey(apiKey.id)
             if (!realKey) return
             const connStr = encodeChannelConnectionInfo(
               realKey,
@@ -255,7 +255,7 @@ export function DataTableRowActions<TData>({
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {
-            const realKey = await resolveRealKey(apiKey.id)
+            const realKey = await rotateKey(apiKey.id)
             if (!realKey) return
             setResolvedKey(realKey)
             setCurrentRow(apiKey)

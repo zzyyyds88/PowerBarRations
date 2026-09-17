@@ -71,6 +71,8 @@ interface HeroSignal {
   value: string
   icon: LucideIcon
   tone: IconBadgeTone
+  /** Present when the signal's backing request failed — lets the user retry. */
+  onRetry?: () => void
 }
 
 function getCurrentOrigin(): string {
@@ -247,8 +249,20 @@ function RequestPreview(props: {
                   {signal.label}
                 </span>
               </span>
-              <span className='text-muted-foreground shrink-0 text-xs'>
-                {signal.value}
+              <span className='flex shrink-0 items-center gap-2'>
+                <span className='text-muted-foreground text-xs'>
+                  {signal.value}
+                </span>
+                {signal.onRetry && (
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    className='h-6 px-2 text-xs'
+                    onClick={signal.onRetry}
+                  >
+                    {t('Retry')}
+                  </Button>
+                )}
               </span>
             </div>
           )
@@ -284,10 +298,17 @@ export function OverviewDashboard() {
     staleTime: 5 * 60 * 1000,
   })
 
+  const { isError: apiKeysError, refetch: refetchApiKeys } = apiKeysQuery
+  const { isError: modelsError, refetch: refetchModels } = modelsQuery
+
   const preferredKey = useMemo(
     () => getPreferredKey(apiKeysQuery.data ?? []),
     [apiKeysQuery.data]
   )
+
+  // A failed request must not degrade into "Needs API key" or a stuck "Loading".
+  const authSignalValue = preferredKey ? t('Secured') : t('Needs API key')
+  const modelSignalValue = modelsQuery.data?.[0] ?? t('Loading')
 
   const heroSignals = useMemo<HeroSignal[]>(
     () => [
@@ -299,18 +320,29 @@ export function OverviewDashboard() {
       },
       {
         label: t('Auth configured'),
-        value: preferredKey ? t('Secured') : t('Needs API key'),
+        value: apiKeysError ? t('Failed to load') : authSignalValue,
         icon: ShieldCheck,
         tone: 'success',
+        onRetry: apiKeysError ? () => void refetchApiKeys() : undefined,
       },
       {
         label: t('Model selected'),
-        value: modelsQuery.data?.[0] ?? t('Loading'),
+        value: modelsError ? t('Failed to load') : modelSignalValue,
         icon: Timer,
         tone: 'chart-4',
+        onRetry: modelsError ? () => void refetchModels() : undefined,
       },
     ],
-    [apiInfoItems.length, modelsQuery.data, preferredKey, t]
+    [
+      apiInfoItems.length,
+      apiKeysError,
+      refetchApiKeys,
+      authSignalValue,
+      modelSignalValue,
+      modelsError,
+      refetchModels,
+      t,
+    ]
   )
 
   const requestExample = useMemo<RequestExample>(() => {

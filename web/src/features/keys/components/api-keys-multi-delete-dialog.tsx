@@ -48,18 +48,41 @@ export function ApiKeysMultiDeleteDialog<TData>({
   const handleConfirm = async () => {
     setIsDeleting(true)
     try {
-      const ids = selectedRows.map((row) => (row.original as ApiKey).id)
+      const rows = table.getFilteredSelectedRowModel().rows
+      const ids = rows.map((row) => (row.original as ApiKey).id)
       const result = await batchDeleteApiKeys(ids)
 
-      if (result.success) {
-        const count = result.data || ids.length
-        toast.success(t('Successfully deleted {{count}} API key(s)', { count }))
-        table.resetRowSelection()
-        triggerRefresh()
-        onOpenChange(false)
-      } else {
+      if (!result.success || !result.data) {
         handleServerError(result, t(ERROR_MESSAGES.BATCH_DELETE_FAILED))
+        return
       }
+
+      const { deleted, failed, failedNames } = result.data
+      triggerRefresh()
+
+      if (failed === 0) {
+        toast.success(
+          t('Successfully deleted {{count}} API key(s)', { count: deleted })
+        )
+        table.resetRowSelection()
+        onOpenChange(false)
+        return
+      }
+
+      // 部分失败：成功项取消选中，失败项保留选中以便原样重试；
+      // 抽屉不关闭，用户可再次确认删除剩余项。
+      const failedSet = new Set(failedNames)
+      for (const row of rows) {
+        const key = row.original as ApiKey
+        if (!failedSet.has(key.name)) row.toggleSelected(false)
+      }
+      toast.error(
+        t('Deleted {{deleted}} key(s); {{failed}} failed: {{names}}', {
+          deleted,
+          failed,
+          names: failedNames.join(', '),
+        })
+      )
     } catch (_error) {
       handleServerError(_error, t(ERROR_MESSAGES.UNEXPECTED))
     } finally {

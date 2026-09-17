@@ -37,6 +37,7 @@ vi.mock('@/lib/api', () => ({
 
 const mockedGet = vi.mocked(api.get)
 const mockedPut = vi.mocked(api.put)
+const mockedDelete = vi.mocked(api.delete)
 
 function renderPanel(initialModel?: string) {
   const client = new QueryClient({
@@ -339,5 +340,157 @@ describe('savePBRFailover 六键来源', () => {
       member_cooldown_seconds: 60,
       member_affinity_seconds: 0,
     })
+  })
+})
+
+/** 两个已配车道模型：用于验证「有草稿时切换模型」的丢弃确认。 */
+function mockTwoModels() {
+  mockedGet.mockImplementation(async (url: string) => {
+    if (url === '/api/v1/models') {
+      return {
+        data: {
+          items: [
+            {
+              model: 'model-1',
+              source: 'explicit',
+              routable: true,
+              member_count: 2,
+            },
+            {
+              model: 'model-2',
+              source: 'explicit',
+              routable: true,
+              member_count: 1,
+            },
+          ],
+        },
+      } as never
+    }
+    if (url === '/api/v1/routes/model-1') {
+      return {
+        data: {
+          model: 'model-1',
+          source: 'explicit',
+          routable: true,
+          members: [
+            {
+              channel_id: 1,
+              channel: 'channel-a',
+              upstream_model: 'real-a',
+              priority: 2,
+            },
+            {
+              channel_id: 3,
+              channel: 'channel-c',
+              upstream_model: 'real-c',
+              priority: 1,
+            },
+          ],
+        },
+      } as never
+    }
+    if (url === '/api/v1/routes/model-2') {
+      return {
+        data: {
+          model: 'model-2',
+          source: 'explicit',
+          routable: true,
+          members: [
+            {
+              channel_id: 2,
+              channel: 'channel-b',
+              upstream_model: 'real-b',
+              priority: 1,
+            },
+          ],
+        },
+      } as never
+    }
+    throw new Error(`Unexpected GET ${url}`)
+  })
+}
+
+describe('删除车道二次确认', () => {
+  test('单击 Remove lane 先弹确认，取消不删除', async () => {
+    mockConfiguredLane()
+    mockedDelete.mockResolvedValue({ data: {} } as never)
+    const user = userEvent.setup()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove lane' }))
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Remove this lane?')).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(mockedDelete).not.toHaveBeenCalled()
+  })
+
+  test('确认后调用删除接口', async () => {
+    mockConfiguredLane()
+    mockedDelete.mockResolvedValue({ data: {} } as never)
+    const user = userEvent.setup()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove lane' }))
+    const dialog = await screen.findByRole('alertdialog')
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Remove lane' })
+    )
+
+    await waitFor(() =>
+      expect(mockedDelete).toHaveBeenCalledWith('/api/v1/lanes/model-1')
+    )
+  })
+
+  test('未配车道时 Remove lane 禁用', async () => {
+    mockUnconfiguredModel()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('No members yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove lane' })).toBeDisabled()
+  })
+})
+
+describe('手工成员链（无一键固化入口）', () => {
+  test('不再渲染 Generate missing lanes 按钮', async () => {
+    mockConfiguredLane()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Generate missing lanes' })
+    ).not.toBeInTheDocument()
+  })
+
+  test('空成员链时保存按钮给出原因提示', async () => {
+    mockUnconfiguredModel()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('No members yet')).toBeInTheDocument()
+    expect(
+      screen.getByText('Keep at least one member, or remove the lane.')
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  test('有草稿时切换模型先确认放弃，确认后加载另一条车道', async () => {
+    mockTwoModels()
+    const user = userEvent.setup()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    // 制造草稿（下移会置 dirty）。
+    await user.click(screen.getAllByRole('button', { name: 'Move down' })[0])
+    await user.click(screen.getByRole('button', { name: /model-2/ }))
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Discard unsaved changes?')).toBeVisible()
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Discard changes' })
+    )
+
+    expect(await screen.findByText('channel-b')).toBeInTheDocument()
   })
 })

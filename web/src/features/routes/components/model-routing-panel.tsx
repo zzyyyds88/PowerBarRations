@@ -21,24 +21,18 @@ PowerBarRations —— 模型成员链（故障切换）面板（ui-spec §6.3�
 
 用户心智：渠道里填好上游与模型后，在**路由与故障切换**页为每个模型定"优先打谁、
 再打谁"。成员顺序即故障切换顺序：**顺序就是优先级**，界面不暴露 priority 数字输入，
-保存时按数组位置生成 priority（首位最大）。只保留 failover/manual 两种模式（weighted /
-round_robin 已删除）。保存即把成员链固化为显式 failover 车道
-（PUT /api/v1/lanes/{model}）；未配车道时成员列表为空，添加成员后保存即固化。
+保存时按数组位置生成 priority（首位最大）。只保留 failover/manual 两种模式。成员链
+只支持**手工添加/删除**（一键固化入口已移除）。保存即把成员链固化为显式 failover
+车道（PUT /api/v1/lanes/{model}）；未配车道时成员列表为空，添加成员后保存即固化。
+删除车道是破坏性操作，需二次确认且会使该模型立即不可调用（503）。
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  ArrowDown,
-  ArrowUp,
-  Loader2,
-  Plus,
-  Save,
-  Trash2,
-  Wand2,
-} from 'lucide-react'
+import { ArrowDown, ArrowUp, Loader2, Plus, Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -51,7 +45,6 @@ import {
   getPBRRoute,
   listPBRModels,
   savePBRFailover,
-  seedPBRLanes,
   pbrModelsQueryKey,
   type PBRModelSummary,
 } from '../api'
@@ -63,15 +56,19 @@ export function ModelRoutingPanel(props: {
   initialModel?: string
   /**
    * 固定模型模式（行内「编辑成员链」弹窗）：只渲染该模型的成员链编辑，
-   * 隐藏模型选择器与一键固化按钮；不传时保持完整面板模式。
+   * 隐藏模型选择器；不传时保持完整面板模式。
    */
   fixedModel?: string
+  /** 草稿脏状态变化回调：供弹窗在关闭前拦截「放弃未保存修改？」。 */
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState<string>(
     props.initialModel ?? props.fixedModel ?? ''
   )
+  const [editorDirty, setEditorDirty] = useState(false)
+  const [pendingModel, setPendingModel] = useState<string | null>(null)
   const fixed = props.fixedModel
 
   const modelsQuery = useQuery({
@@ -91,19 +88,26 @@ export function ModelRoutingPanel(props: {
     active = selected || models[0]?.model || ''
   }
 
-  // 一键固化：为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
-  const seed = useMutation({
-    mutationFn: () => seedPBRLanes(false),
-    onSuccess: async (result) => {
-      toast.success(
-        t('Generated {{count}} lanes', { count: result.created.length })
-      )
-      await queryClient.invalidateQueries({ queryKey: modelsKey })
-    },
-    onError: (error: unknown) => {
-      toast.error(error instanceof Error ? error.message : String(error))
-    },
-  })
+  const handleDirtyChange = (dirty: boolean) => {
+    setEditorDirty(dirty)
+    props.onDirtyChange?.(dirty)
+  }
+
+  // 切换模型会让 RouteEditor 以新 key 重挂载并丢弃草稿：dirty 时先确认。
+  const requestSelect = (model: string) => {
+    if (model === active) return
+    if (editorDirty) {
+      setPendingModel(model)
+      return
+    }
+    setSelected(model)
+  }
+
+  const confirmDiscardAndSwitch = () => {
+    if (pendingModel) setSelected(pendingModel)
+    setPendingModel(null)
+    handleDirtyChange(false)
+  }
 
   let listContent
   if (modelsQuery.isLoading) {
@@ -128,7 +132,7 @@ export function ModelRoutingPanel(props: {
           <li key={m.model}>
             <button
               type='button'
-              onClick={() => setSelected(m.model)}
+              onClick={() => requestSelect(m.model)}
               className={cn(
                 'hover:bg-accent w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors',
                 active === m.model && 'bg-accent font-medium'
@@ -161,15 +165,6 @@ export function ModelRoutingPanel(props: {
             <CardTitle className='text-sm'>
               {t('Routable models')} ({models.length})
             </CardTitle>
-            <Button
-              size='sm'
-              variant='outline'
-              disabled={seed.isPending}
-              onClick={() => seed.mutate()}
-            >
-              <Wand2 className='size-4' />
-              {t('Generate missing lanes')}
-            </Button>
           </CardHeader>
           <Separator />
           <CardContent className='min-h-0 overflow-auto p-2'>
@@ -182,6 +177,7 @@ export function ModelRoutingPanel(props: {
         <RouteEditor
           key={active}
           model={active}
+          onDirtyChange={handleDirtyChange}
           onSaved={async () => {
             await queryClient.invalidateQueries({ queryKey: modelsKey })
             await queryClient.invalidateQueries({ queryKey: routeKey(active) })
@@ -197,6 +193,17 @@ export function ModelRoutingPanel(props: {
           </CardContent>
         </Card>
       )}
+
+      <ConfirmDialog
+        open={pendingModel !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingModel(null)
+        }}
+        title={t('Discard unsaved changes?')}
+        desc={t('Your changes have not been saved.')}
+        confirmText={t('Discard changes')}
+        handleConfirm={confirmDiscardAndSwitch}
+      />
     </div>
   )
 }
@@ -214,12 +221,15 @@ interface EditableMember {
 function RouteEditor({
   model,
   onSaved,
+  onDirtyChange,
 }: {
   model: string
   onSaved: () => Promise<void> | void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState<EditableMember[] | null>(null)
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
 
   const routeQuery = useQuery({
     queryKey: routeKey(model),
@@ -243,9 +253,17 @@ function RouteEditor({
 
   const members: EditableMember[] = [...(draft ?? sourceMembers)]
 
+  // 统一维护草稿并同步脏状态，避免切换/关闭时静默丢弃。
+  const updateDraft = (next: EditableMember[] | null) => {
+    setDraft(next)
+    onDirtyChange?.(next !== null)
+  }
+
   // 顺序即优先级：按列表位置重排，第一个最大。
   const reorder = (next: EditableMember[]) => {
-    setDraft(next.map((m, index) => ({ ...m, priority: next.length - index })))
+    updateDraft(
+      next.map((m, index) => ({ ...m, priority: next.length - index }))
+    )
   }
 
   const move = (index: number, delta: number) => {
@@ -280,7 +298,7 @@ function RouteEditor({
   const renameUpstream = (index: number, value: string) => {
     const next = [...members]
     next[index] = { ...next[index], upstream_override: value }
-    setDraft(next)
+    updateDraft(next)
   }
 
   const emptyDraft = members.length === 0
@@ -297,7 +315,7 @@ function RouteEditor({
       ),
     onSuccess: async () => {
       toast.success(t('Failover order saved'))
-      setDraft(null)
+      updateDraft(null)
       await onSaved()
     },
     onError: (error: unknown) => {
@@ -311,7 +329,7 @@ function RouteEditor({
       toast.success(
         t('Lane removed; configure this model again to make it callable')
       )
-      setDraft(null)
+      updateDraft(null)
       await onSaved()
     },
     onError: (error: unknown) => {
@@ -345,12 +363,17 @@ function RouteEditor({
         </p>
 
         {emptyDraft ? (
-          <EmptyState
-            title={t('No members yet')}
-            description={t(
-              'Add a member from the candidates below, then save to create the lane.'
-            )}
-          />
+          <>
+            <EmptyState
+              title={t('No members yet')}
+              description={t(
+                'Add a member from the candidates below, then save to create the lane.'
+              )}
+            />
+            <p className='text-muted-foreground text-xs'>
+              {t('Keep at least one member, or remove the lane.')}
+            </p>
+          </>
         ) : (
           <div className='space-y-2'>
             {members.map((m, index) => (
@@ -435,41 +458,69 @@ function RouteEditor({
     )
   }
 
+  const saveButton = (
+    <Button
+      size='sm'
+      disabled={!dirty || emptyDraft || save.isPending}
+      title={
+        emptyDraft
+          ? t('Keep at least one member, or remove the lane.')
+          : undefined
+      }
+      onClick={() => save.mutate()}
+    >
+      {save.isPending ? (
+        <Loader2 className='size-4 animate-spin' />
+      ) : (
+        <Save className='size-4' />
+      )}
+      {t('Save')}
+    </Button>
+  )
+
   return (
-    <Card className='min-h-0 overflow-hidden'>
-      <CardHeader className='flex-row items-center justify-between gap-3 py-3'>
-        <CardTitle className='text-sm'>
-          {t('Failover order for')} <code className='font-mono'>{model}</code>
-          <span className='text-muted-foreground ml-2 text-xs font-normal'>
-            {routable ? t('Lane configured') : t('No lane · not callable')}
-          </span>
-        </CardTitle>
-        <div className='flex items-center gap-2'>
-          <Button
-            size='sm'
-            variant='outline'
-            disabled={clear.isPending}
-            onClick={() => clear.mutate()}
-          >
-            <Trash2 className='size-4' />
-            {t('Remove lane')}
-          </Button>
-          <Button
-            size='sm'
-            disabled={!dirty || emptyDraft || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {save.isPending ? (
-              <Loader2 className='size-4 animate-spin' />
-            ) : (
-              <Save className='size-4' />
-            )}
-            {t('Save')}
-          </Button>
-        </div>
-      </CardHeader>
-      <Separator />
-      <CardContent className='min-h-0 overflow-auto p-3'>{body}</CardContent>
-    </Card>
+    <>
+      <Card className='min-h-0 overflow-hidden'>
+        <CardHeader className='flex-row items-center justify-between gap-3 py-3'>
+          <CardTitle className='text-sm'>
+            {t('Failover order for')} <code className='font-mono'>{model}</code>
+            <span className='text-muted-foreground ml-2 text-xs font-normal'>
+              {routable ? t('Lane configured') : t('No lane · not callable')}
+            </span>
+          </CardTitle>
+          <div className='flex items-center gap-2'>
+            <Button
+              size='sm'
+              variant='outline'
+              disabled={!routable || routeQuery.isLoading || clear.isPending}
+              onClick={() => setRemoveConfirmOpen(true)}
+            >
+              <Trash2 className='size-4' />
+              {t('Remove lane')}
+            </Button>
+            {saveButton}
+          </div>
+        </CardHeader>
+        <Separator />
+        <CardContent className='min-h-0 overflow-auto p-3'>{body}</CardContent>
+      </Card>
+
+      <ConfirmDialog
+        destructive
+        open={removeConfirmOpen}
+        onOpenChange={setRemoveConfirmOpen}
+        title={t('Remove this lane?')}
+        desc={t(
+          'Removing the lane makes {{model}} unavailable immediately (requests return 503) until you configure a lane again.',
+          { model }
+        )}
+        confirmText={t('Remove lane')}
+        isLoading={clear.isPending}
+        handleConfirm={() => {
+          setRemoveConfirmOpen(false)
+          clear.mutate()
+        }}
+      />
+    </>
   )
 }

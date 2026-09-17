@@ -35,6 +35,9 @@ export const apiKeySchema = z.object({
   accessed_time: z.number(),
   model_limits_enabled: z.boolean(),
   model_limits: z.string().nullish().default(''),
+  // PBR lane_policy.deny_lanes：在「允许全部（或 allow 清单）」基础上叠加拒绝的
+  // 路由键。列表用它区分「全部允许」与「全部允许但拒绝 X」，编辑保存时原样回填。
+  deny_lanes: z.string().nullish().default(''),
   allow_ips: z.string().nullish().default(''),
 })
 
@@ -78,6 +81,8 @@ export interface ApiKeyFormData {
   expired_time: number
   model_limits_enabled: boolean
   model_limits: string
+  /** lane_policy.deny_lanes：表单不编辑，保存时原样回写，避免静默清空。 */
+  deny_lanes?: string[]
   allow_ips: string
   // PBR 无用户分组；后端基座结构仍带 group 字段，固定送 'default'。
   group: string

@@ -19,12 +19,23 @@ For commercial licensing, please contact support@quantumnous.com
 import { toast } from 'sonner'
 
 import {
-  getServerErrorMessage,
+  getServerErrorDetails,
   getServerErrorSources,
   isServerErrorCancelled,
+  type ServerErrorDetails,
 } from './server-error-message'
 
 const reportedErrors = new WeakSet<object>()
+
+/** Hint is the actionable part; also surface the stable code for support. */
+function buildErrorDescription(
+  details: ServerErrorDetails
+): string | undefined {
+  if (details.hint) {
+    return details.code ? `${details.hint} (${details.code})` : details.hint
+  }
+  return details.code
+}
 
 /** Also used when a failure has already been presented inline. */
 export function markServerErrorHandled(error: unknown): void {
@@ -41,10 +52,12 @@ export function handleServerError(
   const reported = sources.some((source) => reportedErrors.has(source))
   markServerErrorHandled(error)
   if (reported) return
-  const message =
-    presentation?.title || getServerErrorMessage(error, fallbackMessage)
-  if (presentation?.description) {
-    toast.error(message, { description: presentation.description })
+  const details = getServerErrorDetails(error, fallbackMessage)
+  const message = presentation?.title || details.message
+  const description =
+    presentation?.description ?? buildErrorDescription(details)
+  if (description) {
+    toast.error(message, { description })
   } else {
     toast.error(message)
   }

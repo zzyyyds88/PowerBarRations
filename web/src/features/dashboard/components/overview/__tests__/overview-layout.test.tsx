@@ -151,4 +151,27 @@ describe('overview layout', () => {
       screen.queryByText('Keep the platform ready')
     ).not.toBeInTheDocument()
   })
+
+  it('shows a retryable failure instead of a stuck loading or missing-key signal', async () => {
+    vi.spyOn(api, 'get').mockImplementation(async (url) => {
+      if (url === '/api/keys' || url === '/api/models') {
+        throw new Error('Backend unavailable')
+      }
+      switch (url) {
+        case '/api/status':
+          return { data: { data: { api_info_enabled: false } } }
+        case '/api/stats':
+          return { data: { granularity: 'hour', group_by: 'lane', items: [] } }
+        default:
+          throw new Error(`Unexpected dashboard request: ${url}`)
+      }
+    })
+
+    await renderOverview()
+
+    expect(await screen.findByText('First API request')).toBeVisible()
+    expect(await screen.findAllByText('Failed to load')).toHaveLength(2)
+    expect(screen.queryByText('Needs API key')).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading')).not.toBeInTheDocument()
+  })
 })

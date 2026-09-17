@@ -313,3 +313,48 @@ it('shows model and IP restrictions in the mobile card details', async () => {
   expect(within(details).getByText('192.0.2.1')).toBeVisible()
   expect(within(details).getByText('2001:db8::1')).toBeVisible()
 })
+
+it('shows the real key prefix and never rotates on view or prefix copy', async () => {
+  const user = userEvent.setup()
+  const { post } = await renderKeysPage()
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+
+  // 掩码是真实 key_prefix，不再是 sk- 拼接。
+  const trigger = screen.getByRole('button', { name: 'pbr-abcd1234' })
+  expect(trigger).toBeInTheDocument()
+  expect(screen.queryByText(/sk-pbr-/)).not.toBeInTheDocument()
+
+  await user.click(trigger)
+  expect(await screen.findByText('Key prefix')).toBeVisible()
+  expect(post).not.toHaveBeenCalled()
+
+  await user.click(screen.getByRole('button', { name: 'Copy key prefix' }))
+  await waitFor(() => expect(copy).toHaveBeenCalledWith('pbr-abcd1234'))
+  expect(post).not.toHaveBeenCalled()
+})
+
+it('rotates only after an explicit confirmation and reveals the new key once', async () => {
+  const user = userEvent.setup()
+  const { post } = await renderKeysPage()
+  post.mockResolvedValue({ data: { key: 'pbr-rotated-secret' } })
+
+  await user.click(screen.getByRole('button', { name: 'pbr-abcd1234' }))
+  await user.click(await screen.findByRole('button', { name: 'Rotate key' }))
+  expect(post).not.toHaveBeenCalled()
+
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Rotate this key?')).toBeVisible()
+  await user.click(within(dialog).getByRole('button', { name: 'Rotate' }))
+
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith('/api/keys/production/rotate', {})
+  )
+  expect(await screen.findByDisplayValue('pbr-rotated-secret')).toBeVisible()
+})
+
+it('distinguishes allow-all from allow-all-but-deny', async () => {
+  await renderKeysPage({
+    lane_policy: { mode: 'all', allow_lanes: [], deny_lanes: ['model-x'] },
+  })
+  expect(screen.getByText('All except 1')).toBeInTheDocument()
+})

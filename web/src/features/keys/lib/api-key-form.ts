@@ -31,6 +31,8 @@ export function getApiKeyFormSchema(t: TFunction) {
     name: z.string().min(1, t('Please enter a name')),
     expired_time: z.date().optional(),
     model_limits: z.array(z.string()),
+    // 只读随表单携带的拒绝清单：界面不编辑，保存时原样回写。
+    deny_lanes: z.array(z.string()),
     allow_ips: z.string().optional(),
     tokenCount: z.number().min(1).optional(),
   })
@@ -46,6 +48,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   name: '',
   expired_time: undefined,
   model_limits: [],
+  deny_lanes: [],
   allow_ips: '',
   tokenCount: 1,
 }
@@ -73,6 +76,8 @@ export function transformFormDataToPayload(
       : -1,
     model_limits_enabled: data.model_limits.length > 0,
     model_limits: data.model_limits.join(','),
+    // 原样保留拒绝清单（表单未提供则不额外拒绝）。
+    deny_lanes: data.deny_lanes ?? [],
     allow_ips: data.allow_ips || '',
     // PBR 无用户分组：后端基座结构仍带 group 字段，固定送 'default'（design-v1 §16.9）。
     group: 'default',
@@ -93,6 +98,9 @@ export function transformApiKeyToFormDefaults(
         : undefined,
     model_limits: apiKey.model_limits
       ? apiKey.model_limits.split(',').filter(Boolean)
+      : [],
+    deny_lanes: apiKey.deny_lanes
+      ? apiKey.deny_lanes.split(',').filter(Boolean)
       : [],
     allow_ips: apiKey.allow_ips || '',
     tokenCount: 1,

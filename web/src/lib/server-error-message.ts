@@ -141,6 +141,57 @@ export function getServerErrorMessage(
   return messageText(value) || (fallback ?? i18next.t('Something went wrong!'))
 }
 
+/** Structured server failure: human message plus the stable machine code/hint. */
+export interface ServerErrorDetails {
+  message: string
+  code?: string
+  hint?: string
+}
+
+/**
+ * Only raw API payloads carry the contract's code/hint. Axios/Error wrappers own
+ * unrelated fields (e.g. ERR_NETWORK in `error.code`), so never read those.
+ */
+function isRawPayloadSource(source: Record<string | symbol, unknown>): boolean {
+  return !(
+    source instanceof Error ||
+    source.isAxiosError ||
+    isRecord(source.response)
+  )
+}
+
+function rawPayloadStringField(
+  sources: Record<string | symbol, unknown>[],
+  field: 'code' | 'hint'
+): string | undefined {
+  for (const source of sources) {
+    if (!isRawPayloadSource(source)) continue
+    const value = source[field]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+/**
+ * Structured counterpart of {@link getServerErrorMessage}. AuthOperationError
+ * keeps hiding its cause, so its details expose only the safe message.
+ */
+export function getServerErrorDetails(
+  value: unknown,
+  fallback?: string
+): ServerErrorDetails {
+  const sources = getServerErrorSources(value)
+  const safe = sources.find((source) => source[safeServerErrorMessage])
+  if (safe) {
+    return { message: getServerErrorMessage(safe, fallback) }
+  }
+  return {
+    message: getServerErrorMessage(value, fallback),
+    code: rawPayloadStringField(sources, 'code'),
+    hint: rawPayloadStringField(sources, 'hint'),
+  }
+}
+
 /** Preserve the payload/cause so every layer can recognize the same failure. */
 export function createServerError(value: unknown, fallback?: string): Error {
   return new Error(getServerErrorMessage(value, fallback ?? ''), {

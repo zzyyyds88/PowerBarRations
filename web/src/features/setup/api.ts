@@ -32,6 +32,28 @@ export async function getSetupStatus(): Promise<SetupResponse> {
   }
 }
 
+/**
+ * 用 Web Crypto 计算 Base64(SHA256(口令))，与后端 token-spec §2.1 的派生规则一致：
+ * 标准 Base64 带填充（32 字节摘要）。非安全上下文（HTTP 非 localhost）下
+ * `crypto.subtle` 不可用，此时返回 null，界面提示用户按公式自行重算。
+ */
+export async function deriveAdminKey(password: string): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) return null
+  try {
+    const digest = await subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(password)
+    )
+    const bytes = new Uint8Array(digest)
+    let binary = ''
+    for (const byte of bytes) binary += String.fromCharCode(byte)
+    return btoa(binary)
+  } catch {
+    return null
+  }
+}
+
 /** 设置首个登录口令（POST /api/v1/setup），成功即签发会话。 */
 export async function submitSetup(
   payload: SetupFormValues

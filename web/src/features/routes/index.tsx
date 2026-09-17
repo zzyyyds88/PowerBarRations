@@ -213,6 +213,18 @@ export function Routes() {
         </SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col'>
+            {lanesQuery.isError && (
+              <div className='border-destructive/40 bg-destructive/5 text-destructive mb-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs'>
+                <span>{t('Failed to load lane member order')}</span>
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => void lanesQuery.refetch()}
+                >
+                  {t('Retry')}
+                </Button>
+              </div>
+            )}
             <div className='min-h-0 flex-1 overflow-auto pb-4'>
               {tableContent}
             </div>

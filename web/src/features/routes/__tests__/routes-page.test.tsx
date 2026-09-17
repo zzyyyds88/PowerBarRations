@@ -146,18 +146,48 @@ describe('路由与故障切换页', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toBeVisible()
-    // 固定模型模式：隐藏模型选择器与一键固化按钮，只渲染该模型成员链。
+    // 固定模型模式：隐藏模型选择器，只渲染该模型成员链。
     expect(
       within(dialog).queryByText(/Routable models/)
     ).not.toBeInTheDocument()
+    // 一键固化入口已整体移除（成员链只支持手工添加/删除）。
     expect(
-      within(dialog).queryByText('Generate missing lanes')
+      screen.queryByRole('button', { name: 'Generate missing lanes' })
     ).not.toBeInTheDocument()
     // 弹窗标题与成员链编辑只含点中的模型（model-1），不含其他车道。
     expect(within(dialog).getAllByText('model-1').length).toBeGreaterThan(0)
     expect(within(dialog).queryByText('model-2')).not.toBeInTheDocument()
     expect(await within(dialog).findByText('channel-a')).toBeVisible()
     expect(within(dialog).getByText('channel-b')).toBeVisible()
+  })
+
+  test('关闭成员链弹窗时若有草稿先确认放弃', async () => {
+    mockRouteKeys()
+    renderPage()
+
+    const user = userEvent.setup()
+    const editButtons = await screen.findAllByRole('button', {
+      name: 'Edit members',
+    })
+    await user.click(editButtons[0])
+
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText('channel-a')).toBeVisible()
+    // 制造草稿：下移第一个成员。
+    await user.click(
+      within(dialog).getAllByRole('button', { name: 'Move down' })[0]
+    )
+    // 点关闭（X）应先弹放弃确认，而不是直接丢弃草稿。
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    const confirm = await screen.findByRole('alertdialog')
+    expect(within(confirm).getByText('Discard unsaved changes?')).toBeVisible()
+    // 取消后主弹窗回到前台，草稿仍在。
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    expect(await screen.findByRole('dialog')).toBeVisible()
+    expect(
+      within(screen.getByRole('dialog')).getByText('channel-b')
+    ).toBeVisible()
   })
 
   test('空态：没有路由键时给出引导文案', async () => {
@@ -178,6 +208,50 @@ describe('路由与故障切换页', () => {
         'Declare models on channels to see them here, then add members and save to create a lane.'
       )
     ).toBeVisible()
+  })
+
+  test('成员顺序加载失败：内联错误与重试不影响模型列表', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 2,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lanes') {
+        throw new Error('lane order unavailable')
+      }
+      if (url === '/api/v1/routes/model-1') {
+        return {
+          data: {
+            model: 'model-1',
+            source: 'explicit',
+            routable: true,
+            members: [
+              { channel: 'channel-a', upstream_model: 'model-1', priority: 2 },
+            ],
+          },
+        } as never
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    renderPage()
+
+    // 主列表仍然可用。
+    expect(await screen.findByText('model-1')).toBeInTheDocument()
+    // 成员顺序列有独立的内联错误与重试入口。
+    expect(
+      await screen.findByText('Failed to load lane member order')
+    ).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
   })
 
   test('错误态：加载失败给出错误与重试入口', async () => {

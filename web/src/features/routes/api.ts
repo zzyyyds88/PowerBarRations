@@ -22,7 +22,7 @@ PowerBarRations —— PBR 路由（成员链/故障切换）管理 API（api-sp
 用户心智：渠道管理填上游与模型（命名不一致时配渠道映射）→ 模型管理里为每个模型定
 "这个模型优先打谁、再打谁" → 令牌允许该模型。车道是唯一路由入口（ADR 0005）：
 没有车道 = 模型不可调用（503）。本模块封装 /api/v1/models、/api/v1/routes/{model}、
-把成员链固化为车道的 PUT /api/v1/lanes/{model}，以及一键固化 POST /api/v1/lanes/seed。
+把成员链固化为车道的 PUT /api/v1/lanes/{model}。成员链只支持手工添加/删除。
 */
 import { api } from '@/lib/api'
 
@@ -187,18 +187,5 @@ export async function deletePBRFailover(model: string): Promise<void> {
   await api.delete(`/api/v1/lanes/${encodeURIComponent(model)}`)
 }
 
-export interface PBRSeedResult {
-  created: string[]
-  skipped: string[]
-}
-
-/**
- * 一键为所有"渠道已声明但无车道"的模型生成 failover 车道（初始顺序按渠道 id 升序）。
- * `dryRun` 只返回将创建的车道名，不落库。
- */
-export async function seedPBRLanes(dryRun = false): Promise<PBRSeedResult> {
-  const res = await api.post<PBRSeedResult>(
-    `/api/v1/lanes/seed${dryRun ? '?dry_run=true' : ''}`
-  )
-  return res.data
-}
+// 一键固化（POST /api/v1/lanes/seed）已按产品要求整体移除：成员链只支持手工
+// 添加/删除，不再提供批量生成入口。

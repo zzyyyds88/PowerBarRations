@@ -34,6 +34,7 @@ import {
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
 import { MultiSelect } from '@/components/multi-select'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   Collapsible,
@@ -104,6 +105,11 @@ export function ApiKeysMutateDrawer({
   const [initializedTarget, setInitializedTarget] = useState<string | null>(
     null
   )
+  // 批量创建的部分失败汇总：保留已创建名单与失败数，抽屉不关闭以便重试剩余。
+  const [createSummary, setCreateSummary] = useState<{
+    created: string[]
+    failed: number
+  } | null>(null)
 
   // Fetch models
   const { data: modelsData } = useQuery({
@@ -188,34 +194,61 @@ export function ApiKeysMutateDrawer({
           handleServerError(result, t(ERROR_MESSAGES.UPDATE_FAILED))
         }
       } else {
-        // Create mode - handle batch creation
-        const count = data.tokenCount || 1
-        let successCount = 0
+        // Create mode：批量创建。部分失败时保留抽屉与草稿，报告成功/失败数并
+        // 列出已创建名单，用户可再次保存重试剩余（已创建的会跳过）。
+        const requestedCount = data.tokenCount || 1
+        const previouslyCreated = createSummary?.created ?? []
+        const remaining = Math.max(0, requestedCount - previouslyCreated.length)
+        const createdNames = [...previouslyCreated]
+        let failedCount = 0
 
-        for (let i = 0; i < count; i++) {
-          const result = await createApiKey({
-            ...basePayload,
-            name:
-              i === 0 && data.name
-                ? data.name
-                : `${data.name || 'default'}-${randomNameSuffix()}`,
-          })
-          if (result.success) {
-            successCount++
-          } else {
-            handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED))
+        for (let i = 0; i < remaining; i++) {
+          const sequence = createdNames.length
+          const name =
+            sequence === 0 && data.name
+              ? data.name
+              : `${data.name || 'default'}-${randomNameSuffix()}`
+          try {
+            const result = await createApiKey({ ...basePayload, name })
+            if (result.success) {
+              createdNames.push(name)
+              setCreateSummary({ created: createdNames, failed: 0 })
+            } else {
+              failedCount = remaining - i
+              handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED))
+              break
+            }
+          } catch (error) {
+            // 请求被拒（HTTP/网络错误）会抛出而非返回 success:false：
+            // 记录已创建的部分，保留抽屉让用户重试剩余。
+            failedCount = remaining - i
+            handleServerError(error, t(ERROR_MESSAGES.CREATE_FAILED))
             break
           }
         }
 
-        if (successCount > 0) {
+        if (failedCount === 0) {
           toast.success(
             t('Successfully created {{count}} API Key(s)', {
-              count: successCount,
+              count: createdNames.length,
             })
           )
+          setCreateSummary(null)
           onOpenChange(false)
           triggerRefresh()
+        } else {
+          setCreateSummary({ created: createdNames, failed: failedCount })
+          triggerRefresh()
+          toast.error(
+            t(
+              'Created {{created}} of {{total}} API Key(s); {{failed}} failed.',
+              {
+                created: createdNames.length,
+                total: requestedCount,
+                failed: failedCount,
+              }
+            )
+          )
         }
       }
     } catch (error) {
@@ -249,6 +282,7 @@ export function ApiKeysMutateDrawer({
       onOpenChange={(v) => {
         onOpenChange(v)
         if (!v) {
+          setCreateSummary(null)
           form.reset()
         }
       }}
@@ -428,6 +462,7 @@ export function ApiKeysMutateDrawer({
                               placeholder={t(
                                 'Select models (empty for allow all)'
                               )}
+                              allowCreate
                             />
                           </FormControl>
                           <FormDescription>
@@ -469,6 +504,30 @@ export function ApiKeysMutateDrawer({
                 </CollapsibleContent>
               </SideDrawerSection>
             </Collapsible>
+
+            {createSummary && createSummary.failed > 0 && (
+              <Alert variant='destructive'>
+                <AlertTitle>
+                  {t('Created {{created}} of {{total}} API Key(s)', {
+                    created: createSummary.created.length,
+                    total: createSummary.created.length + createSummary.failed,
+                  })}
+                </AlertTitle>
+                <AlertDescription>
+                  {createSummary.created.length > 0 && (
+                    <p className='font-mono text-xs break-all'>
+                      {t('Already created:')} {createSummary.created.join(', ')}
+                    </p>
+                  )}
+                  <p>
+                    {t(
+                      'Save again to retry the remaining {{count}} key(s); already created ones are skipped.',
+                      { count: createSummary.failed }
+                    )}
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
           </form>
         </Form>
         <SheetFooter className={sideDrawerFooterClassName()}>

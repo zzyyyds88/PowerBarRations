@@ -35,7 +35,17 @@ type ApiKeysContextType = {
   triggerRefresh: () => void
   resolvedKey: string
   setResolvedKey: React.Dispatch<React.SetStateAction<string>>
-  resolveRealKey: (id: number) => Promise<string | null>
+  /**
+   * 显式轮换：调用 rotate 接口并返回仅此一次的新明文（会立即作废旧密钥）。
+   * `force` 为 true 时忽略缓存，确保每次显式轮换都真正换新。
+   */
+  rotateKey: (id: number, force?: boolean) => Promise<string | null>
+  /** 当前打开轮换确认/明文展示的令牌 id（跨行重挂载保持）。 */
+  rotateTarget: number | null
+  /** 最近一次轮换返回的明文，只在对应令牌的确认框内展示一次。 */
+  rotatedKey: { id: number; key: string } | null
+  openRotateConfirm: (id: number) => void
+  closeRotateConfirm: () => void
   resolveRealKeysBatch: (ids: number[]) => Promise<Record<number, string>>
   resolvedKeys: Record<number, string>
   loadingKeys: Record<number, boolean>
@@ -59,6 +69,24 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null)
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  // 轮换确认/一次性明文放在 Provider：表格行在 Provider 状态变化时可能重挂载，
+  // 局部 state 会丢失，导致刚显示的新明文消失。
+  const [rotateTarget, setRotateTarget] = useState<number | null>(null)
+  const [rotatedKey, setRotatedKey] = useState<{
+    id: number
+    key: string
+  } | null>(null)
+
+  const openRotateConfirm = useCallback((id: number) => {
+    setRotateTarget(id)
+    setRotatedKey(null)
+  }, [])
+
+  const closeRotateConfirm = useCallback(() => {
+    setRotateTarget(null)
+    setRotatedKey(null)
+  }, [])
+
   useEffect(() => {
     return () => clearTimeout(copiedTimerRef.current)
   }, [])
@@ -73,9 +101,9 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     setRefreshTrigger((prev) => prev + 1)
   }, [])
 
-  const resolveRealKey = useCallback(
-    async (id: number): Promise<string | null> => {
-      if (resolvedKeys[id]) return resolvedKeys[id]
+  const rotateKey = useCallback(
+    async (id: number, force = false): Promise<string | null> => {
+      if (!force && resolvedKeys[id]) return resolvedKeys[id]
       if (id in pendingRequests.current) return pendingRequests.current[id]
 
       const request = (async () => {
@@ -85,6 +113,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
           if (res.success && res.data?.key) {
             const fullKey = res.data.key
             setResolvedKeys((prev) => ({ ...prev, [id]: fullKey }))
+            setRotatedKey({ id, key: fullKey })
             return fullKey
           }
           handleServerError(res, t(ERROR_MESSAGES.UNEXPECTED))
@@ -165,7 +194,11 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
         triggerRefresh,
         resolvedKey,
         setResolvedKey,
-        resolveRealKey,
+        rotateKey,
+        rotateTarget,
+        rotatedKey,
+        openRotateConfirm,
+        closeRotateConfirm,
         resolveRealKeysBatch,
         resolvedKeys,
         loadingKeys,

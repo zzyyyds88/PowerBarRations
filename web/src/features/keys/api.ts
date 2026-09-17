@@ -42,6 +42,13 @@ type PbrLanePolicy = {
   deny_lanes?: string[]
 }
 
+/** 批量删除结果：分别汇报成功数、失败数与失败令牌名，供界面保留重试选择。 */
+export interface BatchDeleteApiKeysResult {
+  deleted: number
+  failed: number
+  failedNames: string[]
+}
+
 type PbrClientKey = {
   id: number
   name: string
@@ -86,6 +93,7 @@ function splitLines(value: string): string[] {
 function toApiKey(item: PbrClientKey): ApiKey {
   idToName.set(item.id, item.name)
   const allowLanes = item.lane_policy?.allow_lanes ?? []
+  const denyLanes = item.lane_policy?.deny_lanes ?? []
   return {
     id: item.id,
     name: item.name,
@@ -97,6 +105,7 @@ function toApiKey(item: PbrClientKey): ApiKey {
     accessed_time: unixSeconds(item.last_used_at),
     model_limits_enabled: allowLanes.length > 0,
     model_limits: allowLanes.join(','),
+    deny_lanes: denyLanes.join(','),
     allow_ips: (item.ip_allowlist ?? []).join('\n'),
   }
 }
@@ -123,7 +132,9 @@ function toPbrPayload(data: ApiKeyFormData) {
     lane_policy: {
       mode: allowLanes.length > 0 ? 'allow' : 'all',
       allow_lanes: allowLanes,
-      deny_lanes: [],
+      // 保留用户未改动的拒绝清单：表单不编辑它，这里原样回写，
+      // 避免「mode=all + deny_lanes=[x]」在保存后被静默放宽为全部允许。
+      deny_lanes: data.deny_lanes ?? [],
     },
     ip_allowlist: splitLines(data.allow_ips),
     expires_at:
@@ -206,15 +217,37 @@ export async function deleteApiKey(id: number): Promise<ApiResponse> {
   return { success: true }
 }
 
+/**
+ * 批量删除：逐条删除并用 allSettled 汇总，绝不把部分失败假报成全部成功。
+ * 失败项保留其令牌名，调用方据此保留选择让用户重试。
+ */
 export async function batchDeleteApiKeys(
   ids: number[]
-): Promise<ApiResponse<number>> {
+): Promise<ApiResponse<BatchDeleteApiKeysResult>> {
+  const results = await Promise.allSettled(
+    ids.map(async (id) => {
+      const name = (await nameForId(id)) ?? String(id)
+      const result = await deleteApiKey(id)
+      if (!result.success) throw new Error(result.message || name)
+      return name
+    })
+  )
+
   let deleted = 0
-  for (const id of ids) {
-    const result = await deleteApiKey(id)
-    if (result.success) deleted += 1
+  const failedNames: string[] = []
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      deleted += 1
+      return
+    }
+    const id = ids[index]
+    failedNames.push(idToName.get(id) ?? String(id))
+  })
+
+  return {
+    success: true,
+    data: { deleted, failed: failedNames.length, failedNames },
   }
-  return { success: true, data: deleted }
 }
 
 export async function updateApiKeyStatus(

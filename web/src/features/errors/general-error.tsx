@@ -20,6 +20,7 @@ import { useNavigate, useRouter } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { getServerErrorDetails } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 type GeneralErrorProps = React.HTMLAttributes<HTMLDivElement> & {
@@ -51,6 +52,9 @@ export function GeneralError({
   const description = isRateLimited
     ? t('Please wait a moment before trying again.')
     : t('Please try again later.')
+  // Structured server failure: readable message + stable code. AuthOperationError
+  // is already reduced to a safe message by getServerErrorDetails (no code/hint).
+  const details = getServerErrorDetails(error, '')
 
   return (
     <div className={cn('h-svh w-full', className)}>
@@ -64,6 +68,16 @@ export function GeneralError({
         <p className='text-muted-foreground text-center'>
           {t('We apologize for the inconvenience.')} <br /> {description}
         </p>
+        {details.message && (
+          <p className='text-muted-foreground max-w-md text-center text-sm break-words'>
+            {details.message}
+          </p>
+        )}
+        {details.code && (
+          <p className='text-muted-foreground font-mono text-xs'>
+            {t('Error')}: {details.code}
+          </p>
+        )}
         {!minimal && (
           <div className='mt-6 flex flex-wrap justify-center gap-4'>
             <Button variant='outline' onClick={() => history.go(-1)}>

@@ -16,8 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DIALOG_SIZE_CLASS } from '@/components/dialog-size'
 import {
   Dialog as DialogRoot,
@@ -35,6 +37,9 @@ import { ModelRoutingPanel } from './model-routing-panel'
  * 渲染 {@link ModelRoutingPanel}，只展示该模型的成员链编辑（居中 Dialog，
  * 参照 ChannelMutateDialog：max-h 约束 + 单层滚动 + header 右上关闭）。
  * 编辑逻辑仍由面板负责。挂在「路由与故障切换」页（ui-spec §6.3）。
+ *
+ * 关闭时若成员链有未保存草稿，先弹「放弃未保存修改？」确认（复用模型编辑
+ * 弹窗的 Discard 文案），避免静默丢弃。
  */
 export function ModelRoutingDrawer(props: {
   open: boolean
@@ -43,38 +48,68 @@ export function ModelRoutingDrawer(props: {
   currentRow?: { model_name?: string } | null
 }) {
   const { t } = useTranslation()
+  const [dirty, setDirty] = useState(false)
+  const [discardOpen, setDiscardOpen] = useState(false)
   const fixedModel = props.open ? props.currentRow?.model_name : undefined
 
+  const handleOpenChange = (open: boolean) => {
+    if (!open && dirty) {
+      // 不直接关闭，先确认是否放弃草稿。
+      setDiscardOpen(true)
+      return
+    }
+    if (!open) setDirty(false)
+    props.onOpenChange(open)
+  }
+
   return (
-    <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent
-        className={cn(
-          'flex w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-none sm:p-6',
-          DIALOG_SIZE_CLASS.lg
-        )}
-      >
-        <DialogHeader className='pr-12'>
-          <DialogTitle className='flex min-w-0 items-center gap-2'>
-            <span className='shrink-0'>{t('Routing & Failover')}</span>
-            {fixedModel ? (
-              <span
-                className='text-muted-foreground min-w-0 truncate font-mono text-sm font-normal'
-                title={fixedModel}
-              >
-                {fixedModel}
-              </span>
-            ) : null}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              'Member order is the failover order: requests try the top member first and escape to the next on failure.'
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        <div className='flex min-h-0 flex-1 flex-col'>
-          <ModelRoutingPanel fixedModel={fixedModel} />
-        </div>
-      </DialogContent>
-    </DialogRoot>
+    <>
+      <DialogRoot open={props.open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className={cn(
+            'flex w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-none sm:p-6',
+            DIALOG_SIZE_CLASS.lg
+          )}
+        >
+          <DialogHeader className='pr-12'>
+            <DialogTitle className='flex min-w-0 items-center gap-2'>
+              <span className='shrink-0'>{t('Routing & Failover')}</span>
+              {fixedModel ? (
+                <span
+                  className='text-muted-foreground min-w-0 truncate font-mono text-sm font-normal'
+                  title={fixedModel}
+                >
+                  {fixedModel}
+                </span>
+              ) : null}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                'Member order is the failover order: requests try the top member first and escape to the next on failure.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className='flex min-h-0 flex-1 flex-col'>
+            <ModelRoutingPanel
+              fixedModel={fixedModel}
+              onDirtyChange={setDirty}
+            />
+          </div>
+        </DialogContent>
+      </DialogRoot>
+
+      <ConfirmDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        title={t('Discard unsaved changes?')}
+        desc={t('Your changes have not been saved.')}
+        confirmText={t('Discard changes')}
+        handleConfirm={() => {
+          setDiscardOpen(false)
+          setDirty(false)
+          props.onOpenChange(false)
+        }}
+      />
+    </>
   )
 }

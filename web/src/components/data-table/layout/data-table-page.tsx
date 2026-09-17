@@ -41,8 +41,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import * as React from 'react'
 
+import { ErrorState } from '@/components/error-state'
 import { PageFooterPortal } from '@/components/layout/components/page-footer'
 import { useMediaQuery } from '@/hooks'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import {
@@ -91,6 +93,23 @@ export type DataTablePageProps<TData> = {
    * Refetch / background loading — dims the table without removing rows.
    */
   isFetching?: boolean
+
+  /**
+   * Query failure — renders {@link ErrorState} with a retry action instead of
+   * the empty state, so a failed request is never mistaken for "no data".
+   */
+  isError?: boolean
+
+  /**
+   * Error backing the failed query. Its safe server message, when available,
+   * becomes the error-state description.
+   */
+  error?: unknown
+
+  /**
+   * Retry handler for the error state.
+   */
+  onRetry?: () => void
 
   /**
    * Empty-state title (used for both desktop {@link TableEmpty} and mobile fallback).
@@ -330,6 +349,19 @@ export function DataTablePage<TData>(props: DataTablePageProps<TData>) {
   const viewMode = props.viewMode ?? internalViewMode
   const setViewMode = props.onViewModeChange ?? setInternalViewMode
   const cardViewActive = !!props.enableCardView
+
+  // A failed request must not masquerade as the "No ... Found" empty state.
+  if (props.isError) {
+    return (
+      <ErrorState
+        description={
+          props.error != null ? getServerErrorMessage(props.error) : undefined
+        }
+        onRetry={props.onRetry}
+        className={cn('min-h-[300px]', props.className)}
+      />
+    )
+  }
 
   const viewToggle = cardViewActive ? (
     <DataTableViewModeToggle value={viewMode} onChange={setViewMode} />
