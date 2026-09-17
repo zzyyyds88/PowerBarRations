@@ -6,9 +6,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 func TestOpenAIToGeminiSafetySettings(t *testing.T) {

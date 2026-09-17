@@ -4,7 +4,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"gorm.io/gorm"
 )

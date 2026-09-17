@@ -9,9 +9,9 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
 	"gorm.io/gorm"
-	"pbr/common"
-	"pbr/logger"
 )
 
 const (

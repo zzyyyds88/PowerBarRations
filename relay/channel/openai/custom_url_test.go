@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"pbr/constant"
-	relaycommon "pbr/relay/common"
-	relayconstant "pbr/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 )
 
 // Custom（type 8）渠道 GetRequestURL 语义（ui-spec §6.4）：

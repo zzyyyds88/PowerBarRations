@@ -6,12 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/relaykit/dto"
-	"pbr/setting/billing_setting"
-	"pbr/setting/ratio_setting"
-	"pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/types"
 )
 
 type Pricing struct {

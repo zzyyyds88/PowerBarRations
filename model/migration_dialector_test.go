@@ -8,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"pbr/common"
 )
 
 type MigrationIdentityFields struct {

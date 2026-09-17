@@ -1,8 +1,8 @@
 package service
 
 import (
-	"pbr/model"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 const (

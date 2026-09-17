@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"pbr/internal/apierr"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 )

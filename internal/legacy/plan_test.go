@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"pbr/common"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"

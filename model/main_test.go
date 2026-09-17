@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"gorm.io/gorm"
-	"pbr/common"
 )
 
 // TestMain was originally defined in the removed task_cas_test.go; it is the

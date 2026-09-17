@@ -6,14 +6,14 @@ import (
 	"reflect"
 	"testing"
 
-	common2 "pbr/common"
-	"pbr/relaykit/types"
+	common2 "github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/relaykit/dto"
-	"pbr/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 )
 
 func TestApplyParamOverrideTrimPrefix(t *testing.T) {

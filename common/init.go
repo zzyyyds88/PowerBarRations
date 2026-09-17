@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 )
 
 var (

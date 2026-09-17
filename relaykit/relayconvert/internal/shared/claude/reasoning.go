@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"math"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	"pbr/relaykit/relayconvert/internal/convdiag"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/convdiag"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.Meta, source reasoning.Intent, crossProtocol bool) error {

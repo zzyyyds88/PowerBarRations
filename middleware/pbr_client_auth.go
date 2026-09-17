@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/internal/apierr"
-	"pbr/logger"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 )

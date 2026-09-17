@@ -1,8 +1,8 @@
 package convmeta
 
 import (
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 // GuessRelayFormatFromRequest infers the relay format from a request DTO's

@@ -9,9 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/dto"
-	"pbr/relaykit/types"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
 )
 
 func TestShouldRetryHonorsPinRetryMode(t *testing.T) {

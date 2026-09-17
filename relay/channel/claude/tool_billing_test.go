@@ -7,10 +7,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
-	"pbr/setting/operation_setting"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 )
 
 func TestHandleClaudeResponseDataCountsToolUse(t *testing.T) {

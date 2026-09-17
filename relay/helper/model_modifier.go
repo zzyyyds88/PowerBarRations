@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type parsedModelModifiers struct {

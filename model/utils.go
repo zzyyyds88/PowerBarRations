@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"

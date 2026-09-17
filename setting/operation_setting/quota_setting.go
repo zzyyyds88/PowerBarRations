@@ -1,6 +1,6 @@
 package operation_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 type QuotaSetting struct {
 	EnableFreeModelPreConsume bool `json:"enable_free_model_pre_consume"` // 是否对免费模型启用预消耗

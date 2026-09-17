@@ -1,6 +1,6 @@
 package system_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 type FetchSetting struct {
 	EnableSSRFProtection   bool     `json:"enable_ssrf_protection"` // 是否启用SSRF防护

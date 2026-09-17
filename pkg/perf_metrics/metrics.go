@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/model"
-	relaycommon "pbr/relay/common"
-	"pbr/setting/perf_metrics_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/perf_metrics_setting"
 )
 
 var hotBuckets sync.Map

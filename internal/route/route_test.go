@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"pbr/model"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

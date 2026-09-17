@@ -1,8 +1,8 @@
 package model
 
 import (
-	"pbr/constant"
-	"pbr/dto"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/dto"
 )
 
 var filterEvalOrder = []dto.ChannelFilterKind{

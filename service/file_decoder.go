@@ -11,9 +11,9 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )

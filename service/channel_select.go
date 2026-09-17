@@ -4,11 +4,11 @@ import (
 	"errors"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
-	"pbr/constant"
-	"pbr/dto"
-	"pbr/logger"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/dto"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 func GetChannelConstraints(c *gin.Context) *dto.ChannelConstraints {

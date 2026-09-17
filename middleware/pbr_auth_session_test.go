@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"pbr/internal/session"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/internal/session"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

@@ -3,7 +3,7 @@ package model
 import (
 	"testing"
 
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 )
 
 // TestNormalizeChannelBaseURL 覆盖 ui-spec §6.4 / api-spec §4.1 的"API 地址只填到

@@ -1,6 +1,6 @@
 package vertex
 
-import "pbr/common"
+import "github.com/zzyyyds88/PowerBarRations/common"
 
 func GetModelRegion(other string, localModelName string) string {
 	// if other is json string

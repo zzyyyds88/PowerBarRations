@@ -4,10 +4,10 @@ import (
 	"maps"
 	"strings"
 
-	"pbr/common"
-	"pbr/setting/operation_setting"
-	hostreasoning "pbr/setting/reasoning"
-	"pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
+	hostreasoning "github.com/zzyyyds88/PowerBarRations/setting/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/types"
 )
 
 // from songquanpeng/one-api

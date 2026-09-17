@@ -3,7 +3,7 @@ package codex
 import (
 	"errors"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 type OAuthKey struct {

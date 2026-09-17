@@ -3,12 +3,12 @@ package relayconvert
 import (
 	"fmt"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	claudemessages "pbr/relaykit/relayconvert/internal/claude_messages"
-	geminichat "pbr/relaykit/relayconvert/internal/gemini_chat"
-	oaichat "pbr/relaykit/relayconvert/internal/oai_chat"
-	oairesponses "pbr/relaykit/relayconvert/internal/oai_responses"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	claudemessages "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/claude_messages"
+	geminichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/gemini_chat"
+	oaichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/oai_chat"
+	oairesponses "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/oai_responses"
 )
 
 type ClaudeResponseInfo = claudemessages.ClaudeResponseInfo

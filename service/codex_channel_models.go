@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"pbr/constant"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 func FetchCodexChannelModels(channel *model.Channel) ([]string, error) {

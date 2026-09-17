@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
-	"pbr/service"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
 )
 
 type MiniMaxTTSRequest struct {

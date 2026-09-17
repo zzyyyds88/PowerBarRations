@@ -14,8 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func withRelayHTTPTransportSettings(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"pbr/common"
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 // ---------------------------------------------------------------------------

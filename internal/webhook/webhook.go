@@ -30,9 +30,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"pbr/common"
-	"pbr/internal/route"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 // OptionKey 是 webhook 目标配置的 system/options 键，值为 Target 数组的 JSON

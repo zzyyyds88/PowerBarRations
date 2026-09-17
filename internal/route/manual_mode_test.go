@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

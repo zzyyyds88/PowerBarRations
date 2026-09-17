@@ -8,7 +8,7 @@
 
 1. 复制 new-api 的 Go 包（`common constant controller dto i18n logger middleware model oauth pkg plugins relay relaykit router service setting types`）与 `main.go go.mod go.sum LICENSE NOTICE THIRD-PARTY-LICENSES.md VERSION`，共 981 个 `.go` 文件。
 2. **不迁** `web/`、`electron/`、`docs/`、`e2e/`、上游 README/AGENTS/CLAUDE、Dockerfile/makefile。
-3. module path 改为 `pbr`；嵌套模块 `relaykit` 改为 `pbr/relaykit`，同步 go.mod 的 require/replace。
+3. module path 曾用 `pbr`；公开发布版已统一为 `github.com/zzyyyds88/PowerBarRations`，嵌套模块 `relaykit` 对应 `github.com/zzyyyds88/PowerBarRations/relaykit`，同步 go.mod 的 require/replace。
 4. `main.go` 有 `//go:embed web/dist`，故补一个**构建占位** `web/dist/index.html`（真正的控制台在 W4 迁入）。
 5. 保留 AGPL 版权头与许可文件。
 

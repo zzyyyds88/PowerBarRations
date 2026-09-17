@@ -1,6 +1,6 @@
 package operation_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 // TokenSetting 令牌相关配置
 type TokenSetting struct {

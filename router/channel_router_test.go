@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"pbr/controller"
+	"github.com/zzyyyds88/PowerBarRations/controller"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

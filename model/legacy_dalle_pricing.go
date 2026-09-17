@@ -8,7 +8,7 @@ package model
 import (
 	"strings"
 
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func legacyDallePricingRules(name string) []LegacyPricingRule {

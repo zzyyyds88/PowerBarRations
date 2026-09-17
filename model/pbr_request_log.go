@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

@@ -1,6 +1,6 @@
 package common
 
-import "pbr/constant"
+import "github.com/zzyyyds88/PowerBarRations/constant"
 
 // GetEndpointTypesByChannelType 获取渠道最优先端点类型（所有的渠道都支持 OpenAI 端点）
 func GetEndpointTypesByChannelType(channelType int, modelName string) []constant.EndpointType {

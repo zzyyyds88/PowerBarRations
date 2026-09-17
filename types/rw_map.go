@@ -3,7 +3,7 @@ package types
 import (
 	"sync"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 type RWMap[K comparable, V any] struct {

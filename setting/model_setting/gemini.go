@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"slices"
 
-	"pbr/common"
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 const defaultGeminiSafetySetting = "OFF"

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/setting/pricing_setting"
-	"pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/setting/pricing_setting"
+	"github.com/zzyyyds88/PowerBarRations/types"
 
 	"github.com/gin-gonic/gin"
 

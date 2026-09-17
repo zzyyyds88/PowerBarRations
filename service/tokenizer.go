@@ -5,7 +5,7 @@ import (
 
 	"github.com/tiktoken-go/tokenizer"
 	"github.com/tiktoken-go/tokenizer/codec"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // tokenEncoderMap won't grow after initialization

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/service"
 )
 
 func GetChannelAffinityCacheStats(c *gin.Context) {

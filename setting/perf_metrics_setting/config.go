@@ -1,6 +1,6 @@
 package perf_metrics_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 type PerfMetricsSetting struct {
 	Enabled       bool   `json:"enabled"`

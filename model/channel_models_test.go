@@ -3,7 +3,7 @@ package model
 import (
 	"testing"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

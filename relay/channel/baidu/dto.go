@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 type BaiduMessage struct {

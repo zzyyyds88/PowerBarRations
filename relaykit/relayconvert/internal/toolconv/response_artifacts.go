@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	geminichat "pbr/relaykit/relayconvert/internal/gemini_chat"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	geminichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/gemini_chat"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type HostedResponseItem struct {

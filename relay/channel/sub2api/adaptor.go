@@ -1,7 +1,7 @@
 package sub2api
 
 import (
-	"pbr/relay/channel/newapi"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/newapi"
 )
 
 type Adaptor struct {

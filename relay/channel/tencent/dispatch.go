@@ -3,10 +3,10 @@ package tencent
 import (
 	"strings"
 
-	"pbr/constant"
-	"pbr/relay/channel"
-	"pbr/relay/channel/openai"
-	relaycommon "pbr/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/openai"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 )
 
 const tokenHubBaseURL = "https://tokenhub.tencentmaas.com"

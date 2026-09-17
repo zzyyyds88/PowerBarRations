@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"gorm.io/gorm"
 )

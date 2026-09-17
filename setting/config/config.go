@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // ConfigManager 统一管理所有配置

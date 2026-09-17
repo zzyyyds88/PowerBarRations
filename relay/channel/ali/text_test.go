@@ -5,7 +5,7 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func TestRequestOpenAI2AliTopP(t *testing.T) {

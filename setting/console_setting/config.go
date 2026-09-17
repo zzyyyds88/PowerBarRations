@@ -1,6 +1,6 @@
 package console_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 type ConsoleSetting struct {
 	ApiInfo        string `json:"api_info"`         // 控制台 API 信息 (JSON 数组字符串)

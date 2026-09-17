@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
-	rootcommon "pbr/common"
-	"pbr/constant"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	hostreasoning "pbr/setting/reasoning"
+	rootcommon "github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	hostreasoning "github.com/zzyyyds88/PowerBarRations/setting/reasoning"
 )
 
 func ModelMappedHelper(c *gin.Context, info *relaycommon.RelayInfo, request dto.Request) error {

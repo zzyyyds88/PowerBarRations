@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/relay/channel"
-	"pbr/relay/channel/openai"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
-	"pbr/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/openai"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 
-	"pbr/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relay/constant"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 // ChannelModelPrice 是渠道级上游单价（人民币/百万 token），用于成本折算。

@@ -8,7 +8,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 )
 
 type readCloser struct {

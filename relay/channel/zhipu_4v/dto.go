@@ -3,8 +3,8 @@ package zhipu_4v
 import (
 	"time"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 //	type ZhipuMessage struct {

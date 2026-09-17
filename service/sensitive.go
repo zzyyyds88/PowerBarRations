@@ -4,8 +4,8 @@ import (
 	"errors"
 	"strings"
 
-	"pbr/relaykit/dto"
-	"pbr/setting"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting"
 )
 
 func CheckSensitiveMessages(messages []dto.Message) ([]string, error) {

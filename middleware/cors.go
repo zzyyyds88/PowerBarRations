@@ -3,7 +3,7 @@ package middleware
 import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 func CORS() gin.HandlerFunc {

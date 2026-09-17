@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"

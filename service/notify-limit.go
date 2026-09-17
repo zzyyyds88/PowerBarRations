@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/bytedance/gopkg/util/gopool"
-	"pbr/common"
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 )
 
 // notifyLimitStore is used for in-memory rate limiting when Redis is disabled

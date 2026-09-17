@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	perfmetrics "pbr/pkg/perf_metrics"
-	"pbr/setting/ratio_setting"
+	perfmetrics "github.com/zzyyyds88/PowerBarRations/pkg/perf_metrics"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"

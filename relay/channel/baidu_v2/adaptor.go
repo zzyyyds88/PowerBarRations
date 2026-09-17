@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/relay/channel"
-	"pbr/relay/channel/openai"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/constant"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/openai"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )

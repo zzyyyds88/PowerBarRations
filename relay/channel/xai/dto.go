@@ -1,6 +1,6 @@
 package xai
 
-import "pbr/relaykit/dto"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 // ChatCompletionResponse represents the response from XAI chat completion API
 type ChatCompletionResponse struct {

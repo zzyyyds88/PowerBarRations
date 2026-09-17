@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/common"
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 type ChatCompletionsToResponsesPolicy struct {

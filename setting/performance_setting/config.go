@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/common"
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 // PerformanceSetting 性能设置配置

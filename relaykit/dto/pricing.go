@@ -1,6 +1,6 @@
 package dto
 
-import "pbr/relaykit/types"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 // 这里不好动就不动了，本来想独立出来的（
 type OpenAIModels struct {

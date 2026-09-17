@@ -3,8 +3,8 @@ package mistral
 import (
 	"regexp"
 
-	"pbr/common"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 var mistralToolCallIdRegexp = regexp.MustCompile("^[a-zA-Z0-9]{9}$")

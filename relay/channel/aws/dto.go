@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 type AwsClaudeRequest struct {

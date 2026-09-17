@@ -8,12 +8,12 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/internal/apierr"
-	"pbr/internal/route"
-	"pbr/model"
-	relaycommon "pbr/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 
 	"github.com/gin-gonic/gin"
 )

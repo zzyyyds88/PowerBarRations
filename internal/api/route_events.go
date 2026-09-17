@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"pbr/internal/route"
-	"pbr/logger"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 )

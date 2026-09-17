@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/internal/apierr"
-	"pbr/model"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

@@ -1,8 +1,8 @@
 package relay
 
 import (
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/types"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func newAPIErrorFromParamOverride(err error) *types.NewAPIError {

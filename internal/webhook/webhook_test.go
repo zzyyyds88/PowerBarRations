@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"pbr/common"
-	"pbr/internal/route"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"

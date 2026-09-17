@@ -6,10 +6,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/reasonmap"
-	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/reasonmap"
+	sharedclaude "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/claude"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 func ResponsesResponseToClaudeMessagesResponse(resp *dto.OpenAIResponsesResponse) (*dto.ClaudeResponse, *dto.Usage, error) {

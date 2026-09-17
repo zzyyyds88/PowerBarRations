@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"pbr/common"
-	"pbr/relaykit/dto"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 )
 
 // WebhookPayload webhook 通知的负载数据

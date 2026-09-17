@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"net/url"
 
-	"pbr/relay/channel"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert"
-	"pbr/relaykit/types"
-	"pbr/service"
-	"pbr/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
 )

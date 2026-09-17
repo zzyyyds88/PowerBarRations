@@ -1,7 +1,7 @@
 package helper
 
 import (
-	relaycommon "pbr/relay/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 )
 
 // StreamResult is passed to each dataHandler invocation, providing methods

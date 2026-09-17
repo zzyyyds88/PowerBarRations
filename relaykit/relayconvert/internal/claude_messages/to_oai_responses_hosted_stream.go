@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"pbr/relaykit/dto"
-	oaichat "pbr/relaykit/relayconvert/internal/oai_chat"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	oaichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/oai_chat"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 // ClaudeHostedStreamBridge keeps Anthropic server-executed tool blocks out of

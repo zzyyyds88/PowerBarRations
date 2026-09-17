@@ -6,8 +6,8 @@ package reasoning
 import (
 	"strings"
 
-	kitreasoning "pbr/relaykit/relayconvert/reasoning"
-	"pbr/setting/model_setting"
+	kitreasoning "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 )
 
 var (

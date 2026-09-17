@@ -3,7 +3,7 @@ package zhipu
 import (
 	"time"
 
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 type ZhipuMessage struct {

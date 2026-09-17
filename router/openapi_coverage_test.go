@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"pbr/internal/api"
+	"github.com/zzyyyds88/PowerBarRations/internal/api"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

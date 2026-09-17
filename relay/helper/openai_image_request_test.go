@@ -13,12 +13,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	"pbr/constant"
-	"pbr/pkg/billingexpr"
-	relaycommon "pbr/relay/common"
-	relayconstant "pbr/relay/constant"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func TestLegacyDalleValidationAndPricesRemainCompatible(t *testing.T) {

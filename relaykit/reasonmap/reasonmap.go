@@ -3,7 +3,7 @@ package reasonmap
 import (
 	"strings"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func ClaudeStopReasonToOpenAIFinishReason(stopReason string) string {

@@ -4,9 +4,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

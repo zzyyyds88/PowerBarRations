@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
-	"pbr/common"
-	"pbr/model"
-	"pbr/relaykit/dto"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 )
 
 func NotifyRootUser(t string, subject string, content string) {

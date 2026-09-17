@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"pbr/common"
-	"pbr/common/limiter"
-	"pbr/constant"
-	"pbr/setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/common/limiter"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"

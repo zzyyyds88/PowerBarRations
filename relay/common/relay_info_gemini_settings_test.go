@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"pbr/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 )
 
 func TestRelayInfoConvOptionsUsesNormalizedGeminiSafetySettings(t *testing.T) {

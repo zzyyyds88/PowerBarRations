@@ -5,7 +5,7 @@ import (
 	"math"
 	"sync"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // maxRateLimitDurationSeconds is the largest window the count cap is computed

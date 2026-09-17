@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/console_setting"
 	"gorm.io/gorm"
-	"pbr/common"
-	"pbr/setting/console_setting"
 )
 
 const retiredThemeOptionKey = "theme.frontend"

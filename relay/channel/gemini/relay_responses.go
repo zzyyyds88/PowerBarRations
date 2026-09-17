@@ -7,15 +7,15 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
-	"pbr/constant"
-	"pbr/logger"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/helper"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert"
-	"pbr/relaykit/types"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
 )
 
 func GeminiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

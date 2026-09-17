@@ -11,13 +11,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 	"gorm.io/gorm"
-	"pbr/common"
-	"pbr/constant"
-	"pbr/model"
-	"pbr/relaykit/dto"
-	"pbr/setting/config"
-	"pbr/setting/operation_setting"
 )
 
 type listModelsResponse struct {

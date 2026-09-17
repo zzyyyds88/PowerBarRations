@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"time"
 
-	"pbr/relay/channel"
-	"pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel"
+	"github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )

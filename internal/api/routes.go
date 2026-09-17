@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 )

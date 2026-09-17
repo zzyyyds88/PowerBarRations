@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	"pbr/relaykit/relayconvert/internal/jsonutil"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/jsonutil"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
 )
 
 func GeminiGenerateContentRequestToOpenAIChat(geminiRequest *dto.GeminiChatRequest, info convmeta.Meta) (*dto.GeneralOpenAIRequest, error) {

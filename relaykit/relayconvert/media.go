@@ -1,6 +1,6 @@
 package relayconvert
 
-import relaymedia "pbr/relaykit/relayconvert/internal/media"
+import relaymedia "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/media"
 
 type MediaResolver = relaymedia.MediaResolver
 

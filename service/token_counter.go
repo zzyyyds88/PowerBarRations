@@ -8,13 +8,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/logger"
-	relaycommon "pbr/relay/common"
-	constant2 "pbr/relay/constant"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	constant2 "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )

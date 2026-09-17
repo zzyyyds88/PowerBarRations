@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/common"
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 //var claudeHeadersSettings = map[string][]string{}

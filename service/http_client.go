@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/relaykit/dto"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 
 	"golang.org/x/net/proxy"
 )

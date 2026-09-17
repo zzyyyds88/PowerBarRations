@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type TextConverterQuality string

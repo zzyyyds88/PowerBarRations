@@ -10,13 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	"pbr/constant"
-	openaichannel "pbr/relay/channel/openai"
-	relaycommon "pbr/relay/common"
-	relayconstant "pbr/relay/constant"
-	"pbr/relaykit/dto"
-	relaytypes "pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	openaichannel "github.com/zzyyyds88/PowerBarRations/relay/channel/openai"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	relaytypes "github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func TestIsResponsesEventStreamContentType(t *testing.T) {

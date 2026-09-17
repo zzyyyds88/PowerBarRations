@@ -3,7 +3,7 @@ package router
 import (
 	"testing"
 
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/stretchr/testify/require"
 )

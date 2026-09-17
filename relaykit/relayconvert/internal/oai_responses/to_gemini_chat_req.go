@@ -6,12 +6,12 @@ import (
 
 	"context"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	relaymedia "pbr/relaykit/relayconvert/internal/media"
-	sharedgemini "pbr/relaykit/relayconvert/internal/shared/gemini"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	relaymedia "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/media"
+	sharedgemini "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/gemini"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
 )
 
 func convertOpenAIResponsesRequestToGeminiChat(c context.Context, info convmeta.Meta, request any) (any, error) {

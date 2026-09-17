@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	relaycommon "pbr/relay/common"
-	relayconstant "pbr/relay/constant"
-	"pbr/relaykit/dto"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 )

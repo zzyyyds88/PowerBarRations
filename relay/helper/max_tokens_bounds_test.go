@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	relayconstant "pbr/relay/constant"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 )
 
 // TestMaxTokensBounds guards the billing invariant that user-supplied max

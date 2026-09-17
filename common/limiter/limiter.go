@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-redis/redis/v8"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 //go:embed lua/rate_limit.lua

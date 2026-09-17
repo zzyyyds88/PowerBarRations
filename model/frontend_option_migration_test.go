@@ -7,8 +7,8 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"gorm.io/gorm"
-	"pbr/common"
 )
 
 func useFrontendOptionMigrationDB(t *testing.T) *gorm.DB {

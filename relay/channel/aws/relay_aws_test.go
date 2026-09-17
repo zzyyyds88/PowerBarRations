@@ -19,10 +19,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	relaytypes "pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	relaytypes "github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 const awsTestModel = "anthropic.claude-3-5-sonnet-20240620-v1:0"

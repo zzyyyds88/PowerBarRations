@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 var (

@@ -11,8 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	rootconstant "pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	rootconstant "github.com/zzyyyds88/PowerBarRations/constant"
 )
 
 // PBR 每成员超时必须区分"我方计时器触发"与"客户端断开"（routing-spec §8）：

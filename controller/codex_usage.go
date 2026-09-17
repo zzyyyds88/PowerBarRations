@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/model"
-	"pbr/relay/channel/codex"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/codex"
+	"github.com/zzyyyds88/PowerBarRations/service"
 
 	"github.com/gin-gonic/gin"
 )

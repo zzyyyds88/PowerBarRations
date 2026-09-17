@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 type GeminiRender struct {

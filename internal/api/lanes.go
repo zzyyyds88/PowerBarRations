@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/internal/apierr"
-	"pbr/internal/route"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

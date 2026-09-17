@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 func RelayPanicRecover() gin.HandlerFunc {

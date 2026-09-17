@@ -1,6 +1,6 @@
 package model
 
-import "pbr/common"
+import "github.com/zzyyyds88/PowerBarRations/common"
 
 // GetDBTimestamp returns a UNIX timestamp from database time.
 // Falls back to application time on error.

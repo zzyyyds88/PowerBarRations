@@ -7,10 +7,10 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/constant"
-	relaycommon "pbr/relay/common"
-	relayconstant "pbr/relay/constant"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func TestGetRequestURLAlphaSearch(t *testing.T) {

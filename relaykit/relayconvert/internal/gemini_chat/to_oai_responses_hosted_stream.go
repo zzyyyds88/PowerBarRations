@@ -3,9 +3,9 @@ package geminichat
 import (
 	"fmt"
 
-	"pbr/relaykit/dto"
-	oaichat "pbr/relaykit/relayconvert/internal/oai_chat"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	oaichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/oai_chat"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 // GeminiHostedStreamBridge accumulates grounding metadata until the provider

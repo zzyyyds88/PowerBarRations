@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // etagVersionPublicContent namespaces the public-content ETag; bump it when

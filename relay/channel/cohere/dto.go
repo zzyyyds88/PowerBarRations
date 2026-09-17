@@ -1,6 +1,6 @@
 package cohere
 
-import "pbr/relaykit/dto"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 type CohereRequest struct {
 	Model       string        `json:"model"`

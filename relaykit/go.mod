@@ -1,4 +1,4 @@
-module pbr/relaykit
+module github.com/zzyyyds88/PowerBarRations/relaykit
 
 go 1.25.1
 

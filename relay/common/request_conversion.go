@@ -1,8 +1,8 @@
 package common
 
 import (
-	"pbr/relaykit/relayconvert/convmeta"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 // GuessRelayFormatFromRequest moved to convmeta with the converters; the

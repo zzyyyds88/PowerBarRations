@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // PBRAuditLog 管理面变更审计（api-spec §2.6）：**只记元数据**，

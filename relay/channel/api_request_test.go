@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
-	relaycommon "pbr/relay/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 )
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {

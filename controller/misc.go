@@ -3,14 +3,14 @@ package controller
 import (
 	"net/http"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/middleware"
-	"pbr/model"
-	"pbr/setting"
-	"pbr/setting/console_setting"
-	"pbr/setting/operation_setting"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/console_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
 )

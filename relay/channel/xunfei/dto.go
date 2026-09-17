@@ -1,6 +1,6 @@
 package xunfei
 
-import "pbr/relaykit/dto"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 type XunfeiMessage struct {
 	Role    string `json:"role"`

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 // MemberPlan 是拟落库的 PBR 车道成员。

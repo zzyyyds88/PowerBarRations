@@ -4,10 +4,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"pbr/common"
-	"pbr/constant"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"

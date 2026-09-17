@@ -3,7 +3,7 @@ package model_setting
 import (
 	"strings"
 
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 // QwenSettings defines Qwen model configuration. 注意bool要以enabled结尾才可以生效编辑

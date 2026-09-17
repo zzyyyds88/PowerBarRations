@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"pbr/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
 )
 
 type MonitorSetting struct {

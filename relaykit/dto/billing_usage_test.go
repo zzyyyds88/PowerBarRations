@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 func TestNewGeminiChatBillingUsageRequiresTokenContent(t *testing.T) {

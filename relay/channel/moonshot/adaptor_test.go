@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func TestConvertOpenAIRequestKimiK26UsesOnlyAllowedTemperature(t *testing.T) {

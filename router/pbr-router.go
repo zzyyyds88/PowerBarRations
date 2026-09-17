@@ -1,8 +1,8 @@
 package router
 
 import (
-	"pbr/internal/api"
-	"pbr/middleware"
+	"github.com/zzyyyds88/PowerBarRations/internal/api"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
 
 	"github.com/gin-gonic/gin"
 )

@@ -3,10 +3,10 @@ package middleware
 import (
 	"github.com/gin-gonic/gin"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/i18n"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/i18n"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 // I18n middleware detects and sets the language preference for the request

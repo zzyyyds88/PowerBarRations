@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 // AlphaSearchRequest is the Codex standalone web search request.

@@ -3,7 +3,7 @@ package toolconv
 import (
 	"encoding/json"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type Kind string

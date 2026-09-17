@@ -1,6 +1,6 @@
 package constant
 
-import "pbr/relaykit/types"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 // EndpointType moved to types with the conversion kit; aliases keep host
 // code compiling unchanged.

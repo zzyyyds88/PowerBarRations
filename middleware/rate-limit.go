@@ -8,8 +8,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
-	"pbr/logger"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
 )
 
 const redisRateLimitNamespace = "rateLimit:v2"

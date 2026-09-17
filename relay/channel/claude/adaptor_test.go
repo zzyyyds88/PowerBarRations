@@ -7,11 +7,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/helper"
-	"pbr/relaykit/dto"
-	"pbr/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 )
 
 func TestConvertClaudeRequestTreatsZeroMaxTokensAsUnset(t *testing.T) {

@@ -39,7 +39,7 @@ COPY . .
 COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
-      -ldflags "-s -w -X pbr/common.Version=${VERSION} -X pbr/common.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      -ldflags "-s -w -X github.com/zzyyyds88/PowerBarRations/common.Version=${VERSION} -X github.com/zzyyyds88/PowerBarRations/common.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       -o /out/pbr .
 
 FROM alpine:3.20

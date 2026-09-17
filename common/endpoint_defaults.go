@@ -1,6 +1,6 @@
 package common
 
-import "pbr/constant"
+import "github.com/zzyyyds88/PowerBarRations/constant"
 
 // EndpointInfo 描述单个端点的默认请求信息
 // path: 上游路径

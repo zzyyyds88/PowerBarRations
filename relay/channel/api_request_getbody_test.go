@@ -14,10 +14,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/hpack"
-	"pbr/common"
-	relaycommon "pbr/relay/common"
 )
 
 func TestApplyUpstreamBodyMetadataSetsReplayableMetadata(t *testing.T) {

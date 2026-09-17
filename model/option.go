@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/performance_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 	"gorm.io/gorm"
-	"pbr/common"
-	"pbr/setting"
-	"pbr/setting/config"
-	"pbr/setting/operation_setting"
-	"pbr/setting/performance_setting"
-	"pbr/setting/ratio_setting"
-	"pbr/setting/system_setting"
 )
 
 type Option struct {

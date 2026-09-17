@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 func ConfigureTrustedProxies(engine *gin.Engine) error {

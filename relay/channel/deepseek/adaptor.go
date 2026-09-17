@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
-	"pbr/relay/channel"
-	"pbr/relay/channel/claude"
-	"pbr/relay/channel/openai"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/constant"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
-	"pbr/setting/model_setting"
-	"pbr/setting/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/claude"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/openai"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/reasoning"
 )
 
 type Adaptor struct {

@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"sync"
 
-	"pbr/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 )
 
 // Chat→Responses upgrade policy is host routing logic (it decides *whether*

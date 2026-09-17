@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/common"
-	"pbr/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/dto"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"

@@ -1,6 +1,6 @@
 package siliconflow
 
-import "pbr/relaykit/dto"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 type SFTokens struct {
 	InputTokens  int `json:"input_tokens"`

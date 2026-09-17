@@ -1,6 +1,6 @@
 package palm
 
-import "pbr/relaykit/dto"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 type PaLMChatMessage struct {
 	Author  string `json:"author"`

@@ -3,7 +3,7 @@ package setting
 import (
 	"encoding/json"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 var Chats = []map[string]string{

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 func FetchCodexWhamUsage(

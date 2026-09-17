@@ -16,12 +16,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 	"gorm.io/gorm"
-	"pbr/common"
-	"pbr/model"
-	"pbr/setting/billing_setting"
-	"pbr/setting/config"
-	"pbr/setting/ratio_setting"
 )
 
 func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type RerankRequest struct {

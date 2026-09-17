@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"pbr/common"
-	"pbr/model"
-	"pbr/service"
-	"pbr/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 )
 
 // RegisterScheduledSystemTasks wires the periodic channel test and upstream

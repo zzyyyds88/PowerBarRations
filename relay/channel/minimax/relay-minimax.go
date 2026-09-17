@@ -3,10 +3,10 @@ package minimax
 import (
 	"fmt"
 
-	channelconstant "pbr/constant"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/constant"
-	"pbr/relaykit/types"
+	channelconstant "github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func GetRequestURL(info *relaycommon.RelayInfo) (string, error) {

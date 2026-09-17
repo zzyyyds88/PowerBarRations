@@ -3,8 +3,8 @@ package controller
 import (
 	"strconv"
 
-	"pbr/common"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 )

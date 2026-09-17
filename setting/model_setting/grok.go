@@ -1,6 +1,6 @@
 package model_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 // GrokSettings defines Grok model configuration.
 type GrokSettings struct {

@@ -17,8 +17,8 @@ import (
 	"os"
 	"strings"
 
-	"pbr/common"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"

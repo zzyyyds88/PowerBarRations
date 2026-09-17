@@ -8,10 +8,10 @@ import (
 
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/reasonmap"
-	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/reasonmap"
+	sharedclaude "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/claude"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 type ClaudeResponseInfo struct {

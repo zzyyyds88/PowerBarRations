@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type StatusCodeRange struct {

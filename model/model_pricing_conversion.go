@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/shopspring/decimal"
-	"pbr/common"
-	"pbr/constant"
-	"pbr/setting/billing_setting"
-	"pbr/setting/operation_setting"
-	"pbr/setting/ratio_setting"
-	hostreasoning "pbr/setting/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
+	hostreasoning "github.com/zzyyyds88/PowerBarRations/setting/reasoning"
 )
 
 // ModelPricingConversion is a preview only. Saving still requires a versioned

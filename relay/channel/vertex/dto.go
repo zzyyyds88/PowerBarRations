@@ -3,7 +3,7 @@ package vertex
 import (
 	"encoding/json"
 
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 type VertexAIClaudeRequest struct {

@@ -6,12 +6,12 @@ import (
 
 	"context"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	relaymedia "pbr/relaykit/relayconvert/internal/media"
-	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	relaymedia "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/media"
+	sharedclaude "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/claude"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
 )
 
 func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, textRequest dto.GeneralOpenAIRequest) (*dto.ClaudeRequest, error) {

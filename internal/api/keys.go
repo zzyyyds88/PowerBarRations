@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/internal/apierr"
-	"pbr/middleware"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"

@@ -8,15 +8,15 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	claudemessages "pbr/relaykit/relayconvert/internal/claude_messages"
-	geminichat "pbr/relaykit/relayconvert/internal/gemini_chat"
-	oaichat "pbr/relaykit/relayconvert/internal/oai_chat"
-	oairesponses "pbr/relaykit/relayconvert/internal/oai_responses"
-	"pbr/relaykit/relayconvert/internal/toolconv"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	claudemessages "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/claude_messages"
+	geminichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/gemini_chat"
+	oaichat "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/oai_chat"
+	oairesponses "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/oai_responses"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/toolconv"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type ResponseConverterFunc func(c context.Context, info convmeta.Meta, response any) (any, *dto.Usage, error)

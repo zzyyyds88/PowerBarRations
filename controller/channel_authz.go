@@ -1,6 +1,6 @@
 package controller
 
-import "pbr/model"
+import "github.com/zzyyyds88/PowerBarRations/model"
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {

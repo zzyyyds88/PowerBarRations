@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 type CodexCredentialRefreshOptions struct {

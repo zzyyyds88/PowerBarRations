@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/internal/apierr"
-	"pbr/internal/webhook"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/webhook"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 )

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 func chatAnnotationsToClaude(raw json.RawMessage, text string) []json.RawMessage {

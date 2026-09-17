@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // AuditOther is the structured metadata stored with an audit event. Privileged

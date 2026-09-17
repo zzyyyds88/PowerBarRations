@@ -1,6 +1,6 @@
 package dto
 
-import "pbr/relaykit/types"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 const (
 	RealtimeEventTypeError              = "error"

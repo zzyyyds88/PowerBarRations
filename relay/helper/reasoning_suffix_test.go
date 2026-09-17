@@ -9,14 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"pbr/common"
-	"pbr/constant"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	kitreasoning "pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
-	"pbr/setting/model_setting"
-	hostreasoning "pbr/setting/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	kitreasoning "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
+	hostreasoning "github.com/zzyyyds88/PowerBarRations/setting/reasoning"
 )
 
 func mustApplyReasoningModelSuffix(t *testing.T, info *relaycommon.RelayInfo, outbound ...dto.Request) {

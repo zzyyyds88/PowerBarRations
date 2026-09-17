@@ -8,9 +8,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 // shardedRoundTripper fans requests for each origin across N independent

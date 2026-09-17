@@ -5,8 +5,8 @@
 package convmeta
 
 import (
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 // Meta is the only view of the relay session that format converters may use.

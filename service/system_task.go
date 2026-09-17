@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/bytedance/gopkg/util/gopool"
 )

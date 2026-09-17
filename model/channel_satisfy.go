@@ -3,8 +3,8 @@ package model
 import (
 	"slices"
 
-	"pbr/common"
-	"pbr/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 )
 
 func IsChannelEnabledForGroupModel(group string, modelName string, channelID int) bool {

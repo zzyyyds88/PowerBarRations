@@ -10,12 +10,12 @@ import (
 	"strings"
 
 	"github.com/samber/lo"
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/helper"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
 
 	"github.com/gin-gonic/gin"
 )

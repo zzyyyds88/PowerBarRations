@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"

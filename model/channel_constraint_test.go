@@ -5,10 +5,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	"pbr/constant"
-	"pbr/dto"
-	kitdto "pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/dto"
+	kitdto "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 func TestFilterCandidateIDs(t *testing.T) {

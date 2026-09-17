@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"pbr/relaykit/dto"
-	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	sharedclaude "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/claude"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 const responsesEventOutputTextDone = "response.output_text.done"

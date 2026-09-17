@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"

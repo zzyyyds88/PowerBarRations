@@ -1,6 +1,6 @@
 package common
 
-import "pbr/constant"
+import "github.com/zzyyyds88/PowerBarRations/constant"
 
 const defaultAnonymousRequestBodyLimitKB = 2048
 

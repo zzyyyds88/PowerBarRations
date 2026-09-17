@@ -3,7 +3,7 @@ package common
 import (
 	"io"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // NewOutboundJSONBody wraps the already-marshaled upstream request body into a

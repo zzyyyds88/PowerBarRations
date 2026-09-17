@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/clickhouse"

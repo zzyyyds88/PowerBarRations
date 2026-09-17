@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	"pbr/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
 )
 
 var SupportedMimeTypes = map[string]bool{

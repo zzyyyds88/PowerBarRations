@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-const modulePrefix = "pbr/"
+const modulePrefix = "github.com/zzyyyds88/PowerBarRations/"
 
 // Packages (relative to the relaykit module root) covered by the boundary.
 var kitDirs = []string{

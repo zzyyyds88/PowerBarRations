@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/common"
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 
 	"golang.org/x/image/webp"
 )

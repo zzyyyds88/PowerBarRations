@@ -2,8 +2,8 @@ package middleware
 
 import (
 	"github.com/gin-gonic/gin"
-	"pbr/common"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/service"
 )
 
 // BodyStorageCleanup 请求体存储清理中间件

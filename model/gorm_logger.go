@@ -12,9 +12,9 @@ import (
 	sqlitedriver "github.com/glebarez/go-sqlite"
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"pbr/common"
 )
 
 const (

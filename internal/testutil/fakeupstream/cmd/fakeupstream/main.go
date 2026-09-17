@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"pbr/internal/testutil/fakeupstream"
+	"github.com/zzyyyds88/PowerBarRations/internal/testutil/fakeupstream"
 )
 
 func main() {

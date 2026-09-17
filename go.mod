@@ -1,4 +1,4 @@
-module pbr
+module github.com/zzyyyds88/PowerBarRations
 
 // +heroku goVersion go1.18
 go 1.25.1
@@ -149,7 +149,7 @@ require (
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.0
-	pbr/relaykit v0.0.0
+	github.com/zzyyyds88/PowerBarRations/relaykit v0.0.0
 )
 
-replace pbr/relaykit => ./relaykit
+replace github.com/zzyyyds88/PowerBarRations/relaykit => ./relaykit

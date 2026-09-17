@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"gorm.io/gorm"
-	"pbr/common"
 )
 
 // 保护契约:数据库驱动错误消息可能内联数据值,非 DEBUG 下日志只保留错误码。

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"pbr/logger"
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 // HTTPTransportPolicy is the runtime-normalized outbound HTTP transport policy

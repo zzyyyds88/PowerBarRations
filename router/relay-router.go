@@ -1,10 +1,10 @@
 package router
 
 import (
-	"pbr/constant"
-	"pbr/controller"
-	"pbr/middleware"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )

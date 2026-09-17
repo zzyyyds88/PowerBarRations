@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	"pbr/pkg/billingexpr"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
 )
 
 // TestComputeTieredQuota_ClampOnOverflow guards the billing-safety invariant

@@ -6,9 +6,9 @@ import (
 	"sort"
 
 	"github.com/samber/lo"
-	"pbr/pkg/billingexpr"
-	"pbr/setting/config"
-	"pbr/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 )
 
 const (

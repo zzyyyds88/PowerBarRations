@@ -1,8 +1,8 @@
 package service
 
 import (
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert"
 )
 
 func ChatCompletionsRequestToResponsesRequest(req *dto.GeneralOpenAIRequest) (*dto.OpenAIResponsesRequest, error) {

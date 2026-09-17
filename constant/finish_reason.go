@@ -1,6 +1,6 @@
 package constant
 
-import "pbr/relaykit/types"
+import "github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 // Finish reasons moved to types with the conversion kit.
 var (

@@ -5,13 +5,13 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	"pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
-	"pbr/setting/model_setting"
-	hostreasoning "pbr/setting/reasoning"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
+	hostreasoning "github.com/zzyyyds88/PowerBarRations/setting/reasoning"
 )
 
 // ApplyReasoningModelSuffix parses host-private reasoning suffixes from the

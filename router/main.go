@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"pbr/common"
-	"pbr/middleware"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
 
 	"github.com/gin-gonic/gin"
 )

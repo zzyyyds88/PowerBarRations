@@ -11,11 +11,11 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/relaykit/dto"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 //// OpenAIErrorWrapper wraps an error into an OpenAIErrorWithStatusCode

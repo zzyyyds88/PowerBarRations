@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strconv"
 
-	"pbr/common"
-	"pbr/model"
-	"pbr/service"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/service"
 
 	"github.com/gin-gonic/gin"
 )

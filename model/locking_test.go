@@ -5,9 +5,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"gorm.io/gorm"
 	"gorm.io/gorm/utils/tests"
-	"pbr/common"
 )
 
 // lockForUpdate must emit FOR UPDATE on databases that support it and skip

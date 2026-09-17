@@ -1,8 +1,8 @@
 package dto
 
 import (
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 	"net/http"
-	"pbr/relaykit/types"
 )
 
 type Request interface {

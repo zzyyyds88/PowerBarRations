@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"pbr/relaykit/dto"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
 )
 
 const (

@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/logger"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/bytedance/gopkg/util/gopool"
 )

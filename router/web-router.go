@@ -8,9 +8,9 @@ import (
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
-	"pbr/common"
-	"pbr/controller"
-	"pbr/middleware"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
 )
 
 // WebAssets holds the embedded dashboard frontend assets.

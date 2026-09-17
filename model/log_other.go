@@ -5,7 +5,7 @@ import (
 	"maps"
 	"slices"
 
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 const (

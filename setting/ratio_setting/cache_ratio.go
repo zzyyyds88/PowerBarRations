@@ -1,7 +1,7 @@
 package ratio_setting
 
 import (
-	"pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/types"
 )
 
 const (

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"pbr/common"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 )
 
 // WorkerRequest Worker请求的数据结构

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/types"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 type ResponseFormat struct {

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"pbr/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
 
 	"github.com/gin-gonic/gin"
 )

@@ -1,6 +1,6 @@
 package system_setting
 
-import "pbr/common"
+import "github.com/zzyyyds88/PowerBarRations/common"
 
 const (
 	DefaultTaskArtifactInvalidRateLimitPerMinute = 60

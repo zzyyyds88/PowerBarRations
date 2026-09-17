@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"pbr/constant"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 )
 
 // ValidateRedirectURL validates that a redirect URL is safe to use.

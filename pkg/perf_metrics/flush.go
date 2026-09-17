@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"time"
 
-	"pbr/common"
-	"pbr/model"
-	"pbr/setting/perf_metrics_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/setting/perf_metrics_setting"
 )
 
 func flushLoop() {

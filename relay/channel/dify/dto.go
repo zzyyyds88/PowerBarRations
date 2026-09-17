@@ -1,7 +1,7 @@
 package dify
 
 import (
-	"pbr/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
 
 type DifyChatRequest struct {

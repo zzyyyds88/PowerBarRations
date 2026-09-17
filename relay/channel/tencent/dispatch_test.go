@@ -3,9 +3,9 @@ package tencent
 import (
 	"testing"
 
-	"pbr/constant"
-	"pbr/relay/channel/openai"
-	relaycommon "pbr/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/relay/channel/openai"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

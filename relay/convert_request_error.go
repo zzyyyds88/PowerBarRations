@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	relaycommon "pbr/relay/common"
-	kitreasoning "pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	kitreasoning "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func newConvertRequestFailedError(c *gin.Context, info *relaycommon.RelayInfo, err error) *types.NewAPIError {

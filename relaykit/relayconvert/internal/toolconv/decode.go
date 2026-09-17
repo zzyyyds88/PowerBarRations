@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/relaykit/dto"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 const maxClaudeWebSearchUses = 1000

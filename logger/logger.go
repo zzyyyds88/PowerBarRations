@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"

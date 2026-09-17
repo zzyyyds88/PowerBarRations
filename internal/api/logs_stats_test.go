@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"pbr/common"
-	"pbr/model"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"

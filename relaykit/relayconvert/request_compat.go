@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	"pbr/relaykit/relayconvert/internal/convdiag"
-	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
-	sharedgemini "pbr/relaykit/relayconvert/internal/shared/gemini"
-	"pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/convdiag"
+	sharedclaude "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/claude"
+	sharedgemini "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/internal/shared/gemini"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 func ClaudeMessagesRequestToOpenAIChat(claudeRequest dto.ClaudeRequest, info convmeta.Meta) (*dto.GeneralOpenAIRequest, error) {

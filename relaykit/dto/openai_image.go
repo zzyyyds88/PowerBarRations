@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"reflect"
 
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/relaykit/types"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 // MaxImageN caps the image generation count. Without this bound a huge or

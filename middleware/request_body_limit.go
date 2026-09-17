@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"pbr/common"
+	"github.com/zzyyyds88/PowerBarRations/common"
 )
 
 // AnonymousRequestBodyLimit 限制非模型面请求体大小（管理面 /api 与 PBR 管理 API）。

@@ -1,6 +1,6 @@
 package operation_setting
 
-import "pbr/setting/config"
+import "github.com/zzyyyds88/PowerBarRations/setting/config"
 
 // 额度展示类型
 const (
