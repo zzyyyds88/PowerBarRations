@@ -67,7 +67,6 @@ const key = apiKeySchema.parse({
   expired_time: -1,
   created_time: 0,
   accessed_time: 0,
-  group: 'default',
   model_limits_enabled: false,
 })
 const i18n = createInstance()

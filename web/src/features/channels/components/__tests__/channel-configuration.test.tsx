@@ -464,6 +464,9 @@ test('model discovery discards a response for old credentials and retains manual
     'custom-model,'
   )
   await user.keyboard('{Escape}')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   expect(await screen.findByText('Fetching models...')).toBeVisible()
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'next-key' },
@@ -478,6 +481,9 @@ test('model discovery discards a response for old credentials and retains manual
     await oldReply.promise
   })
   expect(screen.queryByText('old-upstream-model')).not.toBeInTheDocument()
+  await user.click(
+    await screen.findByRole('button', { name: /Re-fetch|Probe upstream models/ })
+  )
   await user.click(
     await screen.findByRole('checkbox', { name: 'current-upstream-model' })
   )
@@ -499,6 +505,9 @@ test('model discovery reports failures inline and allows an empty result to fall
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'test-key' },
   })
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   expect(await screen.findByText('Upstream rejected the key')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Retry' }))
   expect(
@@ -748,6 +757,9 @@ test('ordinary edits discover models with saved settings and keep removed draft 
     target: { value: 'new-key' },
   })
   await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
+  await user.click(
     await screen.findByRole('checkbox', { name: 'upstream-model' })
   )
   expect(api.get).toHaveBeenCalledWith(
@@ -816,6 +828,9 @@ test('model configuration uses only the current form models and persists changes
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   await screen.findByRole('checkbox', { name: 'upstream-model' })
   await user.type(
     screen.getByRole('combobox', { name: 'Select models or add custom ones' }),
@@ -978,6 +993,7 @@ test('advanced custom edits preview draft connection settings with the saved key
   const post = vi
     .spyOn(api, 'post')
     .mockResolvedValue({ data: { success: true, data: ['preview-model'] } })
+  const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   fireEvent.change(screen.getByDisplayValue('https://saved.example'), {
@@ -986,6 +1002,9 @@ test('advanced custom edits preview draft connection settings with the saved key
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'unsaved-key' },
   })
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   expect(
     await screen.findByRole('checkbox', { name: 'preview-model' })
   ).toBeVisible()
@@ -1029,6 +1048,9 @@ test('an operator without sensitive write permission can discover saved models a
   await screen.findByDisplayValue('Existing channel')
   expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
   expect(screen.getByLabelText('API Key *')).toBeDisabled()
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models|Re-fetch/ })
+  )
   expect(
     await screen.findByRole('checkbox', { name: 'upstream-model' })
   ).toBeVisible()
@@ -1176,11 +1198,18 @@ test('switching edited channels discards a pending model list from the previous 
     }
     return originalGet?.(url, config)
   })
+  const user = userEvent.setup()
   const view = render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   expect(await screen.findByText('Fetching models...')).toBeVisible()
   view.rerender(<ConfigurationHarness currentRow={otherChannel} />)
   await screen.findByDisplayValue('Second channel')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models|Re-fetch/ })
+  )
   expect(
     await screen.findByRole('checkbox', { name: 'second-model' })
   ).toBeVisible()

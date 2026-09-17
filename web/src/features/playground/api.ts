@@ -23,7 +23,6 @@ import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ModelOption,
-  GroupOption,
 } from './types'
 
 /**
@@ -87,12 +86,4 @@ export async function getUserModels(): Promise<ModelOption[]> {
     .map((item) => item.model)
     .filter((model): model is string => typeof model === 'string' && model.length > 0)
     .map((model) => ({ label: model, value: model }))
-}
-
-/**
- * Get user groups
- */
-export async function getUserGroups(): Promise<GroupOption[]> {
-  // PBR 单用户无分组；提供一个默认分组即可。
-  return [{ label: 'default', value: 'default', ratio: 1, desc: '' }]
 }

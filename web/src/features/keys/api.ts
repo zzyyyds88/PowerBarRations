@@ -25,7 +25,6 @@ import type {
   GetApiKeysResponse,
   SearchApiKeysParams,
   ApiKeyFormData,
-  TokenAutoGroupsConfig,
 } from './types'
 
 // PBR 客户端密钥适配层（api-spec §4.3 / §5.4，token-spec §3）。
@@ -96,9 +95,6 @@ function toApiKey(item: PbrClientKey): ApiKey {
     expired_time: item.expires_at ? unixSeconds(item.expires_at) : -1,
     created_time: unixSeconds(item.created_at),
     accessed_time: unixSeconds(item.last_used_at),
-    group: 'default',
-    auto_groups: null,
-    cross_group_retry: false,
     model_limits_enabled: allowLanes.length > 0,
     model_limits: allowLanes.join(','),
     allow_ips: (item.ip_allowlist ?? []).join('\n'),
@@ -186,12 +182,6 @@ export async function getApiKey(id: number): Promise<ApiResponse<ApiKey>> {
   if (!name) return { success: false, message: 'API key not found' }
   const res = await api.get(`/api/keys/${encodeURIComponent(name)}`)
   return { success: true, data: toApiKey(res.data as PbrClientKey) }
-}
-
-export async function getTokenAutoGroups(): Promise<
-  ApiResponse<TokenAutoGroupsConfig>
-> {
-  return { success: true, data: { groups: [], max_count: 0 } }
 }
 
 export async function createApiKey(

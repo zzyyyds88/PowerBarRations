@@ -21,9 +21,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { ChannelPricesEditor } from '../channel-prices-editor'
 
-// 渠道级上游单价编辑器（design-v1 §16.9#7）：表格默认跟随渠道模型清单，
-// 自定义行（清单外的独立车道名等）可添加、可删除；添加行走可搜索下拉
-// （allowCustomValue），键入清单外模型名回车即可加入。
+// 渠道级上游单价编辑器（design-v1 §16.9#7）：表格初始为空，行按需手动添加
+// ——可搜索下拉列出渠道模型清单中尚未添加的模型，也允许键入清单外自定义名
+// （独立车道名等）；每一行可删除；未添加的模型不折算成本（免费）。
 
 afterEach(() => {
   cleanup()
@@ -46,14 +46,24 @@ function renderEditor(props?: {
   return { onChange }
 }
 
-it('renders one row per channel model without a remove button', () => {
-  renderEditor()
+it('starts empty, shows the free hint, and adds a row from the channel model list', () => {
+  const { onChange } = renderEditor()
+
+  expect(
+    screen.getByText(
+      'No models are priced yet. Unpriced models are free (cost 0). Add rows below.'
+    )
+  ).toBeVisible()
+
+  const input = screen.getByRole('combobox', {
+    name: 'Add a model to price',
+  })
+  fireEvent.change(input, { target: { value: 'gpt-4o' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
 
   expect(screen.getByText('gpt-4o')).toBeVisible()
-  expect(screen.getByText('gpt-4o-mini')).toBeVisible()
-  expect(
-    screen.queryByRole('button', { name: /Remove gpt-4o/ })
-  ).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Remove gpt-4o' })).toBeVisible()
+  expect(onChange).not.toHaveBeenCalled()
 })
 
 it('adds a custom model row when typing a name and pressing Enter', () => {
@@ -101,6 +111,12 @@ it('shows priced rows for models outside the channel list and allows removing th
 
 it('keeps an edited price value in the row value', () => {
   const { onChange } = renderEditor()
+
+  const input = screen.getByRole('combobox', {
+    name: 'Add a model to price',
+  })
+  fireEvent.change(input, { target: { value: 'gpt-4o' } })
+  fireEvent.keyDown(input, { key: 'Enter' })
 
   fireEvent.change(screen.getByLabelText('gpt-4o input'), {
     target: { value: '2.5' },
