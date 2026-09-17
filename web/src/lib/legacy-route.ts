@@ -29,17 +29,14 @@ const legacyConsoleRoutes: Record<string, string> = {
   '/console/token': '/keys',
   '/console/playground': '/playground',
   '/console/log': '/usage-logs',
-  '/console/midjourney': '/usage-logs/drawing',
   '/console/task': '/usage-logs/task',
 }
 
 // 旧设置页 tab → 新设置页子节。仅映射仍存在的 sections
-// （content/models/operations/site），计费与安全子节已随 W7 删除。
+// （content/models/operations/site），dashboard/drawing 与计费、安全子节已删。
 const legacySettingsTabs: Record<string, string> = {
   operation: '/system-settings/operations/behavior',
-  dashboard: '/system-settings/content/dashboard',
   chats: '/system-settings/content/chat',
-  drawing: '/system-settings/content/drawing',
   models: '/system-settings/models/global',
   performance: '/system-settings/operations/performance',
   system: '/system-settings/site/system-info',

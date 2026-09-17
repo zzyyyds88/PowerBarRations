@@ -38,7 +38,6 @@ describe('legacy frontend route migration', () => {
       '/console/personal': '/dashboard',
       '/console/topup': '/dashboard',
       '/console/log': '/usage-logs',
-      '/console/midjourney': '/usage-logs/drawing',
       '/console/task': '/usage-logs/task',
       '/console/chat/42': '/chat/42',
     }
@@ -60,9 +59,7 @@ describe('legacy frontend route migration', () => {
   test('maps legacy settings tabs and retains unrelated parameters', () => {
     const settingsTabs = {
       operation: '/system-settings/operations/behavior',
-      dashboard: '/system-settings/content/dashboard',
       chats: '/system-settings/content/chat',
-      drawing: '/system-settings/content/drawing',
       models: '/system-settings/models/global',
       performance: '/system-settings/operations/performance',
       system: '/system-settings/site/system-info',

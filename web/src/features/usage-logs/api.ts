@@ -24,7 +24,6 @@ import type {
   GetLogsResponse,
   GetLogStatsParams,
   GetLogStatsResponse,
-  GetMidjourneyLogsParams,
   UserInfo,
 } from './types'
 
@@ -92,11 +91,3 @@ export async function getUserInfo(
 }
 
 // ============================================================================
-// MjProxy (Drawing) Logs API
-// ============================================================================
-
-export const getAllMidjourneyLogs = (params: GetMidjourneyLogsParams) =>
-  fetchLogs('/api/mj/', params, true)
-
-export const getUserMidjourneyLogs = (params: GetMidjourneyLogsParams) =>
-  fetchLogs('/api/mj/', params, false)

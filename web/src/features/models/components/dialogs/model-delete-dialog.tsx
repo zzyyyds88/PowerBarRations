@@ -25,11 +25,9 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import {
-  useCanEditModelPricing,
-  invalidateModelPricing,
-} from '@/features/model-pricing/api'
 import { createServerError } from '@/lib/server-error-message'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { deleteModel, deleteModels } from '../../api'
 import { modelsQueryKeys } from '../../lib'
@@ -45,7 +43,9 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
   const { t } = useTranslation()
   const checkboxId = useId()
   const pricingCheckboxId = useId()
-  const canEditPricing = useCanEditModelPricing()
+  const canEditPricing = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
   const supportsChannelRemoval = props.models.every(
     (model) => model.name_rule === 0
   )
@@ -74,7 +74,9 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
     },
     onSuccess: async (result) => {
       await client.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
-      if (removePricing) await invalidateModelPricing(client)
+      if (removePricing) {
+        await client.invalidateQueries({ queryKey: ['system-options'] })
+      }
       if (removeFromChannels) {
         await client.invalidateQueries({ queryKey: ['channels'] })
       }

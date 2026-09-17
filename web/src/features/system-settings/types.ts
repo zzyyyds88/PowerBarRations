@@ -100,7 +100,6 @@ export type SiteSettings = {
   About: string
   HomePageContent: string
   ServerAddress: string
-  TaskPublicAddress: string
   'legal.user_agreement': string
   'legal.privacy_policy': string
   HeaderNavModules: string
@@ -110,9 +109,6 @@ export type SiteSettings = {
 export type ContentSettings = {
   'console_setting.api_info': string
   'console_setting.api_info_enabled': boolean
-  DataExportEnabled: boolean
-  DataExportDefaultTime: string
-  DataExportInterval: number
   Chats: string
 }
 
@@ -143,7 +139,6 @@ export type ModelSettings = {
   ImageRatio: string
   AudioRatio: string
   AudioCompletionRatio: string
-  ExposeRatioEnabled: boolean
   'billing_setting.billing_mode': string
   'billing_setting.billing_expr': string
   'tool_price_setting.prices': string
@@ -180,7 +175,6 @@ export type ModelSettings = {
 
 export type OperationsSettings = {
   DefaultCollapseSidebar: boolean
-  DemoSiteEnabled: boolean
   SelfUseModeEnabled: boolean
   QuotaRemindThreshold: string
   SMTPServer: string

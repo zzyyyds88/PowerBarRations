@@ -3,10 +3,8 @@ package constant
 const (
 	ChannelTypeUnknown        = 0
 	ChannelTypeOpenAI         = 1
-	ChannelTypeMidjourney     = 2
 	ChannelTypeAzure          = 3
 	ChannelTypeOllama         = 4
-	ChannelTypeMidjourneyPlus = 5
 	ChannelTypeOpenAIMax      = 6
 	ChannelTypeOhMyGPT        = 7
 	ChannelTypeCustom         = 8
@@ -136,10 +134,8 @@ func GetChannelBaseURL(channelType int) string {
 var ChannelTypeNames = map[int]string{
 	ChannelTypeUnknown:        "Unknown",
 	ChannelTypeOpenAI:         "OpenAI",
-	ChannelTypeMidjourney:     "Midjourney",
 	ChannelTypeAzure:          "Azure",
 	ChannelTypeOllama:         "Ollama",
-	ChannelTypeMidjourneyPlus: "MidjourneyPlus",
 	ChannelTypeOpenAIMax:      "OpenAIMax",
 	ChannelTypeOhMyGPT:        "OhMyGPT",
 	ChannelTypeCustom:         "Custom",

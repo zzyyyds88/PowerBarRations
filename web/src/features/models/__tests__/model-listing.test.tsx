@@ -36,11 +36,6 @@ import userEvent from '@testing-library/user-event'
 import i18n from 'i18next'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import type {
-  ModelPricingConfig,
-  ModelPricingEntry,
-} from '@/features/model-pricing/api'
-import { pricingOptions } from '@/features/model-pricing/pricing'
 import fr from '@/i18n/locales/fr.json'
 import zhCN from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
@@ -92,12 +87,7 @@ async function renderList(
     channel,
     { ...channel, model_name: 'other-channel' },
   ],
-  options: {
-    pricing?: ModelPricingEntry[] | Promise<ModelPricingConfig>
-    waitForPricing?: boolean
-    initialUrl?: string
-    total?: number
-  } = {}
+  options: { initialUrl?: string; total?: number } = {}
 ) {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
@@ -111,21 +101,6 @@ async function renderList(
     }
     if (url === '/api/console/models/7') {
       return { data: { success: true, data: metadata } }
-    }
-    if (url === '/api/option/model_pricing') {
-      return {
-        data: {
-          success: true,
-          data:
-            options.pricing && !Array.isArray(options.pricing)
-              ? await options.pricing
-              : {
-                  entries: options.pricing ?? [],
-                  options: pricingOptions({}),
-                  empty_version: 'empty',
-                },
-        },
-      }
     }
     return { data: { success: true, data: { items: [] } } }
   })
@@ -158,9 +133,7 @@ async function renderList(
   if (items.length) {
     await screen.findByRole('button', { name: items[0].model_name })
   } else await screen.findByText('No Models Found')
-  if (options.waitForPricing !== false) {
-    await waitFor(() => expect(client.isFetching()).toBe(0))
-  }
+  await waitFor(() => expect(client.isFetching()).toBe(0))
   return { ...result, get, router }
 }
 

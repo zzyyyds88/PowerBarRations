@@ -42,7 +42,6 @@ import {
 } from './section-registry'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
-const MJ_LOG_SECTIONS = ['drawing'] as const
 const REQUEST_LOG_SECTIONS = ['common', 'pbr'] as const
 
 const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
@@ -51,9 +50,6 @@ const SECTION_META: Record<UsageLogsSectionId, { titleKey: string }> = {
   },
   pbr: {
     titleKey: 'PBR Requests',
-  },
-  drawing: {
-    titleKey: 'Drawing Logs',
   },
 }
 
@@ -79,13 +75,6 @@ function UsageLogsContent() {
       {
         title: 'Request Logs',
         items: REQUEST_LOG_SECTIONS.map((section) => ({
-          title: SECTION_META[section].titleKey,
-          url: `/usage-logs/${section}`,
-        })),
-      },
-      {
-        title: 'Drawing Logs',
-        items: MJ_LOG_SECTIONS.map((section) => ({
           title: SECTION_META[section].titleKey,
           url: `/usage-logs/${section}`,
         })),

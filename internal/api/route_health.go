@@ -282,7 +282,7 @@ func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel str
 // 与 new-api 自身标注"不支持测试"的类型保持一致，另加原生协议渠道。
 func isProbeUnsupported(channelType int) bool {
 	switch channelType {
-	case constant.ChannelTypeMidjourney, constant.ChannelTypeMidjourneyPlus, constant.ChannelTypeSunoAPI,
+	case constant.ChannelTypeSunoAPI,
 		constant.ChannelTypeJimeng,
 		constant.ChannelTypeAnthropic, constant.ChannelTypeGemini, constant.ChannelTypeVertexAi,
 		constant.ChannelTypePaLM, constant.ChannelTypeAws, constant.ChannelTypeCohere:

@@ -39,7 +39,6 @@ func TestMain(m *testing.M) {
 		&model.User{},
 		&model.Log{},
 		&model.Channel{},
-		&model.Midjourney{},
 		&model.SystemTask{},
 		&model.SystemTaskLock{},
 	); err != nil {
@@ -55,7 +54,6 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
-		model.DB.Exec("DELETE FROM midjourneys")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
 		seededTokenRemainMu.Lock()
@@ -122,13 +120,6 @@ func getTokenUsedQuota(t *testing.T, id int) int {
 	t.Helper()
 	_ = id
 	return 0
-}
-
-func getMidjourneyTask(t *testing.T, id int) model.Midjourney {
-	t.Helper()
-	var task model.Midjourney
-	require.NoError(t, model.DB.First(&task, id).Error)
-	return task
 }
 
 func getLastLog(t *testing.T) *model.Log {

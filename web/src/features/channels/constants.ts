@@ -26,10 +26,8 @@ export const CHANNEL_TYPE_NEW_API = 60
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
-  2: 'MjProxy',
   3: 'Azure',
   4: 'Ollama',
-  5: 'MjProxyPlus',
   // 6: 'OpenAIMax',
   7: 'OhMyGPT',
   8: 'Custom',
@@ -94,10 +92,8 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
   Record<number, ChannelProviderPresentation>
 > = {
   1: { descriptionKey: 'Connect to the OpenAI API or compatible services' },
-  2: { descriptionKey: 'Generate Midjourney images through MjProxy' },
   3: { descriptionKey: 'Connect to OpenAI models deployed on Azure' },
   4: { descriptionKey: 'Connect to local or self-hosted Ollama models' },
-  5: { descriptionKey: 'Generate Midjourney images through MjProxyPlus' },
   7: { descriptionKey: 'Access model services through the OhMyGPT gateway' },
   8: {
     descriptionKey:
