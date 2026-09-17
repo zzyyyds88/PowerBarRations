@@ -187,7 +187,11 @@
     "unicorn/prefer-string-starts-ends-with": "warn",
     "unicorn/prefer-string-trim-start-end": "warn",
     "unicorn/prefer-structured-clone": "warn",
-    "unicorn/throw-new-error": "error"
+    "unicorn/throw-new-error": "error",
+
+    "react/incompatible-library": "off",
+    "react/set-state-in-effect": "warn",
+    "react/refs": "warn"
   },
   "overrides": [
     {

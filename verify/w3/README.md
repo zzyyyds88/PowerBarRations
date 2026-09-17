@@ -1,5 +1,10 @@
 # W3 验收证据：访问与 AI 管理面
 
+> **修订（2026-09-17）**：本页记录 W3 当波的实现历史。其中渠道 priority、成员 weight
+> 与"capabilities 列出四种模式"均已随 ADR 0005 / 模式收敛失效；模型面请求必须先固化同名
+> 车道（车道是唯一入口）。验收脚本已同步，最近一次实测 **PASS=45 / FAIL=0**（verify/w3/smoke.sh）。
+
+
 ## 目标（goal-prompt §四 W3 / design-v1 §5、token-spec §2–§4、api-spec §2/§5）
 
 无账号：首启 `POST /api/v1/setup` 设口令，管理密钥 = `Base64(SHA256(口令))`，只存哈希；

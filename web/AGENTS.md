@@ -77,6 +77,11 @@
 - **TypeScript**：避免 `any`，优先具体类型或 `unknown`；为参数与返回值显式标注类型；仅类型用途的导入使用 `import type { X } from '...'`。
 - **类型检查**：每次改动 TypeScript 或 TSX 代码后都要执行类型检查（如 `pnpm typecheck`）；若出现类型错误，须修复至无错误为止，不得遗留。
 - **Lint 检查**：每次完成代码改动前，必须对所涉及文件执行 lint 检查，并修复这些文件中的所有 lint error；不得遗留 error。warning 可按变更范围与风险评估处理。
+- **Lint 基线（oxlint 1.83）**：全仓 `pnpm lint` 必须 **0 error**。其中三条 React Compiler 结构性规则在 `.oxlintrc.json` 有明确降级，理由如下，改动这三项需同步更新本条：
+  - `react/incompatible-library` = off：它标记的是**第三方库与 React Compiler 的已知不兼容**（本项目使用 TanStack Table 的 `useReactTable` 与 react-hook-form 的 `form.watch`），在保留这些库的前提下无法靠改业务代码满足；
+  - `react/set-state-in-effect` = warn：React Compiler 的优化建议，命中的是本项目既有的"effect 内同步 state"模式；保留 warning 以持续可见，不阻断构建；
+  - `react/refs` = warn：同上，命中的是"渲染期读取 ref 初值"等既有模式。
+  其余规则一律 **error 且必须改代码**；只允许用 `--fix` 处理机械类问题，禁止用全局 disable 掩盖。
 - **解构**：对象非必要不要进行解构，特别是组件的 props；直接使用 `props.xxx` 更清晰，避免不必要的解构增加代码复杂度。
 
 ### 3.3 组件

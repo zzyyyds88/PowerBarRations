@@ -1,5 +1,13 @@
 # W1 验收证据：单层化路由（模型名键控）
 
+> **修订（ADR 0005 之后，2026-09-17）**：本页记录的是 W1 当波实现的历史形态，
+> 其中"渠道 Models + Priority 自动成链、零配置可路由"已被
+> [ADR 0005](../docs/adr/0005-lane-required-and-channel-model-mapping.md) **推翻**。
+> 现行语义：**车道是唯一路由入口**（存在同名启用车道才可调用，否则 503 同形；
+> 渠道无 priority/weight；成员顺序由车道决定）。验收脚本已同步现行语义，最近一次
+> 实测 **PASS=25 / FAIL=0**（verify/w1/smoke.sh）。下文标注"隐式链/零配置"的部分仅作历史追溯。
+
+
 ## 目标（goal-prompt §四 W1 / routing-spec §1.1）
 
 请求体里的 `model` **就是路由键**：渠道声明 `Models` + `Priority` 即自动形成隐式成员链，

@@ -1,5 +1,11 @@
 # W4 验收证据：控制台
 
+> **修订（2026-09-17）**：本页记录 W4 当波实现历史。控制台已从"用户会话/token"迁到
+> PBR 口令会话，且构建产物路径为 /static/js/index.<hash>.js（非 /assets/）；
+> web/dist/index.html 现为真实构建产物（占位页方案已废止）。验收脚本已同步，
+> 最近一次实测 **PASS=19 / FAIL=0**（verify/w4/smoke.sh）。
+
+
 ## 目标（goal-prompt §四 W4 / design-v1 §6、ui-spec §8）
 
 以线上路由层前端（`reference/octopus-bestrui/web`）的**功能原理**为蓝本迁移控制台，

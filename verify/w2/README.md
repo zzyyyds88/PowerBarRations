@@ -1,5 +1,11 @@
 # W2 验收证据：容错（冷却 / 熔断 / 亲和 / 四模式 / 错误分类 / 超时）
 
+> **修订（2026-09-17）**：本页记录 W2 当波的实现历史。其中 weighted / round_robin
+> 两种模式与成员 weight 已被**物理删除**（routing-spec §2.3 / design-v1 §1.3）：
+> 现在只有 failover（默认）与 manual，传入已删模式返回 422 invalid_mode。
+> 验收脚本已同步，最近一次实测 **PASS=37 / FAIL=0**（verify/w2/smoke.sh）。
+
+
 ## 目标（goal-prompt §四 W2 / routing-spec §4–§8）
 
 四种模式共用一套冷却/熔断/超时；错误分类按 routing-spec §4（429 软故障不误伤、
