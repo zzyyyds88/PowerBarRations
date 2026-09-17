@@ -40,7 +40,7 @@ type ChannelConfigurationProps = {
   connection: ReactNode
   models: ReactNode
   routing: ReactNode
-  request: ReactNode
+  prices: ReactNode
   other: ReactNode
 }
 
@@ -98,7 +98,7 @@ export function ChannelConfiguration(props: ChannelConfigurationProps) {
   const sections = [
     { id: 'connection', label: t('Connection & Models') },
     { id: 'routing', label: t('Routing & Mapping') },
-    { id: 'request', label: t('Request & Response') },
+    { id: 'prices', label: t('Upstream unit prices') },
     { id: 'other', label: t('Other Settings') },
   ] as const
 
@@ -150,12 +150,12 @@ export function ChannelConfiguration(props: ChannelConfigurationProps) {
           props.routing}
       </TabsContent>
       <TabsContent
-        value='request'
+        value='prices'
         keepMounted
         className='-m-1 min-h-0 space-y-5 overflow-y-auto overscroll-contain p-1'
       >
-        {(props.section === 'request' || visited.has('request')) &&
-          props.request}
+        {(props.section === 'prices' || visited.has('prices')) &&
+          props.prices}
       </TabsContent>
       <TabsContent
         value='other'

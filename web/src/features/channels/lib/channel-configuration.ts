@@ -28,7 +28,7 @@ import { channelFormSchema, type ChannelFormValues } from './channel-form'
 export type ChannelConfigurationSection =
   | 'connection'
   | 'routing'
-  | 'request'
+  | 'prices'
   | 'other'
 
 export type ChannelConfigurationStatus =
@@ -43,12 +43,13 @@ const CONFIGURATION_BLOCKS = {
     section: 'routing',
     fields: ['test_model', 'auto_ban'],
   },
+  channelPrices: { section: 'prices', fields: ['pbr_prices'] },
   overrideRules: {
-    section: 'request',
+    section: 'other',
     fields: ['status_code_mapping', 'param_override', 'header_override'],
   },
   requestProcessing: {
-    section: 'request',
+    section: 'other',
     fields: [
       'force_format',
       'thinking_to_content',
@@ -58,7 +59,7 @@ const CONFIGURATION_BLOCKS = {
     ],
   },
   fieldPassthrough: {
-    section: 'request',
+    section: 'other',
     fields: [
       'allow_service_tier',
       'disable_store',
@@ -128,6 +129,7 @@ export function getChannelConfigurationState(
     routingStrategy: Boolean(
       values.test_model?.trim() || (values.auto_ban ?? 1) !== 1
     ),
+    channelPrices: Boolean(values.pbr_prices?.length),
     overrideRules:
       hasConfiguredJson(values.status_code_mapping) ||
       hasConfiguredJson(values.param_override) ||
@@ -174,7 +176,7 @@ export function getChannelConfigurationState(
   > = {
     connection: 'idle',
     routing: 'idle',
-    request: 'idle',
+    prices: 'idle',
     other: 'idle',
   }
   for (const id of Object.keys(

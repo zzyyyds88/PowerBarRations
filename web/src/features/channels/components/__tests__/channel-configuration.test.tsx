@@ -653,7 +653,7 @@ test('restoring routing defaults clears the configured indicator for both the bl
   expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
 })
 
-test('request processing configuration does not mark the network category as configured', async () => {
+test('request processing configuration marks Other Settings but not the prices tab', async () => {
   editingChannel = {
     ...editingChannel,
     setting: '{"thinking_to_content":true}',
@@ -665,8 +665,11 @@ test('request processing configuration does not mark the network category as con
   await screen.findByDisplayValue('Existing channel')
   expect(
     screen.getByRole('tab', { name: /Other Settings/ })
+  ).toHaveAccessibleName(/Configured/)
+  expect(
+    screen.getByRole('tab', { name: /Upstream unit prices/ })
   ).not.toHaveAccessibleName(/Configured/)
-  await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
+  await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
   expect(
     within(screen.getByRole('group', { name: 'Override Rules' })).queryByRole(
       'img',
@@ -681,9 +684,6 @@ test('request processing configuration does not mark the network category as con
   expect(
     within(processing).queryByRole('img', { name: 'Configured' })
   ).not.toBeInTheDocument()
-  expect(
-    screen.getByRole('tab', { name: /Request & Response/ })
-  ).not.toHaveAccessibleName(/Configured/)
 })
 
 test('configuration from fields unsupported by the selected provider stays unmarked', async () => {
@@ -696,10 +696,10 @@ test('configuration from fields unsupported by the selected provider stays unmar
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   expect(
-    screen.getByRole('tab', { name: /Request & Response/ })
+    screen.getByRole('tab', { name: /Other Settings/ })
   ).not.toHaveAccessibleName(/Configured/)
   expect(
-    screen.getByRole('tab', { name: /Other Settings/ })
+    screen.getByRole('tab', { name: /Upstream unit prices/ })
   ).not.toHaveAccessibleName(/Configured/)
 })
 
@@ -1035,7 +1035,7 @@ test('an operator without sensitive write permission can discover saved models a
   expect(
     await screen.findByRole('checkbox', { name: 'upstream-model' })
   ).toBeVisible()
-  await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
+  await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
   const thinking = screen.getByRole('switch', { name: 'Thinking to Content' })
   expect(thinking).toHaveAttribute('aria-disabled', 'true')
   await user.click(thinking)
