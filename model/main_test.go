@@ -38,7 +38,6 @@ func TestMain(m *testing.M) {
 		&Channel{},
 		&Ability{},
 		&PerfMetric{},
-		&SystemInstance{},
 		&SystemTask{},
 		&SystemTaskLock{},
 		&Lane{},
@@ -64,7 +63,6 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM channels")
 		DB.Exec("DELETE FROM abilities")
 		DB.Exec("DELETE FROM perf_metrics")
-		DB.Exec("DELETE FROM system_instances")
 		DB.Exec("DELETE FROM system_task_locks")
 		DB.Exec("DELETE FROM system_tasks")
 		DB.Exec("DELETE FROM lane_members")

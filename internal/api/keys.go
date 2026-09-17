@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"pbr/common"
 	"pbr/internal/apierr"
 	"pbr/middleware"
 	"pbr/model"
@@ -35,7 +36,9 @@ type clientKeyPayload struct {
 	Notes          *string            `json:"notes"`
 }
 
-func clientKeyResponse(key *model.ClientKey) gin.H {
+// clientKeyResponse 组装密钥响应。cost 是响应期由小时聚合表派生的只读统计
+// （api-spec §5.4 / token-spec §3.7），不是 ClientKey 的存储字段。
+func clientKeyResponse(key *model.ClientKey, cost float64) gin.H {
 	policy := model.ParseLanePolicy(key.LanePolicy)
 	allow := policy.AllowLanes
 	if allow == nil {
@@ -74,7 +77,49 @@ func clientKeyResponse(key *model.ClientKey) gin.H {
 		"created_at":      rfc3339(key.CreatedAt),
 		"updated_at":      rfc3339(key.UpdatedAt),
 		"last_used_at":    lastUsedAt,
+		"cost":            cost,
 	}
+}
+
+// clientKeyCosts 返回 密钥名 → 累计上游折算花费（元）的映射。
+//
+// 数据源是小时聚合表 pbr_stats_hourly（与看板/日志同源，api-spec §5.4、
+// token-spec §3.7）：group_kind='key'，group_key 存的是密钥 Name
+// （见 model/pbr_request_log.go 的 dimensions 映射 "key": entry.TokenName）。
+//
+// 列表端必须**一次查询 + map 回填**，禁止按密钥逐个查询（N+1）。name 非空时
+// 只查该密钥，供详情与写后回读复用同一条代码路径。
+//
+// cost 是纯统计展示，不参与任何鉴权/限额/拒绝逻辑，因此查询失败只记日志并回落
+// 到空表（所有密钥 cost 为 0），不阻塞密钥管理（token-spec §3.7）。
+func clientKeyCosts(name string) map[string]float64 {
+	costs := map[string]float64{}
+	if model.DB == nil {
+		return costs
+	}
+	query := model.DB.Model(&model.PBRStatsHourly{}).
+		Select("group_key AS group_key, SUM(cost_sum) AS cost_sum").
+		Where("group_kind = ?", "key")
+	if name != "" {
+		query = query.Where("group_key = ?", name)
+	}
+	var rows []struct {
+		GroupKey string  `gorm:"column:group_key"`
+		CostSum  float64 `gorm:"column:cost_sum"`
+	}
+	if err := query.Group("group_key").Scan(&rows).Error; err != nil {
+		common.SysError("pbr: load client key cost failed: " + err.Error())
+		return costs
+	}
+	for _, row := range rows {
+		costs[row.GroupKey] = row.CostSum
+	}
+	return costs
+}
+
+// clientKeyCost 取单个密钥的 cost；无聚合数据时为 0。
+func clientKeyCost(name string) float64 {
+	return clientKeyCosts(name)[name]
 }
 
 // ListKeys GET /api/v1/keys
@@ -98,9 +143,10 @@ func ListKeys(c *gin.Context) {
 		nextCursor = encodeCursor(keys[limit-1].Name)
 		keys = keys[:limit]
 	}
+	costs := clientKeyCosts("")
 	items := make([]gin.H, 0, len(keys))
 	for i := range keys {
-		items = append(items, clientKeyResponse(&keys[i]))
+		items = append(items, clientKeyResponse(&keys[i], costs[keys[i].Name]))
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "next_cursor": nextCursor})
 }
@@ -112,7 +158,7 @@ func GetKey(c *gin.Context) {
 		apierr.NotFound(c, apierr.CodeKeyNotFound, "key '"+c.Param("name")+"' not found", "GET /api/v1/keys")
 		return
 	}
-	c.JSON(http.StatusOK, clientKeyResponse(key))
+	c.JSON(http.StatusOK, clientKeyResponse(key, clientKeyCost(key.Name)))
 }
 
 // CreateKey POST /api/v1/keys：响应含一次性明文。
@@ -163,7 +209,7 @@ func CreateKey(c *gin.Context) {
 		return
 	}
 	writeAudit(c, "create", "client_key", name)
-	response := clientKeyResponse(saved)
+	response := clientKeyResponse(saved, clientKeyCost(saved.Name))
 	response["key"] = plain
 	c.JSON(http.StatusOK, response)
 }
@@ -222,7 +268,7 @@ func PutKey(c *gin.Context) {
 		return
 	}
 	writeAudit(c, "update", "client_key", name)
-	c.JSON(http.StatusOK, clientKeyResponse(saved))
+	c.JSON(http.StatusOK, clientKeyResponse(saved, clientKeyCost(saved.Name)))
 }
 
 // DeleteKey DELETE /api/v1/keys/{name}
@@ -276,7 +322,7 @@ func RotateKey(c *gin.Context) {
 		return
 	}
 	writeAudit(c, "rotate", "client_key", name)
-	response := clientKeyResponse(saved)
+	response := clientKeyResponse(saved, clientKeyCost(saved.Name))
 	response["key"] = plain
 	c.JSON(http.StatusOK, response)
 }
