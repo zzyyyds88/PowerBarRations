@@ -320,6 +320,12 @@ func DeleteLaneByName(name string) error {
 // 的车道名（去重、升序）。用于在渠道编辑/同步模型时防止"车道对某个路由键失去成员
 // 来源"却无人知晓（api-spec §5.3、§5.7 的守卫口径）。
 func RemovedModelLaneRefs(channelId int, removed []string) ([]string, error) {
+	return removedModelLaneRefsWith(DB, channelId, removed)
+}
+
+// removedModelLaneRefsWith 与 RemovedModelLaneRefs 同义，但使用传入的 *gorm.DB：
+// 供已在事务中的调用方复用同一连接，避免"事务持锁 + 全局连接再查"在 SQLite 下死锁。
+func removedModelLaneRefsWith(db *gorm.DB, channelId int, removed []string) ([]string, error) {
 	removedSet := map[string]bool{}
 	for _, m := range removed {
 		if m = strings.TrimSpace(m); m != "" {
@@ -330,15 +336,22 @@ func RemovedModelLaneRefs(channelId int, removed []string) ([]string, error) {
 		return nil, nil
 	}
 	var members []LaneMember
-	if err := DB.Where("channel_id = ?", channelId).Find(&members).Error; err != nil {
+	if err := db.Where("channel_id = ?", channelId).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	laneIds := make([]int, 0, len(members))
+	for _, member := range members {
+		laneIds = append(laneIds, member.LaneId)
+	}
+	if len(laneIds) == 0 {
+		return nil, nil
+	}
+	var lanes []Lane
+	if err := db.Where("id IN ?", laneIds).Find(&lanes).Error; err != nil {
 		return nil, err
 	}
 	names := map[string]bool{}
-	for _, member := range members {
-		lane, err := GetLaneById(member.LaneId)
-		if err != nil {
-			continue
-		}
+	for _, lane := range lanes {
 		if removedSet[strings.TrimSpace(lane.Name)] {
 			names[lane.Name] = true
 		}

@@ -192,6 +192,21 @@ type ModelDeleteResult struct {
 // DeleteModelMetadata optionally removes exact model names from every channel.
 // Channel removal requires exact-match metadata records. Pricing removal
 // clears the selected names without expanding metadata matching rules.
+// LaneReferenceError 表示"要移除的模型仍被车道引用"，携带 渠道名 → 车道名 清单。
+// 调用方据此返回 conflict 包络，避免"模型已删、路由页仍显示可调用"的静默不一致。
+type LaneReferenceError struct {
+	Blocked map[string][]string
+}
+
+func (e *LaneReferenceError) Error() string {
+	names := make([]string, 0, len(e.Blocked))
+	for name := range e.Blocked {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return "models still referenced by lanes on channels: " + strings.Join(names, ", ")
+}
+
 func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (ModelDeleteResult, error) {
 	result := ModelDeleteResult{}
 	if len(ids) == 0 || len(ids) > 1000 {
@@ -230,6 +245,32 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 			// update models and abilities in the same transaction as metadata.
 			if err := lockForUpdate(tx).Select("id", "models", "status", "group", "tag").Order("id").Find(&channels).Error; err != nil {
 				return err
+			}
+			// 车道引用守卫：被移除的路由键若命中同名车道且该车道有该渠道成员，默认拒绝，
+			// 避免"模型已删、路由页仍显示可调用"的静默不一致（与渠道编辑/sync-models 同口径）。
+			blocked := map[string][]string{}
+			for _, channel := range channels {
+				removedHere := make([]string, 0)
+				for _, name := range channel.GetModels() {
+					if trimmed := strings.TrimSpace(name); trimmed != "" {
+						if _, remove := names[trimmed]; remove {
+							removedHere = append(removedHere, trimmed)
+						}
+					}
+				}
+				if len(removedHere) == 0 {
+					continue
+				}
+				refs, refErr := removedModelLaneRefsWith(tx, channel.Id, removedHere)
+				if refErr != nil {
+					return refErr
+				}
+				if len(refs) > 0 {
+					blocked[channel.Name] = refs
+				}
+			}
+			if len(blocked) > 0 {
+				return &LaneReferenceError{Blocked: blocked}
 			}
 			for _, channel := range channels {
 				models := channel.GetModels()

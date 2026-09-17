@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"sort"
 	"strconv"
@@ -177,6 +178,11 @@ func DeleteModelMeta(c *gin.Context) {
 	}
 	result, err := model.DeleteModelMetadata([]int{id}, removeFromChannels, removePricing)
 	if err != nil {
+		var laneErr *model.LaneReferenceError
+		if errors.As(err, &laneErr) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "code": "conflict", "message": "模型仍被车道引用，已取消删除", "data": gin.H{"blocked": laneErr.Blocked}})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
@@ -200,6 +206,11 @@ func BatchDeleteModelMeta(c *gin.Context) {
 	}
 	result, err := model.DeleteModelMetadata(request.ModelIDs, request.RemoveFromChannels, request.RemovePricing)
 	if err != nil {
+		var laneErr *model.LaneReferenceError
+		if errors.As(err, &laneErr) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "code": "conflict", "message": "模型仍被车道引用，已取消删除", "data": gin.H{"blocked": laneErr.Blocked}})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}
