@@ -20,6 +20,13 @@ func TestNormalizeChannelBaseURL(t *testing.T) {
 		{"openai with v1 and trailing slash", constant.ChannelTypeOpenAI, "https://host/v1/", "https://host"},
 		{"openai with path prefix", constant.ChannelTypeOpenAI, "https://host/openai/v1", "https://host/openai"},
 		{"openai unrelated path", constant.ChannelTypeOpenAI, "https://host/api", "https://host/api"},
+		// 用户直接把完整端点粘进 base_url 是常态（第三方中转只给这一个地址）。
+		{"openai full chat endpoint", constant.ChannelTypeOpenAI, "https://host/v1/chat/completions", "https://host"},
+		{"openai chat endpoint no version", constant.ChannelTypeOpenAI, "https://host/chat/completions", "https://host"},
+		{"openai full responses endpoint", constant.ChannelTypeOpenAI, "https://host/v1/responses", "https://host"},
+		{"openai responses compact endpoint", constant.ChannelTypeOpenAI, "https://host/v1/responses/compact", "https://host"},
+		{"openai prefix plus full endpoint", constant.ChannelTypeOpenAI, "https://host/openai/v1/chat/completions", "https://host/openai"},
+		{"anthropic full messages endpoint", constant.ChannelTypeAnthropic, "https://host/v1/messages", "https://host"},
 		{"anthropic with v1", constant.ChannelTypeAnthropic, "https://api.anthropic.com/v1", "https://api.anthropic.com"},
 		{"gemini with v1beta", constant.ChannelTypeGemini, "https://generativelanguage.googleapis.com/v1beta", "https://generativelanguage.googleapis.com"},
 		{"gemini with v1", constant.ChannelTypeGemini, "https://host/v1", "https://host"},
@@ -32,6 +39,26 @@ func TestNormalizeChannelBaseURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := normalizeChannelBaseURL(tc.channelType, tc.raw); got != tc.want {
 				t.Fatalf("normalizeChannelBaseURL(%d, %q) = %q, want %q", tc.channelType, tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDeriveOpenAICompatibleModelsURL 覆盖 Custom(8) 未配置 /v1/models 路由时的
+// 兜底探测地址推导（ui-spec §6.4）。
+func TestDeriveOpenAICompatibleModelsURL(t *testing.T) {
+	cases := []struct{ name, raw, want string }{
+		{"full chat endpoint", "https://host/v1/chat/completions", "https://host/v1/models"},
+		{"bare host", "https://host", "https://host/v1/models"},
+		{"version segment", "https://host/v1", "https://host/v1/models"},
+		{"prefix plus endpoint", "https://host/compatible-mode/v1/chat/completions", "https://host/compatible-mode/v1/models"},
+		{"gemini version", "https://host/v1beta", "https://host/v1beta/models"},
+		{"trailing slash", "https://host/v1/chat/completions/", "https://host/v1/models"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := DeriveOpenAICompatibleModelsURL(tc.raw); got != tc.want {
+				t.Fatalf("DeriveOpenAICompatibleModelsURL(%q) = %q, want %q", tc.raw, got, tc.want)
 			}
 		})
 	}

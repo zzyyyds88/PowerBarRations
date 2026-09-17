@@ -97,7 +97,9 @@
 - **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
-- `base_url`：**允许带版本段结尾**。OpenAI/Anthropic 可填到 `https://host/v1`，Gemini 可填到 `https://host/v1beta`；网关在拼接上游路径前会**剥掉结尾的版本段**（`/v1`、`/v1beta`、`/v1alpha`），因此填 `https://host` 与填 `https://host/v1` 等价，不会出现 `/v1/v1`。旧数据（不含版本段）行为不变。
+- `base_url`：**允许带版本段或完整端点结尾**。对 OpenAI/Anthropic/Gemini 渠道，网关拼接上游路径前会**剥掉结尾的完整端点**（`/chat/completions`、`/responses[/compact]`、`/messages`、`/completions`、`/embeddings`）**与版本段**（`/v1`、`/v1beta`、`/v1alpha`），因此下面三种写法等价、不会出现 `/v1/v1` 或 `…/v1/chat/completions/v1/…`：
+  `https://host` ≡ `https://host/v1` ≡ `https://host/v1/chat/completions`。
+  旧数据（只填 host 或版本段）行为不变；Custom(8) 的 `base_url` 原样保留（支持 `{model}` 变量与完整端点）。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。**渠道未配价即不折算（0）——没有全局单价层**。省略该字段时保持原值。
 - `model_mapping`：**渠道模型映射**（JSON dict，路由键 → 上游真名），用于上游命名与路由键不一致的情况。车道成员解析上游名时：成员级 `upstream_model`（非空且≠路由键）> 本映射 > 路由键。省略该字段时保持原值。
 

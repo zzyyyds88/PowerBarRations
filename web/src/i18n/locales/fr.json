@@ -6285,6 +6285,8 @@
     "OpenAI compatible (/v1/chat/completions)": "Compatible OpenAI (/v1/chat/completions)",
     "OpenAI Responses (/v1/responses)": "OpenAI Responses (/v1/responses)",
     "Anthropic (/v1/messages)": "Anthropic (/v1/messages)",
-    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)"
+    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)",
+    "Added {{count}} models": "{{count}} modèles ajoutés",
+    "Model name (separate multiple with commas or newlines)": "Nom du modèle (séparez-en plusieurs par des virgules ou des retours à la ligne)"
   }
 }

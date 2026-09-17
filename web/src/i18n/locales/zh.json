@@ -6285,6 +6285,8 @@
     "OpenAI compatible (/v1/chat/completions)": "OpenAI 兼容（/v1/chat/completions）",
     "OpenAI Responses (/v1/responses)": "OpenAI Responses（/v1/responses）",
     "Anthropic (/v1/messages)": "Anthropic（/v1/messages）",
-    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini（/v1beta/models/{model}:generateContent）"
+    "Gemini (/v1beta/models/{model}:generateContent)": "Gemini（/v1beta/models/{model}:generateContent）",
+    "Added {{count}} models": "已添加 {{count}} 个模型",
+    "Model name (separate multiple with commas or newlines)": "模型名（多个可用逗号或换行分隔）"
   }
 }

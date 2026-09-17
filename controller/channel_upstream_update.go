@@ -461,6 +461,23 @@ func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string)
 	}
 	key = strings.TrimSpace(key)
 
+	// 兜底（ui-spec §6.4）：Custom 渠道若没有配置 /v1/models 路由，就按 OpenAI 兼容
+	// 约定从 base_url 推导模型清单地址。第三方中转通常只提供一个完整 chat 端点
+	// （base_url 形如 https://host/v1/chat/completions），配置里不会有 advanced_routes；
+	// 此时旧逻辑直接报错，探测永远不可用。
+	if _, ok := channel.GetOtherSettings().AdvancedCustom.ModelListRoute(); !ok {
+		url := model.DeriveOpenAICompatibleModelsURL(baseURL)
+		headers, err := buildFetchModelsHeaders(channel, key)
+		if err != nil {
+			return nil, sanitizeFetchModelsError(err, key)
+		}
+		body, err := getFetchModelsResponseBody(http.MethodGet, url, channel, headers)
+		if err != nil {
+			return nil, sanitizeFetchModelsError(err, key)
+		}
+		return parseOpenAIModelIDs(body)
+	}
+
 	info := &relaycommon.RelayInfo{
 		RelayFormat:    types.RelayFormatOpenAI,
 		RelayMode:      relayconstant.RelayModeUnknown,

@@ -540,13 +540,32 @@ func (channel *Channel) GetBaseURL() string {
 // /v1beta 以外的更长后缀。
 var channelVersionSegments = []string{"/v1alpha", "/v1beta", "/v1"}
 
-// normalizeChannelBaseURL 去掉 base_url 结尾的版本段，使"填到 https://host/v1"与
-// "填到 https://host" 等价：各协议适配器随后会自行补全 /v1/chat/completions、
-// /v1/messages、/v1beta/models/{model}:generateContent，因此不会出现 /v1/v1。
+// channelEndpointSuffixes 是用户可能直接粘进 base_url 的完整端点路径。按长度
+// 降序匹配（/responses/compact 先于 /responses）。
+var channelEndpointSuffixes = []string{
+	"/chat/completions",
+	"/responses/compact",
+	"/responses",
+	"/messages",
+	"/completions",
+	"/embeddings",
+}
+
+// normalizeChannelBaseURL 把用户填的 API 地址归一化成"版本根 + 自定义前缀"，让下面
+// 三种写法等价（ui-spec §6.4 / api-spec §4.1）：
 //
-// 只对自行拼接版本段的协议型渠道生效：OpenAI(1)、Anthropic(14)、Gemini(24)。
-// Custom(8) 有自己的 {model} 变量与完整端点补全规则，原样保留；其余厂商类型
-// （Azure 等）路径结构不同，也不改动。
+//	https://host
+//	https://host/v1
+//	https://host/v1/chat/completions   ← 完整端点（很多第三方中转只给这个地址）
+//
+// 各协议适配器随后会自行补全 /v1/chat/completions、/v1/messages、
+// /v1beta/models/{model}:generateContent，因此既不会出现 /v1/v1，也不会
+// /v1/chat/completions/v1/chat/completions。历史 bug：base_url 填完整端点时，
+// 转发与"探测上游模型"都会拼成 .../v1/chat/completions/v1/... 而 404。
+//
+// 只对自行拼接路径的协议型渠道生效：OpenAI(1)、Anthropic(14)、Gemini(24)。
+// Custom(8) 有自己的 {model} 变量与完整端点补全规则，base_url 必须原样保留；
+// 其余厂商类型（Azure 等）路径结构不同，也不改动。
 func normalizeChannelBaseURL(channelType int, raw string) string {
 	switch channelType {
 	case constant.ChannelTypeOpenAI, constant.ChannelTypeAnthropic, constant.ChannelTypeGemini:
@@ -555,12 +574,46 @@ func normalizeChannelBaseURL(channelType int, raw string) string {
 	}
 	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
 	lower := strings.ToLower(trimmed)
+	stripped := false
+	for _, endpoint := range channelEndpointSuffixes {
+		if strings.HasSuffix(lower, endpoint) {
+			trimmed = strings.TrimRight(trimmed[:len(trimmed)-len(endpoint)], "/")
+			lower = strings.ToLower(trimmed)
+			stripped = true
+			break
+		}
+	}
 	for _, segment := range channelVersionSegments {
 		if strings.HasSuffix(lower, segment) {
 			return trimmed[:len(trimmed)-len(segment)]
 		}
 	}
+	if stripped {
+		return trimmed
+	}
 	return raw
+}
+
+// DeriveOpenAICompatibleModelsURL 从"可能是完整端点"的 API 地址推导 OpenAI 兼容的
+// 模型清单地址，用于 Custom(8) 未配置 /v1/models 路由时的兜底探测（ui-spec §6.4）：
+// 已带版本段 → {base}/models；否则 → {base}/v1/models。
+func DeriveOpenAICompatibleModelsURL(raw string) string {
+	base := strings.TrimRight(strings.TrimSpace(raw), "/")
+	lower := strings.ToLower(base)
+	for _, endpoint := range channelEndpointSuffixes {
+		if strings.HasSuffix(lower, endpoint) {
+			base = strings.TrimRight(base[:len(base)-len(endpoint)], "/")
+			lower = strings.ToLower(base)
+			break
+		}
+	}
+	switch {
+	case strings.HasSuffix(lower, "/v1beta"), strings.HasSuffix(lower, "/v1alpha"),
+		strings.HasSuffix(lower, "/v1"):
+		return base + "/models"
+	default:
+		return base + "/v1/models"
+	}
 }
 
 func (channel *Channel) GetModelMapping() string {

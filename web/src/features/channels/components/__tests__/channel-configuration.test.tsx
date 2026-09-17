@@ -20,6 +20,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   act,
   cleanup,
+  createEvent,
   fireEvent,
   render,
   screen,
@@ -1030,6 +1031,46 @@ test('selected models can be removed and manual additions are trimmed and de-dup
   )
   await user.click(models.getByRole('button', { name: 'Add' }))
   expect(models.getByText('custom-lane')).toBeVisible()
+  expect(models.getByLabelText('Add a model manually')).toHaveValue('')
+})
+
+test('several model names typed with separators are added in one go', async () => {
+  editingChannel.models = ''
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const models = modelsGroup()
+
+  // 一次输入多个（逗号/顿号/空白混用）应全部加入；空白与批内重复被去掉。
+  fireEvent.change(models.getByLabelText('Add a model manually'), {
+    target: { value: 'alpha, beta、gamma alpha  delta' },
+  })
+  await user.click(models.getByRole('button', { name: 'Add' }))
+  for (const name of ['alpha', 'beta', 'gamma', 'delta']) {
+    expect(models.getByText(name)).toBeVisible()
+  }
+  expect(models.getAllByText('alpha')).toHaveLength(1)
+  expect(models.getByLabelText('Add a model manually')).toHaveValue('')
+})
+
+test('pasting a newline-separated model list adds every name', async () => {
+  editingChannel.models = ''
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const models = modelsGroup()
+  const input = models.getByLabelText('Add a model manually')
+
+  // 单行 input 会丢掉换行，靠 onPaste 读剪贴板原文整批加入。
+  const pasteEvent = createEvent.paste(input)
+  Object.defineProperty(pasteEvent, 'clipboardData', {
+    value: { getData: () => 'pasted-one\npasted-two, pasted-three' },
+  })
+  fireEvent(input, pasteEvent)
+
+  for (const name of ['pasted-one', 'pasted-two', 'pasted-three']) {
+    expect(models.getByText(name)).toBeVisible()
+  }
   expect(models.getByLabelText('Add a model manually')).toHaveValue('')
 })
 

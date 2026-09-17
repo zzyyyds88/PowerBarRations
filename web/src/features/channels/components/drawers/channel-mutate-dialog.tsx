@@ -1083,17 +1083,37 @@ export function ChannelMutateDialog({
     await copyToClipboard(models)
   }, [form, copyToClipboard, t])
 
-  const handleAddManualModel = useCallback(() => {
-    const model = newModelDraft.trim()
-    if (!model) return
-    if (currentModelsArray.includes(model)) {
-      toast.info(t('Model already exists'))
+  const handleAddManualModel = useCallback(
+    (raw?: string) => {
+      // 支持一次输入/粘贴多个模型名（逗号、顿号、空白或换行分隔），例如直接从上游
+      // 文档复制一列；只输入一个时行为不变，回车即添加。粘贴走 raw（单行 input 会
+      // 丢掉换行，必须在 onPaste 里先取剪贴板原文）。
+      const parsed = (raw ?? newModelDraft)
+        .split(/[\s,，、\n]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+      if (parsed.length === 0) return
+      const known = new Set(currentModelsArray)
+      const additions: string[] = []
+      for (const model of parsed) {
+        if (known.has(model)) continue
+        known.add(model)
+        additions.push(model)
+      }
+      if (additions.length === 0) {
+        toast.info(t('Model already exists'))
+      } else {
+        updateModels([...currentModelsArray, ...additions])
+        if (additions.length > 1) {
+          toast.success(
+            t('Added {{count}} models', { count: additions.length })
+          )
+        }
+      }
       setNewModelDraft('')
-      return
-    }
-    updateModels([...currentModelsArray, model])
-    setNewModelDraft('')
-  }, [currentModelsArray, newModelDraft, t, updateModels])
+    },
+    [currentModelsArray, newModelDraft, t, updateModels]
+  )
 
   const handleRemoveModel = useCallback(
     (model: string) => {
@@ -2553,7 +2573,7 @@ export function ChannelMutateDialog({
     <div className='scroll-mt-4'>
       <ChannelModelsSection>
         <div className='space-y-5'>
-          <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
+          <div className='space-y-2'>
             <div className='space-y-2'>
               <h3 className='text-sm font-semibold'>
                 {t('Fetch models from upstream')}
@@ -2577,7 +2597,7 @@ export function ChannelMutateDialog({
                   <div
                     role='status'
                     aria-live='polite'
-                    className='border-border/60 bg-muted/20 mt-4 space-y-3 rounded-lg border p-3'
+                    className='border-border/60 bg-muted/20 space-y-3 rounded-lg border p-3'
                   >
                     <div className='flex flex-wrap items-center justify-between gap-2'>
                       <div className='flex min-w-0 items-center gap-2'>
@@ -2701,7 +2721,9 @@ export function ChannelMutateDialog({
                     <FormControl>
                       <Input
                         aria-label={t('Add a model manually')}
-                        placeholder={t('Model name')}
+                        placeholder={t(
+                          'Model name (separate multiple with commas or newlines)'
+                        )}
                         value={newModelDraft}
                         onChange={(event) =>
                           setNewModelDraft(event.target.value)
@@ -2711,6 +2733,16 @@ export function ChannelMutateDialog({
                           event.preventDefault()
                           handleAddManualModel()
                         }}
+                        onPaste={(event) => {
+                          // 单行 input 会丢掉换行：先取剪贴板原文，含分隔符就整批添加。
+                          const text =
+                            event.clipboardData?.getData('text') ?? ''
+                          if (!text.trim() || !/[\s,，、]/.test(text.trim())) {
+                            return
+                          }
+                          event.preventDefault()
+                          handleAddManualModel(text)
+                        }}
                       />
                     </FormControl>
                     <Button
@@ -2718,7 +2750,7 @@ export function ChannelMutateDialog({
                       variant='outline'
                       className='shrink-0'
                       disabled={!newModelDraft.trim()}
-                      onClick={handleAddManualModel}
+                      onClick={() => handleAddManualModel()}
                     >
                       <Plus className='mr-2 h-4 w-4' aria-hidden='true' />
                       {t('Add')}
