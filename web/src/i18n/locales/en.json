@@ -6287,6 +6287,8 @@
     "Anthropic (/v1/messages)": "Anthropic (/v1/messages)",
     "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)",
     "Added {{count}} models": "Added {{count}} models",
-    "Model name (separate multiple with commas or newlines)": "Model name (separate multiple with commas or newlines)"
+    "Model name (separate multiple with commas or newlines)": "Model name (separate multiple with commas or newlines)",
+    "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in",
+    "then add members and save in": "then add members and save in"
   }
 }

@@ -6287,6 +6287,8 @@
     "Anthropic (/v1/messages)": "Anthropic（/v1/messages）",
     "Gemini (/v1beta/models/{model}:generateContent)": "Gemini（/v1beta/models/{model}:generateContent）",
     "Added {{count}} models": "已添加 {{count}} 个模型",
-    "Model name (separate multiple with commas or newlines)": "模型名（多个可用逗号或换行分隔）"
+    "Model name (separate multiple with commas or newlines)": "模型名（多个可用逗号或换行分隔）",
+    "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "本页只维护模型档案；模型要能调用，必须保存过车道：先在",
+    "then add members and save in": "声明，再到"
   }
 }

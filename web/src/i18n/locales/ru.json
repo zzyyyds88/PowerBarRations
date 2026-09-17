@@ -6287,6 +6287,8 @@
     "Anthropic (/v1/messages)": "Anthropic (/v1/messages)",
     "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)",
     "Added {{count}} models": "Добавлено моделей: {{count}}",
-    "Model name (separate multiple with commas or newlines)": "Имя модели (несколько разделяйте запятыми или переносами строк)"
+    "Model name (separate multiple with commas or newlines)": "Имя модели (несколько разделяйте запятыми или переносами строк)",
+    "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "Эта страница управляет только метаданными моделей. Модель становится доступной только после сохранения маршрута: объявите её в",
+    "then add members and save in": "затем добавьте участников и сохраните в"
   }
 }

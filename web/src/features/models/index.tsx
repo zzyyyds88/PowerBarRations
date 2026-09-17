@@ -23,6 +23,7 @@ import { SectionPageLayout } from '@/components/layout'
 import { ModelsDialogs } from './components/models-dialogs'
 import { ModelsPrimaryButtons } from './components/models-primary-buttons'
 import { ModelsProvider } from './components/models-provider'
+import { ModelsRoleHint } from './components/models-role-hint'
 import { ModelsTable } from './components/models-table'
 
 function ModelsContent() {
@@ -38,7 +39,8 @@ function ModelsContent() {
           <ModelsPrimaryButtons />
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
-          <div className='flex h-full min-h-0 flex-col'>
+          <div className='flex h-full min-h-0 flex-col gap-3'>
+            <ModelsRoleHint />
             <div className='min-h-0 flex-1'>
               <ModelsTable />
             </div>

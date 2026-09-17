@@ -6287,6 +6287,8 @@
     "Anthropic (/v1/messages)": "Anthropic (/v1/messages)",
     "Gemini (/v1beta/models/{model}:generateContent)": "Gemini (/v1beta/models/{model}:generateContent)",
     "Added {{count}} models": "Đã thêm {{count}} mô hình",
-    "Model name (separate multiple with commas or newlines)": "Tên mô hình (phân tách nhiều mô hình bằng dấu phẩy hoặc xuống dòng)"
+    "Model name (separate multiple with commas or newlines)": "Tên mô hình (phân tách nhiều mô hình bằng dấu phẩy hoặc xuống dòng)",
+    "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "Trang này chỉ quản lý siêu dữ liệu mô hình. Mô hình chỉ gọi được sau khi lưu làn: khai báo nó trong",
+    "then add members and save in": "rồi thêm thành viên và lưu trong"
   }
 }

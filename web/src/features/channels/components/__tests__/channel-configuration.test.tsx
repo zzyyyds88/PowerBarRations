@@ -1055,7 +1055,6 @@ test('several model names typed with separators are added in one go', async () =
 
 test('pasting a newline-separated model list adds every name', async () => {
   editingChannel.models = ''
-  const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   const models = modelsGroup()

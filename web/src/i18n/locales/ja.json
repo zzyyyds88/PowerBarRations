@@ -6287,6 +6287,8 @@
     "Anthropic (/v1/messages)": "Anthropic（/v1/messages）",
     "Gemini (/v1beta/models/{model}:generateContent)": "Gemini（/v1beta/models/{model}:generateContent）",
     "Added {{count}} models": "{{count}} 件のモデルを追加しました",
-    "Model name (separate multiple with commas or newlines)": "モデル名（複数はカンマまたは改行で区切る）"
+    "Model name (separate multiple with commas or newlines)": "モデル名（複数はカンマまたは改行で区切る）",
+    "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "このページはモデルのメタデータのみを管理します。モデルを呼び出せるのはレーンを保存した後です。まず",
+    "then add members and save in": "で宣言し、次に"
   }
 }
