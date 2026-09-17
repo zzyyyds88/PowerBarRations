@@ -189,7 +189,7 @@ it('lets a super administrator remove pricing independently of channel removal',
     remove_pricing: true,
   })
   expect(invalidate).toHaveBeenCalledWith({
-    queryKey: ['model-pricing-config'],
+    queryKey: ['system-options'],
   })
   expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['channels'] })
 })

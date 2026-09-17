@@ -20,35 +20,8 @@ import type { ContentSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
-import { DashboardSection } from './dashboard-section'
-
-/**
- * Validate and coerce DataExportDefaultTime to a safe value
- */
-function validateDataExportDefaultTime(value: string): 'week' | 'hour' | 'day' {
-  if (value === 'week' || value === 'hour' || value === 'day') {
-    return value
-  }
-  // Default to 'hour' if value is unexpected
-  return 'hour'
-}
 
 const CONTENT_SECTIONS = [
-  {
-    id: 'dashboard',
-    titleKey: 'Data Dashboard',
-    build: (settings: ContentSettings) => (
-      <DashboardSection
-        defaultValues={{
-          DataExportEnabled: settings.DataExportEnabled,
-          DataExportInterval: settings.DataExportInterval,
-          DataExportDefaultTime: validateDataExportDefaultTime(
-            settings.DataExportDefaultTime
-          ),
-        }}
-      />
-    ),
-  },
   {
     id: 'api-info',
     titleKey: 'API Addresses',
@@ -75,7 +48,7 @@ const contentRegistry = createSectionRegistry<
   ContentSettings
 >({
   sections: CONTENT_SECTIONS,
-  defaultSection: 'dashboard',
+  defaultSection: 'api-info',
   basePath: '/system-settings/content',
   urlStyle: 'path',
 })

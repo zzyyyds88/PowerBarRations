@@ -19,16 +19,7 @@ var SystemName = "PowerBarRations"
 var Footer = ""
 var Logo = ""
 
-// var ChatLink = ""
-// var ChatLink2 = ""
 var QuotaPerUnit = 500 * 1000.0 // $0.002 / 1K tokens
-// 保留旧变量以兼容历史逻辑，实际展示由 general_setting.quota_display_type 控制
-var DisplayInCurrencyEnabled = true
-var DisplayTokenStatEnabled = true
-var DrawingEnabled = true
-var DataExportEnabled = true
-var DataExportInterval = 5         // unit: minute
-var DataExportDefaultTime = "hour" // unit: minute
 var DefaultCollapseSidebar = false // default value of collapse sidebar
 
 // Any options with "Secret", "Token" in its key won't be return by GetOptions
@@ -162,13 +153,6 @@ const (
 func IsValidateRole(role int) bool {
 	return role == RoleGuestUser || role == RoleCommonUser || role == RoleAdminUser || role == RoleRootUser
 }
-
-var (
-	FileUploadPermission    = RoleGuestUser
-	FileDownloadPermission  = RoleGuestUser
-	ImageUploadPermission   = RoleGuestUser
-	ImageDownloadPermission = RoleGuestUser
-)
 
 // All duration's unit is seconds
 // Shouldn't larger then RateLimitKeyExpirationDuration

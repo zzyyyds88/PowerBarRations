@@ -29,7 +29,6 @@ import {
   Gauge,
   Info,
   Loader2,
-  Settings,
   Trash2,
 } from 'lucide-react'
 import {
@@ -1250,19 +1249,6 @@ function FailureResultContent({
         {summary}
       </p>
       <div className='flex shrink-0 flex-wrap items-center justify-end gap-1.5'>
-        {isModelPriceError && (
-          <Button
-            variant='outline'
-            size='sm'
-            className='h-7 w-fit px-2 text-xs'
-            onClick={() =>
-              window.open('/system-settings/billing/model-pricing', '_blank')
-            }
-          >
-            <Settings className='mr-1 h-3 w-3 shrink-0' />
-            {t('Go to Settings')}
-          </Button>
-        )}
         {details && (
           <Button
             variant='ghost'

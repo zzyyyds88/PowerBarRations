@@ -27,9 +27,6 @@ import {
 const defaultContentSettings: ContentSettings = {
   'console_setting.api_info': '[]',
   'console_setting.api_info_enabled': true,
-  DataExportEnabled: false,
-  DataExportDefaultTime: 'hour',
-  DataExportInterval: 5,
   Chats: '[]',
 }
 
