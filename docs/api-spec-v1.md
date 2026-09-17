@@ -237,12 +237,24 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/keys` | 列表 |
+| GET | `/api/keys` | 列表（每项含只读 `cost`） |
 | POST | `/api/keys` | 创建（响应含一次性明文） |
-| GET | `/api/keys/{name}` | 详情 |
+| GET | `/api/keys/{name}` | 详情（含只读 `cost`） |
 | PUT | `/api/keys/{name}` | 更新（不含明文） |
 | DELETE | `/api/keys/{name}` | 删除 |
 | POST | `/api/keys/{name}/rotate` | 轮换（响应含新明文一次） |
+
+客户端密钥对象（`GET /api/keys` 元素与详情）字段：`id` / `name` / `enabled` /
+`lane_policy{mode,allow_lanes,deny_lanes}` / `ip_allowlist` / `rate_limit_rpm` /
+`max_concurrency` / `expires_at` / `notes` / `key_prefix` / `created_at` /
+`updated_at` / `last_used_at` / **`cost`**。
+
+- **`cost`（只读，number，单位元）**：该令牌的**上游折算花费**，等于
+  `GET /api/stats?group_by=key` 中同名 `key_name` 的 `estimated_cost` 跨时间总计。
+  数据源是**小时聚合表**（与看板/日志同源），因此 `POST /logs/prune` 清理明细后该值不变。
+  从无请求或聚合表为空时为 `0`。该字段是**统计展示**，不参与任何鉴权、限额或拒绝逻辑。
+- PBR **没有额度语义**：不存在 `remain_quota` / `used_quota` / `unlimited_quota` /
+  钱包 / 订阅字段（design-v1 §1.3、token-spec-v1.md §5）。创建/更新请求体也**不接受**额度字段。
 
 ### 5.5 观测
 
@@ -659,7 +671,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
 | 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
 | 管理员日志 | `/api/log/**` |
-| 系统任务 / 系统信息 / 性能 | `/api/system-task/**`、`/api/system-info/**`、`/api/performance/**`、`/api/perf-metrics/**` |
+| 系统任务 / 性能 | `/api/system-task/**`、`/api/performance/**`、`/api/perf-metrics/**` |
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
 导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据等"控制台运维面"

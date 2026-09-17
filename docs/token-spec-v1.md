@@ -147,6 +147,10 @@ type LanePolicy struct {
 }
 ```
 
+> **`cost` 不是 `ClientKey` 的存储字段**：它是响应期由小时聚合表派生的只读统计值
+> （`SUM(cost_sum) WHERE group_kind='key' AND group_key=key_name`，单位元），
+> 与看板/日志同源，故明细 `logs/prune` 后不变。见 §3.7 与 api-spec §5.4。
+
 ### 3.2 车道权限解析（消歧义）
 
 ```
@@ -200,7 +204,8 @@ type LanePolicy struct {
 ### 3.7 统计与"令牌面板"
 
 - 每个请求记 `key_id/key_name`；按月/日与车道/渠道聚合，供控制台"令牌面板"（`ui-spec-v1.md` §6.5，迁移自线上 `apikey-dashboard`）。
-- 统计只读，不反哺准入（不做"超支停用"）。
+- **「消耗」列 = 该令牌的上游折算花费**（元），读 `pbr_stats_hourly`（`group_kind='key'`）的 `SUM(cost_sum)`，经 `GET /api/keys` 的只读 `cost` 字段暴露（api-spec §5.4）。它取代上游面板的"额度/剩余/已用"——PBR 没有额度、余额、钱包与订阅。
+- 统计只读，不反哺准入（不做"超支停用"）；**`cost` 绝不影响密钥是否可用**。
 
 ---
 
@@ -227,4 +232,6 @@ type LanePolicy struct {
 - 不做用户/账号/注册/登录名，不做角色与授权（casbin），不做 2FA/passkey/OAuth。
 - 不做额度、余额、扣费、`unlimited_quota`、`group`、`cross_group_retry`。
 - 不做"密钥过期即停服务"以外的额度语义；`ExpiresAt` 仅作安全阀。
+  - 令牌面板**只显示「消耗」（上游折算花费，元）**这一只读统计，不显示额度/剩余/余额/订阅；
+    控制台令牌表单也不含额度字段。
 - 不做密钥明文入库；`KeyHash` 之外的任何字段都不得含明文。
