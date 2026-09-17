@@ -4,7 +4,8 @@
 请求里的 `model` 就是路由键：渠道只声明它提供哪些模型（以及上游真名映射），**车道是唯一
 路由入口**——把成员链固化成车道后（一条命令 `POST /api/lanes/seed`，或逐条 `PUT /api/lanes/{model}`），
 网关按车道顺序做故障转移（上游1的模型1 → 上游2的模型1）。没有车道的模型一律 `503`，
-与"上游全挂"同形；车道支持自定义顺序、成员改名、池化不同上游的不同模型名与四种模式。
+与"上游全挂"同形；车道支持自定义顺序、成员改名、池化不同上游的不同模型名与两种模式
+（`failover` 默认 / `manual`）。
 
 对下游协议零破坏：存量车道名与 `/v1/*` 协议、错误语义一律不变，下游只改 `base_url`。
 
@@ -100,7 +101,7 @@ docker run -d --name pbr -p 5700:5700 \
   一律 `503 No available channel for model <X>`。
 - 一步固化：`POST /api/v1/lanes/seed`（为渠道已声明但无车道的模型生成 failover 车道，初始顺序按渠道 id 升序，幂等；
   `?dry_run=true` 先看将创建哪些），或按 §2.2 手工建/改。
-- **渠道没有优先级/权重**（已物理删除）：路由顺序只由车道的成员顺序决定，在模型页的「路由与故障切换」里用上移/下移人工排定。
+- **渠道没有优先级/权重**（已物理删除）：路由顺序只由车道的成员顺序决定，在侧边栏独立页「路由与故障切换」（`/routes`）里用上移/下移人工排定。
 - 上游命名与路由键不一致时，在**渠道**上配 `model_mapping`（路由键 → 上游真名），
   配置一次即对该渠道的所有车道成员生效；成员级 `upstream_model` 可再覆盖它。
 - 没有任何渠道声明该模型 → 同样是 `503 No available channel for model <X>`，
@@ -206,7 +207,7 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 | 账号 | 多用户 + 计费 | 单用户、无计费（成本只折算展示） |
 | 运维 | 改文件、拷库、抓前端 | 全部 HTTP API + OpenAPI |
 | 渠道字段 | 优先级/权重决定选路 | **渠道只有模型清单与上游真名映射**；顺序只在车道上 |
-| 模型清单 | 手工录入 | **填好上游即可自动探测** `/models` 并提示合并 |
+| 模型清单 | 手工录入 | 渠道编辑器内点「探测上游模型」按钮手动拉取 `/models`，按需勾选合并（不自动拉取） |
 | 成本视图 | 按渠道/模型单独看 | 看板可按**渠道 × 模型**看花费与 token |
 | 控制台冗余入口 | 厂商、部署、模型广场等 | **已删**：供应商与 io.net 部署前后端下线，模型页无"广场展示"，模型页为单一平面列表 |
 
@@ -261,7 +262,6 @@ server {
 ./pbr migrate --routing <octopus.db> --vendor <new-api.db> --target <pbr.db> \
               --report /tmp/report.json --keys octopus|newapi|both [--dry-run]
 ./pbr auth reset --db <pbr.db> --yes   # 清库内管理凭据→回到未初始化（破坏性，需 --yes）
-./pbr plugin <子命令>                  # 任务插件维护
 ```
 
 - `migrate` 的 `--keys` 只接受 `octopus|newapi|both`，非法值 `exit 2`；同名不同明文的客户端密钥会被

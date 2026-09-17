@@ -24,21 +24,22 @@
   3. 落成 PBR 渠道（按厂商地址去重，同名渠道只建一次）:
        PUT /api/v1/channels/{渠道名}
          {type: 协议族, base_url: 厂商地址, key: <原 key>, enabled: true,
-          models: [该渠道会真正提供的路由键集合]}    # 见第 4 步
-  4. 落成 PBR 车道成员:
-       若该 group 的成员顺序需要保留（自定义顺序 / 成员改名 / 池化不同上游的不同模型名）:
-         PUT /api/v1/lanes/{group 名}
-           members: [{channel, upstream_model: U, priority}]
-       否则不建车道：直接把 U 加进对应渠道的 models，即可靠隐式链自动成链。
+          models: [该渠道会真正提供的路由键集合]}    # 仅候选成员声明，不产生可调用路由
+  4. 旧 group 一律落成 PBR 显式车道:
+       PUT /api/v1/lanes/{group 名}
+         members: [{channel, upstream_model: U, priority}]
 ```
 
-**关键取舍**：旧 group 名不一定是模型名。PBR 的路由键是**下游请求里的 model**，所以：
+**关键取舍**：旧 group 名不一定是模型名。PBR 的路由键是**下游请求里的 model**，且**车道是唯一
+路由入口**（[ADR 0005](docs/adr/0005-lane-required-and-channel-model-mapping.md)：隐式链已删除）：
 
-- 如果旧部署是"下游请求 `M` → 路由层按 group 选成员 → 厂商层把 `M` 映射成 `U`"，
-  且 `M` 就是下游真实请求名，那么把 `U` 声明进渠道 `models` 即可（隐式链），
-  下游请求名 `M` 与 `U` 相同时甚至连车道都不用建。
-- 如果 `M ≠ U`（同一路由键在不同上游叫不同名字），必须建**显式车道**：车道名 = `M`，
-  成员 `upstream_model = U`。这正是 PBR 取代 `model_mapping` 的地方。
+- **每个旧 group 一律建一条显式车道**（车道名 = 旧 group 名，成员按旧顺序落库）。
+  `pbr migrate`（`internal/legacy/plan.go`）对每个旧分组生成 `LanePlan` 正是这么做的——
+  不存在"只把模型名写进渠道 `models` 就能路由"的路径；没建车道的模型请求一律 `503`。
+- 渠道的 `models` 只是**候选成员声明**：它让模型管理页能把该渠道列为"可添加成员"，
+  不代表可调用。
+- 若同一成员记录里 `M ≠ U`（下游请求名与上游真名不同），成员级 `upstream_model = U`
+  承担改名——这正是 PBR 取代旧 `model_mapping` 表的地方。
 
 ### 客户端凭据
 

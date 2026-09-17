@@ -23,7 +23,7 @@
 | 4 | 以同名分叉仓库为移植源 | **更正上游**：线上路由层真实上游是 `bestruirui/octopus`；六键/冷却/亲和以它为准；熔断器等属**新增** | 镜像 label 记录了 source/revision；分叉仓库 schema 已分叉（§2.7） |
 | 5 | 车道模式来源存疑 | 实现 **failover（默认）/ manual 两种**；`weighted` / `round_robin` 属新增后**已删除**（单用户自用网关不需要随机/轮询负载均衡，见 §7.2） | 用户确认：车道按顺序故障切换即可 |
 | 6 | 未明确 UI 去留 | **保留 UI 控制台**，以线上路由层前端为蓝本迁移功能原理（个人自用仍要能人看） | 应用户纠正：只砍计费，不砍功能；并指定 UI 蓝本 |
-| 6b | 控制台以**线上路由层前端**（octopus）为蓝本 | **改为以 new-api 前端为蓝本整体搬迁**（`web/` 直接取自上游源码），只删多用户/计费页面 | 应用户二次纠正：new-api 的渠道管理/模型管理与其后端接口天然配套（PBR 已保留 93 个基座路由，路径一致），而 octopus 蓝本需大量改造；直接在 new-api 前端上做减法风险与工作量都更低 |
+| 6b | 控制台以**线上路由层前端**（octopus）为蓝本 | **改为以 new-api 前端为蓝本整体搬迁**（`web/` 直接取自上游源码），只删多用户/计费页面 | 应用户二次纠正：new-api 的渠道管理/模型管理与其后端接口天然配套（PBR 已保留基座管理路由，路径一致；实注册数量以 `router/` 与 `/api/openapi.json` 为准），而 octopus 蓝本需大量改造；直接在 new-api 前端上做减法风险与工作量都更低 |
 | 7 | 未明确"开放 API 如何被调用" | 新增 api-spec 的 **AI 调用手册**：发现、认证、典型工作流 curl 示例 | 应用户要求写实 |
 | 8 | 车道是"必须先创建的对象" | **路由键 = 模型名**：渠道声明 `Models` 即自动成链，任意模型零配置可路由；显式车道降级为可选覆盖层 | 用户澄清的目标流程：下游请求模型1 → 上游1的模型1 → 上游2的模型1，且"这个模型可以是所有模型" |
 
@@ -127,7 +127,7 @@
 
 控制台**整体取自 new-api 上游 `web/`**（Rsbuild + React + TanStack Router + Base UI + Tailwind），在其上做减法与接线改造：删多用户/计费页面、把认证换成 PBR 口令会话、把"模型管理"接入 PBR 的成员链（故障切换）。
 
-**为什么直接搬**：PBR 已保留 new-api 的管理面后端（渠道 `/api/channel/**`、模型元数据 `/api/models/**`、厂商、部署、系统任务、性能、日志、`/api/option`、系统信息等 **93 个路由**），路径与前端调用**一一对应**；而删除的多用户/计费接口，恰好是本项目明确不要的部分。反过来，octopus 蓝本只有少量页面与 PBR 对应，其余都要重写。因此**在前端源码上做减法**比"以另一上游为蓝本重做"风险与工作量都更低，也更符合用户"其他功能全都要"的要求。
+**为什么直接搬**：PBR 已保留 new-api 的管理面后端（渠道 `/api/channel/**`、模型元数据 `/api/models/**`、系统任务、性能、日志、`/api/option`、系统信息等基座管理路由——路径与前端调用**一一对应**，实注册清单以 `router/` 与 `/api/openapi.json` 为准）；而删除的多用户/计费接口，恰好是本项目明确不要的部分。反过来，octopus 蓝本只有少量页面与 PBR 对应，其余都要重写。因此**在前端源码上做减法**比"以另一上游为蓝本重做"风险与工作量都更低，也更符合用户"其他功能全都要"的要求。
 
 - **构建**：Rsbuild（上游默认），产物交 Go `embed`；包管理沿用上游 `bun.lock`（如环境不便可用 pnpm）。
 - **保留**：渠道、模型、令牌、日志、仪表盘（数据看板）、试打台、系统设置、系统信息、性能指标、关于/法律页等**除多用户/计费外全部**。
@@ -243,10 +243,12 @@ type Option     struct { Key, Value string }
 | 端点 | 说明 |
 |---|---|
 | `POST /v1/chat/completions` | OpenAI 兼容，流式 SSE / 非流式 |
-| `POST /v1/responses` | OpenAI Responses |
+| `POST /v1/responses/compact` | OpenAI Responses 压缩入口（实注册名，见 `router/relay-router.go`） |
 | `POST /v1/messages` | Anthropic 入口 |
 | `POST /v1/embeddings` | OpenAI 兼容嵌入 |
 | `GET /v1/models` | 列出当前密钥可见的车道 |
+
+> 本表仅列常用子集；全量端点以 `router/relay-router.go` 的实注册与 `/api/openapi.json` 为准（另有 `/v1/completions`、图像、音频、rerank、Gemini 兼容等入口）。
 
 ### 4.1 必须保持的语义
 
@@ -377,7 +379,7 @@ type LaneRelayConfig struct {
 
 ```
 id, ts, lane_name, request_model, route_source, member_channel_id, member_channel_name, upstream_model,
-token_id, token_name, key_label, inbound_format, success, http_status, error_kind,
+token_id, key_name, inbound_format, success, http_status, error_kind,
 error_summary(≤2KB 截断), prompt_tokens, completion_tokens, cache_read_tokens,
 cache_write_tokens, reasoning_tokens, ttft_ms, total_ms, is_stream,
 attempts(JSON), total_attempts, estimated_cost(仅折算)
@@ -683,8 +685,11 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 16.4 存储与迁移版本
 
-- 带版本的 migration 列表（`internal/store/migrations/NNN_*.go`），启动时按序执行并记录到 `schema_migrations` 表。
-- 迁移必须幂等、可在事务内执行；失败即启动失败，不允许半可用状态。
+- 实现采用**幂等的 ad-hoc 迁移**（`model/main.go` 的 `migrateDB()`）：`AutoMigrate` 建表补列，
+  叠加一组可重复执行的手写修正函数（删渠道 priority/weight 列、删任务表、迁移审计日志等），
+  每次启动都全量跑一遍，靠函数自身的幂等性保证安全；**没有** `schema_migrations` 版本表，
+  也没有 `internal/store/migrations/` 目录。
+- 迁移失败即启动失败，不允许半可用状态。
 
 ### 16.5 日志保留
 
@@ -734,8 +739,8 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 | 11 | 开工基座 | **以 new-api 源码迁入为基座**，非净室重写；前端**同样直接搬迁上游 `web/`**（见 §2.8 / §10.5） |
 | 12 | 亲和默认值 | 默认 `member_affinity_seconds=0`（**与现网一致，避免故障切换后长时间粘在备用成员**），可配 |
 | 13 | 前端包管理与适配范围 | 前端直接搬迁 new-api 上游 `web/`（Rsbuild + Bun 锁文件；环境不便时可用 pnpm）；保留除多用户/计费外全部页面；唯一实质改造 = **模型管理页内联成员链（故障切换）**，并把认证接到 PBR 口令会话（见 §7.7） |
-| 14 | 控制台与路由面收敛 | **渠道不再有 `priority`/`weight`**（彻底删除，含 DB 列）：渠道只声明"提供哪些模型 + 上游真名映射"，路由顺序一律在车道上人工排定。**车道只留 `failover`/`manual`**。**删除厂商（Vendors）与 io.net 部署（Deployments）前后端**、删除模型页的"广场展示"（本项目无模型广场）。**定价口径**统一为"上游成本单价"：模型详情只保留上游单价，不出现倍率/计费表达式/分组定价等下游计费编辑器。**上游模型清单改为自动探测**：填好 base_url/key 即自动拉取 `/models` 并提示合并，手动"重新拉取"仅作刷新。**看板新增"渠道 × 模型"维度**，直接回答"哪个渠道、哪个模型花了多少钱、用了多少 token" |
-| 15 | 模型页结构 | 模型页是**单一平面列表 + 行内操作**（不再是多 Tab 分区）；「路由与故障切换」不再作为独立侧边栏入口，而是模型行内的操作抽屉 |
+| 14 | 控制台与路由面收敛 | **渠道不再有 `priority`/`weight`**（彻底删除，含 DB 列）：渠道只声明"提供哪些模型 + 上游真名映射"，路由顺序一律在车道上人工排定。**车道只留 `failover`/`manual`**。**删除厂商（Vendors）与 io.net 部署（Deployments）前后端**、删除模型页的"广场展示"（本项目无模型广场）。**定价口径**统一为"上游成本单价"：模型详情只保留上游单价，不出现倍率/计费表达式/分组定价等下游计费编辑器。**上游模型清单为手动按钮探测**：连接信息填好后点渠道编辑器内的「探测上游模型」按钮（手动触发，**不自动拉取**）调用上游 `/models`，候选按需勾选合并；后续变更标记过期并提示重新拉取（§10 与 ui-spec §6.4）。**看板新增"渠道 × 模型"维度**，直接回答"哪个渠道、哪个模型花了多少钱、用了多少 token" |
+| 15 | 模型页结构 | 模型页是**单一平面列表 + 行内操作**（不再是多 Tab 分区），专注模型目录（元数据、标签、渠道关联）；**「路由与故障切换」为侧边栏独立页 `/routes`**（模型页行内入口已移除），集中管理全部路由键的成员链与顺序 |
 
 ### 16.10 Webhook 事件通知（已定）
 
@@ -781,7 +786,7 @@ ui-spec 全部页面；`pnpm build` 零报错；产物 embed 进二进制。
 
 ### 非阻塞事项（切流阶段才需要，不挡开工）
 - 下游 base_url 的切换顺序与时间；旧两套实例停容器的时间。
-- 成本折算单价表的实际数值（属部署数据，运行期经 `/system/options` 注入）。
+- 成本折算单价表的实际数值（属部署数据，运行期在**各渠道的 `pbr_prices`** 里配置，无全局层）。
 - 旧库归档保留时长。
 - 切流策略可选**分步走**：PBR 先只接管路由层、渠道暂指旧厂商层，验证后再把渠道直连厂商（比一次性替换风险低）。默认按"一次性替换"设计，若要分步需在切流前告知。
 

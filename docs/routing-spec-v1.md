@@ -44,7 +44,7 @@
 ```go
 type Channel struct {
     Name         string
-    Models       []string          // 本渠道提供的路由键；可从上游自动探测或手工维护
+    Models       []string          // 本渠道提供的路由键；可经 sync-models 从上游拉取或手工维护（探测是手动按钮动作，不自动拉取）
     ModelMapping map[string]string // 路由键 → 上游真名（上游命名不一致时配置一次）
     // base_url/key/type/param_override/enabled/proxy 见 design-v1 §3.4
 }
@@ -129,7 +129,7 @@ type LaneRuntime struct {
 
 1. 读取客户端请求体一次；解析 `model`（车道名或成员别名）与 `stream`。
 2. 校验该请求所用客户端密钥对该车道/别名是否有权限（令牌规格见 token-spec）；无权 → `403 forbidden_scope`。
-3. 车道不存在 → `404 lane_not_found`（模型面按 §4.1 语义返回，不是 400 静默）。
+3. 车道不存在 → **`503` 快速失败**（与"成员全部耗尽"同形错误体，见 §1.1 与 §4.2；模型面没有"车道 404"语义，下游无需分支）。
 4. 进入尝试循环（每轮重新读取车道配置，支持热更新）：
    1. 选择成员（§2）。无可用 → **直接快抛 503**（见 §4.2，与线上"轮询等待"不同）。
    2. 解析渠道；渠道被禁用或不存在 → 记为该成员的一次失败（计入冷却/熔断），继续循环。

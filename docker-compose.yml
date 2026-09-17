@@ -9,7 +9,8 @@
 #   1) 设登录口令：POST /api/v1/setup  {"password":"<长随机串>"}（响应含一次性管理密钥）
 #   2) 建渠道：PUT /api/v1/channels/{name}
 #   3) 建客户端密钥：POST /api/v1/keys（响应含一次性明文）
-#   4) 下游把 base_url 指到 https://<host>:5700/v1（自签证书需在客户端信任或加 -k）。
+#   4) 下游把 base_url 指到 http://<host>:5700/v1（明文 HTTP 基线；需要 HTTPS 请在外部
+#      反向代理终结 TLS 后转发到本端口，见 README §5.1）。
 services:
   pbr:
     build:
