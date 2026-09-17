@@ -515,6 +515,18 @@ func TestPricingDefaultBrands(t *testing.T) {
 	}
 }
 
+// assertChannelBusinessFieldsEqual 比较渠道的**业务字段**，刻意排除 UpdatedAt。
+//
+// 为什么不能整结构 assert.Equal：渠道更新走 GORM 的 Updates，updated_at 由 GORM
+// 以"当前秒"写入；而期望值是 Create 时那次写入的秒。当两次写入恰好跨越秒边界时，
+// expected/actual 会差 1，产生与业务无关的偶发失败（本轮验收实测到过）。这里只断言
+// "只有 models 变化"这类真正的行为契约。
+func assertChannelBusinessFieldsEqual(t *testing.T, expected, actual model.Channel) {
+	t.Helper()
+	expected.UpdatedAt, actual.UpdatedAt = 0, 0
+	assert.Equal(t, expected, actual)
+}
+
 func TestModelDeletionDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
 		t.Run(dialect.kind, func(t *testing.T) {
@@ -584,7 +596,7 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 						for _, original := range channels {
 							var after model.Channel
 							require.NoError(t, db.First(&after, original.Id).Error)
-							assert.Equal(t, original, after)
+							assertChannelBusinessFieldsEqual(t, original, after)
 						}
 						return
 					}
@@ -603,7 +615,7 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					for _, original := range channels {
 						var after model.Channel
 						require.NoError(t, db.First(&after, original.Id).Error)
-						assert.Equal(t, original, after)
+						assertChannelBusinessFieldsEqual(t, original, after)
 					}
 					cached, err = model.GetRandomSatisfiedChannel("default", name, 0, nil)
 					require.NoError(t, err)
@@ -615,7 +627,7 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 						var after model.Channel
 						require.NoError(t, db.First(&after, original.Id).Error)
 						original.Models = []string{name + "-keep", "prefix-" + name, "", strings.ToUpper(name)}[i]
-						assert.Equal(t, original, after, "only the model list changes")
+						assertChannelBusinessFieldsEqual(t, original, after)
 					}
 					var abilities []model.Ability
 					require.NoError(t, db.Where("channel_id IN ?", []int{channels[0].Id, channels[1].Id, channels[2].Id, channels[3].Id}).Find(&abilities).Error)
