@@ -20,30 +20,25 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
-import { BadgeListCell, TruncatedCell } from '@/components/data-table'
+import { BadgeListCell } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from '@/components/ui/tooltip'
-import { formatTimestampToDate } from '@/lib/format'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
-import { getNameRuleConfig } from '../constants'
-import { parseModelTags, formatEndpointsDisplay } from '../lib'
-import { getModelChannelState } from '../lib/model-utils'
+import { parseModelTags, resolveModelIconKey } from '../lib'
 import type { Model } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
 import { useModels } from './models-provider'
 
+// 模型页 = 模型目录（ui-spec §6.3）：列集合收敛为四列——
+// 模型（含推断图标）/ 描述 / 标签 / 操作；不再有渠道分组、同步策略、
+// 展示策略、匹配类型、端点或时间戳等基座遗留列。
+
 export function useModelsColumns(): ColumnDef<Model>[] {
   const { t } = useTranslation()
   const { setCurrentRow, setOpen } = useModels()
-  const rules = getNameRuleConfig(t)
   return [
     {
       id: 'select',
@@ -71,17 +66,16 @@ export function useModelsColumns(): ColumnDef<Model>[] {
     {
       accessorKey: 'model_name',
       header: t('Model'),
-      size: 310,
-      minSize: 250,
+      size: 340,
+      minSize: 240,
       enableHiding: false,
       meta: { mobileTitle: true },
       cell: ({ row }) => {
         const model = row.original
-        const iconKey = model.icon || model.model_name[0]
         return (
-          <div className='flex max-w-[320px] min-w-0 items-start gap-2.5 py-1'>
+          <div className='flex max-w-[340px] min-w-0 items-start gap-2.5 py-1'>
             <span className='mt-1 flex size-6 shrink-0 items-center justify-center'>
-              {getLobeIcon(iconKey, 24)}
+              {getLobeIcon(resolveModelIconKey(model), 24)}
             </span>
             <div className='min-w-0 flex-1'>
               <div className='flex min-w-0 items-center gap-1'>
@@ -101,54 +95,27 @@ export function useModelsColumns(): ColumnDef<Model>[] {
                   className='size-6 shrink-0'
                 />
               </div>
-              <div className='text-muted-foreground mt-1 flex min-w-0 items-center gap-2 text-xs'>
-                {model.id <= 0 && (
-                  <span className='truncate'>{t('Missing metadata')}</span>
-                )}
-                {model.name_rule !== 0 && (
-                  <span className='shrink-0'>
-                    {rules[model.name_rule as 0 | 1 | 2 | 3]?.label} ·{' '}
-                    {model.matched_count ?? 0}
-                  </span>
-                )}
-              </div>
+              {model.id <= 0 && (
+                <div className='text-muted-foreground mt-1 text-xs'>
+                  {t('Missing metadata')}
+                </div>
+              )}
             </div>
           </div>
         )
       },
     },
     {
-      id: 'connections',
-      header: t('Channels and groups'),
-      size: 180,
+      accessorKey: 'description',
+      header: t('Description'),
+      size: 260,
       enableSorting: false,
-      cell: ({ row }) => {
-        const state = getModelChannelState(row.original)
-        return (
-          <div className='min-w-0 text-sm'>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span
-                    tabIndex={0}
-                    title={t(state.description)}
-                    aria-description={t(state.description)}
-                    className='block whitespace-normal sm:truncate'
-                  />
-                }
-              >
-                {t('Channels {{channels}} · Groups {{groups}}', {
-                  channels: row.original.bound_channels?.length ?? 0,
-                  groups: row.original.enable_groups?.length ?? 0,
-                })}
-              </TooltipTrigger>
-              <TooltipContent role='tooltip'>
-                {t(state.description)}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-        )
-      },
+      cell: ({ row }) => (
+        <DescriptionCell
+          modelName={row.original.model_name}
+          description={row.original.description ?? ''}
+        />
+      ),
     },
     {
       accessorKey: 'tags',
@@ -167,104 +134,13 @@ export function useModelsColumns(): ColumnDef<Model>[] {
       ),
     },
     {
-      accessorKey: 'sync_official',
-      header: () => (
-        <TruncatedCell className='max-w-[120px]'>
-          {t('Sync policy')}
-        </TruncatedCell>
-      ),
-      size: 145,
-      enableSorting: false,
-      meta: { mobileHidden: true, label: t('Sync policy') },
-      cell: ({ row }) => (
-        <TruncatedCell className='text-muted-foreground max-w-[120px] text-sm'>
-          {row.original.id > 0 &&
-            (row.original.sync_official ? t('Allow updates') : t('Keep local'))}
-          {!row.original.id && '—'}
-        </TruncatedCell>
-      ),
-    },
-    {
       id: 'actions',
       header: t('Actions'),
       enableSorting: false,
       enableHiding: false,
       size: 105,
+      meta: { pinned: 'right' as const },
       cell: ({ row }) => <DataTableRowActions row={row} />,
-    },
-    {
-      accessorKey: 'status',
-      header: t('Display policy'),
-      enableHiding: false,
-      enableSorting: false,
-      cell: ({ row }) =>
-        row.original.status === 1 ? t('Allowed') : t('Not listed'),
-    },
-    {
-      accessorKey: 'id',
-      header: t('ID'),
-      cell: ({ row }) => row.original.id || '—',
-      size: 65,
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'name_rule',
-      header: t('Match Type'),
-      size: 100,
-      enableSorting: false,
-      cell: ({ row }) => rules[row.original.name_rule as 0 | 1 | 2 | 3]?.label,
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'description',
-      header: t('Description'),
-      size: 180,
-      enableSorting: false,
-      cell: ({ row }) => (
-        <DescriptionCell
-          modelName={row.original.model_name}
-          description={row.original.description ?? ''}
-        />
-      ),
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'endpoints',
-      header: t('Custom endpoints'),
-      size: 180,
-      enableSorting: false,
-      cell: ({ row }) => (
-        <BadgeListCell
-          expandable
-          expandLabel={t('Supported endpoints')}
-          items={formatEndpointsDisplay(row.original.endpoints ?? '').map(
-            (endpoint) => (
-              <StatusBadge key={endpoint} label={endpoint} variant='neutral' />
-            )
-          )}
-        />
-      ),
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'created_time',
-      header: t('Created'),
-      size: 160,
-      cell: ({ row }) =>
-        row.original.id
-          ? formatTimestampToDate(row.original.created_time)
-          : '—',
-      meta: { mobileHidden: true },
-    },
-    {
-      accessorKey: 'updated_time',
-      header: t('Updated'),
-      size: 160,
-      cell: ({ row }) =>
-        row.original.id
-          ? formatTimestampToDate(row.original.updated_time)
-          : '—',
-      meta: { mobileHidden: true },
     },
   ]
 }

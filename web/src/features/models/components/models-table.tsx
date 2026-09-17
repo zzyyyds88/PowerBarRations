@@ -34,6 +34,9 @@ import { useModelsColumns } from './models-columns'
 
 const route = getRouteApi('/_authenticated/models/$section')
 
+// 模型页 = 单一平面的模型目录（ui-spec §6.3）：四列且没有分区 Tab，
+// 因此不再提供「展示策略 / 同步策略」筛选（对应列已删除）。
+
 export function ModelsTable() {
   const { t } = useTranslation()
   const isMobile = useMediaQuery('(max-width: 640px)')
@@ -55,32 +58,9 @@ export function ModelsTable() {
       defaultPageSize: isMobile ? 10 : DEFAULT_PAGE_SIZE,
     },
     globalFilter: { enabled: true, key: 'filter' },
-    columnFilters: [
-      { columnId: 'status', searchKey: 'status', type: 'array' },
-      { columnId: 'sync_official', searchKey: 'sync', type: 'array' },
-    ],
   })
 
-  // Extract filters from column filters
-  const statusFilter =
-    (columnFilters.find((f) => f.id === 'status')?.value as string[]) || []
-  const syncFilter =
-    (columnFilters.find((f) => f.id === 'sync_official')?.value as string[]) ||
-    []
-
-  const statusFilterValue =
-    statusFilter.length > 0 && !statusFilter.includes('all')
-      ? statusFilter[0]
-      : undefined
-  const syncFilterValue =
-    syncFilter.length > 0 && !syncFilter.includes('all')
-      ? syncFilter[0]
-      : undefined
-
-  // Use search API whenever any filter is active so status/sync are applied server-side
-  const shouldSearch = Boolean(
-    globalFilter?.trim() || statusFilterValue || syncFilterValue
-  )
+  const shouldSearch = Boolean(globalFilter?.trim())
 
   // Fetch models data
   // eslint-disable-next-line @tanstack/query/exhaustive-deps
@@ -88,8 +68,6 @@ export function ModelsTable() {
     queryKey: modelsQueryKeys.list({
       include_channel_models: true,
       keyword: globalFilter,
-      status: statusFilterValue,
-      sync_official: syncFilterValue,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
     }),
@@ -99,8 +77,6 @@ export function ModelsTable() {
           await searchModels({
             include_channel_models: true,
             keyword: globalFilter,
-            status: statusFilterValue,
-            sync_official: syncFilterValue,
             p: pagination.pageIndex + 1,
             page_size: pagination.pageSize,
           })
@@ -129,15 +105,8 @@ export function ModelsTable() {
       model.id > 0 ? `metadata:${model.id}` : `channel:${model.model_name}`,
     columns,
     totalCount,
-    initialColumnVisibility: {
-      description: false,
-      id: false,
-      name_rule: false,
-      endpoints: false,
-      created_time: false,
-      updated_time: false,
-      status: false,
-    },
+    // 列集合已收敛为四列；description 与 tags 默认可见，无遗留隐藏列。
+    initialColumnVisibility: {},
     columnFilters,
     pagination,
     globalFilter,
@@ -182,26 +151,6 @@ export function ModelsTable() {
       toolbarProps={{
         searchPlaceholder: t('Filter by model name...'),
         searchDebounceMs: 500,
-        filters: [
-          {
-            columnId: 'status',
-            title: t('Display policy'),
-            options: [
-              { label: t('Allowed'), value: 'enabled' },
-              { label: t('Not listed'), value: 'disabled' },
-            ],
-            singleSelect: true,
-          },
-          {
-            columnId: 'sync_official',
-            title: t('Sync policy'),
-            options: [
-              { label: t('Allow updates'), value: 'yes' },
-              { label: t('Keep local'), value: 'no' },
-            ],
-            singleSelect: true,
-          },
-        ],
       }}
       bulkActions={<DataTableBulkActions table={table} />}
     />
