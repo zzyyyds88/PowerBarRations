@@ -29,7 +29,7 @@ const channelsSearchSchema = z.object({
   filter: z.string().optional().catch(''),
   status: z.array(z.string()).optional().catch([]),
   type: z.array(z.string()).optional().catch([]),
-  group: z.array(z.string()).optional().catch([]),
+  // 渠道没有分组（design-v1 §1.3）：不再接受 group 搜索参数。
   model: z.string().optional().catch(''),
 })
 
