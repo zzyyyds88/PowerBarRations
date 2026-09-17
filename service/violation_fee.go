@@ -1,20 +1,9 @@
 package service
 
 import (
-	"fmt"
 	"strings"
-	"time"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/model"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/types"
-	"pbr/setting/model_setting"
-
-	"github.com/shopspring/decimal"
-
-	"github.com/gin-gonic/gin"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
 
 const (
@@ -23,10 +12,12 @@ const (
 	ContentViolatesUsageMarker = "Content violates usage guidelines"
 )
 
+// IsViolationFeeCode 判断错误码是否带有稳定的违规前缀。
 func IsViolationFeeCode(code types.ErrorCode) bool {
 	return strings.HasPrefix(string(code), ViolationFeeCodePrefix)
 }
 
+// HasCSAMViolationMarker 判断上游错误是否命中 CSAM/内容违规标记。
 func HasCSAMViolationMarker(err *types.NewAPIError) bool {
 	if err == nil {
 		return false
@@ -38,6 +29,8 @@ func HasCSAMViolationMarker(err *types.NewAPIError) bool {
 	return strings.Contains(msg, CSAMViolationMarker) || strings.Contains(err.Error(), ContentViolatesUsageMarker)
 }
 
+// WrapAsViolationFeeGrokCSAM 把命中标记的错误改写为稳定的 new_api_error 错误码，
+// 并打上 skip-retry 选项。
 func WrapAsViolationFeeGrokCSAM(err *types.NewAPIError) *types.NewAPIError {
 	if err == nil {
 		return nil
@@ -53,6 +46,10 @@ func WrapAsViolationFeeGrokCSAM(err *types.NewAPIError) *types.NewAPIError {
 // - if error.code already has the violation-fee prefix, skip-retry is enabled.
 //
 // It must be called before retry decision logic.
+//
+// 注意：PBR 无计费/钱包，原"违规罚款扣费"链路（ChargeViolationFeeIfNeeded、
+// 扣减用户/渠道已用额度、写 Violation fee 日志）已整体删除。这里保留的只是
+// new_api_error 的稳定错误码与 skip-retry 归一化——它属于错误类型契约，不属于计费。
 func NormalizeViolationFeeError(err *types.NewAPIError) *types.NewAPIError {
 	if err == nil {
 		return nil
@@ -68,97 +65,4 @@ func NormalizeViolationFeeError(err *types.NewAPIError) *types.NewAPIError {
 	}
 
 	return err
-}
-
-func shouldChargeViolationFee(err *types.NewAPIError) bool {
-	if err == nil {
-		return false
-	}
-	if err.GetErrorCode() == types.ErrorCodeViolationFeeGrokCSAM {
-		return true
-	}
-	// In case some callers didn't normalize, keep a safety net.
-	return HasCSAMViolationMarker(err)
-}
-
-func calcViolationFeeQuota(amount, groupRatio float64) int {
-	if amount <= 0 {
-		return 0
-	}
-	if groupRatio <= 0 {
-		return 0
-	}
-	quota := common.QuotaFromDecimal(decimal.NewFromFloat(amount).
-		Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
-		Mul(decimal.NewFromFloat(groupRatio)).
-		Round(0))
-	if quota <= 0 {
-		return 0
-	}
-	return quota
-}
-
-// ChargeViolationFeeIfNeeded charges an additional fee after the normal flow finishes (including refund).
-// It uses Grok fee settings as the fee policy.
-func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, apiErr *types.NewAPIError) bool {
-	if ctx == nil || relayInfo == nil || apiErr == nil {
-		return false
-	}
-	//if relayInfo.IsPlayground {
-	//	return false
-	//}
-	if !shouldChargeViolationFee(apiErr) {
-		return false
-	}
-
-	settings := model_setting.GetGrokSettings()
-	if settings == nil || !settings.ViolationDeductionEnabled {
-		return false
-	}
-
-	groupRatio := relayInfo.PriceData.GroupRatioInfo.GroupRatio
-	feeQuota := calcViolationFeeQuota(settings.ViolationDeductionAmount, groupRatio)
-	if feeQuota <= 0 {
-		return false
-	}
-
-	if err := PostConsumeQuota(relayInfo, feeQuota, 0, true); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("failed to charge violation fee: %s", err.Error()))
-		return false
-	}
-
-	model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
-	model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
-
-	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
-	tokenName := ctx.GetString("token_name")
-	oai := apiErr.ToOpenAIError()
-
-	other := model.NewLogOther()
-	other.MergePublic(map[string]any{
-		"violation_fee":        true,
-		"violation_fee_code":   string(types.ErrorCodeViolationFeeGrokCSAM),
-		"fee_quota":            feeQuota,
-		"base_amount":          settings.ViolationDeductionAmount,
-		"group_ratio":          groupRatio,
-		"status_code":          apiErr.StatusCode,
-		"upstream_error_type":  oai.Type,
-		"upstream_error_code":  fmt.Sprintf("%v", oai.Code),
-		"violation_fee_marker": CSAMViolationMarker,
-	})
-
-	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
-		ChannelId:      relayInfo.ChannelId,
-		ModelName:      relayInfo.OriginModelName,
-		TokenName:      tokenName,
-		Quota:          feeQuota,
-		Content:        "Violation fee charged",
-		TokenId:        relayInfo.TokenId,
-		UseTimeSeconds: int(useTimeSeconds),
-		IsStream:       relayInfo.IsStream,
-		Group:          relayInfo.UsingGroup,
-		Other:          other,
-	})
-
-	return true
 }

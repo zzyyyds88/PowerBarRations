@@ -1,8 +1,8 @@
 package service
 
 import (
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/types"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,12 +15,10 @@ import (
 // 语义：不预扣、不结算、不退费——`relayInfo.Billing` 恒为 nil，日志里的
 // 用量与折算由 PBR 单价表（§16.9#7）在 `model.RecordConsumeLog` 里完成。
 
-// BillingSource* 只作为日志字段（`billing_source`）的取值保留：PBR 不区分钱包/
-// 订阅，恒为 wallet；删掉字符串会让保留的日志链路出现空值。
-const (
-	BillingSourceWallet       = "wallet"
-	BillingSourceSubscription = "subscription"
-)
+// BillingSourceWallet 只作为日志字段（`billing_source`）的遗留取值保留：PBR 无钱包/
+// 订阅语义，恒为空。删掉字符串会让保留的日志链路出现空值，故仅保留 wallet 取值；
+// subscription 取值已无任何生产者与消费者，随订阅链路一并删除。
+const BillingSourceWallet = "wallet"
 
 // PreConsumeBilling 迁移期空实现：不再创建计费会话，也不做任何额度预占。
 //

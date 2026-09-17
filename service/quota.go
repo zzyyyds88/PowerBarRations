@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"time"
 
-	"pbr/common"
-	"pbr/logger"
-	"pbr/model"
-	"pbr/pkg/billingexpr"
-	perfmetrics "pbr/pkg/perf_metrics"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	"pbr/setting/ratio_setting"
-	"pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
+	perfmetrics "github.com/zzyyyds88/PowerBarRations/pkg/perf_metrics"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 
@@ -347,52 +347,4 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
 	result.FundingApplied = true
 	result.TokenApplied = true
 	return result, nil
-}
-
-func checkAndSendSubscriptionQuotaNotify(relayInfo *relaycommon.RelayInfo) {
-	gopool.Go(func() {
-		if relayInfo == nil {
-			return
-		}
-		if relayInfo.SubscriptionId == 0 || relayInfo.SubscriptionAmountTotal <= 0 {
-			return
-		}
-
-		userSetting := relayInfo.UserSetting
-		threshold := common.QuotaRemindThreshold
-		if userSetting.QuotaWarningThreshold != 0 {
-			threshold = int(userSetting.QuotaWarningThreshold)
-		}
-
-		usedAfter := relayInfo.SubscriptionAmountUsedAfterPreConsume + relayInfo.SubscriptionPostDelta
-		remaining := relayInfo.SubscriptionAmountTotal - usedAfter
-		if remaining >= int64(threshold) {
-			return
-		}
-
-		prompt := "您的订阅额度即将用尽"
-		topUpLink := PaymentReturnURL("/wallet")
-
-		var content string
-		var values []any
-		notifyType := userSetting.NotifyType
-		if notifyType == "" {
-			notifyType = dto.NotifyTypeEmail
-		}
-
-		if notifyType == dto.NotifyTypeBark {
-			content = "{{value}}，剩余额度：{{value}}，请及时充值"
-			values = []any{prompt, logger.FormatQuota(int(remaining))}
-		} else if notifyType == dto.NotifyTypeGotify {
-			content = "{{value}}，当前剩余额度为 {{value}}，请及时充值。"
-			values = []any{prompt, logger.FormatQuota(int(remaining))}
-		} else {
-			content = "{{value}}，当前剩余额度为 {{value}}，为了不影响您的使用，请及时充值。<br/>充值链接：<a href='{{value}}'>{{value}}</a>"
-			values = []any{prompt, logger.FormatQuota(int(remaining)), topUpLink, topUpLink}
-		}
-
-		if err := NotifyUser(relayInfo.UserId, relayInfo.UserEmail, relayInfo.UserSetting, dto.NewNotify(dto.NotifyTypeQuotaExceed, prompt, content, values)); err != nil {
-			common.SysError(fmt.Sprintf("failed to send subscription quota notify to user %d: %s", relayInfo.UserId, err.Error()))
-		}
-	})
 }

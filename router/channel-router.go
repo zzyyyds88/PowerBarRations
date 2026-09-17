@@ -3,8 +3,8 @@ package router
 import (
 	"net/http"
 
-	"pbr/controller"
-	"pbr/middleware"
+	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,8 +46,6 @@ var channelRoutes = []channelRouteDef{
 	{method: http.MethodGet, path: "/:id", handler: controller.GetChannel},
 	{method: http.MethodGet, path: "/test", handler: controller.TestAllChannels},
 	{method: http.MethodGet, path: "/test/:id", handler: controller.TestChannel},
-	{method: http.MethodGet, path: "/update_balance", handler: controller.UpdateAllChannelsBalance},
-	{method: http.MethodGet, path: "/update_balance/:id", handler: controller.UpdateChannelBalance},
 	{method: http.MethodPost, path: "/", handler: controller.AddChannel},
 	{method: http.MethodPut, path: "/", handler: controller.UpdateChannel},
 	{method: http.MethodPost, path: "/status/batch", handler: controller.BatchUpdateChannelStatus},

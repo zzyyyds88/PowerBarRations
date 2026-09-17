@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/common"
-	"pbr/model"
-	"pbr/setting"
-	"pbr/setting/billing_setting"
-	"pbr/setting/console_setting"
-	"pbr/setting/model_setting"
-	"pbr/setting/operation_setting"
-	"pbr/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/console_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,7 +82,7 @@ func buildCompletionRatioMetaValue(optionValues map[string]string) string {
 // 它们是 `setting/ratio_setting` 这一"惰性遗留"的存储（成本折算与模型名归一化仍引用），
 // 不参与准入、不扣额度。W7 物理删除的是计费/支付**执行链**与专属端点
 // （`/api/option/model_pricing*`、`/api/option/rest_model_ratio` 等），不是 /api/option 本身。
-// 渠道余额查询侧曾据"余额<=0"自动禁用渠道的逻辑已随 W7 一并移除（见 controller/channel-billing.go）。
+// 渠道余额查询能力与其"余额<=0 自动禁用渠道"的逻辑已整体删除：PBR 无计费/余额语义。
 func GetOptions(c *gin.Context) {
 	var options []*model.Option
 	optionValues := make(map[string]string)

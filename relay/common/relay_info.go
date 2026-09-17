@@ -6,16 +6,16 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	"pbr/pkg/billingexpr"
-	relayconstant "pbr/relay/constant"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
-	kitreasoning "pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
-	"pbr/setting/model_setting"
-	hosttypes "pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
+	kitreasoning "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
+	hosttypes "github.com/zzyyyds88/PowerBarRations/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -137,30 +137,18 @@ type RelayInfo struct {
 	// Billing 是计费会话，封装了预扣费/结算/退款的统一生命周期。
 	// 初始免费组可为 nil；若 auto 重试切换到付费组，会在发送前创建。
 	Billing BillingSettler
-	// BillingSource indicates whether this request is billed from wallet quota or subscription.
-	// "" or "wallet" => wallet; "subscription" => subscription
+	// BillingSource 是遗留日志字段（billing_source）；PBR 无计费/钱包/订阅语义，
+	// 恒为空，保留字段只是为了让历史日志读取方不报错。
 	BillingSource string
-	// SubscriptionId is the user_subscriptions.id used when BillingSource == "subscription"
-	SubscriptionId int
-	// SubscriptionPreConsumed is the amount pre-consumed on subscription item (quota units or 1)
-	SubscriptionPreConsumed int64
-	// SubscriptionPostDelta is the post-consume delta applied to amount_used (quota units; can be negative).
-	SubscriptionPostDelta int64
-	// SubscriptionPlanId / SubscriptionPlanTitle are used for logging/UI display.
-	SubscriptionPlanId    int
-	SubscriptionPlanTitle string
 	// RequestId is used for idempotent pre-consume/refund
-	RequestId string
-	// SubscriptionAmountTotal / SubscriptionAmountUsedAfterPreConsume are used to compute remaining in logs.
-	SubscriptionAmountTotal               int64
-	SubscriptionAmountUsedAfterPreConsume int64
-	IsClaudeBetaQuery                     bool // /v1/messages?beta=true
-	IsChannelTest                         bool // channel test request
-	RetryIndex                            int
-	LastError                             *types.NewAPIError
-	RuntimeHeadersOverride                map[string]any
-	UseRuntimeHeadersOverride             bool
-	ParamOverrideAudit                    []string
+	RequestId                 string
+	IsClaudeBetaQuery         bool // /v1/messages?beta=true
+	IsChannelTest             bool // channel test request
+	RetryIndex                int
+	LastError                 *types.NewAPIError
+	RuntimeHeadersOverride    map[string]any
+	UseRuntimeHeadersOverride bool
+	ParamOverrideAudit        []string
 
 	PriceData hosttypes.PriceData
 

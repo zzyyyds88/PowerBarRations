@@ -16,21 +16,21 @@ import (
 	"syscall"
 	"time"
 
-	"pbr/common"
-	"pbr/controller"
-	"pbr/i18n"
-	"pbr/internal/authutil"
-	"pbr/internal/legacy"
-	"pbr/internal/webhook"
-	"pbr/logger"
-	"pbr/middleware"
-	"pbr/model"
-	perfmetrics "pbr/pkg/perf_metrics"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"pbr/router"
-	"pbr/service"
-	_ "pbr/setting/performance_setting"
-	"pbr/setting/ratio_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/i18n"
+	"github.com/zzyyyds88/PowerBarRations/internal/authutil"
+	"github.com/zzyyyds88/PowerBarRations/internal/legacy"
+	"github.com/zzyyyds88/PowerBarRations/internal/webhook"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	perfmetrics "github.com/zzyyyds88/PowerBarRations/pkg/perf_metrics"
+	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
+	"github.com/zzyyyds88/PowerBarRations/router"
+	"github.com/zzyyyds88/PowerBarRations/service"
+	_ "github.com/zzyyyds88/PowerBarRations/setting/performance_setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
@@ -115,14 +115,6 @@ func main() {
 	go model.SyncOptions(common.SyncFrequency)
 
 	// W7（design-v1 §10.2.1）：数据看板/额度聚合随计费与多用户面删除。
-
-	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
-		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
-		if err != nil {
-			common.FatalLog("failed to parse CHANNEL_UPDATE_FREQUENCY: " + err.Error())
-		}
-		go controller.AutomaticallyUpdateChannels(frequency)
-	}
 
 	// Codex credential auto-refresh check every 10 minutes, refresh when expires within 1 day
 	service.StartCodexCredentialAutoRefreshTask()

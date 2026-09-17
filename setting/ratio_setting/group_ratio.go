@@ -4,24 +4,23 @@ import (
 	"encoding/json"
 	"errors"
 
-	"pbr/common"
-	"pbr/setting/config"
-	"pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/config"
+	"github.com/zzyyyds88/PowerBarRations/types"
 )
 
+// legacy-only：PBR 在 middleware/pbr_client_auth.go 中把请求分组恒定为 "default"
+// （无用户/分组体系）。组倍率机制仅作为 setting/ratio_setting 的遗留存储保留，
+// 成本折算仍会读取；原基座预置的 vip/svip 分组已无任何消费者，故不再预置。
 var defaultGroupRatio = map[string]float64{
 	"default": 1,
-	"vip":     1,
-	"svip":    1,
 }
 
 var groupRatioMap = types.NewRWMap[string, float64]()
 
-var defaultGroupGroupRatio = map[string]map[string]float64{
-	"vip": {
-		"edit_this": 0.9,
-	},
-}
+// legacy-only：原基座预置的 "vip" -> {"edit_this": 0.9} 占位倍率已无消费者，
+// 且与 PBR 恒为 default 分组的语义冲突，保留空表（仍可由 /api/option 配置）。
+var defaultGroupGroupRatio = map[string]map[string]float64{}
 
 var groupGroupRatioMap = types.NewRWMap[string, map[string]float64]()
 

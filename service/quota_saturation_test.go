@@ -4,11 +4,11 @@ import (
 	"math"
 	"testing"
 
-	"pbr/common"
-	"pbr/model"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
-	hosttypes "pbr/types"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	hosttypes "github.com/zzyyyds88/PowerBarRations/types"
 
 	"github.com/gin-gonic/gin"
 
@@ -44,14 +44,6 @@ func TestAttachQuotaSaturationNestsUnderAdminInfo(t *testing.T) {
 	require.Equal(t, "QuotaFromDecimal", sat["op"])
 	require.Equal(t, common.QuotaClampOverflow, sat["kind"])
 	require.Equal(t, common.MaxQuota, sat["clamped"])
-}
-
-func TestCalcViolationFeeQuotaSaturates(t *testing.T) {
-	oldQuotaPerUnit := common.QuotaPerUnit
-	common.QuotaPerUnit = 500_000
-	t.Cleanup(func() { common.QuotaPerUnit = oldQuotaPerUnit })
-
-	require.Equal(t, common.MaxQuota, calcViolationFeeQuota(1e20, 1))
 }
 
 func TestCalcOpenRouterCacheCreateTokensDoesNotWrap(t *testing.T) {

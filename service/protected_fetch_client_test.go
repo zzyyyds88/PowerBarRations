@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"pbr/common"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 )
 
 type staticSSRFResolver map[string][]net.IPAddr
@@ -314,4 +314,70 @@ func TestProtectedFetchRoundTripperReusesTransportPerProxy(t *testing.T) {
 	require.NotSame(t, direct, proxied)
 	require.True(t, direct.ForceAttemptHTTP2)
 	require.False(t, direct.DisableKeepAlives)
+}
+
+// 以下用例锁定：走 HTTP 代理时，目标主机的解析 IP 仍要被校验。直连模式下这一步由
+// protectedFetchDialer 在拨号时完成，代理模式下 transport 只看到代理地址，必须由
+// validateProxyTarget 显式补齐，否则 HTTP_PROXY 会绕过私网 IP 过滤。
+func TestProtectedFetchProxyTargetValidationRejectsPrivateResolvedIP(t *testing.T) {
+	roundTripper := &ssrfProtectedRoundTripper{
+		resolver: staticSSRFResolver{
+			"rebind.example": {{IP: net.ParseIP("10.0.0.7")}},
+		},
+		getProtection: staticProtection(&common.SSRFProtection{
+			AllowPrivateIp:         false,
+			DomainFilterMode:       false,
+			IpFilterMode:           false,
+			ApplyIPFilterForDomain: true,
+		}),
+	}
+
+	err := roundTripper.validateProxyTarget(context.Background(), mustParseURL(t, "http://rebind.example/resource"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private IP address not allowed")
+}
+
+func TestProtectedFetchProxyTargetValidationAllowsPublicResolvedIP(t *testing.T) {
+	roundTripper := &ssrfProtectedRoundTripper{
+		resolver: staticSSRFResolver{
+			"safe.example": {{IP: net.ParseIP("8.8.8.8")}},
+		},
+		getProtection: staticProtection(&common.SSRFProtection{
+			AllowPrivateIp:         false,
+			DomainFilterMode:       false,
+			IpFilterMode:           false,
+			ApplyIPFilterForDomain: true,
+		}),
+	}
+
+	require.NoError(t, roundTripper.validateProxyTarget(context.Background(), mustParseURL(t, "http://safe.example/resource")))
+}
+
+func TestProtectedFetchProxyTargetValidationRejectsPrivateLiteralIP(t *testing.T) {
+	roundTripper := &ssrfProtectedRoundTripper{
+		resolver: staticSSRFResolver{},
+		getProtection: staticProtection(&common.SSRFProtection{
+			AllowPrivateIp:         false,
+			DomainFilterMode:       false,
+			IpFilterMode:           false,
+			ApplyIPFilterForDomain: true,
+		}),
+	}
+
+	err := roundTripper.validateProxyTarget(context.Background(), mustParseURL(t, "http://127.0.0.1:8080/resource"))
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private IP address not allowed")
+}
+
+func TestProtectedFetchProxyTargetValidationSkippedWhenProtectionDisabled(t *testing.T) {
+	roundTripper := &ssrfProtectedRoundTripper{
+		resolver: staticSSRFResolver{},
+		getProtection: func() (*common.SSRFProtection, bool, error) {
+			return nil, false, nil
+		},
+	}
+
+	require.NoError(t, roundTripper.validateProxyTarget(context.Background(), mustParseURL(t, "http://10.0.0.1/resource")))
 }

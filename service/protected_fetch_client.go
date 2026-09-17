@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"pbr/common"
-	"pbr/setting/system_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 )
 
 type ssrfResolver interface {
@@ -109,7 +109,75 @@ func (t *ssrfProtectedRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	if err != nil {
 		return nil, err
 	}
+	if proxyURL != nil {
+		// 走 HTTP 代理时 transport 的 DialContext 只会看到代理地址，目标
+		// 主机的解析与私网 IP 校验不会发生；必须在交给代理前显式补上，
+		// 否则 HTTP_PROXY 会让 ValidateResolvedIP 过滤整体失效。
+		if err := t.validateProxyTarget(req.Context(), req.URL); err != nil {
+			return nil, err
+		}
+	}
 	return t.transportFor(proxyURL).RoundTrip(req)
+}
+
+// validateProxyTarget 在请求经 HTTP 代理转发前校验目标主机的端口与解析 IP。
+//
+// 直连模式下 protectedFetchDialer 会在每次拨号时用实际解析结果做校验；但走代理时
+// transport 只能拿到代理地址，目标解析不会经过 protectedFetchDialer。这里复用注入的
+// resolver 补齐 ValidateNetworkTarget / ValidateResolvedIP，堵住经 HTTP_PROXY 绕过
+// 私网 IP 过滤的路径。
+func (t *ssrfProtectedRoundTripper) validateProxyTarget(ctx context.Context, target *url.URL) error {
+	protection, enabled, err := t.getProtection()
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+
+	host := target.Hostname()
+	if host == "" {
+		return fmt.Errorf("invalid proxy target host")
+	}
+	portText := target.Port()
+	if portText == "" {
+		switch target.Scheme {
+		case "https":
+			portText = "443"
+		case "http":
+			portText = "80"
+		default:
+			return fmt.Errorf("unsupported protocol: %s (only http/https allowed)", target.Scheme)
+		}
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		return fmt.Errorf("invalid port: %s", portText)
+	}
+	if err := protection.ValidateNetworkTarget(host, port); err != nil {
+		return err
+	}
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	if !protection.ApplyIPFilterForDomain {
+		return nil
+	}
+
+	resolved, err := t.resolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return fmt.Errorf("DNS resolution failed for %s: %v", host, err)
+	}
+	for _, ipAddr := range resolved {
+		ip := ipAddr.IP
+		if ip == nil {
+			continue
+		}
+		if err := protection.ValidateResolvedIP(host, ip); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (t *ssrfProtectedRoundTripper) CloseIdleConnections() {

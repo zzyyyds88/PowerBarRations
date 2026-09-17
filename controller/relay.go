@@ -8,22 +8,22 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
-	"pbr/constant"
-	pbrroute "pbr/internal/route"
-	"pbr/logger"
-	"pbr/middleware"
-	"pbr/model"
-	perfmetrics "pbr/pkg/perf_metrics"
-	"pbr/relay"
-	relaycommon "pbr/relay/common"
-	relayconstant "pbr/relay/constant"
-	"pbr/relay/helper"
-	"pbr/relaykit/dto"
-	"pbr/relaykit/types"
-	"pbr/service"
-	"pbr/setting"
-	"pbr/setting/operation_setting"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	pbrroute "github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	perfmetrics "github.com/zzyyyds88/PowerBarRations/pkg/perf_metrics"
+	"github.com/zzyyyds88/PowerBarRations/relay"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting"
+	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -233,7 +233,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if relayInfo.Billing != nil {
 				relayInfo.Billing.Refund(c)
 			}
-			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
 		}
 	}()
 
