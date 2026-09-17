@@ -587,11 +587,13 @@ def main() -> int:
         cdp.screenshot(os.path.join(out_dir, "02-signin.png"))
 
         # 3) 逐页渲染（新控制台保留页）
+        # 保留页集合已随 ADR 0005 与子系统移除更新：路由页提为 /routes，
+        # task-plugins 移除，system-info 改为 system-tasks。
         pages = [("/dashboard/overview", "03-dashboard"), ("/channels", "04-channels"),
-                 ("/models/metadata", "05-models"), ("/models/routing", "06-routing"),
+                 ("/models/metadata", "05-models"), ("/routes", "06-routes"),
                  ("/keys", "07-keys"), ("/usage-logs/common", "08-logs"),
-                 ("/playground", "09-playground"), ("/task-plugins", "10-task-plugins"),
-                 ("/system-info", "11-system-info"), ("/system-settings/site/system-info", "12-settings")]
+                 ("/playground", "09-playground"),
+                 ("/system-tasks", "11-system-tasks"), ("/system-settings/site/system-info", "12-settings")]
         rendered = 0
         for path, shot in pages:
             cdp.console_errors = []

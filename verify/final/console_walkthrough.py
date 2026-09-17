@@ -37,12 +37,13 @@ PAGES = [
     ("/dashboard/overview", "dashboard", "dashboard"),
     ("/channels", "channels", "channels"),
     ("/models/metadata", "models", "models"),
-    ("/models/routing", "models-routing", "routing"),
+    # 路由与故障切换已是侧边栏独立页 /routes（与 /models 同级）。
+    ("/routes", "routes", "routes"),
     ("/keys", "keys", "keys"),
     ("/usage-logs/common", "usage-logs", "logs"),
     ("/playground", "playground", "playground"),
-    ("/task-plugins", "task-plugins", "task-plugins"),
-    ("/system-info", "system-info", "system-info"),
+    # task-plugins 子系统已整链路移除；system-info 页已删除，任务面板提为 /system-tasks。
+    ("/system-tasks", "system-tasks", "system-tasks"),
     ("/system-settings/site/system-info", "system-settings", "settings"),
 ]
 

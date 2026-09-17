@@ -8,7 +8,7 @@
 本脚本全程自包含（自建独立端口 + 独立 SQLite + 假上游，不碰现网）：
   1. 构建 PBR 与假上游，设登录口令
   2. 建两个都声明 t4-model 的渠道：channel-live（假上游）与 channel-dead（死端口）
-  3. 真实无头浏览器登录 → 进入 /models/routing → 断言面板列出模型与两个成员
+  3. 真实无头浏览器登录 → 进入 /routes（路由与故障切换独立页）→ 断言面板列出模型与两个成员
      → 点"下移"调整顺序 → 点"保存"（走 PUT /api/v1/lanes/t4-model）
   4. 回读 /api/v1/routes/t4-model，断言显式链已落库且顺序为 dead → live
   5. 用客户端密钥真发一次 /v1/chat/completions：断言第一个成员失败后逃逸到 live 成功
@@ -204,10 +204,10 @@ def main():
                     st = cdp.val("fetch('/api/v1/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},"
                                  "credentials:'same-origin',body:JSON.stringify({password:%s})}).then(r=>r.status)" % json.dumps(PW))
                     check("浏览器登录成功", st == 200, st)
-                    cdp.send("Page.navigate", {"url": base + "/models/routing"})
+                    cdp.send("Page.navigate", {"url": base + "/routes"})
                     time.sleep(6)
                     path = cdp.val("location.pathname")
-                    check("进入 /models/routing（未被踢回登录）", path == "/models/routing", path)
+                    check("进入 /routes（未被踢回登录）", path == "/routes", path)
                     body_text = cdp.val("document.body.innerText.slice(0,800)") or ""
                     print("  [debug] path=", path)
                     print("  [debug] body=", body_text.replace("\n", " | ")[:800])
