@@ -2954,7 +2954,6 @@
     "Model = route key": "モデル = ルートキー",
     "Model Is the Route Key": "モデルがルートキー",
     "No lane means 503; the gateway never hits an upstream channel directly.": "レーンがなければ 503。ゲートウェイが上流チャネルへ直接アクセスすることはありません。",
-    "One call to POST /api/lanes/seed turns declared models into failover lanes — or order the members yourself.": "POST /api/lanes/seed を 1 回呼べば、宣言済みモデルがフェイルオーバーレーンになります。メンバー順を手動で並べることも可能です。",
     "OpenAI Chat, Responses, Anthropic, and Gemini are translated on both the inbound and upstream sides.": "OpenAI Chat・Responses・Anthropic・Gemini を、受信側と上流側の両方で変換します。",
     "Point Cherry Studio, CC Switch, or any OpenAI / Anthropic / Gemini compatible client at this gateway.": "Cherry Studio、CC Switch、または OpenAI / Anthropic / Gemini 互換クライアントをこのゲートウェイに向けるだけです。",
     "Priority Failover": "優先度フェイルオーバー",
@@ -3033,6 +3032,7 @@
     "This browser cannot derive the admin key (Web Crypto is unavailable). Recompute it as described below.": "このブラウザーでは管理者キーを計算できません（Web Crypto が利用不可）。以下に従って再計算してください。",
     "How to recompute": "再計算方法",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Base64(SHA256(ログインパスワード)) で、標準のパディング付き Base64 です。必要なときに再計算できます。",
-    "Continue to console": "コンソールへ進む"
+    "Continue to console": "コンソールへ進む",
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "「ルーティングとフェイルオーバー」ページで各モデルのメンバーを手動で追加し、優先度順に並べて保存するとレーンが確定します。"
   }
 }

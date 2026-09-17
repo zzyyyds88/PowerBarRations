@@ -2954,7 +2954,6 @@
     "Model = route key": "Модель = ключ маршрута",
     "Model Is the Route Key": "Модель — это ключ маршрута",
     "No lane means 503; the gateway never hits an upstream channel directly.": "Нет полосы — 503; шлюз никогда не обращается к каналу апстрима напрямую.",
-    "One call to POST /api/lanes/seed turns declared models into failover lanes — or order the members yourself.": "Один вызов POST /api/lanes/seed превращает объявленные модели в полосы отказоустойчивости — либо задайте порядок участников вручную.",
     "OpenAI Chat, Responses, Anthropic, and Gemini are translated on both the inbound and upstream sides.": "OpenAI Chat, Responses, Anthropic и Gemini преобразуются как на входе, так и на стороне апстрима.",
     "Point Cherry Studio, CC Switch, or any OpenAI / Anthropic / Gemini compatible client at this gateway.": "Наведите Cherry Studio, CC Switch или любой клиент, совместимый с OpenAI / Anthropic / Gemini, на этот шлюз.",
     "Priority Failover": "Отказоустойчивость по приоритету",
@@ -3033,6 +3032,7 @@
     "This browser cannot derive the admin key (Web Crypto is unavailable). Recompute it as described below.": "Этот браузер не может вычислить ключ администратора (Web Crypto недоступен). Пересчитайте его, как описано ниже.",
     "How to recompute": "Как пересчитать",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Это Base64(SHA256(пароль входа)), стандартный Base64 с заполнением. Пересчитайте при необходимости.",
-    "Continue to console": "Перейти в консоль"
+    "Continue to console": "Перейти в консоль",
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "На странице «Маршрутизация и отказоустойчивость» добавьте участников вручную для каждой модели и расставьте их по приоритету; сохранение закрепляет полосу."
   }
 }

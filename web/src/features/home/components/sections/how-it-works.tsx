@@ -37,7 +37,7 @@ export function HowItWorks() {
       num: '2',
       title: t('Solidify the lanes'),
       desc: t(
-        'One call to POST /api/lanes/seed turns declared models into failover lanes — or order the members yourself.'
+        'On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.'
       ),
       icon: <Route className='size-6' strokeWidth={1.5} />,
     },

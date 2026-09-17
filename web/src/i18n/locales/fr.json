@@ -2954,7 +2954,6 @@
     "Model = route key": "Modèle = clé de routage",
     "Model Is the Route Key": "Le modèle est la clé de routage",
     "No lane means 503; the gateway never hits an upstream channel directly.": "Sans voie, c'est 503 ; la passerelle ne contacte jamais un canal amont directement.",
-    "One call to POST /api/lanes/seed turns declared models into failover lanes — or order the members yourself.": "Un appel à POST /api/lanes/seed transforme les modèles déclarés en voies de bascule — ou ordonnez les membres vous-même.",
     "OpenAI Chat, Responses, Anthropic, and Gemini are translated on both the inbound and upstream sides.": "OpenAI Chat, Responses, Anthropic et Gemini sont traduits côté entrant comme côté amont.",
     "Point Cherry Studio, CC Switch, or any OpenAI / Anthropic / Gemini compatible client at this gateway.": "Pointez Cherry Studio, CC Switch ou tout client compatible OpenAI / Anthropic / Gemini vers cette passerelle.",
     "Priority Failover": "Bascule par priorité",
@@ -3033,6 +3032,7 @@
     "This browser cannot derive the admin key (Web Crypto is unavailable). Recompute it as described below.": "Ce navigateur ne peut pas dériver la clé d'administration (Web Crypto indisponible). Recalculez-la comme expliqué ci-dessous.",
     "How to recompute": "Comment recalculer",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Il s’agit de Base64(SHA256(mot de passe de connexion)), Base64 standard avec remplissage. Recalculez-le quand vous en avez besoin.",
-    "Continue to console": "Continuer vers la console"
+    "Continue to console": "Continuer vers la console",
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "Sur la page Routage et bascule, ajoutez les membres à la main pour chaque modèle et classez-les par priorité ; l enregistrement fige la voie."
   }
 }

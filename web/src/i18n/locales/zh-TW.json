@@ -2954,7 +2954,6 @@
     "Model = route key": "模型 = 路由鍵",
     "Model Is the Route Key": "模型即路由鍵",
     "No lane means 503; the gateway never hits an upstream channel directly.": "沒有車道就回傳 503；閘道絕不直連上游渠道。",
-    "One call to POST /api/lanes/seed turns declared models into failover lanes — or order the members yourself.": "一次 POST /api/lanes/seed 就能把已宣告的模型固化為故障轉移車道——也可以自己排成員順序。",
     "OpenAI Chat, Responses, Anthropic, and Gemini are translated on both the inbound and upstream sides.": "OpenAI Chat、Responses、Anthropic、Gemini 在入站與上游兩側都會做協議轉換。",
     "Point Cherry Studio, CC Switch, or any OpenAI / Anthropic / Gemini compatible client at this gateway.": "把 Cherry Studio、CC Switch 或任何 OpenAI / Anthropic / Gemini 相容客戶端指向本閘道即可。",
     "Priority Failover": "優先級故障轉移",
@@ -3033,6 +3032,7 @@
     "This browser cannot derive the admin key (Web Crypto is unavailable). Recompute it as described below.": "此瀏覽器無法計算管理金鑰（Web Crypto 不可用）。請按下文說明自行重算。",
     "How to recompute": "如何重算",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "它是 Base64(SHA256(登入口令))，標準 Base64 帶填充。需要時可隨時重算。",
-    "Continue to console": "進入控制台"
+    "Continue to console": "進入控制台",
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "在「路由與故障切換」頁為每個模型手動新增成員並排好優先級順序，儲存即固化車道。"
   }
 }
