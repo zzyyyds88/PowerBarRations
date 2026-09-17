@@ -168,8 +168,12 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	//case constant.ChannelTypeMiniMax:
 	//	return minimax.GetRequestURL(info)
 	case constant.ChannelTypeCustom:
-		url := info.ChannelBaseUrl
-		url = strings.Replace(url, "{model}", info.UpstreamModelName, -1)
+		url := strings.Replace(info.ChannelBaseUrl, "{model}", info.UpstreamModelName, -1)
+		// ui-spec §6.4：原始 URL 不含 {model} 且路径以版本段结尾时（如只填到
+		// https://host/v1），自动补全 /chat/completions；完整端点 URL 原样直用。
+		if !strings.Contains(info.ChannelBaseUrl, "{model}") {
+			url = appendCustomChatCompletions(url)
+		}
 		return url, nil
 	default:
 		if (info.RelayFormat == types.RelayFormatClaude || info.RelayFormat == types.RelayFormatGemini) &&
@@ -810,4 +814,31 @@ func (a *Adaptor) GetChannelName() string {
 	default:
 		return ChannelName
 	}
+}
+
+// customVersionSegments 列出 Custom 渠道「只填到版本段」的路径末段。
+// 命中其一说明 URL 是版本级 Base URL 而非完整 chat/completions 端点。
+var customVersionSegments = map[string]bool{
+	"v1":     true,
+	"v1beta": true,
+	"openai": true,
+}
+
+// appendCustomChatCompletions 在路径以版本段（/v1、/v1beta、/openai，可带尾斜杠）
+// 结尾时追加 /chat/completions；追加发生在 path 与 query 之间。其余 URL 原样返回。
+// 解析失败（非法 URL）同样原样返回，维持旧的直通语义。
+func appendCustomChatCompletions(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(segments) == 0 || segments[len(segments)-1] == "" {
+		return rawURL
+	}
+	if !customVersionSegments[segments[len(segments)-1]] {
+		return rawURL
+	}
+	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/chat/completions"
+	return parsed.String()
 }

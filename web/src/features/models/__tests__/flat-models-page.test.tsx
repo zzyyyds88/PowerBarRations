@@ -26,7 +26,6 @@ import {
 } from '@tanstack/react-router'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import i18n from 'i18next'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -136,16 +135,11 @@ it('renders the models page as a single flat list without section tabs', async (
   expect(screen.queryByRole('tab')).not.toBeInTheDocument()
 })
 
-it('opens the failover drawer from the inline row action', async () => {
+it('no longer offers an inline routing entry in row actions', async () => {
   await renderModelsPage()
-  const user = userEvent.setup()
   const menus = screen.getAllByRole('button', { name: 'Open menu' })
-  await user.click(menus[1])
-  await user.click(
-    await screen.findByRole('menuitem', {
-      name: i18n.t('Routing & Failover'),
-    })
-  )
-  expect(await screen.findByRole('dialog')).toBeVisible()
-  expect(screen.getByText(/Routable models/)).toBeVisible()
+  await userEvent.setup().click(menus[1])
+  expect(
+    screen.queryByRole('menuitem', { name: 'Routing & Failover' })
+  ).not.toBeInTheDocument()
 })

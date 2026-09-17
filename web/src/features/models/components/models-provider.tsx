@@ -32,7 +32,6 @@ type DialogType =
   | 'sync-wizard'
   | 'prefill-groups'
   | 'description'
-  | 'model-routing'
   | null
 
 type ModelsContextType = {

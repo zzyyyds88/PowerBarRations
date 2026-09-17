@@ -109,6 +109,8 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/channels': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },
   '/models/metadata': { section: 'admin', module: 'models' },
+  // 路由与故障切换页归属 models 模块：隐藏「模型」时一并隐藏（ui-spec §6.3）。
+  '/routes': { section: 'admin', module: 'models' },
   '/system-settings': { section: 'admin', module: 'setting' },
   '/system-settings/site': { section: 'admin', module: 'setting' },
 }

@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { Row } from '@tanstack/react-table'
-import { GitBranch, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -61,18 +61,6 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       </Button>
 
       <DataTableRowActionMenu ariaLabel={t('Open menu')}>
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault()
-            setOpen('model-routing')
-          }}
-        >
-          {t('Routing & Failover')}
-          <DropdownMenuShortcut>
-            <GitBranch size={16} />
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
-
         {model.id > 0 && (
           <DropdownMenuItem
             onSelect={(e) => {

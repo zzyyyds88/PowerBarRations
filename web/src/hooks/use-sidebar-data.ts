@@ -28,6 +28,7 @@ import {
   Radio,
   ServerCog,
   Settings,
+  Waypoints,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -109,6 +110,11 @@ export function useSidebarData(): SidebarData {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,
+          },
+          {
+            title: t('Routing & Failover'),
+            url: '/routes',
+            icon: Waypoints,
           },
           {
             title: t('System Info'),

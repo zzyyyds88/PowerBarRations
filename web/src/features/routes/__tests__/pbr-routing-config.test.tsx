@@ -24,7 +24,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { api } from '@/lib/api'
 
 import { ModelRoutingPanel } from '../components/model-routing-panel'
-import { savePBRFailover } from '../pbr-routing-api'
+import { savePBRFailover } from '../api'
 
 vi.mock('@/lib/api', () => ({
   api: {

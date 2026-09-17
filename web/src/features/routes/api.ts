@@ -8,6 +8,10 @@ PowerBarRations —— PBR 路由（成员链/故障切换）管理 API（api-sp
 */
 import { api } from '@/lib/api'
 
+// 路由键列表的共享 queryKey：「路由与故障切换」页与成员链面板/抽屉共用同一
+// 缓存条目，抽屉里保存/删除成员链后 invalidate 该前缀即可同时刷新两者。
+export const pbrModelsQueryKey = ['pbr-routable-models'] as const
+
 /** GET /api/v1/models 的元素。 */
 export interface PBRModelSummary {
   model: string
@@ -49,6 +53,35 @@ interface ListResponse<T> {
 export async function listPBRModels(): Promise<PBRModelSummary[]> {
   const res = await api.get<ListResponse<PBRModelSummary>>('/api/v1/models')
   return res.data.items ?? []
+}
+
+/** GET /api/v1/lanes 的精简项：车道名 + 有序成员（成员数组顺序即故障切换顺序）。 */
+export interface PBRLaneSummary {
+  name: string
+  members: { channel: string; upstream_model: string }[]
+}
+
+/**
+ * 车道列表摘要，供「路由与故障切换」页的「成员数与顺序摘要」列使用。
+ *
+ * GET /api/v1/lanes 是 cursor 分页（api-spec §5.2）：这里取最大页 200 条，
+ * 超出部分该列退化为只显示成员数（GET /api/v1/models 的 member_count 不受影响）。
+ */
+export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
+  const res = await api.get<{
+    items?: {
+      name: string
+      members?: { channel: string; upstream_model: string }[]
+    }[]
+    next_cursor: unknown
+  }>('/api/v1/lanes', { params: { limit: 200 } })
+  return (res.data.items ?? []).map((lane) => ({
+    name: lane.name,
+    members: (lane.members ?? []).map((m) => ({
+      channel: m.channel,
+      upstream_model: m.upstream_model,
+    })),
+  }))
 }
 
 /** 解析某模型的成员链（已配车道返回真实链；未配返回建议链，routable=false）。 */
