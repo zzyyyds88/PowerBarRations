@@ -75,8 +75,8 @@ pbr migrate \
   --keys    both          # octopus | newapi | both
 ```
 
-- **算法**：design-v1 §11.1（路由层成员请求名 M → 厂商层能力表按 priority/weight 择渠道 C →
-  应用 C 的 `model_mapping` 得到真名 U → PBR 成员）。
+- **算法**：见上文第 1 节（旧 group → 一律显式车道；成员请求名 M → 厂商层能力表按
+  priority/weight 择渠道 C → 应用 C 的 `model_mapping` 得到真名 U → PBR 成员）。
 - **幂等**：以 `name` 为键 upsert，可重复跑；同一输入两次产出的计划逐字节一致。
 - **对账报告**：`unresolved`（无归属，必须人工裁决，不许静默丢弃）、`ambiguous`
   （同优先级平局）、`widened`（旧白名单/模型限制被放宽为全部车道）、

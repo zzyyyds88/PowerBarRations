@@ -206,7 +206,7 @@ type LanePolicy struct {
 
 ## 4. 迁移与兼容
 
-### 4.1 存量密钥导入（迁移阶段，见 design-v1 §11）
+### 4.1 存量密钥导入（迁移阶段，见 [`MIGRATION.md`](../../MIGRATION.md)）
 
 - 导入现存客户端凭据，**密钥值不变**（下游零改动），因此：
   - `KeyHash = sha256(原值)`；

@@ -13,30 +13,9 @@
 | 管理面 | `/api/*` | **二选一**：`Authorization: Bearer <管理密钥>`（AI/脚本）或 HttpOnly 会话 Cookie（浏览器，登录后自动携带） |
 | 模型面 | `/v1/*` | `Authorization: Bearer <客户端密钥>`（同时兼容 `X-Api-Key`） |
 
-> **前缀说明**：`/api` 是规范前缀；`/api/v1` 保留为**兼容别名**（注册完全相同的处理器），既有脚本无需改动。
-> 与 AI 契约冲突的两个控制台内部资源收在 `/api/console/*`（`/api/console/models`、`/api/console/audit`）；其余控制台内部接口仍在 `/api/*` 下，可用同一管理密钥调用，但**不属于**本契约（§5 表内才是稳定契约）。
-> 面向 AI 的手册：`GET /doc`（`text/markdown`，见 §5.1）、`GET /llms.txt`（`text/plain`）；交互式 OpenAPI UI：`GET /doc/ui`。
+**管理密钥 = `Base64(SHA256(登录口令))`**（无账号体系），由调用方自行计算，服务端只存其哈希；首次使用先 `POST /api/setup` 设置口令（未初始化时除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`）；浏览器登录 `POST /api/auth/login` 换 HttpOnly Cookie（不写 localStorage），AI/脚本走 Bearer，两通道等价。派生规则、会话属性、失败退避与恢复手段（`PBR_ADMIN_KEY(S)`、`pbr auth reset`、`PBR_BIND` 与明文 HTTP 边界）详见 [`token-spec-v1.md`](token-spec-v1.md) §2；认证失败的响应形态见 §3（401 `unauthorized`）。
 
-**管理密钥由登录口令派生**（无账号体系，详见 [`token-spec-v1.md`](token-spec-v1.md) §2）：
-
-```
-管理密钥 = Base64( SHA256( 登录口令 ) )
-```
-
-- 首次启动时未初始化，必须先 `POST /api/setup` 设置口令；否则除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`。
-- 服务端只存 `sha256(管理密钥)`；口令与管理密钥明文都不落库。
-- **浏览器走会话 Cookie**：`POST /api/auth/login` 成功后签发 HttpOnly Cookie，控制台**不再把管理密钥写进 localStorage**；`POST /api/auth/logout` 清除。
-- **AI/脚本走 Bearer**：管理密钥 = `Base64(SHA256(登录口令))`，由调用方自行计算，无需人工复制（见 token-spec §2.1）。
-- 两条通道等价：任一通过即鉴权成功。口令变更后旧 Cookie 与新签名不匹配，自动失效。
-- **监听 `0.0.0.0` 对局域网开放**（模型面与管理面同端口），凭凭据鉴权、不做来源限制（业主决定）；可用 `PBR_BIND=127.0.0.1` 收紧。局域网为明文 HTTP，故口令须为长随机串。
-- 可用 `PBR_ADMIN_KEY` 环境变量显式覆盖（无头/AI 部署）；客户端密钥只存哈希，明文仅在创建/轮换响应出现一次。
-
-**认证失败响应**
-
-```json
-HTTP/1.1 401 Unauthorized
-{ "error": { "code": "unauthorized", "message": "missing or invalid bearer token" } }
-```
+> 前缀说明：`/api` 是规范前缀；`/api/v1` 保留为**兼容别名**（注册完全相同的处理器），既有脚本无需改动。控制台内部资源的边界见 §9。面向 AI 的手册：`GET /doc`（`text/markdown`）、`GET /llms.txt`（`text/plain`）、交互式文档 `GET /doc/ui`（§5.1）。
 
 ---
 
@@ -518,7 +497,7 @@ curl -s -X PUT $PBR/api/system/options \
   不会把关键词表清空。
 - 车道六键（`member_max_attempts` 等）默认是**车道级**配置，在
   `PUT /api/lanes/{name}` 的 `config` 里设置。`lane_defaults` 是它们的**全局默认值**
-  （选项键 `PBRLaneDefaults`，内置于 2/3/120/30/60/0）：作用于新建与一键固化的车道，
+  （选项键 `PBRLaneDefaults`，数值默认值单处规范见 routing-spec §1.2）：作用于新建与一键固化的车道，
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
 - `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。

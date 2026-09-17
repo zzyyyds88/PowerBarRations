@@ -129,20 +129,14 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 
 ### 2.3 六键与超时算术
 
-| 键 | 默认 | 含义 |
-|---|---|---|
-| `member_max_attempts` | 2 | 单成员含首发的总尝试次数 |
-| `member_retry_interval_seconds` | 3 | 同成员相邻尝试间隔 |
-| `member_non_stream_response_timeout_seconds` | 120 | 非流式整响应超时 |
-| `member_stream_first_event_timeout_seconds` | 30 | 流式首个事件超时 |
-| `member_cooldown_seconds` | 60 | 成员耗尽尝试后被跳过的秒数 |
-| `member_affinity_seconds` | **0** | 切换成功后保持当前成员的秒数（默认不粘滞） |
+六个键：`member_max_attempts`（单成员含首发的总尝试次数）、`member_retry_interval_seconds`（同成员相邻尝试间隔）、
+`member_non_stream_response_timeout_seconds`（非流式整响应超时）、`member_stream_first_event_timeout_seconds`（流式首个事件超时）、
+`member_cooldown_seconds`（成员耗尽尝试后被跳过的秒数）、`member_affinity_seconds`（切换成功后保持当前成员的秒数）。
+**数值默认值与超时算术的单处规范见 [`docs/routing-spec-v1.md`](docs/routing-spec-v1.md) §1.2、§8**；
+默认六键可经 `PUT /api/v1/system/options` 的 `lane_defaults` 调整（只影响新建/一键固化的车道与未显式配置的车道；
+已配置的车道以其自身六键为准）。
 
-默认六键可经 `PUT /api/v1/system/options` 的 `lane_defaults` 调整（只影响新建/一键固化
-的车道与未显式配置的车道；已配置的车道以其自身六键为准）。
-
-**超时算术（排障必用）**：最坏判定耗时 = 成员数 × attempts ×（超时 + 重试间隔）；
-端到端 = 客户端重试次数 × 该数。嫌慢时正确旋钮是 response timeout，而不是砍 attempts。
+嫌慢时正确旋钮是 response timeout，而不是砍 attempts。
 超时（含"上游一直不返回响应头"）一律按真实失败处理：计入尝试、冷却并换下一个成员。
 
 ### 2.4 冷却、熔断与亲和
