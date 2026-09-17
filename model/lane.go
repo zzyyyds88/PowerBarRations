@@ -319,6 +319,27 @@ func DeleteLaneByName(name string) error {
 	})
 }
 
+// removedModelNames 返回 oldModels 中有、newModels 中没有的模型名（trim、去重、保持顺序）。
+func removedModelNames(oldModels, newModels []string) []string {
+	newSet := map[string]bool{}
+	for _, m := range newModels {
+		if m = strings.TrimSpace(m); m != "" {
+			newSet[m] = true
+		}
+	}
+	out := make([]string, 0)
+	seen := map[string]bool{}
+	for _, m := range oldModels {
+		m = strings.TrimSpace(m)
+		if m == "" || newSet[m] || seen[m] {
+			continue
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	return out
+}
+
 // RemovedModelLaneRefs 返回本次从渠道移除的模型名里，命中同名车道且该车道有本渠道成员
 // 的车道名（去重、升序）。用于在渠道编辑/同步模型时防止"车道对某个路由键失去成员
 // 来源"却无人知晓（api-spec §5.3、§5.7 的守卫口径）。

@@ -899,6 +899,11 @@ func EditTagChannels(c *gin.Context) {
 	// 渠道 priority/weight 已删除：入参传 nil（EditChannelByTag 内部同样忽略）。
 	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, nil, nil, channelTag.ParamOverride, channelTag.HeaderOverride)
 	if err != nil {
+		var laneErr *model.LaneReferenceError
+		if errors.As(err, &laneErr) {
+			c.JSON(http.StatusOK, gin.H{"success": false, "code": "conflict", "message": "标签批量修改会移除仍被车道引用的模型，已取消", "data": gin.H{"blocked": laneErr.Blocked}})
+			return
+		}
 		common.ApiError(c, err)
 		return
 	}

@@ -949,6 +949,36 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		updateData.ModelMapping = modelMapping
 	}
 	if models != nil && *models != "" {
+		// 按标签批量改写模型清单同样要过车道引用守卫：被移除的路由键若命中同名车道
+		// 且该车道有该渠道成员，返回 LaneReferenceError，由调用方转成 conflict 包络
+		// （与渠道编辑/sync-models/模型删除同口径）。
+		newModels := make([]string, 0)
+		for _, m := range strings.Split(*models, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				newModels = append(newModels, m)
+			}
+		}
+		channels, err := GetChannelsByTag(tag, false, false)
+		if err != nil {
+			return err
+		}
+		blocked := map[string][]string{}
+		for _, ch := range channels {
+			removed := removedModelNames(ch.GetModels(), newModels)
+			if len(removed) == 0 {
+				continue
+			}
+			refs, refErr := RemovedModelLaneRefs(ch.Id, removed)
+			if refErr != nil {
+				return refErr
+			}
+			if len(refs) > 0 {
+				blocked[ch.Name] = refs
+			}
+		}
+		if len(blocked) > 0 {
+			return &LaneReferenceError{Blocked: blocked}
+		}
 		shouldReCreateAbilities = true
 		updateData.Models = *models
 	}
