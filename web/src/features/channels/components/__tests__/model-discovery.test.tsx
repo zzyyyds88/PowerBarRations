@@ -211,6 +211,9 @@ test('a successful auto discovery merges into the model list without replacing m
   const user = userEvent.setup()
   render(<DiscoveryHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   expect(
     await screen.findByText(/Found 2 upstream models · 1 new · 1 existing/)
   ).toBeVisible()
@@ -238,6 +241,9 @@ test('a failed auto discovery offers an inline retry and recovers on success', a
   const user = userEvent.setup()
   render(<DiscoveryHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
   expect(await screen.findByText('Upstream rejected the key')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Retry' }))
   expect(

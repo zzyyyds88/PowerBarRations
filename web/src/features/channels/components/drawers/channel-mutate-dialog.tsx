@@ -929,9 +929,9 @@ export function ChannelMutateDialog({
     () => ({ kind: 'saved', channelId: channelId || 0 }),
     [channelId]
   )
-  // Auto discovery starts only once the connection fields the probe needs are
-  // valid: type + key for unsaved channels, and the saved record for existing
-  // ones (the saved request reuses the stored credential).
+  // Manual probing is allowed only once the connection fields the probe needs
+  // are valid: type + key for unsaved channels, and the saved record for
+  // existing ones (the saved request reuses the stored credential).
   const discoveryConnectionReady = useMemo(() => {
     if (!MODEL_FETCHABLE_TYPES.has(currentType)) return false
     if (!previewModels) return Boolean(channelData?.data)
@@ -965,7 +965,8 @@ export function ChannelMutateDialog({
       MODEL_FETCHABLE_TYPES.has(currentType) &&
       (!isEditing || Boolean(channelData?.data)),
     request: previewModels ? previewRequest : savedRequest,
-    autoFetch: discoveryConnectionReady,
+    // 探测一律手动触发（「探测上游模型」按钮），不自动拉取。
+    autoFetch: false,
   })
   const fetchDiscoveredModels = discovery.fetch
   const handleFetchModels = useCallback(async () => {
@@ -1018,7 +1019,7 @@ export function ChannelMutateDialog({
   }, [discoveredNewModels, updateModels])
 
   let discoveryMessage = t(
-    'Fill in the connection fields to discover upstream models automatically.'
+    'Click "Probe upstream models" to fetch the model list from the upstream.'
   )
   if (discovery.status === 'loading') {
     discoveryMessage = t('Fetching models...')
@@ -2545,13 +2546,19 @@ export function ChannelMutateDialog({
                           variant='outline'
                           size='sm'
                           onClick={handleFetchModels}
-                          disabled={discovery.status === 'loading'}
+                          disabled={
+                            discovery.status === 'loading' ||
+                            !discoveryConnectionReady
+                          }
                         >
                           <RefreshCw
                             className='mr-1.5 size-3.5'
                             aria-hidden='true'
                           />
-                          {t('Re-fetch')}
+                          {discovery.status === 'success' ||
+                          discovery.status === 'stale'
+                            ? t('Re-fetch')
+                            : t('Probe upstream models')}
                         </Button>
                         {discovery.status === 'success' &&
                           normalizedDiscoveredModels.length > 0 && (

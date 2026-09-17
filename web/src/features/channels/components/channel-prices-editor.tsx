@@ -30,11 +30,11 @@ import type { ChannelModelPrice } from '../types'
 // 渠道级上游单价编辑器（人民币/百万 token，单层单价：design-v1 §16.9#7）。
 //
 // 只用于成本折算：同一模型在不同上游的采购价不同，价格唯一来源就是渠道价，
-// 没有全局默认单价层。计价键是**请求模型名**（路由键/车道名），不是上游真名
-// ——车道成员可引用清单之外的上游名，因此除渠道模型清单外还支持添加清单外
-// 的自定义计价行（可删除）。添加行用可搜索下拉（allowCustomValue）：选项 =
-// 渠道模型清单中尚未出现在表格里的模型，也允许键入清单外的自定义名。
-// 保存时仅落库至少填了一项的模型；这里只负责编辑，写入 setting JSON 由
+// 没有全局默认单价层。计价键是**请求模型名**（路由键/车道名），不是上游真名。
+// **表格初始为空，行全部按需手动添加**：可搜索下拉列出渠道模型清单中尚未
+// 添加的模型，也允许键入清单外的自定义名（独立车道名等边缘场景）；每一行
+// 都可删除。**未添加的模型不折算成本（免费）**，行内留空的维度按 0 计。
+// 保存时仅落库至少填了一项的行；写入 setting JSON 由
 // channel-form.buildSettingJSON 完成。
 
 const PRICE_FIELDS = ['input', 'output', 'cache_read', 'cache_write'] as const
@@ -70,28 +70,15 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
   const [customDraft, setCustomDraft] = useState('')
   const [customModels, setCustomModels] = useState<string[]>([])
 
-  // 已配价但不在模型清单里的模型（如独立车道名）也要可见、可删除，否则会变成
-  // 表格外的隐形价格行。它们与手动添加的自定义行一样按清单外行处理。
-  const pricedCustomModels = useMemo(
-    () =>
-      props.value
-        .map((item) => item.model)
-        .filter(
-          (model) =>
-            model !== '' &&
-            !props.models.includes(model) &&
-            !customModels.includes(model)
-        ),
-    [props.value, props.models, customModels]
-  )
-
-  const rows = useMemo(
-    () => [
-      ...new Set([...props.models, ...customModels, ...pricedCustomModels]),
-    ],
-    [props.models, customModels, pricedCustomModels]
-  )
-  const isCustom = (model: string) => !props.models.includes(model)
+  // 展示行 = 手动添加的行 ∪ 已有计价条目（编辑回显时后端带来的价格也要可见，
+  // 否则会变成表格外的隐形价格行）。
+  const rows = useMemo(() => {
+    const out = [...customModels]
+    for (const item of props.value) {
+      if (!out.includes(item.model)) out.push(item.model)
+    }
+    return out
+  }, [customModels, props.value])
 
   // 可搜索下拉的选项：渠道模型清单中尚未出现在表格里的模型；allowCustomValue
   // 允许键入清单外的自定义名（独立车道名等边缘场景）。
@@ -149,18 +136,14 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
     setCustomDraft(model)
   }
 
-  const removeCustomModel = (model: string) => {
+  const removeModel = (model: string) => {
     setCustomModels(customModels.filter((item) => item !== model))
     props.onChange(props.value.filter((item) => item.model !== model))
   }
 
   return (
     <div className='space-y-3'>
-      {rows.length === 0 ? (
-        <p className='text-muted-foreground text-sm'>
-          {t('Add models first, then set their upstream prices.')}
-        </p>
-      ) : (
+      {rows.length > 0 && (
         <div className='overflow-x-auto'>
           <table className='w-full min-w-[560px] text-sm'>
             <thead>
@@ -176,7 +159,6 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
             <tbody>
               {rows.map((model) => {
                 const price = props.value.find((item) => item.model === model)
-                const custom = isCustom(model)
                 return (
                   <tr key={model} className='border-b last:border-0'>
                     <td className='py-1.5 pr-2 break-all'>{model}</td>
@@ -194,18 +176,16 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
                       </td>
                     ))}
                     <td className='py-1.5'>
-                      {custom && (
-                        <Button
-                          type='button'
-                          variant='ghost'
-                          size='icon-sm'
-                          aria-label={t('Remove {{model}}', { model })}
-                          disabled={props.disabled}
-                          onClick={() => removeCustomModel(model)}
-                        >
-                          <X className='size-4' aria-hidden='true' />
-                        </Button>
-                      )}
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='icon-sm'
+                        aria-label={t('Remove {{model}}', { model })}
+                        disabled={props.disabled}
+                        onClick={() => removeModel(model)}
+                      >
+                        <X className='size-4' aria-hidden='true' />
+                      </Button>
                     </td>
                   </tr>
                 )
@@ -213,6 +193,13 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
             </tbody>
           </table>
         </div>
+      )}
+      {rows.length === 0 && (
+        <p className='text-muted-foreground text-sm'>
+          {t(
+            'No models are priced yet. Unpriced models are free (cost 0). Add rows below.'
+          )}
+        </p>
       )}
 
       {/* 敏感信息锁定时隐藏添加入口（组件不支持 disabled，锁定即不可加行）。 */}
@@ -232,6 +219,11 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
           }}
         />
       )}
+      <p className='text-muted-foreground text-xs'>
+        {t(
+          'Unit: CNY per 1M tokens, for cost accounting only. Blank fields count as 0; models without a row are free.'
+        )}
+      </p>
     </div>
   )
 }

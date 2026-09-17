@@ -437,7 +437,7 @@ export const FIELD_DESCRIPTIONS = {
   BASE_URL: 'Custom API base URL. Leave empty to use provider default.',
   KEY: 'API key from the provider',
   MODELS:
-    'Manually fine-tune the model list. Upstream discovery above is the primary source; edit here as a fallback.',
+    'Selected models. Use "Probe upstream models" above to fetch the upstream list, then add the ones you need; edit here manually as a fallback.',
   MODEL_MAPPING:
     'For this channel, map the model name in client requests to the model name sent upstream.',
   TEST_MODEL: 'Model to use when testing channel connectivity',
