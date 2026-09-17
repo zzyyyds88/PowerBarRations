@@ -81,12 +81,14 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('lists channels that declare the model and prefers the channel upstream price', async () => {
+// 模型页 = 元数据页：渠道关联只展示渠道声明与可用状态，不含计价（ui-spec §6.3）。
+it('lists channels that declare the model with type and availability badges', async () => {
   await renderAssociation([
     {
       id: 1,
       name: 'Cheap upstream',
       type: 1,
+      status: 1,
       models: 'model1',
       model_mapping: null,
       setting: JSON.stringify({
@@ -97,6 +99,7 @@ it('lists channels that declare the model and prefers the channel upstream price
       id: 2,
       name: 'Default upstream',
       type: 1,
+      status: 2,
       models: 'model1,model-other',
       model_mapping: null,
       setting: '{}',
@@ -115,10 +118,12 @@ it('lists channels that declare the model and prefers the channel upstream price
   expect(screen.getByText('Default upstream')).toBeVisible()
   expect(screen.queryByText('Unrelated')).not.toBeInTheDocument()
 
-  // 渠道价（单层单价）：配了价的渠道显示金额，未配价的渠道显示"未配置"。
-  expect(screen.getAllByText(/¥3 \/ ¥4/).length).toBeGreaterThan(0)
-  expect(screen.getByText('Channel price')).toBeVisible()
-  expect(screen.getAllByText('Not configured').length).toBeGreaterThan(0)
+  // 可用状态徽章：启用/手动停用；未配价渠道不再显示任何单价信息。
+  expect(screen.getByText('Enabled')).toBeVisible()
+  expect(screen.getByText('Disabled')).toBeVisible()
+  expect(screen.queryByText(/¥3 \/ ¥4/)).not.toBeInTheDocument()
+  expect(screen.queryByText('Channel price')).not.toBeInTheDocument()
+  expect(screen.queryByText('Not configured')).not.toBeInTheDocument()
 
   expect(screen.getAllByRole('button', { name: 'Edit channel' })).toHaveLength(
     2

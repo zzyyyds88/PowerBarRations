@@ -229,7 +229,7 @@ export function PlaygroundParameterPanel(props: PlaygroundParameterPanelProps) {
           className='max-h-[85vh] overflow-hidden rounded-t-xl'
           side='bottom'
         >
-          <SheetHeader>
+          <SheetHeader className='pr-12'>
             <SheetTitle>{t('Parameter settings')}</SheetTitle>
           </SheetHeader>
           <PlaygroundParameterContent {...props} compact />

@@ -23,29 +23,33 @@ import { useTranslation } from 'react-i18next'
 
 import { SideDrawerSection } from '@/components/drawer-layout'
 import { ErrorState } from '@/components/error-state'
+import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { searchChannels } from '@/features/channels/api'
-import { channelsQueryKeys, getChannelTypeLabel } from '@/features/channels/lib'
+import {
+  channelsQueryKeys,
+  getChannelTypeLabel,
+} from '@/features/channels/lib'
+import {
+  CHANNEL_STATUS,
+  CHANNEL_STATUS_CONFIG,
+} from '@/features/channels/constants'
+import { getLobeIcon } from '@/lib/lobe-icon'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import {
-  channelRouteKeys,
-  findChannelPrice,
-  matchesName,
-} from '../lib/channel-price'
+import { channelRouteKeys, matchesName } from '../lib/channel-price'
 
-// 模型抽屉「渠道关联」：列出声明该模型（或经 model_mapping 映射它）的渠道，
-// 展示每个渠道的上游单价（渠道 pbr_prices，单层单价：无渠道价即"未配置"），
-// 并给出跳转到渠道编辑的入口。此处只读，仅用于成本展示。
+// 模型抽屉「渠道关联」（模型页 = 元数据页，ui-spec §6.3）：列出声明该模型
+// （或经 model_mapping 映射它）的渠道，展示渠道名、类型与可用状态徽章，
+// 并给出跳转到渠道编辑的入口。此处只读；计价只在渠道编辑「上游单价」页签，
+// 不在此展示。
 const PAGE_SIZE = 100
-
-function formatPrice(price: { input?: number; output?: number }): string {
-  return `¥${price.input ?? 0} / ¥${price.output ?? 0}`
-}
 
 export function ModelLinkedChannels(props: {
   modelName: string
   nameRule?: number
+  /** 模型元数据图标（与模型列表同源：model.icon || model_name 首字符）。 */
+  icon?: string
 }) {
   const { t } = useTranslation()
   const nameRule = props.nameRule ?? 0
@@ -77,13 +81,16 @@ export function ModelLinkedChannels(props: {
 
   return (
     <SideDrawerSection>
-      <div className='flex flex-col gap-1'>
-        <h3 className='text-sm font-semibold'>{t('Channel association')}</h3>
-        <p className='text-muted-foreground text-xs'>
-          {t(
-            'Channel upstream price only; cost conversion only, never affects billing or admission.'
-          )}
-        </p>
+      <div className='flex items-start gap-2.5'>
+        <span className='mt-0.5 flex size-6 shrink-0 items-center justify-center'>
+          {getLobeIcon(props.icon || props.modelName[0], 24)}
+        </span>
+        <div className='flex min-w-0 flex-col gap-1'>
+          <h3 className='text-sm font-semibold'>{t('Channel association')}</h3>
+          <p className='text-muted-foreground text-xs'>
+            {t('Declarations and availability of this model across channels.')}
+          </p>
+        </div>
       </div>
 
       {channelsQuery.isError ? (
@@ -110,15 +117,10 @@ export function ModelLinkedChannels(props: {
       channels.length > 0 ? (
         <ul className='flex flex-col gap-2'>
           {channels.map((channel) => {
-            const channelPrice = findChannelPrice(
-              channel,
-              props.modelName,
-              nameRule
-            )
-            let priceLabel = t('Not configured')
-            if (channelPrice) {
-              priceLabel = t('Channel price')
-            }
+            const statusConfig =
+              CHANNEL_STATUS_CONFIG[
+                channel.status as keyof typeof CHANNEL_STATUS_CONFIG
+              ] ?? CHANNEL_STATUS_CONFIG[CHANNEL_STATUS.UNKNOWN]
             return (
               <li
                 key={channel.id}
@@ -130,17 +132,12 @@ export function ModelLinkedChannels(props: {
                     {t(getChannelTypeLabel(channel.type))}
                   </p>
                 </div>
-                <div className='min-w-0 text-end'>
-                  <p className='font-mono text-xs tabular-nums'>
-                    {channelPrice
-                      ? formatPrice(channelPrice)
-                      : t('Not configured')}
-                    {channelPrice ? (
-                      <span className='text-muted-foreground'> · 1M</span>
-                    ) : null}
-                  </p>
-                  <p className='text-muted-foreground text-xs'>{priceLabel}</p>
-                </div>
+                <StatusBadge
+                  label={t(statusConfig.label)}
+                  variant={statusConfig.variant}
+                  size='sm'
+                  copyable={false}
+                />
                 <Button
                   variant='outline'
                   size='sm'

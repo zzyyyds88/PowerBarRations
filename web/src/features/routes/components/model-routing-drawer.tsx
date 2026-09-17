@@ -19,46 +19,55 @@ For commercial licensing, please contact support@quantumnous.com
 import { useTranslation } from 'react-i18next'
 
 import {
-  sideDrawerContentClassName,
-  sideDrawerHeaderClassName,
-} from '@/components/drawer-layout'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+  Dialog as DialogRoot,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 import { ModelRoutingPanel } from './model-routing-panel'
 
 /**
- * 成员链（路由与故障切换）抽屉：仅作为既有 {@link ModelRoutingPanel} 的
- * 抽屉容器，编辑逻辑仍由面板负责。挂在「路由与故障切换」页（ui-spec §6.3）。
+ * 成员链（路由与故障切换）弹窗：行内「编辑成员链」打开时以固定模型模式
+ * 渲染 {@link ModelRoutingPanel}，只展示该模型的成员链编辑（居中 Dialog，
+ * 参照 ChannelMutateDialog：max-h 约束 + 单层滚动 + header 右上关闭）。
+ * 编辑逻辑仍由面板负责。挂在「路由与故障切换」页（ui-spec §6.3）。
  */
 export function ModelRoutingDrawer(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** 从行内操作打开时点中的模型：面板据此预选该模型的成员链。 */
+  /** 从行内操作打开时点中的模型：弹窗只编辑该模型的成员链。 */
   currentRow?: { model_name?: string } | null
 }) {
   const { t } = useTranslation()
+  const fixedModel = props.open ? props.currentRow?.model_name : undefined
 
   return (
-    <Sheet open={props.open} onOpenChange={props.onOpenChange}>
-      <SheetContent className={sideDrawerContentClassName('sm:max-w-[1100px]')}>
-        <SheetHeader className={sideDrawerHeaderClassName()}>
-          <SheetTitle>{t('Routing & Failover')}</SheetTitle>
-          <SheetDescription>
+    <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogContent className='flex max-h-[calc(100vh-2rem)] w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-4xl sm:p-6'>
+        <DialogHeader className='pr-12'>
+          <DialogTitle className='flex min-w-0 items-center gap-2'>
+            <span className='shrink-0'>{t('Routing & Failover')}</span>
+            {fixedModel ? (
+              <span
+                className='text-muted-foreground min-w-0 truncate font-mono text-sm font-normal'
+                title={fixedModel}
+              >
+                {fixedModel}
+              </span>
+            ) : null}
+          </DialogTitle>
+          <DialogDescription>
             {t(
               'Member order is the failover order: requests try the top member first and escape to the next on failure.'
             )}
-          </SheetDescription>
-        </SheetHeader>
-        <ModelRoutingPanel
-          initialModel={props.open ? props.currentRow?.model_name : undefined}
-        />
-      </SheetContent>
-    </Sheet>
+          </DialogDescription>
+        </DialogHeader>
+        <div className='flex min-h-0 flex-1 flex-col'>
+          <ModelRoutingPanel fixedModel={fixedModel} />
+        </div>
+      </DialogContent>
+    </DialogRoot>
   )
 }

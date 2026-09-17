@@ -18,15 +18,15 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   extractMappingSourceModels,
-  parseChannelSettings,
   parseModelsList,
 } from '@/features/channels/lib'
-import type { Channel, ChannelModelPrice } from '@/features/channels/types'
+import type { Channel } from '@/features/channels/types'
 
-// 渠道级上游单价的匹配工具（design-v1 §16#7）。
+// 模型 ↔ 渠道声明匹配工具（ui-spec §6.3）。
 //
-// 一个模型可能由多个渠道提供，各自采购价不同；这些函数负责"某渠道是否服务该模型"
-// 与"该渠道为它配了什么价"，供模型页的有效单价列与模型抽屉的渠道关联段共用。
+// 一个模型可能由多个渠道提供；这些函数负责"某渠道是否声明该模型"
+// （models 清单或 model_mapping 映射），供模型抽屉的渠道关联段使用。
+// 计价只在渠道编辑「上游单价」页签（ChannelPricesEditor），此处不再涉及。
 
 /** 模型名按 name_rule 匹配：0 精确 / 1 前缀 / 2 包含 / 3 后缀。 */
 export function matchesName(
@@ -55,13 +55,3 @@ export function channelRouteKeys(channel: Channel): string[] {
   return [...new Set(keys)]
 }
 
-/** 渠道为该模型配置的上游单价；未配置返回 undefined。 */
-export function findChannelPrice(
-  channel: Channel,
-  modelName: string,
-  rule: number
-): ChannelModelPrice | undefined {
-  const prices = parseChannelSettings(channel.setting).pbr_prices ?? []
-  if (rule === 0) return prices.find((item) => item.model === modelName)
-  return prices.find((item) => matchesName(item.model, modelName, rule))
-}

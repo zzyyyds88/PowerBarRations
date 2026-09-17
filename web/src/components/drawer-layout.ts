@@ -29,7 +29,7 @@ export const sideDrawerContentClassName = (className?: string) =>
 
 export const sideDrawerHeaderClassName = (className?: string) =>
   cn(
-    'border-border/70 bg-background/95 border-b px-4 py-3 text-start backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4',
+    'border-border/70 bg-background/95 border-b px-4 py-3 pr-12 text-start backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 sm:py-4',
     className
   )
 
