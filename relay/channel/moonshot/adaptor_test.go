@@ -3,10 +3,10 @@ package moonshot
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	relaycommon "pbr/relay/common"
 	"pbr/relaykit/dto"
-	"github.com/stretchr/testify/require"
 )
 
 func TestConvertOpenAIRequestKimiK26UsesOnlyAllowedTemperature(t *testing.T) {

@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	rootconstant "pbr/constant"
-	"pbr/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/common"
+	rootconstant "pbr/constant"
 )
 
 // PBR 每成员超时必须区分"我方计时器触发"与"客户端断开"（routing-spec §8）：
@@ -45,7 +45,9 @@ func TestPBRAttemptTimeoutWrapTranslatesFiredCancel(t *testing.T) {
 // pbrAttemptTimeoutErr 模拟 url.Error 包装 context.Canceled 的形态。
 type pbrAttemptTimeoutErr struct{}
 
-func (e *pbrAttemptTimeoutErr) Error() string { return "Post \"https://upstream.example\": context canceled" }
+func (e *pbrAttemptTimeoutErr) Error() string {
+	return "Post \"https://upstream.example\": context canceled"
+}
 func (e *pbrAttemptTimeoutErr) Unwrap() error { return context.Canceled }
 
 // 端到端一小步：startPBRAttemptTimeout 按 stream/非 stream 取不同上下文键，

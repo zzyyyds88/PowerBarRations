@@ -14,6 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"pbr/common"
 	rootconstant "pbr/constant"
 	relaycommon "pbr/relay/common"
@@ -23,10 +27,6 @@ import (
 	"pbr/service"
 	"pbr/setting/ratio_setting"
 	"pbr/setting/system_setting"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func TestAliMultipartEditsUseValidatedProviderQuantity(t *testing.T) {

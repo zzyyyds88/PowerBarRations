@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"pbr/common"
-	"pbr/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/common"
+	"pbr/model"
 )
 
 func TestChannelHasSensitiveChanges(t *testing.T) {

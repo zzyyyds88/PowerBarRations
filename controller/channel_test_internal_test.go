@@ -9,6 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/model"
@@ -18,9 +21,6 @@ import (
 	"pbr/service"
 	"pbr/setting/operation_setting"
 	"pbr/types"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGetChannelDefaultBaseURLsUsesBuiltInDefaults(t *testing.T) {

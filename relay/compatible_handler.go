@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/samber/lo"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/logger"
@@ -17,7 +18,6 @@ import (
 	"pbr/service"
 	"pbr/setting/model_setting"
 	"pbr/setting/ratio_setting"
-	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 )

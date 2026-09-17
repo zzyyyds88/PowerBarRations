@@ -1,8 +1,8 @@
 package dto
 
 import (
-	"pbr/relaykit/types"
 	"net/http"
+	"pbr/relaykit/types"
 )
 
 type Request interface {

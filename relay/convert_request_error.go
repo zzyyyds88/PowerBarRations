@@ -4,10 +4,10 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	relaycommon "pbr/relay/common"
 	kitreasoning "pbr/relaykit/relayconvert/reasoning"
 	"pbr/relaykit/types"
-	"github.com/gin-gonic/gin"
 )
 
 func newConvertRequestFailedError(c *gin.Context, info *relaycommon.RelayInfo, err error) *types.NewAPIError {

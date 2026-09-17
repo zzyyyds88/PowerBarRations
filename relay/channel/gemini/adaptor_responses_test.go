@@ -3,12 +3,12 @@ package gemini
 import (
 	"testing"
 
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"pbr/common"
+	relaycommon "pbr/relay/common"
+	"pbr/relaykit/dto"
 )
 
 func TestConvertOpenAIResponsesRequestToGeminiInstructionsAndInput(t *testing.T) {

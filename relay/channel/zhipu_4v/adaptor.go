@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/samber/lo"
 	channelconstant "pbr/constant"
 	"pbr/relay/channel"
 	"pbr/relay/channel/claude"
@@ -14,7 +15,6 @@ import (
 	relayconstant "pbr/relay/constant"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/types"
-	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 )

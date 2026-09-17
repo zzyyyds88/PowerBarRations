@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/logger"
 	relaycommon "pbr/relay/common"
@@ -13,7 +14,6 @@ import (
 	"pbr/relaykit/relayconvert"
 	"pbr/relaykit/types"
 	"pbr/service"
-	"github.com/gin-gonic/gin"
 )
 
 func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {

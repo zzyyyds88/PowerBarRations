@@ -13,15 +13,15 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"pbr/common"
-	"pbr/model"
-	"pbr/setting/billing_setting"
-	"pbr/setting/ratio_setting"
-	"pbr/setting/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"pbr/common"
+	"pbr/model"
+	"pbr/setting/billing_setting"
+	"pbr/setting/config"
+	"pbr/setting/ratio_setting"
 )
 
 func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
@@ -102,7 +102,6 @@ func modelManagementRequest(t *testing.T, handler gin.HandlerFunc, method, path 
 	}
 	return recorder
 }
-
 
 func TestModelManagementDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {

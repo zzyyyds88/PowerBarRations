@@ -3,9 +3,9 @@ package ali
 import (
 	"testing"
 
-	"pbr/relaykit/dto"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
+	"pbr/relaykit/dto"
 )
 
 func TestRequestOpenAI2AliTopP(t *testing.T) {

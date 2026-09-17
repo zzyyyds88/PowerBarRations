@@ -3,10 +3,10 @@ package oaichat
 import (
 	"testing"
 
-	"pbr/relaykit/dto"
-	"pbr/relaykit/relayconvert/convmeta"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/relaykit/dto"
+	"pbr/relaykit/relayconvert/convmeta"
 )
 
 func TestResponseOpenAI2GeminiMapsTextToolFinishReasonAndUsage(t *testing.T) {

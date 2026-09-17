@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
 	relaycommon "pbr/relay/common"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/types"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStreamResponseGeminiChat2OpenAIAttachesUsageMetadata(t *testing.T) {

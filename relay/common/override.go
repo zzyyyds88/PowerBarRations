@@ -11,12 +11,12 @@ import (
 	"strconv"
 	"strings"
 
-	"pbr/common"
-	kitreasoning "pbr/relaykit/relayconvert/reasoning"
-	"pbr/relaykit/types"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"pbr/common"
+	kitreasoning "pbr/relaykit/relayconvert/reasoning"
+	"pbr/relaykit/types"
 )
 
 var negativeIndexRegexp = regexp.MustCompile(`\.(-\d+)`)

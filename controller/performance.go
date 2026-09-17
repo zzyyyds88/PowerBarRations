@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/logger"
-	"github.com/gin-gonic/gin"
 )
 
 // PerformanceStats 性能统计信息

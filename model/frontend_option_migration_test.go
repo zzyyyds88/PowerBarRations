@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	"pbr/common"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"pbr/common"
 )
 
 func useFrontendOptionMigrationDB(t *testing.T) *gorm.DB {

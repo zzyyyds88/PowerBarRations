@@ -3,10 +3,10 @@ package middleware
 import (
 	"fmt"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/logger"
 	"pbr/relaykit/types"
-	"github.com/gin-gonic/gin"
 )
 
 func abortWithOpenAiMessage(c *gin.Context, statusCode int, message string, code ...types.ErrorCode) {

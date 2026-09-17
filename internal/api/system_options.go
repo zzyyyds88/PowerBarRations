@@ -37,15 +37,15 @@ type systemOptions struct {
 }
 
 type systemOptionsPatch struct {
-	CircuitFailureThreshold  *float64                 `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds       *int                     `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds    *int                     `json:"circuit_max_open_seconds"`
-	LogRetentionDays         *int                     `json:"log_retention_days"`
-	ProbeConcurrency         *int                     `json:"probe_concurrency"`
-	AutomaticEnableChannel   *bool                    `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel  *bool                    `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords *[]string                `json:"automatic_disable_keywords"`
-	LaneDefaults             *model.LaneRelayConfig   `json:"lane_defaults"`
+	CircuitFailureThreshold  *float64               `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds       *int                   `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds    *int                   `json:"circuit_max_open_seconds"`
+	LogRetentionDays         *int                   `json:"log_retention_days"`
+	ProbeConcurrency         *int                   `json:"probe_concurrency"`
+	AutomaticEnableChannel   *bool                  `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel  *bool                  `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords *[]string              `json:"automatic_disable_keywords"`
+	LaneDefaults             *model.LaneRelayConfig `json:"lane_defaults"`
 }
 
 // validateLaneDefaults 校验默认六键：四个"必须为正"的时长/预算、两个允许为 0 的间隔。

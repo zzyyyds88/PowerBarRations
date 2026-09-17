@@ -9,11 +9,11 @@ import (
 	common2 "pbr/common"
 	"pbr/relaykit/types"
 
-	"pbr/relaykit/dto"
-	"pbr/setting/model_setting"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/relaykit/dto"
+	"pbr/setting/model_setting"
 )
 
 func TestApplyParamOverrideTrimPrefix(t *testing.T) {

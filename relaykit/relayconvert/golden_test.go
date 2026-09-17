@@ -16,10 +16,10 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/relayconvert/convmeta"
 	"pbr/relaykit/types"
-	"github.com/stretchr/testify/require"
 )
 
 var updateGolden = flag.Bool("update", false, "update golden files")

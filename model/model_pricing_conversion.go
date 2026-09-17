@@ -7,13 +7,13 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/shopspring/decimal"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/setting/billing_setting"
 	"pbr/setting/operation_setting"
 	"pbr/setting/ratio_setting"
 	hostreasoning "pbr/setting/reasoning"
-	"github.com/shopspring/decimal"
 )
 
 // ModelPricingConversion is a preview only. Saving still requires a versioned

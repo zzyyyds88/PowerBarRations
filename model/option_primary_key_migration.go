@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"pbr/common"
 	"gorm.io/gorm"
+	"pbr/common"
 )
 
 const (

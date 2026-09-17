@@ -5,9 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	relaycommon "pbr/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	relaycommon "pbr/relay/common"
 )
 
 func TestProcessHeaderOverride_ChannelTestSkipsPassthroughRules(t *testing.T) {

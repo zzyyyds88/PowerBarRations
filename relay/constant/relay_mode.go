@@ -73,4 +73,3 @@ func Path2RelayMode(path string) int {
 	}
 	return relayMode
 }
-

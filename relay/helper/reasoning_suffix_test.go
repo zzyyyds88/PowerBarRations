@@ -5,6 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 	"pbr/common"
 	"pbr/constant"
 	relaycommon "pbr/relay/common"
@@ -13,10 +17,6 @@ import (
 	"pbr/relaykit/types"
 	"pbr/setting/model_setting"
 	hostreasoning "pbr/setting/reasoning"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 func mustApplyReasoningModelSuffix(t *testing.T, info *relaycommon.RelayInfo, outbound ...dto.Request) {

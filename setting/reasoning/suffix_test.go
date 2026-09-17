@@ -3,9 +3,9 @@ package reasoning
 import (
 	"testing"
 
-	"pbr/setting/model_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/setting/model_setting"
 )
 
 func TestCanonicalBillingModelNames(t *testing.T) {

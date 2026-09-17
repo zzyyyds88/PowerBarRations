@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/gin-gonic/gin"
 	rootcommon "pbr/common"
 	"pbr/constant"
 	relaycommon "pbr/relay/common"
 	"pbr/relaykit/dto"
 	hostreasoning "pbr/setting/reasoning"
-	"github.com/gin-gonic/gin"
 )
 
 func ModelMappedHelper(c *gin.Context, info *relaycommon.RelayInfo, request dto.Request) error {

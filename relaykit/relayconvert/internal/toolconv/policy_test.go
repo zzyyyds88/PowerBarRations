@@ -3,12 +3,12 @@ package toolconv
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/relayconvert/convmeta"
 	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"pbr/relaykit/types"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func geminiCodeExecutionRequest(t *testing.T) *dto.GeminiChatRequest {

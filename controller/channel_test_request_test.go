@@ -4,6 +4,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/model"
@@ -14,10 +18,6 @@ import (
 	"pbr/relaykit/dto"
 	"pbr/relaykit/types"
 	"pbr/setting/model_setting"
-	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func convertChatCompatibilityRequest(t *testing.T, request *dto.GeneralOpenAIRequest, channelType int, mapping map[string]string) []byte {

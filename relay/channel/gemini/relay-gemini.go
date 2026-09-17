@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/logger"
@@ -19,7 +20,6 @@ import (
 	"pbr/relaykit/relayconvert"
 	"pbr/relaykit/types"
 	"pbr/service"
-	"github.com/gin-gonic/gin"
 )
 
 func buildUsageFromGeminiMetadata(metadata *dto.GeminiUsageMetadata, fallbackPromptTokens int) dto.Usage {

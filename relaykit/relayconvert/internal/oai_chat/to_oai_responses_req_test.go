@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	"pbr/relaykit/dto"
-	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"pbr/relaykit/dto"
+	kitutil "pbr/relaykit/relayconvert/kitutil"
 )
 
 func TestChatCompletionsRequestToResponsesRequestInstructionsAndTools(t *testing.T) {

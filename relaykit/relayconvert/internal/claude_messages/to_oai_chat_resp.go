@@ -6,12 +6,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/reasonmap"
 	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
 	kitutil "pbr/relaykit/relayconvert/kitutil"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 type ClaudeResponseInfo struct {

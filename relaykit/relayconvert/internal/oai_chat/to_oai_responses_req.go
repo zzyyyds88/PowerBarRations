@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo"
 	"pbr/relaykit/dto"
 	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"pbr/relaykit/relayconvert/reasoning"
-	"github.com/samber/lo"
 )
 
 func normalizeChatImageURLToString(v any) any {

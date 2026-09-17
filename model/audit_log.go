@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
-	"pbr/common"
-	"pbr/logger"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"pbr/common"
+	"pbr/logger"
 )
 
 const (

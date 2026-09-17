@@ -3,10 +3,10 @@ package openai
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"pbr/constant"
 	relaycommon "pbr/relay/common"
 	relayconstant "pbr/relay/constant"
-	"github.com/stretchr/testify/assert"
 )
 
 // Custom（type 8）渠道 GetRequestURL 语义（ui-spec §6.4）：

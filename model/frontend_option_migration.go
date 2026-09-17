@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"gorm.io/gorm"
 	"pbr/common"
 	"pbr/setting/console_setting"
-	"gorm.io/gorm"
 )
 
 const retiredThemeOptionKey = "theme.frontend"

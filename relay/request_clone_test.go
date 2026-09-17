@@ -8,14 +8,14 @@ import (
 	"reflect"
 	"testing"
 
-	"pbr/common"
-	relaycommon "pbr/relay/common"
-	"pbr/relay/helper"
-	"pbr/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/copier"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/common"
+	relaycommon "pbr/relay/common"
+	"pbr/relay/helper"
+	"pbr/relaykit/dto"
 )
 
 func TestRequestDeepCopyResponses(t *testing.T) {

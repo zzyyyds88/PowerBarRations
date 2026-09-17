@@ -3,10 +3,10 @@ package ali
 import (
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"pbr/logger"
 	"pbr/relaykit/dto"
 	"pbr/service"
-	"github.com/gin-gonic/gin"
 )
 
 type AliMessage struct {

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"pbr/constant"
 	"pbr/relay/channel"
 	"pbr/relay/channel/claude"
@@ -19,8 +21,6 @@ import (
 	"pbr/relaykit/relayconvert"
 	"pbr/relaykit/types"
 	"pbr/service"
-	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
 )
 
 const ChannelName = "advanced_custom"

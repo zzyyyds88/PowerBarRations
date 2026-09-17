@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/logger"
@@ -15,7 +16,6 @@ import (
 	"pbr/relaykit/dto"
 	"pbr/relaykit/types"
 	"pbr/service"
-	"github.com/gin-gonic/gin"
 )
 
 func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) *dto.Usage {

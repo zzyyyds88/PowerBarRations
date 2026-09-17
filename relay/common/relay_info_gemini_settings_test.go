@@ -3,8 +3,8 @@ package common
 import (
 	"testing"
 
-	"pbr/setting/model_setting"
 	"github.com/stretchr/testify/assert"
+	"pbr/setting/model_setting"
 )
 
 func TestRelayInfoConvOptionsUsesNormalizedGeminiSafetySettings(t *testing.T) {

@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"testing"
 
-	relaycommon "pbr/relay/common"
-	"pbr/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	relaycommon "pbr/relay/common"
+	"pbr/service"
 )
 
 func TestDoRequestReturnsUpstreamRedirectWithoutFollowing(t *testing.T) {

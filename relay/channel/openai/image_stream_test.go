@@ -10,14 +10,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/constant"
 	"pbr/pkg/billingexpr"
 	relaycommon "pbr/relay/common"
 	relayconstant "pbr/relay/constant"
 	"pbr/relaykit/dto"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func newImageTestContext(t *testing.T, body, contentType string, isStream bool) (*gin.Context, *httptest.ResponseRecorder, *http.Response, *relaycommon.RelayInfo) {

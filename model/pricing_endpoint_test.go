@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/relaykit/dto"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func resetPricingEndpointTestTables(t *testing.T) {

@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/pkg/billingexpr"
 	relaycommon "pbr/relay/common"
@@ -15,9 +18,6 @@ import (
 	"pbr/setting/model_setting"
 	"pbr/setting/operation_setting"
 	"pbr/setting/ratio_setting"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestModelPriceHelperTieredUsesPreloadedRequestInput(t *testing.T) {

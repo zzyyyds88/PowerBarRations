@@ -3,9 +3,9 @@ package relay
 import (
 	"testing"
 
-	"pbr/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/common"
 )
 
 func TestBuildAlphaSearchRequestBodyPreservesUnknownFields(t *testing.T) {

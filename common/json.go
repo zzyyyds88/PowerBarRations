@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"io"
 
-	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"github.com/gin-gonic/gin/binding"
+	kitutil "pbr/relaykit/relayconvert/kitutil"
 )
 
 // hostJSONCodec is the single place where the host chooses its JSON engine.

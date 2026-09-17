@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
-	"github.com/stretchr/testify/require"
 )
 
 func clearPreferredOwnerTables(t *testing.T) {

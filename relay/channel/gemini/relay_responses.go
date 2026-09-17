@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/constant"
 	"pbr/logger"
@@ -15,7 +16,6 @@ import (
 	"pbr/relaykit/relayconvert"
 	"pbr/relaykit/types"
 	"pbr/service"
-	"github.com/gin-gonic/gin"
 )
 
 func GeminiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

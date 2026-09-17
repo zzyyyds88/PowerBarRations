@@ -22,11 +22,11 @@ func GetAuditLogs(c *gin.Context) {
 		return
 	}
 	filter := model.AuditLogFilter{
-		Username:         c.Query("username"),
-		Category:         c.Query("category"),
-		TokenRef:         c.Query("token_ref"),
-		ExcludeTokenRef:  c.Query("exclude_token_ref"),
-		RequestId:        c.Query("request_id"),
+		Username:        c.Query("username"),
+		Category:        c.Query("category"),
+		TokenRef:        c.Query("token_ref"),
+		ExcludeTokenRef: c.Query("exclude_token_ref"),
+		RequestId:       c.Query("request_id"),
 	}
 	if !model.ValidAuditCategory(filter.Category) || !model.ValidTokenFingerprint(filter.TokenRef) || !model.ValidTokenFingerprint(filter.ExcludeTokenRef) {
 		common.ApiErrorMsg(c, "Invalid audit filters")

@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/constant"
 	relaycommon "pbr/relay/common"
 	relayconstant "pbr/relay/constant"
 	"pbr/relaykit/dto"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGetRequestURLAlphaSearch(t *testing.T) {

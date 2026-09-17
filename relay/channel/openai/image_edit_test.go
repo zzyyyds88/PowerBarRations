@@ -8,12 +8,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	relaycommon "pbr/relay/common"
 	relayconstant "pbr/relay/constant"
 	"pbr/relaykit/dto"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/require"
 )
 
 // TestConvertImageEditRequestMultipart verifies that ConvertImageRequest

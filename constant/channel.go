@@ -54,7 +54,6 @@ const (
 	ChannelTypeNewAPI         = 60
 	// ChannelTypeDummy 与历史最大类型号保持一致（曾是 Task Plugin 的 61），仅作计数上界。
 	ChannelTypeDummy = 61
-
 )
 
 // ChannelBaseURLs 保存各渠道类型的内置默认 Base URL。

@@ -4,6 +4,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/controller"
 	"pbr/model"
@@ -13,9 +16,6 @@ import (
 	"pbr/setting/billing_setting"
 	"pbr/setting/config"
 	"pbr/setting/ratio_setting"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestGPT6AstraBuiltinBilling(t *testing.T) {

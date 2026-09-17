@@ -6,13 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/relayconvert"
 	"pbr/relaykit/relayconvert/convmeta"
 	"pbr/relaykit/types"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRelayInfoGetFinalRequestRelayFormatPrefersExplicitFinal(t *testing.T) {

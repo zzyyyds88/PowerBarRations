@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"pbr/logger"
 	"github.com/gin-gonic/gin"
+	"pbr/logger"
 )
 
 // SignRequestForJimeng 对即梦 API 请求进行签名，支持 http.Request 或 header+url+body 方式

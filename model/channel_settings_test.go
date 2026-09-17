@@ -3,10 +3,10 @@ package model
 import (
 	"testing"
 
-	"pbr/constant"
-	"pbr/relaykit/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/constant"
+	"pbr/relaykit/dto"
 )
 
 func TestChannelValidateSettingsRejectsInvalidHTTPTransport(t *testing.T) {

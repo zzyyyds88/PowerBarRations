@@ -3,11 +3,11 @@ package model
 import (
 	"testing"
 
-	"pbr/common"
-	"pbr/constant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"pbr/common"
+	"pbr/constant"
 )
 
 func setupChannelStatusTest(t *testing.T) {

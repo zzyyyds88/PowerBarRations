@@ -4,9 +4,9 @@ import (
 	"io"
 	"testing"
 
-	"pbr/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/common"
 )
 
 func TestNewOutboundJSONBody_GetBodyReplaysFullBody(t *testing.T) {

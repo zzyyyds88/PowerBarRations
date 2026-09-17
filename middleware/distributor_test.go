@@ -3,8 +3,8 @@ package middleware
 import (
 	"testing"
 
-	"pbr/setting/model_setting"
 	"github.com/stretchr/testify/assert"
+	"pbr/setting/model_setting"
 )
 
 func TestTokenModelLimitAllowsLegacyAliasAndModifierVariant(t *testing.T) {

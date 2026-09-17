@@ -189,4 +189,3 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	}
 	return channel, selectGroup, nil
 }
-

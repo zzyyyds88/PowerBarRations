@@ -101,4 +101,3 @@ func GetAPIVersion(c *gin.Context) string {
 	}
 	return apiVersion
 }
-

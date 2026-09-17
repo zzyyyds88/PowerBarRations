@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"pbr/common"
 	"pbr/relay/channel"
 	"pbr/relay/channel/claude"
@@ -17,7 +18,6 @@ import (
 	"pbr/relaykit/types"
 	"pbr/setting/model_setting"
 	"pbr/setting/reasoning"
-	"github.com/gin-gonic/gin"
 )
 
 type Adaptor struct {

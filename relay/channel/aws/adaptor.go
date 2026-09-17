@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/pkg/errors"
 	"pbr/relay/channel"
 	"pbr/relay/channel/claude"
 	relaycommon "pbr/relay/common"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/types"
 	"pbr/service"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
-	"github.com/pkg/errors"
 
 	"github.com/gin-gonic/gin"
 )

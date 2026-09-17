@@ -8,6 +8,9 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
 	relaycommon "pbr/relay/common"
@@ -16,9 +19,6 @@ import (
 	"pbr/relaykit/relayconvert"
 	"pbr/relaykit/types"
 	"pbr/setting/model_setting"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAdaptorUsesExactRouteAndQueryAuth(t *testing.T) {

@@ -6,12 +6,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"pbr/dto"
-	"pbr/service"
-	"pbr/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"pbr/dto"
+	"pbr/relaykit/types"
+	"pbr/service"
 )
 
 func TestShouldRetryHonorsPinRetryMode(t *testing.T) {

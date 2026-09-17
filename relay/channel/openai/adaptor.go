@@ -23,6 +23,7 @@ import (
 	"pbr/relaykit/dto"
 
 	//"pbr/relay/channel/minimax"
+	"github.com/samber/lo"
 	"pbr/relay/channel/xinference"
 	relaycommon "pbr/relay/common"
 	"pbr/relay/common_handler"
@@ -32,7 +33,6 @@ import (
 	"pbr/service"
 	"pbr/setting/model_setting"
 	"pbr/setting/reasoning"
-	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 )

@@ -201,7 +201,6 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 	return filtered
 }
 
-
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 	// 与 UpdateAbilities 保持一致：用 GetModels() 的集合语义（去空白/丢空项/去重），
 	// 否则 models 为空串时会生成一条空模型 ability。
@@ -223,7 +222,7 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
 				// 渠道 priority/weight 已删除：ability 自身的列保留（基座遗留的
 				// 任务插件/显式 pin 选择链仍在用），新行取默认值。
-				Tag:       channel.Tag,
+				Tag: channel.Tag,
 			}
 			abilities = append(abilities, ability)
 		}
@@ -295,7 +294,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
 				// 渠道 priority/weight 已删除：ability 自身的列保留（基座遗留的
 				// 任务插件/显式 pin 选择链仍在用），新行取默认值。
-				Tag:       channel.Tag,
+				Tag: channel.Tag,
 			}
 			abilities = append(abilities, ability)
 		}

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"pbr/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"pbr/common"
 )
 
 type MigrationIdentityFields struct {

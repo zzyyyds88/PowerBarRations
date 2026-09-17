@@ -4,8 +4,8 @@ import (
 	"log"
 	"os"
 
-	"pbr/common"
 	"github.com/gin-gonic/gin"
+	"pbr/common"
 )
 
 func ConfigureTrustedProxies(engine *gin.Engine) error {

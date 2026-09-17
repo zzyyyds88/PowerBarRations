@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/relaykit/dto"
 	"pbr/relaykit/relayconvert/convmeta"
 	sharedclaude "pbr/relaykit/relayconvert/internal/shared/claude"
 	kitutil "pbr/relaykit/relayconvert/kitutil"
 	"pbr/relaykit/relayconvert/reasoning"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestClaudeDefaultMaxTokensPresence(t *testing.T) {

@@ -3,9 +3,9 @@ package common_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"pbr/common"
 	"pbr/constant"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestWanEndpointsDistinguishImagesFromVideos(t *testing.T) {

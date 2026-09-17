@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"pbr/common"
 	"pbr/constant"
 	openaichannel "pbr/relay/channel/openai"
@@ -14,9 +17,6 @@ import (
 	relayconstant "pbr/relay/constant"
 	"pbr/relaykit/dto"
 	relaytypes "pbr/relaykit/types"
-	"github.com/gin-gonic/gin"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestIsResponsesEventStreamContentType(t *testing.T) {
