@@ -56,15 +56,6 @@ export async function getUserModels(): Promise<{
   return { success: true, data: names }
 }
 
-export async function getUserGroups(): Promise<{
-  success: boolean
-  message?: string
-  data?: Record<string, { desc: string; ratio: number | string }>
-}> {
-  // PBR 单用户无分组；控制台的分组选择器仍需要一个默认项。
-  return { success: true, data: { default: { desc: '', ratio: 1 } } }
-}
-
 // ============================================================================
 // System APIs
 // ============================================================================
