@@ -27,12 +27,14 @@ import {
   Copy,
   FileText,
   Eraser,
+  Plus,
   RefreshCw,
   Code,
   Route,
   Settings,
   SlidersHorizontal,
   Wand2,
+  X,
 } from 'lucide-react'
 import {
   type ReactNode,
@@ -53,7 +55,6 @@ import { ErrorState } from '@/components/error-state'
 import { JsonCodeEditor } from '@/components/json-code-editor'
 import { JsonEditor } from '@/components/json-editor'
 import { LearnMore } from '@/components/learn-more'
-import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -111,7 +112,6 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
-  getAllModels,
   getChannel,
   getChannelDefaultBaseURLs,
   refreshCodexCredential,
@@ -177,7 +177,6 @@ import {
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
 import { ModelMappingEditor } from '../model-mapping-editor'
-import { UpstreamModelSelection } from '../upstream-model-selection'
 import {
   ChannelConfiguration,
   ChannelConfigurationStatusIndicator,
@@ -381,9 +380,9 @@ export function ChannelMutateDialog({
     ((action: MissingModelsAction) => void) | null
   >(null)
   const channelFormRef = useRef<HTMLFormElement>(null)
-  const [modelConfiguration, setModelConfiguration] = useState<{
-    pluginKey?: string
-  } | null>(null)
+  const [modelDiscoveryDialogOpen, setModelDiscoveryDialogOpen] = useState(false)
+  const [pendingDiscoveryOpen, setPendingDiscoveryOpen] = useState(false)
+  const [newModelDraft, setNewModelDraft] = useState('')
   const [paramOverrideEditorOpen, setParamOverrideEditorOpen] = useState(false)
   const [advancedCustomEditorOpen, setAdvancedCustomEditorOpen] =
     useState(false)
@@ -422,13 +421,6 @@ export function ChannelMutateDialog({
     queryFn: async () => requireServerSuccess(await getChannel(channelId || 0)),
     enabled: open && isEditing && Boolean(channelId),
     meta: { errorToast: false },
-  })
-
-  // Fetch all available models
-  const { data: allModelsData } = useQuery({
-    queryKey: ['channel_models'],
-    queryFn: async () => requireServerSuccess(await getAllModels()),
-    enabled: open,
   })
 
   const { copyToClipboard } = useCopyToClipboard()
@@ -575,12 +567,6 @@ export function ChannelMutateDialog({
       ? advancedCustomStats.routeTypeLabels.join(', ')
       : undefined
 
-  // Get all models list
-  const allModelsList = useMemo(
-    () => allModelsData?.data?.map((model) => model.id).filter(Boolean) || [],
-    [allModelsData]
-  )
-
   // Parse current models as array
   const currentModelsArray = useMemo(
     () => parseModelsString(currentModels),
@@ -631,14 +617,13 @@ export function ChannelMutateDialog({
     [currentModelMapping]
   )
 
-  // Transform models to multi-select options
-  const modelOptions = useMemo(() => {
-    const allModels = new Set([...allModelsList, ...currentModelsArray])
-    return [...allModels].map((model) => ({
-      value: model,
-      label: model,
-    }))
-  }, [allModelsList, currentModelsArray])
+  // Upstream names offered as mapping targets: aliases already mapped plus the
+  // channel's declared models. The base "all declared models" union was a
+  // leftover that surfaced unrelated channels' models (ui-spec §6.4).
+  const mappingTargetOptions = useMemo(
+    () => [...new Set([...redirectModelList, ...currentModelsArray])],
+    [redirectModelList, currentModelsArray]
+  )
 
   const modelMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
     if (!currentModelMapping?.trim()) {
@@ -736,7 +721,9 @@ export function ChannelMutateDialog({
   // Load channel data into form when editing
   useEffect(() => {
     if (!open) {
-      setModelConfiguration(null)
+      setModelDiscoveryDialogOpen(false)
+      setPendingDiscoveryOpen(false)
+      setNewModelDraft('')
       form.reset(CHANNEL_FORM_DEFAULT_VALUES)
       loadedForm.current = null
       setConfigurationSection('connection')
@@ -760,7 +747,9 @@ export function ChannelMutateDialog({
         snapshot: JSON.stringify(form.getValues()),
       }
       if (isNewChannel) {
-        setModelConfiguration(null)
+        setModelDiscoveryDialogOpen(false)
+        setPendingDiscoveryOpen(false)
+        setNewModelDraft('')
         setConfigurationSection('connection')
         setPendingErrorFocus(null)
       }
@@ -993,6 +982,7 @@ export function ChannelMutateDialog({
       setPendingErrorFocus('key')
       return
     }
+    setPendingDiscoveryOpen(true)
     await fetchDiscoveredModels()
   }, [isEditing, canDiscoverModels, form, t, fetchDiscoveredModels])
 
@@ -1011,13 +1001,22 @@ export function ChannelMutateDialog({
     return normalizedDiscoveredModels.filter((model) => !existing.has(model))
   }, [currentModelsArray, isEditing, normalizedDiscoveredModels])
 
-  const handleAddAllDiscoveredModels = useCallback(() => {
-    updateModels(normalizedDiscoveredModels, true)
-  }, [normalizedDiscoveredModels, updateModels])
-
-  const handleAddNewDiscoveredModels = useCallback(() => {
-    updateModels(discoveredNewModels, true)
-  }, [discoveredNewModels, updateModels])
+  // A successful probe opens the centered selection dialog (ui-spec §6.4).
+  // Opening here instead of inside handleFetchModels keeps the hook untouched
+  // and avoids a stale render window while the request is in flight.
+  useEffect(() => {
+    if (!pendingDiscoveryOpen) return
+    if (discovery.status === 'success') {
+      // An empty upstream result keeps the inline "no models returned" notice
+      // instead of opening an empty picker.
+      if (normalizedDiscoveredModels.length > 0) {
+        setModelDiscoveryDialogOpen(true)
+      }
+      setPendingDiscoveryOpen(false)
+    } else if (discovery.status === 'error') {
+      setPendingDiscoveryOpen(false)
+    }
+  }, [discovery.status, pendingDiscoveryOpen, normalizedDiscoveredModels.length])
 
   let discoveryMessage = t(
     'Click "Probe upstream models" to fetch the model list from the upstream.'
@@ -1055,12 +1054,30 @@ export function ChannelMutateDialog({
     await copyToClipboard(models)
   }, [form, copyToClipboard, t])
 
-  // Handle model selection change from MultiSelect
-  const handleModelsChange = useCallback(
-    (selected: string[]) => {
-      form.setValue('models', selected.join(','))
+  const handleAddManualModel = useCallback(() => {
+    const model = newModelDraft.trim()
+    if (!model) return
+    if (currentModelsArray.includes(model)) {
+      toast.info(t('Model already exists'))
+      setNewModelDraft('')
+      return
+    }
+    updateModels([...currentModelsArray, model])
+    setNewModelDraft('')
+  }, [currentModelsArray, newModelDraft, t, updateModels])
+
+  const handleRemoveModel = useCallback(
+    (model: string) => {
+      updateModels(currentModelsArray.filter((item) => item !== model))
     },
-    [form]
+    [currentModelsArray, updateModels]
+  )
+
+  const handleModelDiscoveryApply = useCallback(
+    (selected: string[]) => {
+      updateModels(selected)
+    },
+    [updateModels]
   )
 
   // Handle successful submission
@@ -1888,7 +1905,7 @@ export function ChannelMutateDialog({
                 onChange={field.onChange}
                 disabled={isSubmitting}
                 sourceModelOptions={currentModelsArray}
-                targetModelOptions={modelOptions.map((option) => option.value)}
+                targetModelOptions={mappingTargetOptions}
               />
             </FormControl>
             {modelMappingGuardrail.invalidJson && (
@@ -2561,29 +2578,6 @@ export function ChannelMutateDialog({
                             ? t('Re-fetch')
                             : t('Probe upstream models')}
                         </Button>
-                        {discovery.status === 'success' &&
-                          normalizedDiscoveredModels.length > 0 && (
-                            <>
-                              <Button
-                                type='button'
-                                variant='outline'
-                                size='sm'
-                                onClick={handleAddAllDiscoveredModels}
-                              >
-                                {t('Add all')}
-                              </Button>
-                              {discoveredNewModels.length > 0 && (
-                                <Button
-                                  type='button'
-                                  variant='secondary'
-                                  size='sm'
-                                  onClick={handleAddNewDiscoveredModels}
-                                >
-                                  {t('Add new only')}
-                                </Button>
-                              )}
-                            </>
-                          )}
                       </div>
                     ) : (
                       <span className='text-muted-foreground text-xs'>
@@ -2603,22 +2597,6 @@ export function ChannelMutateDialog({
                           )}
                         </p>
                       </div>
-                    )}
-                  {discovery.status === 'success' &&
-                    normalizedDiscoveredModels.length > 0 && (
-                      <UpstreamModelSelection
-                        models={normalizedDiscoveredModels}
-                        selected={currentModelsArray}
-                        existingModels={
-                          isEditing
-                            ? initialModelsRef.current
-                            : currentModelsArray
-                        }
-                        onChange={handleModelsChange}
-                        showChanges={isEditing}
-                        redirectModels={redirectModelList}
-                        redirectSourceModels={redirectModelKeyList}
-                      />
                     )}
                   {isEditing && !previewModels && (
                     <p className='text-muted-foreground text-xs'>
@@ -2647,36 +2625,71 @@ export function ChannelMutateDialog({
                   aria-label={t('Models')}
                   className='space-y-3'
                 >
-                  <div className='flex items-start justify-between gap-3'>
-                    <div className='min-w-0 space-y-1'>
-                      <FormLabel required>{t('Models')}</FormLabel>
-                      <FormDescription>
-                        {t(FIELD_DESCRIPTIONS.MODELS)}
-                      </FormDescription>
-                    </div>
+                  <div className='min-w-0 space-y-1'>
+                    <FormLabel required>{t('Models')}</FormLabel>
+                    <FormDescription>
+                      {t(FIELD_DESCRIPTIONS.MODELS)}
+                    </FormDescription>
+                  </div>
+                  <div className='space-y-2'>
+                    <span className='text-sm font-medium'>
+                      {t('Selected models')}
+                    </span>
+                    {currentModelsArray.length > 0 ? (
+                      <ul className='divide-border/60 divide-y rounded-lg border'>
+                        {currentModelsArray.map((model) => (
+                          <li
+                            key={model}
+                            className='flex items-center justify-between gap-2 px-3 py-1.5'
+                          >
+                            <span className='min-w-0 text-sm wrap-anywhere'>
+                              {model}
+                            </span>
+                            <Button
+                              type='button'
+                              variant='ghost'
+                              size='icon-sm'
+                              aria-label={t('Remove {{model}}', { model })}
+                              onClick={() => handleRemoveModel(model)}
+                            >
+                              <X className='size-4' aria-hidden='true' />
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className='text-muted-foreground text-sm'>
+                        {t('No models selected')}
+                      </p>
+                    )}
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <FormControl>
+                      <Input
+                        aria-label={t('Add a model manually')}
+                        placeholder={t('Model name')}
+                        value={newModelDraft}
+                        onChange={(event) =>
+                          setNewModelDraft(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return
+                          event.preventDefault()
+                          handleAddManualModel()
+                        }}
+                      />
+                    </FormControl>
                     <Button
                       type='button'
                       variant='outline'
-                      size='sm'
-                      onClick={() => setModelConfiguration({})}
-                      disabled={currentModelsArray.length === 0}
+                      className='shrink-0'
+                      disabled={!newModelDraft.trim()}
+                      onClick={handleAddManualModel}
                     >
-                      <Settings className='mr-2 h-4 w-4' aria-hidden='true' />
-                      {t('Configure Models')}
+                      <Plus className='mr-2 h-4 w-4' aria-hidden='true' />
+                      {t('Add')}
                     </Button>
                   </div>
-                  <FormControl>
-                    <MultiSelect
-                      options={modelOptions}
-                      selected={currentModelsArray}
-                      onChange={handleModelsChange}
-                      placeholder={t('Select models or add custom ones')}
-                      allowCreate
-                      createLabel='Add custom model "{{value}}"'
-                      maxVisibleChips={8}
-                      copyChipOnClick
-                    />
-                  </FormControl>
                   {modelMappingGuardrail.exposedTargetModels.length > 0 && (
                     <Alert className='border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-50'>
                       <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
@@ -3713,11 +3726,7 @@ export function ChannelMutateDialog({
             {connectionSection}
           </>
         }
-        models={
-          <>
-            {modelsSection}
-          </>
-        }
+        models={modelsSection}
         routing={
           <>
             {modelMappingFields}
@@ -3921,14 +3930,18 @@ export function ChannelMutateDialog({
         </DialogContent>
       </DialogRoot>
 
-      {open && modelConfiguration && (
+      {open && modelDiscoveryDialogOpen && (
         <ConfigureModelsDialog
           open
-          models={currentModelsArray}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) setModelConfiguration(null)
-          }}
-          onApply={handleModelsChange}
+          candidates={normalizedDiscoveredModels}
+          selectedModels={currentModelsArray}
+          existingModels={
+            isEditing ? initialModelsRef.current : currentModelsArray
+          }
+          redirectModels={redirectModelList}
+          redirectSourceModels={redirectModelKeyList}
+          onOpenChange={setModelDiscoveryDialogOpen}
+          onApply={handleModelDiscoveryApply}
         />
       )}
 

@@ -29,14 +29,18 @@ type ChannelModelsSectionProps = {
   children: ReactNode
 }
 
+// ui-spec §6.4：PBR 渠道只有"模型清单"与"上游真名映射"，没有分组。
+// 标题与说明据此去分组口径。
 export function ChannelModelsSection(props: ChannelModelsSectionProps) {
   const { t } = useTranslation()
 
   return (
     <SideDrawerSection>
       <SideDrawerSectionHeader
-        title={t('Models & Groups')}
-        description={t('Published models and model remapping rules.')}
+        title={t('Models')}
+        description={t(
+          'Models this channel declares upstream. Route order lives in lanes, not here.'
+        )}
         icon={<Boxes className='h-4 w-4' aria-hidden='true' />}
         iconTone='chart-4'
       />

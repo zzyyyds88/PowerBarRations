@@ -23,6 +23,7 @@ import {
   render,
   renderHook,
   screen,
+  waitFor,
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -71,9 +72,6 @@ function mockChannelGet(override?: GetOverride) {
     }
     if (url === '/api/channel/default_base_urls') {
       return { data: { success: true, data: {} } }
-    }
-    if (url === '/api/channel/models') {
-      return { data: { success: true, data: [{ id: 'manual-model' }] } }
     }
     if (url === '/api/prefill_group') {
       return { data: { success: true, data: [] } }
@@ -200,7 +198,7 @@ test('auto discovery stays idle while the connection is not ready', async () => 
   expect(post).not.toHaveBeenCalled()
 })
 
-test('a successful auto discovery merges into the model list without replacing manual entries', async () => {
+test('a successful manual probe opens the centered dialog and merges through Apply without replacing manual entries', async () => {
   mockChannelGet((url) => {
     if (url === '/api/channel/fetch_models/42') {
       return { data: { success: true, data: ['manual-model', 'upstream-new'] } }
@@ -213,21 +211,41 @@ test('a successful auto discovery merges into the model list without replacing m
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Select upstream models',
+  })
   expect(
-    await screen.findByText(/Found 2 upstream models · 1 new · 1 existing/)
+    within(dialog).getByText(/Found 2 upstream models · 1 new · 1 existing/)
   ).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Add all' }))
+  const apply = within(dialog).getByRole('button', { name: 'Apply' })
+  expect(apply).toBeVisible()
+
+  // Cancelling the picker must not touch the selected list.
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Select upstream models' })
+    ).not.toBeInTheDocument()
+  )
+  expect(
+    within(screen.getByRole('group', { name: 'Models' })).queryByText(
+      'upstream-new'
+    )
+  ).not.toBeInTheDocument()
+
+  await user.click(screen.getByRole('button', { name: 'Re-fetch' }))
+  const reopened = await screen.findByRole('dialog', {
+    name: 'Select upstream models',
+  })
+  await user.click(within(reopened).getByRole('button', { name: 'Add all' }))
+  await user.click(within(reopened).getByRole('button', { name: 'Apply' }))
 
   const models = screen.getByRole('group', { name: 'Models' })
-  expect(
-    within(models).getByRole('button', { name: 'manual-model' })
-  ).toBeVisible()
-  expect(
-    within(models).getByRole('button', { name: 'upstream-new' })
-  ).toBeVisible()
+  expect(within(models).getByText('manual-model')).toBeVisible()
+  expect(within(models).getByText('upstream-new')).toBeVisible()
 })
 
-test('a failed auto discovery offers an inline retry and recovers on success', async () => {
+test('a failed manual probe offers an inline retry and the next success opens the dialog', async () => {
   let attempts = 0
   mockChannelGet((url) => {
     if (url !== '/api/channel/fetch_models/42') return undefined
@@ -244,8 +262,14 @@ test('a failed auto discovery offers an inline retry and recovers on success', a
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
   expect(await screen.findByText('Upstream rejected the key')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Retry' }))
   expect(
-    await screen.findByRole('checkbox', { name: 'upstream-new' })
+    screen.queryByRole('dialog', { name: 'Select upstream models' })
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Retry' }))
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Select upstream models',
+  })
+  expect(
+    within(dialog).getByRole('checkbox', { name: 'upstream-new' })
   ).toBeVisible()
 })

@@ -63,6 +63,23 @@ async function selectTypeOption(
   await user.click(await screen.findByRole('option', { name }))
 }
 
+// The Models area is now a plain "selected list + single-value add" (ui-spec
+// §6.4). These helpers keep each test focused on behavior rather than layout.
+function modelsGroup() {
+  return within(screen.getByRole('group', { name: 'Models' }))
+}
+
+async function addManualModel(user: UserEventInstance, model: string) {
+  await user.type(modelsGroup().getByLabelText('Add a model manually'), model)
+  await user.click(modelsGroup().getByRole('button', { name: 'Add' }))
+}
+
+async function openDiscoveryDialog() {
+  return within(
+    await screen.findByRole('dialog', { name: 'Select upstream models' })
+  )
+}
+
 function ConfigurationHarness(props: {
   initialOpen?: boolean
   currentRow?: Channel
@@ -114,9 +131,6 @@ beforeEach(() => {
     }
     if (url === '/api/channel/fetch_models/42') {
       return { data: { success: true, data: ['upstream-model'] } }
-    }
-    if (url === '/api/channel/models') {
-      return { data: { success: true, data: [{ id: 'custom-model' }] } }
     }
     if (url === '/api/channel/default_base_urls') {
       return {
@@ -362,11 +376,11 @@ test('configuration navigation retains its height when the form content overflow
     name: 'Channel configuration',
   })
   expect(navigation.parentElement).toHaveClass('shrink-0')
-  // ui-spec 6.9: the centered dialog uses the shared lg bucket; the outer
-  // frame size is fixed and no longer scales with form content.
+  // ui-spec §6.9：外框尺寸只由 lg 档决定，正文自身滚动；断言用拼接后的
+  // className 子串，避免 Tailwind 任意值 class 的合并写法差异。
   const dialog = screen.getByRole('dialog', { name: 'Create Channel' })
-  expect(dialog).toHaveClass('w-[min(94vw,960px)]')
-  expect(dialog).toHaveClass('h-[min(82vh,640px)]')
+  expect(dialog.className).toContain('w-[min(94vw,960px)]')
+  expect(dialog.className).toContain('h-[min(82vh,640px)]')
 })
 
 test('an invalid setting in another category is revealed and focused on submission', async () => {
@@ -376,11 +390,12 @@ test('an invalid setting in another category is revealed and focused on submissi
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'secret' },
   })
-  await user.click(
-    screen.getByRole('combobox', { name: 'Select models or add custom ones' })
+  const models = screen.getByRole('group', { name: 'Models' })
+  await user.type(
+    within(models).getByLabelText('Add a model manually'),
+    'custom-model'
   )
-  await user.click(await screen.findByRole('option', { name: 'custom-model' }))
-  await user.keyboard('{Escape}')
+  await user.click(within(models).getByRole('button', { name: 'Add' }))
   await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
   fireEvent.change(screen.getByLabelText('Proxy Address'), {
     target: { value: 'invalid-proxy' },
@@ -419,11 +434,12 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'keep-secret' },
   })
-  await user.click(
-    screen.getByRole('combobox', { name: 'Select models or add custom ones' })
+  const models = screen.getByRole('group', { name: 'Models' })
+  await user.type(
+    within(models).getByLabelText('Add a model manually'),
+    'custom-model'
   )
-  await user.click(await screen.findByRole('option', { name: 'custom-model' }))
-  await user.keyboard('{Escape}')
+  await user.click(within(models).getByRole('button', { name: 'Add' }))
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
   expect(screen.getByRole('button', { name: 'Create Channel' })).toBeDisabled()
   await user.click(screen.getByRole('button', { name: 'Create Channel' }))
@@ -460,11 +476,7 @@ test('model discovery discards a response for old credentials and retains manual
   fireEvent.change(screen.getByLabelText('API Key *'), {
     target: { value: 'first-key' },
   })
-  await user.type(
-    screen.getByRole('combobox', { name: 'Select models or add custom ones' }),
-    'custom-model,'
-  )
-  await user.keyboard('{Escape}')
+  await addManualModel(user, 'custom-model')
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
@@ -481,17 +493,21 @@ test('model discovery discards a response for old credentials and retains manual
     oldReply.resolve({ data: { success: true, data: ['old-upstream-model'] } })
     await oldReply.promise
   })
+  // The stale response must not open the dialog nor leak its candidates.
+  expect(
+    screen.queryByRole('dialog', { name: 'Select upstream models' })
+  ).not.toBeInTheDocument()
   expect(screen.queryByText('old-upstream-model')).not.toBeInTheDocument()
   await user.click(
     await screen.findByRole('button', { name: /Re-fetch|Probe upstream models/ })
   )
+  const dialog = await openDiscoveryDialog()
   await user.click(
-    await screen.findByRole('checkbox', { name: 'current-upstream-model' })
+    dialog.getByRole('checkbox', { name: 'current-upstream-model' })
   )
-  expect(
-    screen.getByRole('button', { name: 'current-upstream-model' })
-  ).toBeVisible()
-  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
+  await user.click(dialog.getByRole('button', { name: 'Apply' }))
+  expect(modelsGroup().getByText('current-upstream-model')).toBeVisible()
+  expect(modelsGroup().getByText('custom-model')).toBeVisible()
 })
 
 test('model discovery reports failures inline and allows an empty result to fall back to manual models', async () => {
@@ -514,12 +530,12 @@ test('model discovery reports failures inline and allows an empty result to fall
   expect(
     await screen.findByText('No models returned by the upstream')
   ).toBeVisible()
-  await user.type(
-    screen.getByRole('combobox', { name: 'Select models or add custom ones' }),
-    'custom-model,'
-  )
-  await user.keyboard('{Escape}')
-  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
+  // An empty upstream result must not open an empty picker.
+  expect(
+    screen.queryByRole('dialog', { name: 'Select upstream models' })
+  ).not.toBeInTheDocument()
+  await addManualModel(user, 'custom-model')
+  expect(modelsGroup().getByText('custom-model')).toBeVisible()
 })
 
 test('editing opens the shared configuration and omits an unchanged key on update', async () => {
@@ -580,7 +596,7 @@ test('editing legacy channels retains the full provider list and saves the origi
   expect(screen.getByRole('option', { name: 'DoubaoVideo' })).toBeVisible()
   // Re-selecting the saved built-in type keeps the channel values.
   await user.click(screen.getByRole('option', { name: 'Sora' }))
-  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
+  expect(modelsGroup().getByText('custom-model')).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()
   fireEvent.change(screen.getByLabelText('Name *'), {
     target: { value: 'Renamed legacy channel' },
@@ -759,67 +775,55 @@ test('ordinary edits discover models with saved settings and keep removed draft 
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
-  await user.click(
-    await screen.findByRole('checkbox', { name: 'upstream-model' })
-  )
+  const dialog = await openDiscoveryDialog()
   expect(api.get).toHaveBeenCalledWith(
     '/api/channel/fetch_models/42',
     expect.anything()
   )
-  expect(screen.getByRole('button', { name: 'custom-model' })).toBeVisible()
-  expect(screen.getByRole('button', { name: 'upstream-model' })).toBeVisible()
-  expect(screen.getByRole('tab', { name: 'New Models (1)' })).toBeVisible()
-  expect(screen.getByRole('tab', { name: 'Removed Models (1)' })).toBeVisible()
-  await user.type(
-    screen.getByRole('combobox', { name: 'Select models or add custom ones' }),
-    'manual-draft,'
-  )
-  await user.keyboard('{Escape}')
-  const removedTab = screen.getByRole('tab', { name: 'Removed Models (2)' })
-  await user.click(removedTab)
-  for (const model of ['custom-model', 'manual-draft']) {
-    await user.click(screen.getByRole('checkbox', { name: model }))
-    expect(
-      screen.queryByRole('button', { name: model })
-    ).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: model })).not.toBeChecked()
-    expect(removedTab).toHaveAttribute('aria-selected', 'true')
-  }
-  await user.click(screen.getByRole('checkbox', { name: 'manual-draft' }))
-  expect(screen.getByRole('button', { name: 'manual-draft' })).toBeVisible()
-  expect(screen.getByRole('checkbox', { name: 'manual-draft' })).toBeChecked()
-  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  // The saved model stays checked; the newly discovered candidate starts
+  // unchecked and is added explicitly.
+  expect(dialog.getByRole('checkbox', { name: 'custom-model' })).toBeChecked()
+  const candidate = dialog.getByRole('checkbox', { name: 'upstream-model' })
+  expect(candidate).not.toBeChecked()
+  await user.click(candidate)
+  await user.click(dialog.getByRole('button', { name: 'Apply' }))
+
+  expect(modelsGroup().getByText('upstream-model')).toBeVisible()
+  expect(modelsGroup().getByText('custom-model')).toBeVisible()
+
+  // Draft-only manual model joins the form list and stays available.
+  await addManualModel(user, 'manual-draft')
+  expect(modelsGroup().getByText('manual-draft')).toBeVisible()
+
+  // Applying and editing the draft must not hit the network.
   expect(post).not.toHaveBeenCalled()
   expect(put).not.toHaveBeenCalled()
 })
 
-test('model configuration replaces the selected-count badge at the right of the model field header', async () => {
+test('the Models area keeps no always-on combobox and focuses the manual input without opening candidates', async () => {
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
 
-  const models = screen.getByRole('group', { name: 'Models' })
-  const input = within(models).getByRole('combobox', {
-    name: 'Select models or add custom ones',
-  })
-  const configure = within(models).getByRole('button', {
-    name: 'Configure Models',
-  })
-  expect(configure.parentElement).toHaveClass(
-    'flex',
-    'items-start',
-    'justify-between'
-  )
-  expect(configure).toHaveClass('shrink-0')
+  const models = modelsGroup()
+  // The base "all declared models" multi-select is gone (ui-spec §6.4): there
+  // must be no combobox at all in the Models area.
+  expect(models.queryByRole('combobox')).not.toBeInTheDocument()
   expect(
-    configure.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING
-  ).toBeTruthy()
-  expect(screen.queryByText('Selected 1')).not.toBeInTheDocument()
-  expect(
-    screen.getAllByRole('button', { name: 'Configure Models' })
-  ).toHaveLength(1)
+    screen.queryByRole('combobox', { name: 'Select models or add custom ones' })
+  ).not.toBeInTheDocument()
+
+  const input = models.getByLabelText('Add a model manually')
+  input.focus()
+  expect(input).toHaveFocus()
+  // Focusing/typing a partial name must not surface unrelated candidates.
+  fireEvent.change(input, { target: { value: 'gpt' } })
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument()
+  expect(screen.queryByRole('option')).not.toBeInTheDocument()
+
+  expect(models.getByText('custom-model')).toBeVisible()
 })
 
-test('model configuration uses only the current form models and persists changes only when the channel is saved', async () => {
+test('probing opens a centered dialog that seeds the current selection and persists changes only when the channel is saved', async () => {
   editingChannel.models = 'gpt-one,manual-model,alias'
   const post = vi.spyOn(api, 'post')
   const put = vi
@@ -828,150 +832,152 @@ test('model configuration uses only the current form models and persists changes
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
+  // 'upstream-model' is returned on re-fetch in this suite's GET mock.
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
-  await screen.findByRole('checkbox', { name: 'upstream-model' })
-  await user.type(
-    screen.getByRole('combobox', { name: 'Select models or add custom ones' }),
-    'gpt-two,'
-  )
-  await user.keyboard('{Escape}')
-  const models = screen.getByRole('group', { name: 'Models' })
-  const manualModelChip = within(models).getByRole('button', {
-    name: 'manual-model',
-  })
-  vi.mocked(api.get).mockClear()
-
-  const trigger = screen.getByRole('button', { name: 'Configure Models' })
-  await user.click(trigger)
-  const dialog = within(
-    screen.getByRole('dialog', { name: 'Configure Models' })
-  )
-  for (const model of ['gpt-one', 'manual-model', 'alias', 'gpt-two']) {
+  const dialog = await openDiscoveryDialog()
+  // Candidates are checked against the saved list: the existing form models
+  // start checked while the newly discovered candidate starts unchecked.
+  for (const model of ['gpt-one', 'manual-model', 'alias']) {
     expect(dialog.getByRole('checkbox', { name: model })).toBeChecked()
   }
   expect(
-    dialog.queryByRole('checkbox', { name: 'upstream-model' })
-  ).not.toBeInTheDocument()
-  expect(
-    dialog.queryByRole('checkbox', { name: 'custom-model' })
-  ).not.toBeInTheDocument()
-  expect(dialog.queryByRole('tab')).not.toBeInTheDocument()
-  expect(dialog.getByText('Current models: 4')).toBeVisible()
+    dialog.getByRole('checkbox', { name: 'upstream-model' })
+  ).not.toBeChecked()
+
+  await user.click(dialog.getByRole('checkbox', { name: 'upstream-model' }))
   await user.click(dialog.getByRole('checkbox', { name: 'manual-model' }))
-  expect(manualModelChip).toBeInTheDocument()
+  // Nothing is written to the channel until Apply.
   expect(put).not.toHaveBeenCalled()
 
   await user.click(dialog.getByRole('button', { name: 'Apply' }))
 
-  expect(
-    within(models).queryByRole('button', { name: 'manual-model' })
-  ).not.toBeInTheDocument()
-  await waitFor(() => expect(trigger).toHaveFocus())
-  expect(api.get).not.toHaveBeenCalled()
+  const models = modelsGroup()
+  expect(models.getByText('upstream-model')).toBeVisible()
+  expect(models.queryByText('manual-model')).not.toBeInTheDocument()
   expect(post).not.toHaveBeenCalled()
   expect(put).not.toHaveBeenCalled()
-  await user.click(trigger)
-  const reopened = within(
-    screen.getByRole('dialog', { name: 'Configure Models' })
-  )
-  expect(
-    reopened.queryByRole('checkbox', { name: 'manual-model' })
-  ).not.toBeInTheDocument()
-  expect(reopened.getByRole('checkbox', { name: 'gpt-two' })).toBeChecked()
-  await user.click(reopened.getByRole('button', { name: 'Cancel' }))
+
   await user.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
   expect(put.mock.calls[0]?.[1]).toMatchObject({
     id: 42,
-    models: 'gpt-one,alias,gpt-two',
+    models: 'gpt-one,alias,upstream-model',
   })
 })
 
-test.each(['Cancel', 'Close', 'Escape'])(
-  'model configuration discards changes on %s and restores focus to its trigger',
+test.each(['Cancel', 'Escape'])(
+  'dismissing the discovery dialog on %s leaves the selected models unchanged',
   async (action) => {
     editingChannel.models = 'gpt-one,gpt-two'
     const user = userEvent.setup()
     render(<ConfigurationHarness currentRow={editingChannel} />)
     await screen.findByDisplayValue('Existing channel')
-    const trigger = screen.getByRole('button', { name: 'Configure Models' })
-    trigger.focus()
-    await user.keyboard('{Enter}')
-    const dialog = within(
-      screen.getByRole('dialog', { name: 'Configure Models' })
+    await user.click(
+      await screen.findByRole('button', { name: /Probe upstream models/ })
     )
-    const model = dialog.getByRole('checkbox', { name: 'gpt-one' })
-    model.focus()
+    const dialog = await openDiscoveryDialog()
+    const candidate = dialog.getByRole('checkbox', { name: 'upstream-model' })
+    candidate.focus()
     await user.keyboard(' ')
-    expect(model).not.toBeChecked()
+    expect(candidate).toBeChecked()
 
     if (action === 'Escape') {
       await user.keyboard('{Escape}')
     } else {
-      await user.click(dialog.getByRole('button', { name: action }))
+      await user.click(dialog.getByRole('button', { name: 'Cancel' }))
     }
 
-    await waitFor(() => expect(trigger).toHaveFocus())
-    expect(screen.getByRole('button', { name: 'gpt-one' })).toBeVisible()
-    expect(screen.getByRole('button', { name: 'gpt-two' })).toBeVisible()
-    await user.click(trigger)
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Select upstream models' })
+      ).not.toBeInTheDocument()
+    )
+    const models = modelsGroup()
+    expect(models.getByText('gpt-one')).toBeVisible()
+    expect(models.getByText('gpt-two')).toBeVisible()
+    expect(models.queryByText('upstream-model')).not.toBeInTheDocument()
+
+    // Re-running the probe reopens with the (unchanged) current selection.
+    await user.click(screen.getByRole('button', { name: 'Re-fetch' }))
+    const reopened = await openDiscoveryDialog()
     expect(
-      within(
-        screen.getByRole('dialog', { name: 'Configure Models' })
-      ).getByRole('checkbox', { name: 'gpt-one' })
-    ).toBeChecked()
+      reopened.getByRole('checkbox', { name: 'upstream-model' })
+    ).not.toBeChecked()
   }
 )
 
-test('model configuration keeps unchecked candidates searchable and supports category selection and applying an empty list', async () => {
+test('the discovery dialog distinguishes existing from new candidates and applies the current selection', async () => {
   editingChannel.models = 'gpt-one,gpt-two,manual-model'
+  const originalGet = vi.mocked(api.get).getMockImplementation()
+  vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (url === '/api/channel/fetch_models/42') {
+      return {
+        data: {
+          success: true,
+          data: ['gpt-one', 'gpt-two', 'fresh-alpha', 'fresh-beta'],
+        },
+      }
+    }
+    return originalGet?.(url, config)
+  })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
-  const trigger = screen.getByRole('button', { name: 'Configure Models' })
-  await user.click(trigger)
-  const dialog = within(
-    screen.getByRole('dialog', { name: 'Configure Models' })
-  )
-  const category = dialog.getByRole('checkbox', {
-    name: 'Select all models in OpenAI',
-  })
-  await user.click(category)
-  expect(dialog.getByRole('checkbox', { name: 'gpt-one' })).not.toBeChecked()
-  expect(dialog.getByRole('checkbox', { name: 'gpt-two' })).not.toBeChecked()
-  await user.click(dialog.getByRole('checkbox', { name: 'gpt-one' }))
-  expect(category).toHaveAttribute('aria-checked', 'mixed')
-  const search = dialog.getByRole('textbox', { name: 'Search models...' })
-  await user.type(search, 'gpt-')
   await user.click(
-    dialog.getByRole('button', { name: 'Select all matching models' })
+    await screen.findByRole('button', { name: /Probe upstream models/ })
   )
+  const dialog = await openDiscoveryDialog()
+  // Saved models the upstream still returns start checked; new ones do not.
+  expect(dialog.getByRole('checkbox', { name: 'gpt-one' })).toBeChecked()
   expect(dialog.getByRole('checkbox', { name: 'gpt-two' })).toBeChecked()
-  expect(
-    dialog.queryByRole('checkbox', { name: 'manual-model' })
-  ).not.toBeInTheDocument()
-  await user.clear(search)
-  await user.type(search, 'missing')
-  expect(dialog.getByText('No matching items')).toBeVisible()
-  expect(
-    dialog.getByRole('button', { name: 'Select all matching models' })
-  ).toBeDisabled()
-  await user.clear(search)
-  expect(dialog.getByRole('checkbox', { name: 'manual-model' })).toBeChecked()
-  await user.click(
-    dialog.getByRole('checkbox', { name: 'Select all models in OpenAI' })
-  )
-  await user.click(
-    dialog.getByRole('checkbox', { name: 'Select all models in Other' })
-  )
+  expect(dialog.getByRole('checkbox', { name: 'fresh-alpha' })).not.toBeChecked()
+  expect(dialog.getByRole('checkbox', { name: 'fresh-beta' })).not.toBeChecked()
+
+  // A draft-only model that upstream no longer returns stays selected unless
+  // the user unchecks it.
+  await user.click(dialog.getByRole('button', { name: 'Add new only' }))
   await user.click(dialog.getByRole('button', { name: 'Apply' }))
 
-  expect(
-    screen.queryByRole('button', { name: 'manual-model' })
-  ).not.toBeInTheDocument()
-  expect(trigger).toBeDisabled()
+  const models = modelsGroup()
+  for (const model of [
+    'gpt-one',
+    'gpt-two',
+    'manual-model',
+    'fresh-alpha',
+    'fresh-beta',
+  ]) {
+    expect(models.getByText(model)).toBeVisible()
+  }
+})
+
+test('selected models can be removed and manual additions are trimmed and de-duplicated', async () => {
+  editingChannel.models = 'gpt-one,gpt-two'
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const models = modelsGroup()
+
+  await user.click(models.getByRole('button', { name: 'Remove gpt-one' }))
+  expect(models.queryByText('gpt-one')).not.toBeInTheDocument()
+  expect(models.getByText('gpt-two')).toBeVisible()
+
+  // Duplicate of an already selected model is ignored, not listed twice.
+  await user.type(models.getByLabelText('Add a model manually'), 'gpt-two')
+  await user.click(models.getByRole('button', { name: 'Add' }))
+  expect(models.getAllByText('gpt-two')).toHaveLength(1)
+
+  // Blank input cannot be submitted.
+  await user.type(models.getByLabelText('Add a model manually'), '   ')
+  expect(models.getByRole('button', { name: 'Add' })).toBeDisabled()
+  await user.clear(models.getByLabelText('Add a model manually'))
+
+  // Surrounding whitespace is trimmed before adding the custom model.
+  await user.type(models.getByLabelText('Add a model manually'), '  custom-lane  ')
+  await user.click(models.getByRole('button', { name: 'Add' }))
+  expect(models.getByText('custom-lane')).toBeVisible()
+  expect(models.getByLabelText('Add a model manually')).toHaveValue('')
 })
 
 test('advanced custom edits preview draft connection settings with the saved key', async () => {
@@ -1005,8 +1011,9 @@ test('advanced custom edits preview draft connection settings with the saved key
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
+  const dialog = await openDiscoveryDialog()
   expect(
-    await screen.findByRole('checkbox', { name: 'preview-model' })
+    dialog.getByRole('checkbox', { name: 'preview-model' })
   ).toBeVisible()
   expect(post).toHaveBeenCalledWith(
     '/api/channel/fetch_models',
@@ -1051,9 +1058,16 @@ test('an operator without sensitive write permission can discover saved models a
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models|Re-fetch/ })
   )
+  const dialog = await openDiscoveryDialog()
   expect(
-    await screen.findByRole('checkbox', { name: 'upstream-model' })
+    dialog.getByRole('checkbox', { name: 'upstream-model' })
   ).toBeVisible()
+  await user.click(dialog.getByRole('button', { name: 'Cancel' }))
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('dialog', { name: 'Select upstream models' })
+    ).not.toBeInTheDocument()
+  )
   await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
   const thinking = screen.getByRole('switch', { name: 'Thinking to Content' })
   expect(thinking).toHaveAttribute('aria-disabled', 'true')
@@ -1210,16 +1224,19 @@ test('switching edited channels discards a pending model list from the previous 
   await user.click(
     await screen.findByRole('button', { name: /Probe upstream models|Re-fetch/ })
   )
+  const dialog = await openDiscoveryDialog()
   expect(
-    await screen.findByRole('checkbox', { name: 'second-model' })
+    dialog.getByRole('checkbox', { name: 'second-model' })
   ).toBeVisible()
   await act(async () => {
     reply.resolve({ data: { success: true, data: ['first-model'] } })
   })
+  // The late first-channel response must not replace the second channel's
+  // candidates inside the open picker.
   expect(
-    screen.queryByRole('checkbox', { name: 'first-model' })
+    dialog.queryByRole('checkbox', { name: 'first-model' })
   ).not.toBeInTheDocument()
-  expect(screen.getByRole('checkbox', { name: 'second-model' })).toBeVisible()
+  expect(dialog.getByRole('checkbox', { name: 'second-model' })).toBeVisible()
 })
 
 test('an unknown saved type remains editable without selecting a new provider', async () => {
