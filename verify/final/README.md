@@ -38,7 +38,7 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 |---|---|---|---|---|
 | **A1** 功能完整性：端点无 5xx、无未实现桩 | openapi 登记的全部 path×method 实跑 | `verify/final/e2e.sh` | ✅ PASS=33（2026-09-17 复跑） | `verify/final/run-*.log`（日志不入库） |
 | **A2** 两种模式 + 冷却 + 亲和 + 熔断半开 | failover/manual 各跑通；已删模式返回 422；熔断打开→半开→复通留时间戳 | `verify/w2/smoke.sh` | ✅ PASS=37（2026-09-17 复跑） | `verify/w2/run-*.log`、`verify/w2/README.md` |
-| **A3** 控制台逐页走查（ui-spec §8） | 无头 Chromium + CDP 注入管理密钥，逐页导航/断言渲染与 console 无报错/三态组件/品牌残留；随后跑 `console_flow.py` 完整使用流程（自包含假上游 + 后端强断言） | `verify/final/a3_console.sh` | ✅ PASS=9 + 完整流程 28/28（整改后实测） | `verify/final/a3-*.log` 中的 console_flow JSON（日志不入库） |
+| **A3** 控制台逐页走查（ui-spec §8） | 无头 Chromium + CDP 注入管理密钥，逐页导航/断言渲染与 console 无报错/三态组件/品牌残留；随后跑 `console_flow.py` 完整使用流程（自包含假上游 + 后端强断言） | `verify/final/a3_console.sh` | ✅ **PASS=10 FAIL=0**（2026-09-17 复跑；页面清单已改为 /routes 与 /system-tasks，完整流程 12/12 断言） | `verify/final/a3-*.log` 中的 console_flow JSON（日志不入库） |
 | **A4** 迁移脚本幂等 | ①`pbr migrate` 在旧两层库（octopus 路由层 + new-api 厂商层）副本上跑两次：计划逐字节一致、目标库计数一致、产物可被 PBR 加载；②`/api/v1/import` 的导入幂等与对账规则 | `ROUTING_DB=… VENDOR_DB=… verify/final/a4_migrate.sh`；`verify/final/a4_import_idempotent.sh` | ✅ PASS=11（真实迁移，2026-09-15 实测）+ **PASS=16**（导入幂等，2026-09-17 复跑；探针字段已从删除的 priority 改为 models） | `verify/final/a4-migrate-*.log`；`verify/final/a4-*.log` |
 | **B①** 工具调用 | 带 tools 的请求 → 回 tool_calls | `verify/final/e2e.sh` | ✅ | run 日志 |
 | **B②** 多模态小图 | 图片 data URL 透传，上游确实收到 | 同上 | ✅ | run 日志 |
@@ -52,10 +52,10 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 | **D** 长稳与并发 | **50000 请求 / 并发 100**：日志行数=请求数、无串号、RSS 增长受控、聚合与明细一致 | `TOTAL=50000 CONCURRENCY=100 bash verify/final/longrun.sh` | ⚠️ 脚本已修时序竞态，新增 1 条一致性断言；结论以整改后**多次运行取稳定结果**为准 | 整改后 `longrun-*.log`（不入库）；`longrun-20260915-093434.log` 为整改前快照 |
 | **E** 持久化与重启 | 重启后配置/令牌不丢；运行态清空 | `verify/final/e2e.sh`、`verify/deploy/smoke.sh` | ✅ | run 日志；`verify/deploy/README.md` |
 | **F** 安全 | 未初始化 409、错误密钥 401、被拒车道 403、明文不入库不入日志、OpenAPI 不泄漏 | `verify/w3/smoke.sh`、`verify/final/e2e.sh` | ✅ PASS=45（2026-09-17 复跑） | `verify/w3/run-*.log`、run 日志 |
-| **G** 部署验收 | 独立 compose 项目从零起容器 → 设口令 → 建渠道/密钥 → 转发 → 重启数据仍在 | `verify/deploy/smoke.sh` | ✅ | `verify/deploy/run-20260915-093955.log`、`verify/deploy/README.md` |
+| **G** 部署验收 | 独立 compose 项目从零起容器 → 设口令 → 建渠道/密钥 → 转发 → 重启数据仍在 | `verify/deploy/smoke.sh` | ✅（2026-09-17 复跑 exit 0） | `verify/deploy/run-*.log`、`verify/deploy/README.md` |
 | **H** 回滚演练 | 按 `MIGRATION.md` 在测试实例上演练切流与回滚（不动生产） | `verify/final/rollback.sh` | ✅ PASS=16（2026-09-17 复跑） | `verify/final/rollback-*.log` |
 | **I** 文档一致性 | README / MIGRATION / ADR / OpenAPI / verify 与实现一致 | e2e 端点实跑、`verify/w4/console_contract_check.py`、本索引 | ✅（2026-09-17 修订） | 控制台端点与 openapi 对齐（检查器已修三处解析缺陷）；w1–w4 脚本、波次 README 顶部修订横幅与现行设计一致 |
-| **J** 代码质量 | `go build/vet/test`、`web pnpm typecheck/build/test/lint` | 见下 | ✅（2026-09-17 实测） | `go test ./...` **39 个含测试的包全 ok / 0 FAIL**；`pnpm typecheck` 通过；`pnpm test` **75 文件 / 751 用例**全过；`pnpm lint` **0 error / 43 warning**（warning 中三条 React Compiler 结构性规则见 `web/AGENTS.md` §3.2） |
+| **J** 代码质量 | `go build/vet/test`、`web pnpm typecheck/build/test/lint/format:check/copyright:check` | 见下 | ✅（2026-09-17 实测） | `go test ./...` **39 个含测试的包全 ok / 0 FAIL**；`pnpm typecheck` 通过；`pnpm test` **75 文件 / 751 用例**全过；`pnpm lint` **0 error / 43 warning**（三条 React Compiler 规则按 `web/AGENTS.md` §3.2 明确降级）；`pnpm format:check` 与 `pnpm copyright:check` 均 0 失败 |
 
 ```bash
 go build ./...                   # 通过
@@ -65,6 +65,8 @@ cd web && pnpm typecheck         # tsgo -b 通过
 cd web && pnpm test              # 75 files / 751 tests 全过
 cd web && pnpm build             # rsbuild build 零报错
 cd web && pnpm lint              # 0 error, 43 warning
+cd web && pnpm format:check      # 通过（804 文件）
+cd web && pnpm copyright:check   # 通过（added=0 / updated=0）
 ```
 
 ## 各波次验收汇总（W7 合并前复跑）
@@ -77,8 +79,8 @@ cd web && pnpm lint              # 0 error, 43 warning
 | W3 访问与管理面 | `verify/w3/smoke.sh` | **PASS=45 FAIL=0** |
 | W4 控制台（构建 + 内嵌 + 契约一致性） | `verify/w4/smoke.sh` | **PASS=19 FAIL=0** |
 | W5 日志与记账 | `verify/w5/smoke.sh` | **PASS=29 FAIL=0** |
-| 部署 | `verify/deploy/smoke.sh` | PASS |
-| W8 自验收（自动化部分） | `verify/final/{e2e,a3,a4,fault,longrun,rollback}` | 全 PASS（见逐项索引） |
+| 部署 | `verify/deploy/smoke.sh` | **PASS**（2026-09-17 复跑） |
+| W8 自验收（自动化部分） | `verify/final/{e2e,a3,a4_import,fault,rollback}` | 全 PASS（PASS=33/10/16/23/16，见逐项索引；longrun/a4_migrate 见下方残余说明） |
 
 ## 本轮验收发现并修掉的真问题
 
@@ -121,8 +123,9 @@ cd web && pnpm lint              # 0 error, 43 warning
 
 > 说明：W7（物理删除计费/多用户）已完成，`go build/vet/test`、`pnpm typecheck/build/test/lint`
 > 与全波次脚本在其后复跑通过（2026-09-17）；W7 的代码清除与保留清单见 `docs/design-v1.md` §10.2.1。
-> A3 控制台逐页走查（`verify/final/a3_console.sh`，无头 Chromium）与 W0 冒烟、部署冒烟
-> 属"需运行环境"的项，其最近一次实测记录见对应 README；本轮未重跑，故不计入本次复跑结论。
+> A3 控制台逐页走查（`verify/final/a3_console.sh`，无头 Chromium）与部署冒烟（`verify/deploy/smoke.sh`，
+> 独立 compose 项目）本轮均已重跑通过（A3 PASS=10、部署 exit 0）。**W0 冒烟**与
+> **D 的 2 小时时长版本**本轮未重跑，其最近一次实测记录见对应 README / 残余说明。
 
 ## 未处理 TODO 清单（W8-J："有则列清单说明"）
 
