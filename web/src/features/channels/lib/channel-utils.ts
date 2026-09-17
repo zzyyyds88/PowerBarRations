@@ -230,40 +230,10 @@ export function parseModelsList(models: string): string[] {
 }
 
 /**
- * Parse comma-separated groups list.
- * Sorts with 'default' group first, then locale-sorted alphabetically.
- */
-export function parseGroupsList(groups: string): string[] {
-  if (!groups) {
-    return []
-  }
-  const list = groups
-    .split(',')
-    .map((g) => g.trim())
-    .filter((g) => g.length > 0)
-  return list.sort((a, b) => {
-    if (a === 'default') {
-      return -1
-    }
-    if (b === 'default') {
-      return 1
-    }
-    return a.localeCompare(b)
-  })
-}
-
-/**
  * Format models array back to string
  */
 export function formatModelsString(models: string[]): string {
   return models.join(',')
-}
-
-/**
- * Format groups array back to string
- */
-export function formatGroupsString(groups: string[]): string {
-  return groups.join(',')
 }
 
 // ============================================================================
@@ -518,13 +488,6 @@ export function validateModels(models: string): boolean {
 }
 
 /**
- * Validate groups list
- */
-export function validateGroups(groups: string): boolean {
-  return parseGroupsList(groups).length > 0
-}
-
-/**
  * Check if channel needs attention (low balance, auto-disabled, etc.)
  */
 export function channelNeedsAttention(channel: Channel): boolean {
@@ -621,7 +584,6 @@ export function aggregateChannelsByTag(
         name: tag,
         type: 0,
         status: undefined as unknown as number,
-        group: '',
         used_quota: 0,
         response_time: 0,
         balance: 0,
@@ -651,19 +613,6 @@ export function aggregateChannelsByTag(
     tagRow.response_time =
       (tagRow.response_time * (childCount - 1) + channel.response_time) /
       childCount
-
-    // Aggregate group (concatenate and deduplicate)
-    if (tagRow.group === '') {
-      tagRow.group = channel.group
-    } else {
-      const existingGroups = new Set(tagRow.group.split(',').filter(Boolean))
-      const newGroups = channel.group.split(',').filter(Boolean)
-      newGroups.forEach((g) => {
-        if (!existingGroups.has(g)) {
-          tagRow.group += `,${g}`
-        }
-      })
-    }
 
     // Aggregate status (enabled if any child is enabled)
     if (channel.status === 1) {

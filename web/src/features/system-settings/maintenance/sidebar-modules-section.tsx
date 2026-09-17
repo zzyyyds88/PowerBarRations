@@ -117,7 +117,7 @@ export function SidebarModulesSection({
     },
     admin: {
       channel: {
-        title: t('Channels'),
+        title: t('Channel management'),
         description: t('Configure upstream providers and routing.'),
       },
       models: {
@@ -227,7 +227,7 @@ export function SidebarModulesSection({
                                 checked={Boolean(field.value)}
                                 onCheckedChange={field.onChange}
                                 disabled={
-                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                  // eslint-disable-next-line @typescript-eslint/no-explicit-any, react/incompatible-library -- pre-existing RHF watch() usage
                                   !form.watch(`${sectionKey}.enabled` as any)
                                 }
                               />

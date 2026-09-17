@@ -46,3 +46,21 @@ it('exposes one models entry followed by the routing & failover page', () => {
   )
   expect(modelsEntry?.title).toBe('Model management')
 })
+
+// ui-spec §5/§6.10：「系统信息」页删除，任务面板提为「系统任务」独立页。
+// PBR 单用户，管理面即全量权限，入口不带任何角色门。
+it('replaces the system info entry with an ungated system tasks page', () => {
+  const { result } = renderHook(() => useSidebarData())
+  const adminItems = result.current.navGroups.find(
+    (group) => group.id === 'admin'
+  )?.items
+  expect(adminItems).toBeDefined()
+
+  const urls = adminItems?.map((item) => item.url) ?? []
+  expect(urls).not.toContain('/system-info')
+  expect(urls).toContain('/system-tasks')
+
+  const tasksEntry = adminItems?.find((item) => item.url === '/system-tasks')
+  expect(tasksEntry?.title).toBe('System Tasks')
+  expect(tasksEntry).not.toHaveProperty('requiredRole')
+})

@@ -16,21 +16,27 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { useTranslation } from 'react-i18next'
 
-import { SystemInfo } from '@/features/system-info'
-import { ROLE } from '@/lib/roles'
-import { useAuthStore } from '@/stores/auth-store'
+import { SectionPageLayout } from '@/components/layout'
 
-export const Route = createFileRoute('/_authenticated/system-info/')({
-  beforeLoad: () => {
-    const { auth } = useAuthStore.getState()
+import { SystemTasksPanel } from './components/system-tasks-panel'
 
-    if (auth.user?.role !== ROLE.SUPER_ADMIN) {
-      throw redirect({
-        to: '/403',
-      })
-    }
-  },
-  component: SystemInfo,
-})
+/**
+ * 系统任务独立页（ui-spec §6.10）：原 system-info 页里的任务面板提为侧边栏
+ * 独立页。PBR 单用户，管理面即全量权限，因此不设 Root 徽标与角色门。
+ */
+export function SystemTasks() {
+  const { t } = useTranslation()
+
+  return (
+    <SectionPageLayout>
+      <SectionPageLayout.Title>
+        <span className='truncate'>{t('System Tasks')}</span>
+      </SectionPageLayout.Title>
+      <SectionPageLayout.Content>
+        <SystemTasksPanel />
+      </SectionPageLayout.Content>
+    </SectionPageLayout>
+  )
+}

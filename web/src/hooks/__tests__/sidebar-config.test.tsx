@@ -116,7 +116,7 @@ describe('security sidebar visibility', () => {
       .map((item) => item.title)
     expect(titles).toContain('Overview')
     expect(titles).toContain('API Keys')
-    expect(titles).toContain('Channels')
+    expect(titles).toContain('Channel management')
   })
 })
 
@@ -178,5 +178,23 @@ describe('audit log sidebar entry', () => {
       .map((item) => item.title)
     expect(titles).not.toContain('Usage Logs')
     expect(titles).toContain('Audit Logs')
+  })
+})
+
+describe('system tasks sidebar entry', () => {
+  it('is controlled by the admin setting module, like System Settings', () => {
+    const visible = sidebarFor({ admin: { enabled: true, setting: true } })
+    expect(
+      visible.result.current
+        .flatMap((group) => group.items)
+        .map((item) => item.url)
+    ).toContain('/system-tasks')
+
+    const hidden = sidebarFor({ admin: { enabled: true, setting: false } })
+    expect(
+      hidden.result.current
+        .flatMap((group) => group.items)
+        .map((item) => item.url)
+    ).not.toContain('/system-tasks')
   })
 })

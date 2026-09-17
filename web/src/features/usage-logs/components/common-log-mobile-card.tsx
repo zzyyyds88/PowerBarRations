@@ -23,7 +23,6 @@ import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
-import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -42,14 +41,7 @@ import { ModelBadge } from './model-badge'
 import { StreamTpsCell, TimingMetricsCell } from './timing-metrics-cell'
 import { useUsageLogsContext } from './usage-logs-provider'
 
-type FieldName =
-  | 'model'
-  | 'cost'
-  | 'user'
-  | 'channel'
-  | 'token'
-  | 'group'
-  | 'time'
+type FieldName = 'model' | 'cost' | 'user' | 'channel' | 'token' | 'time'
 type LogField = {
   label: string
   value: string
@@ -71,7 +63,6 @@ export function CommonLogMobileCard<TData>(props: {
   const timing = isTimingLogType(log.type)
   const model = formatModelName(log)
   const config = getLogTypeConfig(log.type)
-  const group = log.group || other?.group || ''
   const groupRatio =
     other?.user_group_ratio != null && other.user_group_ratio !== -1
       ? other.user_group_ratio
@@ -110,19 +101,13 @@ export function CommonLogMobileCard<TData>(props: {
       visible: displayable && props.cells.has('token_name') && !!log.token_name,
       sensitive: true,
     },
-    group: {
-      label: t('Group'),
-      value: group,
-      visible: displayable && props.cells.has('token_name') && !!group,
-      sensitive: true,
-    },
   }
   const selected = selectedField ? fields[selectedField] : undefined
   const activeField =
     selected?.visible && (!selected.sensitive || context.sensitiveVisible)
       ? selected
       : undefined
-  const metadata: FieldName[] = ['user', 'channel', 'token', 'group']
+  const metadata: FieldName[] = ['user', 'channel', 'token']
   const visibleMetadata = metadata.filter((id) => fields[id].visible)
   const costCell = props.cells.get('quota')
   const contentCell = props.cells.get('content')
@@ -219,15 +204,7 @@ export function CommonLogMobileCard<TData>(props: {
           {visibleMetadata.map((id) => {
             const field = fields[id]
             let fieldContent = <span className='truncate'>{field.value}</span>
-            if (id === 'group') {
-              fieldContent = (
-                <GroupBadge
-                  group={field.value}
-                  type='text'
-                  className='max-w-full text-sm'
-                />
-              )
-            } else if (id === 'token') {
+            if (id === 'token') {
               fieldContent = (
                 <StatusBadge
                   label={field.value}

@@ -804,11 +804,11 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
   mode: 'single' | 'batch' | 'multi_to_single'
   multi_key_mode?: 'random' | 'polling'
   batch_add_set_key_prefix_2_name?: boolean
-  channel: Partial<Channel>
+  channel: Partial<Channel> & { group?: string }
 } {
   const mode = formData.multi_key_mode || 'single'
 
-  const channel: Partial<Channel> = {
+  const channel: Partial<Channel> & { group?: string } = {
     name: formData.name,
     type: formData.type,
     base_url: normalizeBaseUrl(formData.base_url) || null,
@@ -854,8 +854,8 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
 export function transformFormDataToUpdatePayload(
   formData: ChannelFormValues,
   channelId: number
-): Partial<Channel> {
-  const payload: Partial<Channel> = {
+): Partial<Channel> & { group?: string } {
+  const payload: Partial<Channel> & { group?: string } = {
     id: channelId,
     name: formData.name,
     type: formData.type,

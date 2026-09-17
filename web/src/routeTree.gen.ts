@@ -34,8 +34,8 @@ import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenti
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
 import { Route as AuthenticatedRoutesIndexRouteImport } from './routes/_authenticated/routes/index'
-import { Route as AuthenticatedSystemInfoIndexRouteImport } from './routes/_authenticated/system-info/index'
 import { Route as AuthenticatedSystemSettingsIndexRouteImport } from './routes/_authenticated/system-settings/index'
+import { Route as AuthenticatedSystemTasksIndexRouteImport } from './routes/_authenticated/system-tasks/index'
 import { Route as AuthenticatedUsageLogsIndexRouteImport } from './routes/_authenticated/usage-logs/index'
 import { Route as AuthenticatedUsageLogsSectionRouteImport } from './routes/_authenticated/usage-logs/$section'
 import { Route as AuthenticatedUsageLogsAuditRouteImport } from './routes/_authenticated/usage-logs/audit'
@@ -180,17 +180,17 @@ const AuthenticatedRoutesIndexRoute =
     path: '/routes/',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedSystemInfoIndexRoute =
-  AuthenticatedSystemInfoIndexRouteImport.update({
-    id: '/system-info/',
-    path: '/system-info/',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
 const AuthenticatedSystemSettingsIndexRoute =
   AuthenticatedSystemSettingsIndexRouteImport.update({
     id: '/',
     path: '/',
     getParentRoute: () => AuthenticatedSystemSettingsRouteRoute,
+  } as any)
+const AuthenticatedSystemTasksIndexRoute =
+  AuthenticatedSystemTasksIndexRouteImport.update({
+    id: '/system-tasks/',
+    path: '/system-tasks/',
+    getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedUsageLogsIndexRoute =
   AuthenticatedUsageLogsIndexRouteImport.update({
@@ -285,8 +285,8 @@ export interface FileRoutesByFullPath {
   '/models/': typeof AuthenticatedModelsIndexRoute
   '/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/routes/': typeof AuthenticatedRoutesIndexRoute
-  '/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
+  '/system-tasks/': typeof AuthenticatedSystemTasksIndexRoute
   '/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
   '/system-settings/models/$section': typeof AuthenticatedSystemSettingsModelsSectionRoute
@@ -322,8 +322,8 @@ export interface FileRoutesByTo {
   '/models': typeof AuthenticatedModelsIndexRoute
   '/playground': typeof AuthenticatedPlaygroundIndexRoute
   '/routes': typeof AuthenticatedRoutesIndexRoute
-  '/system-info': typeof AuthenticatedSystemInfoIndexRoute
   '/system-settings': typeof AuthenticatedSystemSettingsIndexRoute
+  '/system-tasks': typeof AuthenticatedSystemTasksIndexRoute
   '/usage-logs': typeof AuthenticatedUsageLogsIndexRoute
   '/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
   '/system-settings/models/$section': typeof AuthenticatedSystemSettingsModelsSectionRoute
@@ -363,8 +363,8 @@ export interface FileRoutesById {
   '/_authenticated/models/': typeof AuthenticatedModelsIndexRoute
   '/_authenticated/playground/': typeof AuthenticatedPlaygroundIndexRoute
   '/_authenticated/routes/': typeof AuthenticatedRoutesIndexRoute
-  '/_authenticated/system-info/': typeof AuthenticatedSystemInfoIndexRoute
   '/_authenticated/system-settings/': typeof AuthenticatedSystemSettingsIndexRoute
+  '/_authenticated/system-tasks/': typeof AuthenticatedSystemTasksIndexRoute
   '/_authenticated/usage-logs/': typeof AuthenticatedUsageLogsIndexRoute
   '/_authenticated/system-settings/content/$section': typeof AuthenticatedSystemSettingsContentSectionRoute
   '/_authenticated/system-settings/models/$section': typeof AuthenticatedSystemSettingsModelsSectionRoute
@@ -403,8 +403,8 @@ export interface FileRouteTypes {
     | '/models/'
     | '/playground/'
     | '/routes/'
-    | '/system-info/'
     | '/system-settings/'
+    | '/system-tasks/'
     | '/usage-logs/'
     | '/system-settings/content/$section'
     | '/system-settings/models/$section'
@@ -440,8 +440,8 @@ export interface FileRouteTypes {
     | '/models'
     | '/playground'
     | '/routes'
-    | '/system-info'
     | '/system-settings'
+    | '/system-tasks'
     | '/usage-logs'
     | '/system-settings/content/$section'
     | '/system-settings/models/$section'
@@ -480,8 +480,8 @@ export interface FileRouteTypes {
     | '/_authenticated/models/'
     | '/_authenticated/playground/'
     | '/_authenticated/routes/'
-    | '/_authenticated/system-info/'
     | '/_authenticated/system-settings/'
+    | '/_authenticated/system-tasks/'
     | '/_authenticated/usage-logs/'
     | '/_authenticated/system-settings/content/$section'
     | '/_authenticated/system-settings/models/$section'
@@ -685,19 +685,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRoutesIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/system-info/': {
-      id: '/_authenticated/system-info/'
-      path: '/system-info'
-      fullPath: '/system-info/'
-      preLoaderRoute: typeof AuthenticatedSystemInfoIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/system-settings/': {
       id: '/_authenticated/system-settings/'
       path: '/'
       fullPath: '/system-settings/'
       preLoaderRoute: typeof AuthenticatedSystemSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSystemSettingsRouteRoute
+    }
+    '/_authenticated/system-tasks/': {
+      id: '/_authenticated/system-tasks/'
+      path: '/system-tasks'
+      fullPath: '/system-tasks/'
+      preLoaderRoute: typeof AuthenticatedSystemTasksIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/usage-logs/': {
       id: '/_authenticated/usage-logs/'
@@ -845,7 +845,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedModelsIndexRoute: typeof AuthenticatedModelsIndexRoute
   AuthenticatedPlaygroundIndexRoute: typeof AuthenticatedPlaygroundIndexRoute
   AuthenticatedRoutesIndexRoute: typeof AuthenticatedRoutesIndexRoute
-  AuthenticatedSystemInfoIndexRoute: typeof AuthenticatedSystemInfoIndexRoute
+  AuthenticatedSystemTasksIndexRoute: typeof AuthenticatedSystemTasksIndexRoute
   AuthenticatedUsageLogsIndexRoute: typeof AuthenticatedUsageLogsIndexRoute
 }
 
@@ -865,7 +865,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedModelsIndexRoute: AuthenticatedModelsIndexRoute,
   AuthenticatedPlaygroundIndexRoute: AuthenticatedPlaygroundIndexRoute,
   AuthenticatedRoutesIndexRoute: AuthenticatedRoutesIndexRoute,
-  AuthenticatedSystemInfoIndexRoute: AuthenticatedSystemInfoIndexRoute,
+  AuthenticatedSystemTasksIndexRoute: AuthenticatedSystemTasksIndexRoute,
   AuthenticatedUsageLogsIndexRoute: AuthenticatedUsageLogsIndexRoute,
 }
 
