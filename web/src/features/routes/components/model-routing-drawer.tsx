@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
-import { DIALOG_SIZE_CLASS } from '@/components/dialog'
+import { DIALOG_SIZE_CLASS } from '@/components/dialog-size'
 import {
   Dialog as DialogRoot,
   DialogContent,

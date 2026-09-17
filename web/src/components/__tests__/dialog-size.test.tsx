@@ -19,7 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
-import { DIALOG_SIZE_CLASS, Dialog, type DialogSize } from '@/components/dialog'
+import { Dialog } from '@/components/dialog'
+import { DIALOG_SIZE_CLASS, type DialogSize } from '@/components/dialog-size'
 
 // ui-spec §6.9：居中弹窗外框尺寸只由档位决定，不随内容长度/页签变化。
 // 这里断言的是**稳定行为契约**（固定尺寸 class + 正文单层滚动 + header/footer 钉住），

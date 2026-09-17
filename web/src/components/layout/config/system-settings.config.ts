@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type TFunction } from 'i18next'
+import type { TFunction } from 'i18next'
 import { Box, Layout, Settings, Wrench } from 'lucide-react'
 
 import { getContentSectionNavItems } from '@/features/system-settings/content/section-registry.tsx'

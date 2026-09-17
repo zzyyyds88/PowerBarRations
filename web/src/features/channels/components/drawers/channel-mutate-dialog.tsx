@@ -107,7 +107,7 @@ import {
   createServerError,
   getServerErrorMessage,
 } from '@/lib/server-error-message'
-import { DIALOG_SIZE_CLASS } from '@/components/dialog'
+import { DIALOG_SIZE_CLASS } from '@/components/dialog-size'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 

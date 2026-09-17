@@ -154,11 +154,14 @@ function ChatRouteComponent() {
   }
 
   return (
+    // 管理端配置的聊天地址按外部内容隔离：保留脚本/表单/弹窗能力，但不授予
+    // allow-same-origin（与自定义首页、About 页的策略一致）；相机/麦克风经 allow 授权。
     <iframe
       src={iframeSrc}
       key={iframeSrc}
       className='h-full w-full border-0'
       allow='camera; microphone'
+      sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts'
       title={`Chat preset: ${preset.name}`}
     />
   )

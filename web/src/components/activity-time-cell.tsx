@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -37,6 +38,12 @@ interface TimestampCellProps {
 }
 
 export function TimestampCell(props: TimestampCellProps) {
+  // Date.now() 属于渲染期不纯调用；仅在未传入 now 时于 effect 中兜底取值。
+  const [fallbackNow, setFallbackNow] = useState<number>()
+  useEffect(() => {
+    if (props.now === undefined) setFallbackNow(Date.now())
+  }, [props.now])
+
   if (!props.timestamp || props.timestamp === -1) {
     return <span className='text-muted-foreground'>-</span>
   }
@@ -54,8 +61,9 @@ export function TimestampCell(props: TimestampCellProps) {
     )
   }
 
-  const now = props.now ?? Date.now()
-  const isJustNow = timestampMs <= now && now - timestampMs < 60_000
+  const now = props.now ?? fallbackNow
+  const isJustNow =
+    now !== undefined && timestampMs <= now && now - timestampMs < 60_000
   const relativeTime = isJustNow
     ? props.justNowLabel
     : formatTimestampRelative(props.timestamp, 'seconds', props.locale)

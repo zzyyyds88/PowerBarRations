@@ -231,7 +231,7 @@ export function PBRLaneLogsSection() {
             const previous = [...cursors]
             previous.pop()
             setCursors(previous)
-            setCursor(previous[previous.length - 1])
+            setCursor(previous.at(-1))
           }}
           size='sm'
           variant='outline'

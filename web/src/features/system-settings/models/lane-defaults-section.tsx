@@ -40,35 +40,11 @@ import { SettingsForm } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { safeNumberFieldProps } from '../utils/numeric-field'
-
-/** 默认六键（api-spec §4.2 / §5.1 的 lane_defaults）。 */
-export interface LaneDefaults {
-  member_max_attempts: number
-  member_retry_interval_seconds: number
-  member_non_stream_response_timeout_seconds: number
-  member_stream_first_event_timeout_seconds: number
-  member_cooldown_seconds: number
-  member_affinity_seconds: number
-}
-
-export const LANE_DEFAULTS_QUERY_KEY = ['pbr-system-options'] as const
-
-/** 读取默认六键（GET /api/v1/system/options）。 */
-export async function fetchLaneDefaults(): Promise<LaneDefaults> {
-  const res = await api.get<{ lane_defaults?: LaneDefaults }>(
-    '/api/v1/system/options'
-  )
-  return (
-    res.data.lane_defaults ?? {
-      member_max_attempts: 2,
-      member_retry_interval_seconds: 3,
-      member_non_stream_response_timeout_seconds: 120,
-      member_stream_first_event_timeout_seconds: 30,
-      member_cooldown_seconds: 60,
-      member_affinity_seconds: 0,
-    }
-  )
-}
+import {
+  fetchLaneDefaults,
+  LANE_DEFAULTS_QUERY_KEY,
+  type LaneDefaults,
+} from './lane-defaults'
 
 // 四个"必须为正"的预算/时长 + 两个允许为 0 的间隔（与后端 validateLaneDefaults 一致）。
 const positiveInt = (message: string) => z.coerce.number().int().min(1, message)

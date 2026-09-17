@@ -16,9 +16,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-/**
- * Status mappers for different log types
- * Centralized mapper instances for consistent usage across components
- */
+import { createContext, useContext } from 'react'
 
-// ============================================================================
+export type SearchContextType = {
+  open: boolean
+  setOpen: (next: boolean | ((previous: boolean) => boolean)) => void
+}
+
+export const SearchContext = createContext<SearchContextType | null>(null)
+
+export const useSearch = () => {
+  const searchContext = useContext(SearchContext)
+
+  if (!searchContext) {
+    throw new Error('useSearch has to be used within SearchProvider')
+  }
+
+  return searchContext
+}

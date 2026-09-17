@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
-import { fetchLaneDefaults } from '../lane-defaults-section'
+import { fetchLaneDefaults } from '../lane-defaults'
 
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn(), put: vi.fn() },

@@ -64,11 +64,14 @@ export function ModelRoutingPanel(props: {
   })
   const models: PBRModelSummary[] = modelsQuery.data ?? []
   const knownModels = models.map((m) => m.model)
-  const active = fixed
-    ? fixed
-    : selected && knownModels.includes(selected)
-      ? selected
-      : selected || models[0]?.model || ''
+  let active: string
+  if (fixed) {
+    active = fixed
+  } else if (selected && knownModels.includes(selected)) {
+    active = selected
+  } else {
+    active = selected || models[0]?.model || ''
+  }
 
   // 一键固化：为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
   const seed = useMutation({
