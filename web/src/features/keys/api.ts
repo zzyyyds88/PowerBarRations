@@ -156,15 +156,13 @@ export async function searchApiKeys(
   const { keyword = '', token = '', p = 1, size = 10 } = params
   const lowerKeyword = keyword.toLowerCase()
   const lowerToken = token.toLowerCase()
-  const items = (await listPbrKeys())
-    .map(toApiKey)
-    .filter((item) => {
-      const matchesKeyword =
-        !lowerKeyword || item.name.toLowerCase().includes(lowerKeyword)
-      const matchesToken =
-        !lowerToken || item.key.toLowerCase().includes(lowerToken)
-      return matchesKeyword && matchesToken
-    })
+  const items = (await listPbrKeys()).map(toApiKey).filter((item) => {
+    const matchesKeyword =
+      !lowerKeyword || item.name.toLowerCase().includes(lowerKeyword)
+    const matchesToken =
+      !lowerToken || item.key.toLowerCase().includes(lowerToken)
+    return matchesKeyword && matchesToken
+  })
   const start = Math.max(0, (p - 1) * size)
   return {
     success: true,
@@ -237,10 +235,7 @@ export async function rotateApiKey(
 ): Promise<ApiResponse<{ key: string }>> {
   const name = await nameForId(id)
   if (!name) return { success: false, message: 'API key not found' }
-  const res = await api.post(
-    `/api/keys/${encodeURIComponent(name)}/rotate`,
-    {}
-  )
+  const res = await api.post(`/api/keys/${encodeURIComponent(name)}/rotate`, {})
   return { success: true, data: { key: String(res.data.key ?? '') } }
 }
 

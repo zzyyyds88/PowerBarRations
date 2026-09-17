@@ -97,7 +97,10 @@ export async function updateModelStatus(
   id: number,
   status: number
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await api.put('/api/console/models/?status_only=true', { id, status })
+  const res = await api.put('/api/console/models/?status_only=true', {
+    id,
+    status,
+  })
   return res.data
 }
 

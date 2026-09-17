@@ -84,7 +84,8 @@ export function StatusCodeRiskDialog({
   }
 
   return (
-    <Dialog size='sm'
+    <Dialog
+      size='sm'
       open={open}
       onOpenChange={onOpenChange}
       title={

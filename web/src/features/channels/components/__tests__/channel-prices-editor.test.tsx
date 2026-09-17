@@ -76,9 +76,7 @@ it('adds a custom model row when typing a name and pressing Enter', () => {
   fireEvent.keyDown(input, { key: 'Enter' })
 
   expect(screen.getByText('my-lane')).toBeVisible()
-  expect(
-    screen.getByRole('button', { name: 'Remove my-lane' })
-  ).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Remove my-lane' })).toBeVisible()
   // 行先出现；价格在行内输入，onChange 由价格输入触发。
   expect(onChange).not.toHaveBeenCalled()
 })

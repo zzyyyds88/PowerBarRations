@@ -50,7 +50,6 @@ function RootComponent() {
   // Load system configuration (logo, system name, etc.) from backend
   useSystemConfig({ autoLoad: true })
 
-
   useEffect(
     () =>
       useAuthStore.subscribe((state, previousState) => {

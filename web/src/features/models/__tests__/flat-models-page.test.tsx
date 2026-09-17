@@ -62,7 +62,10 @@ const clients: QueryClient[] = []
 async function renderModelsPage() {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
-    if (url === '/api/console/models/' || url === '/api/console/models/search') {
+    if (
+      url === '/api/console/models/' ||
+      url === '/api/console/models/search'
+    ) {
       return {
         data: {
           success: true,

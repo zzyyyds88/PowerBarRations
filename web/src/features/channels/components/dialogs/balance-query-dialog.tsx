@@ -165,7 +165,8 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
   }
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={props.open}
       onOpenChange={handleClose}
       title={t('Query Balance')}

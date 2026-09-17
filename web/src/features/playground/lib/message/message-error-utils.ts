@@ -32,7 +32,9 @@ export function isErrorMessage(message: Message): boolean {
   return message.status === MESSAGE_STATUS.ERROR
 }
 
-export function getMessageErrorState(message: Message): MessageErrorState | null {
+export function getMessageErrorState(
+  message: Message
+): MessageErrorState | null {
   if (!isErrorMessage(message)) {
     return null
   }

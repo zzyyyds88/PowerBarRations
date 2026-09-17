@@ -47,13 +47,15 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
   const { t } = useTranslation()
   // Mounted for each opening, so the initial selection and unchecked
   // candidates persist for the whole dialog session.
-  const [initialSelected] = useState(() =>
-    [...new Set(props.selectedModels.map(normalizeModelName).filter(Boolean))]
-  )
+  const [initialSelected] = useState(() => [
+    ...new Set(props.selectedModels.map(normalizeModelName).filter(Boolean)),
+  ])
   const [selected, setSelected] = useState(initialSelected)
 
   const candidates = useMemo(
-    () => [...new Set(props.candidates.map(normalizeModelName).filter(Boolean))],
+    () => [
+      ...new Set(props.candidates.map(normalizeModelName).filter(Boolean)),
+    ],
     [props.candidates]
   )
   // The picker lists every upstream candidate plus the models already selected
@@ -64,8 +66,7 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
     [candidates, initialSelected]
   )
   const existingSet = useMemo(
-    () =>
-      new Set(props.existingModels.map(normalizeModelName).filter(Boolean)),
+    () => new Set(props.existingModels.map(normalizeModelName).filter(Boolean)),
     [props.existingModels]
   )
   const newCandidates = useMemo(

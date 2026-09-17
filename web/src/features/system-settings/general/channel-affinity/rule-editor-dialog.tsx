@@ -245,7 +245,8 @@ export function RuleEditorDialog(props: Props) {
   }
 
   return (
-    <Dialog size='lg'
+    <Dialog
+      size='lg'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={isEdit ? t('Edit Rule') : t('Add Rule')}

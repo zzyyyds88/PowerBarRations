@@ -36,7 +36,8 @@ export function DescriptionDialog({
 }: DescriptionDialogProps) {
   const { t } = useTranslation()
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={modelName}

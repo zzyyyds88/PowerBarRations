@@ -65,11 +65,7 @@ function Sparkline(props: { values: number[] }) {
   )
 }
 
-function StatBlock(props: {
-  label: string
-  value: string
-  values?: number[]
-}) {
+function StatBlock(props: { label: string; value: string; values?: number[] }) {
   return (
     <div className='bg-card/60 rounded-lg border px-4 py-3'>
       <div className='text-muted-foreground text-xs'>{props.label}</div>
@@ -128,7 +124,9 @@ export function SummaryCards() {
       const ts = to - (SUMMARY_BUCKETS - 1 - index) * 3600
       return { ts: Math.floor(ts / 3600) * 3600, cost: 0, requests: 0 }
     })
-    const indexByTs = new Map(buckets.map((bucket, index) => [bucket.ts, index]))
+    const indexByTs = new Map(
+      buckets.map((bucket, index) => [bucket.ts, index])
+    )
     for (const item of items) {
       const index = indexByTs.get(Math.floor(item.bucket_ts / 3600) * 3600)
       if (index === undefined) continue

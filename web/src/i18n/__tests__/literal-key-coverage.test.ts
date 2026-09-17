@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+
 import { describe, expect, it } from 'vitest'
 
 // ui-spec §7/§8：新增文案必须同时补全部 7 个 locale；漏键会让 i18next 静默回退
@@ -65,7 +66,8 @@ function collectSourceFiles(dir: string): string[] {
       out.push(...collectSourceFiles(full))
       continue
     }
-    if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue
+    if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name))
+      continue
     out.push(full)
   }
   return out

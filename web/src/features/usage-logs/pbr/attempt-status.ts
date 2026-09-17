@@ -33,7 +33,9 @@ export function attemptStatusClass(status: string): string {
 
 /** 是否是需要解释"为什么没用它"的跳过类状态。 */
 export function isSkipStatus(status: string): boolean {
-  return status === 'cooldown' || status === 'circuit_break' || status === 'skipped'
+  return (
+    status === 'cooldown' || status === 'circuit_break' || status === 'skipped'
+  )
 }
 
 /** 失败请求是否有可展示的尝试链（成功请求也有，只是只有一条 success）。 */

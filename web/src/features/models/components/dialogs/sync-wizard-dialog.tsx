@@ -278,7 +278,8 @@ export function SyncWizardDialog(props: {
   }
 
   return (
-    <Dialog size='xl'
+    <Dialog
+      size='xl'
       open={props.open}
       onOpenChange={(open) => !busy && props.onOpenChange(open)}
       title={t('Sync model metadata')}

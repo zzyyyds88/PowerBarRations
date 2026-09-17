@@ -39,10 +39,8 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import {
-  FALLBACK_ERROR_CONTENT,
-  getMessageErrorState,
-} from '../../lib'
+
+import { FALLBACK_ERROR_CONTENT, getMessageErrorState } from '../../lib'
 import type { Message } from '../../types'
 
 interface MessageErrorProps {

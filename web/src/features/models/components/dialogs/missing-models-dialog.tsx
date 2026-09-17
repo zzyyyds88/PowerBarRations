@@ -120,7 +120,8 @@ export function MissingModelsDialog({
   const showPagination = totalItems > pageSize
 
   return (
-    <Dialog size='lg'
+    <Dialog
+      size='lg'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Missing Models')}

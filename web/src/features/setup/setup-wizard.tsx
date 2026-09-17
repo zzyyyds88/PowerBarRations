@@ -107,7 +107,9 @@ export function SetupWizard() {
       <Card className='w-full max-w-md'>
         <CardHeader>
           <CardTitle>
-            {t('Initialize {{name}}', { name: systemName || 'PowerBarRations' })}
+            {t('Initialize {{name}}', {
+              name: systemName || 'PowerBarRations',
+            })}
           </CardTitle>
           <CardDescription>
             {t(
@@ -117,7 +119,9 @@ export function SetupWizard() {
         </CardHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+          <form
+            onSubmit={form.handleSubmit((values) => mutation.mutate(values))}
+          >
             <CardContent className='space-y-4'>
               <FormField
                 control={form.control}
@@ -170,8 +174,14 @@ export function SetupWizard() {
             </CardContent>
 
             <CardFooter>
-              <Button type='submit' className='w-full' disabled={mutation.isPending}>
-                {mutation.isPending && <Loader2 className='size-4 animate-spin' />}
+              <Button
+                type='submit'
+                className='w-full'
+                disabled={mutation.isPending}
+              >
+                {mutation.isPending && (
+                  <Loader2 className='size-4 animate-spin' />
+                )}
                 {t('Initialize')}
               </Button>
             </CardFooter>

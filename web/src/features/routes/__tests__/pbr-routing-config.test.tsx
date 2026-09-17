@@ -23,8 +23,8 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
-import { ModelRoutingPanel } from '../components/model-routing-panel'
 import { savePBRFailover } from '../api'
+import { ModelRoutingPanel } from '../components/model-routing-panel'
 
 vi.mock('@/lib/api', () => ({
   api: {
@@ -56,7 +56,12 @@ function mockConfiguredLane() {
       return {
         data: {
           items: [
-            { model: 'model-1', source: 'explicit', routable: true, member_count: 2 },
+            {
+              model: 'model-1',
+              source: 'explicit',
+              routable: true,
+              member_count: 2,
+            },
           ],
         },
       } as never
@@ -96,7 +101,12 @@ function mockUnconfiguredModel() {
       return {
         data: {
           items: [
-            { model: 'model-1', source: 'unconfigured', routable: false, member_count: 2 },
+            {
+              model: 'model-1',
+              source: 'unconfigured',
+              routable: false,
+              member_count: 2,
+            },
           ],
         },
       } as never
@@ -108,8 +118,18 @@ function mockUnconfiguredModel() {
           source: 'unconfigured',
           routable: false,
           members: [
-            { channel_id: 1, channel: 'channel-a', upstream_model: 'real-a', priority: 2 },
-            { channel_id: 2, channel: 'channel-b', upstream_model: 'real-b', priority: 1 },
+            {
+              channel_id: 1,
+              channel: 'channel-a',
+              upstream_model: 'real-a',
+              priority: 2,
+            },
+            {
+              channel_id: 2,
+              channel: 'channel-b',
+              upstream_model: 'real-b',
+              priority: 1,
+            },
           ],
         },
       } as never
@@ -158,7 +178,10 @@ describe('成员链手工管理', () => {
       string,
       { members: { channel: string; priority: number }[] },
     ]
-    expect(body.members.map((m) => m.channel)).toEqual(['channel-b', 'channel-a'])
+    expect(body.members.map((m) => m.channel)).toEqual([
+      'channel-b',
+      'channel-a',
+    ])
     expect(body.members.map((m) => m.priority)).toEqual([2, 1])
   })
 
@@ -220,8 +243,12 @@ describe('成员链手工管理', () => {
     renderPanel('model-1')
 
     expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: 'Remove member' })[0])
-    await user.click(screen.getAllByRole('button', { name: 'Remove member' })[0])
+    await user.click(
+      screen.getAllByRole('button', { name: 'Remove member' })[0]
+    )
+    await user.click(
+      screen.getAllByRole('button', { name: 'Remove member' })[0]
+    )
 
     expect(screen.getByText('No members yet')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()

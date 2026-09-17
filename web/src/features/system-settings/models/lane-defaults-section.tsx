@@ -48,7 +48,8 @@ import {
 
 // 四个"必须为正"的预算/时长 + 两个允许为 0 的间隔（与后端 validateLaneDefaults 一致）。
 const positiveInt = (message: string) => z.coerce.number().int().min(1, message)
-const nonNegativeInt = (message: string) => z.coerce.number().int().min(0, message)
+const nonNegativeInt = (message: string) =>
+  z.coerce.number().int().min(0, message)
 
 const createSchema = (
   t: (key: string, options?: Record<string, unknown>) => string
@@ -104,11 +105,7 @@ export function LaneDefaultsSection() {
     staleTime: 30_000,
   })
 
-  const form = useForm<
-    LaneDefaultsFormInput,
-    unknown,
-    LaneDefaultsFormValues
-  >({
+  const form = useForm<LaneDefaultsFormInput, unknown, LaneDefaultsFormValues>({
     resolver: zodResolver(schema),
     defaultValues: defaultsQuery.data,
     values: defaultsQuery.data,
@@ -155,7 +152,11 @@ export function LaneDefaultsSection() {
                   <FormItem>
                     <FormLabel>{t(FIELD_LABELS[key])}</FormLabel>
                     <FormControl>
-                      <Input min='0' type='number' {...safeNumberFieldProps(field)} />
+                      <Input
+                        min='0'
+                        type='number'
+                        {...safeNumberFieldProps(field)}
+                      />
                     </FormControl>
                     <FormDescription>
                       {t(

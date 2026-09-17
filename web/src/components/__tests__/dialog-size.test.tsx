@@ -81,7 +81,11 @@ describe('centered dialog size contract', () => {
         size='md'
         footer={<button type='button'>OK</button>}
       >
-        <div>{Array.from({ length: 200 }, (_, i) => <p key={i}>line {i}</p>)}</div>
+        <div>
+          {Array.from({ length: 200 }, (_, i) => (
+            <p key={i}>line {i}</p>
+          ))}
+        </div>
       </Dialog>
     )
 

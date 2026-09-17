@@ -76,9 +76,7 @@ export function LobeIconField(props: {
             {getLobeIcon(suggestedIcon, 24)}
           </span>
           <div className='min-w-0 flex-1 text-xs'>
-            <p className='font-medium'>
-              {t('Detected from the model name')}
-            </p>
+            <p className='font-medium'>{t('Detected from the model name')}</p>
             <p className='text-muted-foreground break-all'>{suggestedIcon}</p>
           </div>
           <Button

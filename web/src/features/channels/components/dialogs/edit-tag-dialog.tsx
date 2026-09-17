@@ -184,7 +184,8 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   if (!currentTag) return null
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={handleClose}
       title={

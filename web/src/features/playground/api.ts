@@ -53,9 +53,7 @@ export async function sendChatCompletion(
 }
 
 /** 把模型面的失败响应压成一句可展示的话（优先服务端 message，其次状态码）。 */
-async function buildModelFaceErrorMessage(
-  response: Response
-): Promise<string> {
+async function buildModelFaceErrorMessage(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as {
       error?: { message?: string; code?: string }
@@ -84,6 +82,8 @@ export async function getUserModels(): Promise<ModelOption[]> {
   const items = body.items ?? []
   return items
     .map((item) => item.model)
-    .filter((model): model is string => typeof model === 'string' && model.length > 0)
+    .filter(
+      (model): model is string => typeof model === 'string' && model.length > 0
+    )
     .map((model) => ({ label: model, value: model }))
 }

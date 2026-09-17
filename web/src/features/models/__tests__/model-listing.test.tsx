@@ -91,7 +91,10 @@ async function renderList(
 ) {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
   const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
-    if (url === '/api/console/models/' || url === '/api/console/models/search') {
+    if (
+      url === '/api/console/models/' ||
+      url === '/api/console/models/search'
+    ) {
       return {
         data: {
           success: true,

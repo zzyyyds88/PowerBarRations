@@ -36,5 +36,4 @@ describe('server error message mapping', () => {
     expect(message ?? '').toMatch(/rolling window/)
     expect(getServerErrorMessageKey({ code: 'UNKNOWN_CODE' })).toBe(null)
   })
-
 })

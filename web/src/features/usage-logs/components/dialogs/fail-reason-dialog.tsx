@@ -40,7 +40,8 @@ export function FailReasonDialog({
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Fail Reason Details')}

@@ -668,9 +668,9 @@ it('clears cached records and open details when the admin audit endpoint denies 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   )
   await waitFor(() =>
-    expect(client.getQueriesData({ queryKey: ['audit', 1, 'all'] })).toHaveLength(
-      0
-    )
+    expect(
+      client.getQueriesData({ queryKey: ['audit', 1, 'all'] })
+    ).toHaveLength(0)
   )
   expect(screen.queryByText('other-account')).not.toBeInTheDocument()
   // 其它会话的缓存不受影响。

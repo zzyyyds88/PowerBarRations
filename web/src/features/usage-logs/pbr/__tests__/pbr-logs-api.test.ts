@@ -20,12 +20,12 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
-import { listPBRRequestLogs } from '../pbr-logs-api'
 import {
   attemptStatusClass,
   isSkipStatus,
   summarizeAttempts,
 } from '../attempt-status'
+import { listPBRRequestLogs } from '../pbr-logs-api'
 
 vi.mock('@/lib/api', () => ({
   api: { get: vi.fn() },
@@ -39,7 +39,9 @@ describe('PBR 请求日志数据源', () => {
   })
 
   test('读 PBR /api/v1/logs 并把筛选映射成查询参数', async () => {
-    mockedGet.mockResolvedValue({ data: { items: [], next_cursor: null } } as never)
+    mockedGet.mockResolvedValue({
+      data: { items: [], next_cursor: null },
+    } as never)
 
     await listPBRRequestLogs({
       lane: 'model-1',

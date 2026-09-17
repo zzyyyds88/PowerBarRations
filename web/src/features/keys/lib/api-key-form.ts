@@ -82,7 +82,9 @@ export function transformFormDataToPayload(
 /**
  * Transform API key data to form defaults
  */
-export function transformApiKeyToFormDefaults(apiKey: ApiKey): ApiKeyFormValues {
+export function transformApiKeyToFormDefaults(
+  apiKey: ApiKey
+): ApiKeyFormValues {
   return {
     name: apiKey.name,
     expired_time:

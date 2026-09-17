@@ -136,7 +136,9 @@ export function ModelRoutingPanel(props: {
             >
               <span className='block truncate'>{m.model}</span>
               <span className='text-muted-foreground text-xs'>
-                {m.routable ? t('Lane configured') : t('No lane · not callable')}{' '}
+                {m.routable
+                  ? t('Lane configured')
+                  : t('No lane · not callable')}{' '}
                 · {t('{{count}} members', { count: m.member_count })}
               </span>
             </button>
@@ -255,7 +257,10 @@ function RouteEditor({
     reorder(next)
   }
 
-  const addMember = (candidate: { channel: string; upstream_model: string }) => {
+  const addMember = (candidate: {
+    channel: string
+    upstream_model: string
+  }) => {
     if (members.some((m) => m.channel === candidate.channel)) return
     reorder([
       ...members,

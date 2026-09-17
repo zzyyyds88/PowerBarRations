@@ -293,7 +293,7 @@ async function requestRefresh(
   _expectedSID?: string
 ): Promise<AuthRefreshHTTPResponse> {
   try {
-    const response = await authClient.get("/api/v1/auth/session")
+    const response = await authClient.get('/api/v1/auth/session')
     const body = response.data as
       | { authenticated?: boolean; stale?: boolean }
       | undefined

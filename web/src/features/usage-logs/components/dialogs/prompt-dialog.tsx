@@ -42,7 +42,8 @@ export function PromptDialog({
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
 
   return (
-    <Dialog size='lg'
+    <Dialog
+      size='lg'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Prompt Details')}

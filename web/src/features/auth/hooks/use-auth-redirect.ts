@@ -28,7 +28,6 @@ import { applyAuthBundle, isAuthBundle } from '@/lib/api'
 import { AuthOperationError } from '@/lib/secure-verification'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
 
-
 /**
  * Hook for handling authentication redirects and user data management
  */

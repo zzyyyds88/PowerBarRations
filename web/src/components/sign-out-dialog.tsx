@@ -23,9 +23,9 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { pbrLogout } from '@/lib/pbr-auth'
 import { clearAuthenticatedClientState } from '@/lib/auth-session'
 import { handleServerError } from '@/lib/handle-server-error'
+import { pbrLogout } from '@/lib/pbr-auth'
 
 interface SignOutDialogProps {
   open: boolean

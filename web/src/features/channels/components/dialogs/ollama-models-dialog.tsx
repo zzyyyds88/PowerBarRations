@@ -368,7 +368,8 @@ export function OllamaModelsDialog({
   if (!open) return null
 
   return (
-    <Dialog size='lg'
+    <Dialog
+      size='lg'
       open={open}
       onOpenChange={close}
       title={t('Ollama Models')}

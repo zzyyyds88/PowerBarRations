@@ -8,19 +8,19 @@
 
 ### 技术栈
 
-| 类别       | 技术                                                              |
-| ---------- | ----------------------------------------------------------------- |
+| 类别       | 技术                                                                       |
+| ---------- | -------------------------------------------------------------------------- |
 | 包管理     | pnpm（PBR 统一；上游用 Bun，本仓库为可复现构建改用 pnpm + pnpm-lock.yaml） |
-| 框架       | React 19、TypeScript                                              |
-| 数据与请求 | @tanstack/react-query、axios、Zustand                             |
-| 路由       | @tanstack/react-router                                            |
-| 表格与列表 | @tanstack/react-table、@tanstack/react-virtual                    |
-| 国际化     | i18next、react-i18next、i18next-browser-languagedetector          |
-| 日期       | Day.js                                                            |
-| UI 与样式  | Base UI、Hugeicons、Tailwind CSS、clsx / class-variance-authority |
-| 表单       | React Hook Form、Zod                                              |
-| 图表       | @visactor/vchart、@visactor/react-vchart                          |
-| 工具       | qrcode.react、oxfmt、oxlint、vitest（可选）                       |
+| 框架       | React 19、TypeScript                                                       |
+| 数据与请求 | @tanstack/react-query、axios、Zustand                                      |
+| 路由       | @tanstack/react-router                                                     |
+| 表格与列表 | @tanstack/react-table、@tanstack/react-virtual                             |
+| 国际化     | i18next、react-i18next、i18next-browser-languagedetector                   |
+| 日期       | Day.js                                                                     |
+| UI 与样式  | Base UI、Hugeicons、Tailwind CSS、clsx / class-variance-authority          |
+| 表单       | React Hook Form、Zod                                                       |
+| 图表       | @visactor/vchart、@visactor/react-vchart                                   |
+| 工具       | qrcode.react、oxfmt、oxlint、vitest（可选）                                |
 
 优先复用项目已有组件与能力（见 [3.3 组件](#33-组件)）；项目内无合适实现时，再评估已安装依赖及成熟、维护良好的开源库。仅在复用、组合或合理扩展仍无法满足需求时自行实现，并说明具体能力缺口。
 
@@ -81,7 +81,7 @@
   - `react/incompatible-library` = off：它标记的是**第三方库与 React Compiler 的已知不兼容**（本项目使用 TanStack Table 的 `useReactTable` 与 react-hook-form 的 `form.watch`），在保留这些库的前提下无法靠改业务代码满足；
   - `react/set-state-in-effect` = warn：React Compiler 的优化建议，命中的是本项目既有的"effect 内同步 state"模式；保留 warning 以持续可见，不阻断构建；
   - `react/refs` = warn：同上，命中的是"渲染期读取 ref 初值"等既有模式。
-  其余规则一律 **error 且必须改代码**；只允许用 `--fix` 处理机械类问题，禁止用全局 disable 掩盖。
+    其余规则一律 **error 且必须改代码**；只允许用 `--fix` 处理机械类问题，禁止用全局 disable 掩盖。
 - **解构**：对象非必要不要进行解构，特别是组件的 props；直接使用 `props.xxx` 更清晰，避免不必要的解构增加代码复杂度。
 
 ### 3.3 组件

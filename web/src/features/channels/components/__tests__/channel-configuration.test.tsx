@@ -499,7 +499,9 @@ test('model discovery discards a response for old credentials and retains manual
   ).not.toBeInTheDocument()
   expect(screen.queryByText('old-upstream-model')).not.toBeInTheDocument()
   await user.click(
-    await screen.findByRole('button', { name: /Re-fetch|Probe upstream models/ })
+    await screen.findByRole('button', {
+      name: /Re-fetch|Probe upstream models/,
+    })
   )
   const dialog = await openDiscoveryDialog()
   await user.click(
@@ -932,7 +934,9 @@ test('the discovery dialog distinguishes existing from new candidates and applie
   // Saved models the upstream still returns start checked; new ones do not.
   expect(dialog.getByRole('checkbox', { name: 'gpt-one' })).toBeChecked()
   expect(dialog.getByRole('checkbox', { name: 'gpt-two' })).toBeChecked()
-  expect(dialog.getByRole('checkbox', { name: 'fresh-alpha' })).not.toBeChecked()
+  expect(
+    dialog.getByRole('checkbox', { name: 'fresh-alpha' })
+  ).not.toBeChecked()
   expect(dialog.getByRole('checkbox', { name: 'fresh-beta' })).not.toBeChecked()
 
   // A draft-only model that upstream no longer returns stays selected unless
@@ -974,7 +978,10 @@ test('selected models can be removed and manual additions are trimmed and de-dup
   await user.clear(models.getByLabelText('Add a model manually'))
 
   // Surrounding whitespace is trimmed before adding the custom model.
-  await user.type(models.getByLabelText('Add a model manually'), '  custom-lane  ')
+  await user.type(
+    models.getByLabelText('Add a model manually'),
+    '  custom-lane  '
+  )
   await user.click(models.getByRole('button', { name: 'Add' }))
   expect(models.getByText('custom-lane')).toBeVisible()
   expect(models.getByLabelText('Add a model manually')).toHaveValue('')
@@ -1012,9 +1019,7 @@ test('advanced custom edits preview draft connection settings with the saved key
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
   const dialog = await openDiscoveryDialog()
-  expect(
-    dialog.getByRole('checkbox', { name: 'preview-model' })
-  ).toBeVisible()
+  expect(dialog.getByRole('checkbox', { name: 'preview-model' })).toBeVisible()
   expect(post).toHaveBeenCalledWith(
     '/api/channel/fetch_models',
     expect.objectContaining({
@@ -1056,12 +1061,12 @@ test('an operator without sensitive write permission can discover saved models a
   expect(screen.getByRole('combobox', { name: 'Type' })).toBeDisabled()
   expect(screen.getByLabelText('API Key *')).toBeDisabled()
   await user.click(
-    await screen.findByRole('button', { name: /Probe upstream models|Re-fetch/ })
+    await screen.findByRole('button', {
+      name: /Probe upstream models|Re-fetch/,
+    })
   )
   const dialog = await openDiscoveryDialog()
-  expect(
-    dialog.getByRole('checkbox', { name: 'upstream-model' })
-  ).toBeVisible()
+  expect(dialog.getByRole('checkbox', { name: 'upstream-model' })).toBeVisible()
   await user.click(dialog.getByRole('button', { name: 'Cancel' }))
   await waitFor(() =>
     expect(
@@ -1222,12 +1227,12 @@ test('switching edited channels discards a pending model list from the previous 
   view.rerender(<ConfigurationHarness currentRow={otherChannel} />)
   await screen.findByDisplayValue('Second channel')
   await user.click(
-    await screen.findByRole('button', { name: /Probe upstream models|Re-fetch/ })
+    await screen.findByRole('button', {
+      name: /Probe upstream models|Re-fetch/,
+    })
   )
   const dialog = await openDiscoveryDialog()
-  expect(
-    dialog.getByRole('checkbox', { name: 'second-model' })
-  ).toBeVisible()
+  expect(dialog.getByRole('checkbox', { name: 'second-model' })).toBeVisible()
   await act(async () => {
     reply.resolve({ data: { success: true, data: ['first-model'] } })
   })
@@ -1285,7 +1290,9 @@ test('closing an edited channel clears the row so the next open starts a fresh c
   )
   view.rerender(<ConfigurationHarness clearRowOnClose />)
   await user.click(screen.getByRole('button', { name: 'Open channel' }))
-  expect(await screen.findByRole('dialog', { name: 'Create Channel' })).toBeVisible()
+  expect(
+    await screen.findByRole('dialog', { name: 'Create Channel' })
+  ).toBeVisible()
   expect(screen.getByRole('combobox', { name: 'Type' })).toHaveValue('OpenAI')
   expect(screen.getByRole('textbox', { name: /^Name\s*\*$/ })).toHaveValue('')
 })

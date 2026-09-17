@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useSearch } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
-
 import { AuthLayout } from '../auth-layout'
 import { UserAuthForm } from './components/user-auth-form'
 

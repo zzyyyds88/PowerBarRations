@@ -20,10 +20,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Dialog } from '@/components/dialog'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
-import { Dialog } from '@/components/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -176,7 +176,9 @@ export function PBRLaneLogsSection() {
                 <TableHead>{t('Result')}</TableHead>
                 <TableHead>{t('Attempts')}</TableHead>
                 <TableHead className='text-right'>{t('Total ms')}</TableHead>
-                <TableHead className='text-right'>{t('Cost (converted)')}</TableHead>
+                <TableHead className='text-right'>
+                  {t('Cost (converted)')}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,7 +207,9 @@ export function PBRLaneLogsSection() {
                       )}
                       variant='secondary'
                     >
-                      {item.success ? t('Success') : item.error_kind || t('Failed')}
+                      {item.success
+                        ? t('Success')
+                        : item.error_kind || t('Failed')}
                     </Badge>
                   </TableCell>
                   <TableCell className='font-mono text-[11px] break-all'>
@@ -265,51 +269,51 @@ export function PBRLaneLogsSection() {
         )}
       >
         {detailQuery.isPending && <LoadingState />}
-          {detailQuery.data && (
-            <div className='flex flex-col gap-3'>
-              <dl className='grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3'>
-                <DetailItem label={t('Lane')} value={detailQuery.data.lane} />
-                <DetailItem
-                  label={t('Request model')}
-                  value={detailQuery.data.request_model}
-                />
-                <DetailItem
-                  label={t('Upstream model')}
-                  value={detailQuery.data.upstream_model}
-                />
-                <DetailItem
-                  label={t('Channel')}
-                  value={detailQuery.data.channel}
-                />
-                <DetailItem
-                  label={t('Inbound format')}
-                  value={detailQuery.data.inbound_format}
-                />
-                <DetailItem
-                  label={t('HTTP status')}
-                  value={String(detailQuery.data.http_status)}
-                />
-                <DetailItem
-                  label={t('Prompt tokens')}
-                  value={String(detailQuery.data.prompt_tokens)}
-                />
-                <DetailItem
-                  label={t('Completion tokens')}
-                  value={String(detailQuery.data.completion_tokens)}
-                />
-                <DetailItem
-                  label={t('Total ms')}
-                  value={String(detailQuery.data.total_ms)}
-                />
-              </dl>
-              {detailQuery.data.error_summary && (
-                <p className='text-destructive text-xs break-words'>
-                  {detailQuery.data.error_summary}
-                </p>
-              )}
-              <PBRAttemptTimeline attempts={detailQuery.data.attempts ?? []} />
-            </div>
-          )}
+        {detailQuery.data && (
+          <div className='flex flex-col gap-3'>
+            <dl className='grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3'>
+              <DetailItem label={t('Lane')} value={detailQuery.data.lane} />
+              <DetailItem
+                label={t('Request model')}
+                value={detailQuery.data.request_model}
+              />
+              <DetailItem
+                label={t('Upstream model')}
+                value={detailQuery.data.upstream_model}
+              />
+              <DetailItem
+                label={t('Channel')}
+                value={detailQuery.data.channel}
+              />
+              <DetailItem
+                label={t('Inbound format')}
+                value={detailQuery.data.inbound_format}
+              />
+              <DetailItem
+                label={t('HTTP status')}
+                value={String(detailQuery.data.http_status)}
+              />
+              <DetailItem
+                label={t('Prompt tokens')}
+                value={String(detailQuery.data.prompt_tokens)}
+              />
+              <DetailItem
+                label={t('Completion tokens')}
+                value={String(detailQuery.data.completion_tokens)}
+              />
+              <DetailItem
+                label={t('Total ms')}
+                value={String(detailQuery.data.total_ms)}
+              />
+            </dl>
+            {detailQuery.data.error_summary && (
+              <p className='text-destructive text-xs break-words'>
+                {detailQuery.data.error_summary}
+              </p>
+            )}
+            <PBRAttemptTimeline attempts={detailQuery.data.attempts ?? []} />
+          </div>
+        )}
       </Dialog>
     </div>
   )

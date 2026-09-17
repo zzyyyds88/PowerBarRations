@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { t } from 'i18next'
 
-import type { ApiResponse } from '@/lib/api-response'
 import { api } from '@/lib/api'
+import type { ApiResponse } from '@/lib/api-response'
 import { createServerError } from '@/lib/server-error-message'
 
 export interface AuditLog {
@@ -60,7 +60,9 @@ export async function getAuditLogs(
 ): Promise<{ items: AuditLog[]; total: number }> {
   const response = await api.get<
     ApiResponse<{ items: AuditLog[]; total: number }>
-  >(scope === 'all' ? '/api/console/audit' : '/api/console/audit/self', { params })
+  >(scope === 'all' ? '/api/console/audit' : '/api/console/audit/self', {
+    params,
+  })
   if (!response.data.success || !response.data.data) {
     throw createServerError(response.data, t('Failed to load audit records'))
   }

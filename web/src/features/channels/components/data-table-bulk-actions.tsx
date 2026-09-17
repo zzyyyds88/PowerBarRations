@@ -212,7 +212,8 @@ export function DataTableBulkActions<TData>({
       </BulkActionsToolbar>
 
       {/* Set Tag Dialog */}
-      <Dialog size='md'
+      <Dialog
+        size='md'
         open={showTagDialog}
         onOpenChange={setShowTagDialog}
         title={t('Set Tag')}
@@ -253,7 +254,8 @@ export function DataTableBulkActions<TData>({
       </Dialog>
 
       {/* Delete Confirmation Dialog */}
-      <Dialog size='md'
+      <Dialog
+        size='md'
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
         title={t('Delete Channels?')}

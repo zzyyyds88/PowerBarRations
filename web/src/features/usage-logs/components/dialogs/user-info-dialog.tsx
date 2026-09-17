@@ -78,7 +78,8 @@ export function UserInfoDialog({
   }, [open, userId, fetchUserInfo])
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={t('User Information')}

@@ -1740,7 +1740,8 @@ export function ParamOverrideEditorDialog(
   // ---------------------------------------------------------------------------
 
   return (
-    <Dialog size='xl'
+    <Dialog
+      size='xl'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Parameter Override')}

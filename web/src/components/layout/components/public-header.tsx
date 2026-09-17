@@ -407,7 +407,8 @@ export function PublicHeader(props: PublicHeaderProps) {
         </div>
       </div>
 
-      <Dialog size='md'
+      <Dialog
+        size='md'
         open={!!authPromptTarget}
         onOpenChange={(open) => {
           if (!open) {

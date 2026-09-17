@@ -959,7 +959,8 @@ function ChannelTestDialogContent({
 
   return (
     <>
-      <Dialog size='lg'
+      <Dialog
+        size='lg'
         open={open}
         onOpenChange={handleDialogOpenChange}
         title={

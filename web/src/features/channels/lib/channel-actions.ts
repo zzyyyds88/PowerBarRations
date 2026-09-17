@@ -198,7 +198,6 @@ export async function handleDeleteChannel(
   }
 }
 
-
 /**
  * Test channel connectivity
  */

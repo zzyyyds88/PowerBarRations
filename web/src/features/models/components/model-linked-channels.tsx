@@ -27,13 +27,10 @@ import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { searchChannels } from '@/features/channels/api'
 import {
-  channelsQueryKeys,
-  getChannelTypeLabel,
-} from '@/features/channels/lib'
-import {
   CHANNEL_STATUS,
   CHANNEL_STATUS_CONFIG,
 } from '@/features/channels/constants'
+import { channelsQueryKeys, getChannelTypeLabel } from '@/features/channels/lib'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
@@ -85,7 +82,10 @@ export function ModelLinkedChannels(props: {
       <div className='flex items-start gap-2.5'>
         <span className='mt-0.5 flex size-6 shrink-0 items-center justify-center'>
           {getLobeIcon(
-            resolveModelIconKey({ model_name: props.modelName, icon: props.icon }),
+            resolveModelIconKey({
+              model_name: props.modelName,
+              icon: props.icon,
+            }),
             24
           )}
         </span>

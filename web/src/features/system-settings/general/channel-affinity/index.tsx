@@ -89,7 +89,8 @@ function ChannelAffinityConfirmDialog(props: {
   const { t } = useTranslation()
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={props.title}

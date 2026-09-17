@@ -155,7 +155,8 @@ export function TagBatchEditDialog({
   if (!currentTag) return null
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={handleClose}
       title={t('Batch Edit by Tag')}

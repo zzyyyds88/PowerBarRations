@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-import { discardPBRSession, getPBRSessionState, pbrLogin } from "../pbr-auth"
+import { discardPBRSession, getPBRSessionState, pbrLogin } from '../pbr-auth'
 
 // token-spec §2.5.1：口令变更后旧会话立即失效，前端必须能识别 stale 并清理，
 // 否则会卡在"登录成功却每个请求都 401"的状态。
@@ -34,15 +34,15 @@ const fetchMock = vi.fn()
 
 beforeEach(() => {
   fetchMock.mockReset()
-  vi.stubGlobal("fetch", fetchMock)
+  vi.stubGlobal('fetch', fetchMock)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe("PBR 会话状态", () => {
-  test("有效会话返回 authenticated=true 且 stale=false", async () => {
+describe('PBR 会话状态', () => {
+  test('有效会话返回 authenticated=true 且 stale=false', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ authenticated: true, stale: false })
     )
@@ -52,7 +52,7 @@ describe("PBR 会话状态", () => {
     })
   })
 
-  test("带了失效 Cookie 时返回 stale=true（前端据此清态提示重登）", async () => {
+  test('带了失效 Cookie 时返回 stale=true（前端据此清态提示重登）', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ authenticated: false, stale: true })
     )
@@ -62,7 +62,7 @@ describe("PBR 会话状态", () => {
     })
   })
 
-  test("从未登录时不报 stale", async () => {
+  test('从未登录时不报 stale', async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({ authenticated: false, stale: false })
     )
@@ -72,21 +72,21 @@ describe("PBR 会话状态", () => {
     })
   })
 
-  test("登录前先清掉残留的失效 Cookie", async () => {
+  test('登录前先清掉残留的失效 Cookie', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ initialized: true }))
-    await pbrLogin("some-password")
+    await pbrLogin('some-password')
 
     const urls = fetchMock.mock.calls.map((call) => call[0])
-    expect(urls[0]).toBe("/api/v1/auth/logout")
-    expect(urls).toContain("/api/v1/auth/login")
+    expect(urls[0]).toBe('/api/v1/auth/logout')
+    expect(urls).toContain('/api/v1/auth/login')
   })
 
-  test("discardPBRSession 调用登出端点", async () => {
+  test('discardPBRSession 调用登出端点', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ logged_out: true }))
     await discardPBRSession()
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/v1/auth/logout",
-      expect.objectContaining({ method: "POST" })
+      '/api/v1/auth/logout',
+      expect.objectContaining({ method: 'POST' })
     )
   })
 })

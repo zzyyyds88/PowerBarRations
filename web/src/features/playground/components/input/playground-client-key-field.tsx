@@ -34,9 +34,7 @@ interface PlaygroundClientKeyFieldProps {
  * 模型面只认客户端密钥（token-spec §1），管理面会话对 `/v1/*` 无效，
  * 因此这里必须由使用者提供 `pbr-...`。密钥只存本机 localStorage。
  */
-export function PlaygroundClientKeyField(
-  props: PlaygroundClientKeyFieldProps
-) {
+export function PlaygroundClientKeyField(props: PlaygroundClientKeyFieldProps) {
   const { t } = useTranslation()
 
   return (

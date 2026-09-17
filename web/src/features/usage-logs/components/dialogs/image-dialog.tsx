@@ -60,7 +60,8 @@ export function ImageDialog({
   }
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={handleOpenChange}
       title={t('Image Preview')}

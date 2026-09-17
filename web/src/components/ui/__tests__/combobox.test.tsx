@@ -215,10 +215,7 @@ describe('selected option icons', () => {
     render(<ProviderSelectionFixture />)
     const user = userEvent.setup()
     const input = screen.getByRole('combobox', { name: 'Model provider' })
-    expect(screen.getByAltText('')).toHaveAttribute(
-      'src',
-      '/icons/alpha.png'
-    )
+    expect(screen.getByAltText('')).toHaveAttribute('src', '/icons/alpha.png')
     await user.click(input)
     const nextOption = screen.getByRole('option', { name: 'Beta provider' })
     expect(nextOption.querySelector('img')).toHaveAttribute(
@@ -227,10 +224,7 @@ describe('selected option icons', () => {
     )
     await user.click(nextOption)
     await waitFor(() => expect(input).toHaveValue('Beta provider'))
-    expect(screen.getByAltText('')).toHaveAttribute(
-      'src',
-      '/icons/beta.png'
-    )
+    expect(screen.getByAltText('')).toHaveAttribute('src', '/icons/beta.png')
   })
 
   it('removes the logo when the selection is cleared or no longer has an icon', () => {
@@ -261,9 +255,9 @@ describe('selected option icons', () => {
       />
     )
     expect(screen.queryByAltText('')).not.toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Model provider' })).toHaveValue(
-      'Alpha provider'
-    )
+    expect(
+      screen.getByRole('combobox', { name: 'Model provider' })
+    ).toHaveValue('Alpha provider')
   })
 
   it('preserves the existing text-only selected state unless icon display is requested', () => {

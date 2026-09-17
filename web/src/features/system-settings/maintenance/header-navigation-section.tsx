@@ -208,7 +208,6 @@ export function HeaderNavigationSection({
               />
             ))}
           </div>
-
         </SettingsForm>
       </Form>
     </SettingsSection>

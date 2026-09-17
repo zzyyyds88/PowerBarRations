@@ -154,8 +154,7 @@ export function ChannelConfiguration(props: ChannelConfigurationProps) {
         keepMounted
         className='-m-1 min-h-0 space-y-5 overflow-y-auto overscroll-contain p-1'
       >
-        {(props.section === 'prices' || visited.has('prices')) &&
-          props.prices}
+        {(props.section === 'prices' || visited.has('prices')) && props.prices}
       </TabsContent>
       <TabsContent
         value='other'

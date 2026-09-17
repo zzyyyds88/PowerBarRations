@@ -147,7 +147,8 @@ export function CCSwitchDialog(props: Props) {
   }
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Import to CC Switch')}

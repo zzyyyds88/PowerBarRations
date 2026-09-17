@@ -43,9 +43,24 @@ import {
 // GET /api/stats 的聚合；上游单价在渠道里配置（渠道价 > 全局默认 > 不折算）。
 
 const RANGE_OPTIONS = [
-  { value: '24h', label: '最近 24 小时', seconds: 24 * 3600, granularity: 'hour' },
-  { value: '7d', label: '最近 7 天', seconds: 7 * 24 * 3600, granularity: 'day' },
-  { value: '30d', label: '最近 30 天', seconds: 30 * 24 * 3600, granularity: 'day' },
+  {
+    value: '24h',
+    label: '最近 24 小时',
+    seconds: 24 * 3600,
+    granularity: 'hour',
+  },
+  {
+    value: '7d',
+    label: '最近 7 天',
+    seconds: 7 * 24 * 3600,
+    granularity: 'day',
+  },
+  {
+    value: '30d',
+    label: '最近 30 天',
+    seconds: 30 * 24 * 3600,
+    granularity: 'day',
+  },
 ] as const
 
 const GROUP_OPTIONS: { value: PBRStatsGroupBy; label: string }[] = [
@@ -73,7 +88,10 @@ function formatNumber(value: number): string {
 function formatBucket(ts: number, granularity: 'hour' | 'day'): string {
   const date = new Date(ts * 1000)
   if (granularity === 'day') {
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    return date.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    })
   }
   return date.toLocaleString(undefined, {
     month: 'short',
@@ -163,7 +181,10 @@ export function PbrAnalyticsDashboard(props: {
       .map(([ts, cost]) => ({ ts, cost }))
   }, [items])
 
-  const maxBucketCost = timeline.reduce((max, item) => Math.max(max, item.cost), 0)
+  const maxBucketCost = timeline.reduce(
+    (max, item) => Math.max(max, item.cost),
+    0
+  )
 
   const distribution = useMemo(() => {
     const byGroup = new Map<
@@ -175,7 +196,8 @@ export function PbrAnalyticsDashboard(props: {
       const current = byGroup.get(key) ?? { cost: 0, requests: 0, tokens: 0 }
       current.cost += item.estimated_cost || 0
       current.requests += item.requests || 0
-      current.tokens += (item.prompt_tokens || 0) + (item.completion_tokens || 0)
+      current.tokens +=
+        (item.prompt_tokens || 0) + (item.completion_tokens || 0)
       byGroup.set(key, current)
     }
     return [...byGroup.entries()]
@@ -238,7 +260,7 @@ export function PbrAnalyticsDashboard(props: {
                 title={`${formatBucket(item.ts, range.granularity)} · ${formatCost(item.cost)}`}
               >
                 <div
-                  className='bg-sky-500/70 w-full rounded-sm'
+                  className='w-full rounded-sm bg-sky-500/70'
                   style={{
                     height:
                       maxBucketCost > 0
@@ -257,10 +279,7 @@ export function PbrAnalyticsDashboard(props: {
             </span>
             <span>
               {timeline.length > 0
-                ? formatBucket(
-                    timeline.at(-1)?.ts ?? 0,
-                    range.granularity
-                  )
+                ? formatBucket(timeline.at(-1)?.ts ?? 0, range.granularity)
                 : ''}
             </span>
           </div>

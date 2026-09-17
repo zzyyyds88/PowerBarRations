@@ -234,7 +234,8 @@ export function MultiKeyManageDialog({
 
   return (
     <>
-      <Dialog size='xl'
+      <Dialog
+        size='xl'
         open={open}
         onOpenChange={onOpenChange}
         title={

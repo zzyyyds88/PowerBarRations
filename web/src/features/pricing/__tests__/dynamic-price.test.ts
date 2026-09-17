@@ -183,5 +183,4 @@ describe('expression price summaries', () => {
     ])
     expect(summary?.secondaryEntries).toEqual([])
   })
-
 })

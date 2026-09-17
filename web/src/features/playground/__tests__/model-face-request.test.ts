@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { API_ENDPOINTS } from '../constants'
 import { sendChatCompletion } from '../api'
+import { API_ENDPOINTS } from '../constants'
 import type { ChatCompletionRequest } from '../types'
 
 const payload: ChatCompletionRequest = {

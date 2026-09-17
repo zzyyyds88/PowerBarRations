@@ -79,7 +79,9 @@ beforeEach(() => {
       case '/api/models':
         return {
           data: {
-            items: [{ model: 'gpt-4o-mini', source: 'implicit', member_count: 1 }],
+            items: [
+              { model: 'gpt-4o-mini', source: 'implicit', member_count: 1 },
+            ],
           },
         }
       case '/api/stats':
@@ -137,20 +139,14 @@ describe('overview layout', () => {
       screen.queryByRole('button', { name: 'Setup guide' })
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Get started')).not.toBeInTheDocument()
-    expect(
-      screen.queryByText(/Setup progress:/)
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Setup progress:/)).not.toBeInTheDocument()
   })
 
   it('does not render recommended quick actions', async () => {
     await renderOverview()
 
-    expect(
-      await screen.findByText('First API request')
-    ).toBeVisible()
-    expect(
-      screen.queryByText('Recommended actions')
-    ).not.toBeInTheDocument()
+    expect(await screen.findByText('First API request')).toBeVisible()
+    expect(screen.queryByText('Recommended actions')).not.toBeInTheDocument()
     expect(
       screen.queryByText('Keep the platform ready')
     ).not.toBeInTheDocument()

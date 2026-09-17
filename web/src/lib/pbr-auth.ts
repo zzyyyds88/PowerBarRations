@@ -92,14 +92,19 @@ export async function getPBRSetupStatus(): Promise<PBRSetupStatus> {
 }
 
 /** 首启设置口令（PBR /api/v1/setup），成功即签发会话。 */
-export async function submitPBRSetup(password: string): Promise<{ warning?: string }> {
+export async function submitPBRSetup(
+  password: string
+): Promise<{ warning?: string }> {
   const res = await fetch('/api/v1/setup', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
   })
-  const body = (await res.json().catch(() => ({}))) as { warning?: string; error?: { message?: string } }
+  const body = (await res.json().catch(() => ({}))) as {
+    warning?: string
+    error?: { message?: string }
+  }
   if (!res.ok) {
     throw new Error(body.error?.message || `setup failed: ${res.status}`)
   }
@@ -165,7 +170,9 @@ export async function pbrLogin(password: string): Promise<AuthBundle> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
   })
-  const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: { message?: string }
+  }
   if (!res.ok) {
     throw new Error(body.error?.message || '登录失败')
   }

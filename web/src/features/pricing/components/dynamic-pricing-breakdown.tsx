@@ -558,13 +558,7 @@ export function DynamicPricingBreakdown({
                     ((field.unit === 'request' || field.unit === 'image') &&
                       Number.isFinite(value)) ? (
                     <span className={cn(!compact && 'font-semibold')}>
-                      {formatBreakdownPrice(
-                        value,
-                        field,
-                        symbol,
-                        rate,
-                        t
-                      )}
+                      {formatBreakdownPrice(value, field, symbol, rate, t)}
                     </span>
                   ) : (
                     '-'

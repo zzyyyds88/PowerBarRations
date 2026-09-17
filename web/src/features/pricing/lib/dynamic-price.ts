@@ -184,10 +184,7 @@ export function getDynamicPriceEntries(
   options: DynamicPriceOptions
 ): DynamicPriceEntry[] {
   if (!tier) return []
-  if (
-    tier.billingUnit === 'request' &&
-    typeof tier.fixedPrice === 'number'
-  ) {
+  if (tier.billingUnit === 'request' && typeof tier.fixedPrice === 'number') {
     return [
       {
         key: 'fixed',
@@ -209,11 +206,7 @@ export function getDynamicPriceEntries(
     // Same-price reads can stay in the expression to preserve accounting for
     // overlapping usage. They do not need a separate displayed price. Keep
     // explicit zero prices visible, even when the input itself is free.
-    if (
-      variable.key === 'cr' &&
-      value !== 0 &&
-      value === tier.inputPrice
-    ) {
+    if (variable.key === 'cr' && value !== 0 && value === tier.inputPrice) {
       return []
     }
 
@@ -262,9 +255,7 @@ export function getDynamicPricingSummary(
   const tier = summaryTiers[0] ?? null
   let entries = getDynamicPriceEntries(tier, options)
   let isMixedBilling = false
-  const tokenTier = summaryTiers.find(
-    (item) => item.billingUnit !== 'request'
-  )
+  const tokenTier = summaryTiers.find((item) => item.billingUnit !== 'request')
   const requestTier = summaryTiers.find(
     (item) => item.billingUnit === 'request'
   )

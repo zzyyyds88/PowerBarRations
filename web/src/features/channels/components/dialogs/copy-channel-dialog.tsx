@@ -69,7 +69,8 @@ export function CopyChannelDialog({
   }
 
   return (
-    <Dialog size='md'
+    <Dialog
+      size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={t('Copy Channel')}

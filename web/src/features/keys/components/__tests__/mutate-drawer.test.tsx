@@ -61,7 +61,9 @@ function renderDrawer() {
     }
     return { data: { success: true, data: {} } }
   })
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   client.setQueryData(['status'], {})
   render(
     <I18nextProvider i18n={i18n}>
@@ -102,7 +104,9 @@ afterEach(() => {
 it('has no quota, wallet or subscription fields in the edit form', async () => {
   const client = renderDrawer()
   await waitFor(() =>
-    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('production')
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(
+      'production'
+    )
   )
   expect(screen.queryByLabelText(/Quota/i)).not.toBeInTheDocument()
   expect(screen.queryByLabelText(/Unlimited Quota/i)).not.toBeInTheDocument()
@@ -118,7 +122,9 @@ it('saves the edit without sending any quota field', async () => {
   const client = renderDrawer()
   const user = userEvent.setup()
   await waitFor(() =>
-    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('production')
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue(
+      'production'
+    )
   )
   await user.click(screen.getByRole('button', { name: 'Save changes' }))
   await waitFor(() => expect(put).toHaveBeenCalled())

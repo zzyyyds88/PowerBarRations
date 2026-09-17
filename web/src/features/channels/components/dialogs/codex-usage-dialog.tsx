@@ -1083,7 +1083,8 @@ export function CodexUsageDialog({
   }, [response])
 
   return (
-    <Dialog size='lg'
+    <Dialog
+      size='lg'
       open={open}
       onOpenChange={handleDialogOpenChange}
       title={t('Codex Account & Usage')}

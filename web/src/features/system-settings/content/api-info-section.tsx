@@ -388,7 +388,8 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
         />
       </div>
 
-      <Dialog size='xl'
+      <Dialog
+        size='xl'
         open={showDialog}
         onOpenChange={setShowDialog}
         title={editingApiInfo ? t('Edit API Shortcut') : t('Add API Shortcut')}

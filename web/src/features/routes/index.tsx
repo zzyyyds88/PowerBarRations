@@ -28,6 +28,7 @@ import { GitBranch, Loader2, Waypoints } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import {
   StaticDataTable,
   staticDataTableClassNames as tableStyles,
@@ -36,7 +37,6 @@ import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { StatusBadge } from '@/components/status-badge'
-import { CopyButton } from '@/components/copy-button'
 import { Button } from '@/components/ui/button'
 
 import {

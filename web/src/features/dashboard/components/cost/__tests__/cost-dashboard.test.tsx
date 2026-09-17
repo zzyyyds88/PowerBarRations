@@ -66,7 +66,9 @@ function mockStats(items: PBRStatBucket[]) {
 }
 
 function renderDashboard(node: ReactNode) {
-  return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>)
+  return render(
+    <QueryClientProvider client={client}>{node}</QueryClientProvider>
+  )
 }
 
 describe('cost dashboard channel x model dimension', () => {
@@ -80,13 +82,9 @@ describe('cost dashboard channel x model dimension', () => {
     )
 
     expect(await screen.findByText('ch-a')).toBeVisible()
-    expect(
-      screen.getByRole('columnheader', { name: 'Channel' })
-    ).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: 'Channel' })).toBeVisible()
     expect(screen.getByRole('columnheader', { name: 'Model' })).toBeVisible()
-    expect(
-      screen.getByRole('columnheader', { name: 'Requests' })
-    ).toBeVisible()
+    expect(screen.getByRole('columnheader', { name: 'Requests' })).toBeVisible()
     expect(
       screen.getByRole('columnheader', { name: 'Token count' })
     ).toBeVisible()
@@ -123,9 +121,7 @@ describe('cost dashboard channel x model dimension', () => {
     renderDashboard(<CostDashboard />)
 
     await user.click(await screen.findByRole('combobox'))
-    await user.click(
-      await screen.findByRole('option', { name: '渠道 × 模型' })
-    )
+    await user.click(await screen.findByRole('option', { name: '渠道 × 模型' }))
 
     expect(
       await screen.findByRole('columnheader', { name: 'Channel' })

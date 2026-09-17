@@ -41,7 +41,6 @@ export type { ApiRequestConfig } from '@/lib/http-client'
 // User APIs
 // ============================================================================
 
-
 export async function getUserModels(): Promise<{
   success: boolean
   message?: string
@@ -52,7 +51,9 @@ export async function getUserModels(): Promise<{
   const items = (res.data as { items?: Array<{ model?: string }> }).items ?? []
   const names = items
     .map((item) => item.model)
-    .filter((name): name is string => typeof name === 'string' && name.length > 0)
+    .filter(
+      (name): name is string => typeof name === 'string' && name.length > 0
+    )
   return { success: true, data: names }
 }
 

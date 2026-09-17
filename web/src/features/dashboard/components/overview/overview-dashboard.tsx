@@ -367,9 +367,12 @@ export function OverviewDashboard() {
                 )}
               </div>
             )}
-            <div className='grid min-w-0 content-start grid-cols-1 gap-4'>
+            <div className='grid min-w-0 grid-cols-1 content-start gap-4'>
               <CardStaggerItem>
-                <RequestPreview example={requestExample} signals={heroSignals} />
+                <RequestPreview
+                  example={requestExample}
+                  signals={heroSignals}
+                />
               </CardStaggerItem>
             </div>
           </CardStaggerContainer>

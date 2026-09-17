@@ -27,6 +27,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+
 import { useModels } from './models-provider'
 
 // 模型页入口收敛（ui-spec §6.3）：保留「同步资料」「缺失的模型」；

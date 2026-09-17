@@ -638,7 +638,9 @@ export function useChannelsColumns(
               <TooltipProvider delay={300}>
                 <Tooltip>
                   <TooltipTrigger
-                    render={<div className='max-w-full min-w-0 overflow-hidden' />}
+                    render={
+                      <div className='max-w-full min-w-0 overflow-hidden' />
+                    }
                   >
                     <ProviderBadge
                       iconKey={`${iconName}.Color`}
@@ -653,7 +655,6 @@ export function useChannelsColumns(
                   <TooltipContent side='top'>{typeName}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-
             </div>
           )
         },
