@@ -23,15 +23,9 @@ import { useTranslation } from 'react-i18next'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { LoadingState } from '@/components/loading-state'
+import { Dialog } from '@/components/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -266,21 +260,17 @@ export function PBRLaneLogsSection() {
       </div>
 
       <Dialog
+        size='lg'
         onOpenChange={(open) => {
           if (!open) setDetailId(null)
         }}
         open={detailId !== null}
+        title={t('Request detail')}
+        description={t(
+          'Attempt chain: which member served the request and why the others were skipped.'
+        )}
       >
-        <DialogContent className='max-w-3xl'>
-          <DialogHeader className='pr-12'>
-            <DialogTitle>{t('Request detail')}</DialogTitle>
-            <DialogDescription>
-              {t(
-                'Attempt chain: which member served the request and why the others were skipped.'
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          {detailQuery.isPending && <LoadingState />}
+        {detailQuery.isPending && <LoadingState />}
           {detailQuery.data && (
             <div className='flex flex-col gap-3'>
               <dl className='grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3'>
@@ -326,7 +316,6 @@ export function PBRLaneLogsSection() {
               <PBRAttemptTimeline attempts={detailQuery.data.attempts ?? []} />
             </div>
           )}
-        </DialogContent>
       </Dialog>
     </div>
   )

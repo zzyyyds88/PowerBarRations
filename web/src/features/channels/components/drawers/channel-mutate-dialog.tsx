@@ -106,6 +106,7 @@ import {
   createServerError,
   getServerErrorMessage,
 } from '@/lib/server-error-message'
+import { DIALOG_SIZE_CLASS } from '@/components/dialog'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -3797,7 +3798,12 @@ export function ChannelMutateDialog({
   return (
     <>
       <DialogRoot open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className='flex max-h-[calc(100vh-2rem)] w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-5xl sm:p-6'>
+        <DialogContent
+          className={cn(
+            'flex w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-none sm:p-6',
+            DIALOG_SIZE_CLASS.lg
+          )}
+        >
           <DialogHeader className='pr-12'>
             <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
               <div className='min-w-0 flex-1'>

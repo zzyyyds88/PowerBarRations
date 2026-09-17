@@ -150,6 +150,7 @@ export function AudioPreviewDialog(props: AudioPreviewDialogProps) {
 
   return (
     <Dialog
+      size='md'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={
@@ -162,7 +163,6 @@ export function AudioPreviewDialog(props: AudioPreviewDialogProps) {
       }
       contentClassName='sm:max-w-lg'
       titleClassName='flex items-center gap-2'
-      contentHeight='auto'
       bodyClassName='space-y-4'
     >
       {clips.length === 0 ? (

@@ -36,13 +36,12 @@ export function DescriptionDialog({
 }: DescriptionDialogProps) {
   const { t } = useTranslation()
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={onOpenChange}
       title={modelName}
       description={t('Model Description')}
       contentClassName='max-w-2xl'
-      contentHeight='auto'
       bodyClassName='space-y-4'
     >
       <ScrollArea className='max-h-96'>

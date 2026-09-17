@@ -51,6 +51,7 @@ export function ConfigureModelsDialog(props: ConfigureModelsDialogProps) {
 
   return (
     <Dialog
+      size='xl'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={t('Configure Models')}

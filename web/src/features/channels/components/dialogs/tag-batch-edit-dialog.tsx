@@ -155,7 +155,7 @@ export function TagBatchEditDialog({
   if (!currentTag) return null
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={handleClose}
       title={t('Batch Edit by Tag')}
@@ -166,7 +166,6 @@ export function TagBatchEditDialog({
         </>
       }
       contentClassName='max-w-2xl'
-      contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         !isLoading ? (

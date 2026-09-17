@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useTranslation } from 'react-i18next'
 
+import { DIALOG_SIZE_CLASS } from '@/components/dialog'
 import {
   Dialog as DialogRoot,
   DialogContent,
@@ -25,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { cn } from '@/lib/utils'
 
 import { ModelRoutingPanel } from './model-routing-panel'
 
@@ -45,7 +47,12 @@ export function ModelRoutingDrawer(props: {
 
   return (
     <DialogRoot open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent className='flex max-h-[calc(100vh-2rem)] w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-4xl sm:p-6'>
+      <DialogContent
+        className={cn(
+          'flex w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-none sm:p-6',
+          DIALOG_SIZE_CLASS.lg
+        )}
+      >
         <DialogHeader className='pr-12'>
           <DialogTitle className='flex min-w-0 items-center gap-2'>
             <span className='shrink-0'>{t('Routing & Failover')}</span>

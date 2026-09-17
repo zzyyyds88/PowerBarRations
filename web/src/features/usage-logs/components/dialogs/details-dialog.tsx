@@ -610,6 +610,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
   return (
     <Dialog
+      size='xl'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={
@@ -632,7 +633,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
       headerClassName='max-sm:gap-1'
       titleClassName='flex items-center gap-2 text-base'
       descriptionClassName='sr-only'
-      contentHeight='min(72dvh, 720px)'
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>

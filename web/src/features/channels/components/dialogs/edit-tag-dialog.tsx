@@ -184,7 +184,7 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   if (!currentTag) return null
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={handleClose}
       title={
@@ -197,7 +197,6 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
         'Batch edit all channels with this tag. Leave fields empty to keep current values.'
       )}
       contentClassName='max-h-[90vh] max-w-2xl'
-      contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <>

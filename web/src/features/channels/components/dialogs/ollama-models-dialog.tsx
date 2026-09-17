@@ -368,7 +368,7 @@ export function OllamaModelsDialog({
   if (!open) return null
 
   return (
-    <Dialog
+    <Dialog size='lg'
       open={open}
       onOpenChange={close}
       title={t('Ollama Models')}
@@ -378,7 +378,6 @@ export function OllamaModelsDialog({
         </>
       }
       contentClassName='sm:max-w-3xl'
-      contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <Button variant='outline' onClick={close}>

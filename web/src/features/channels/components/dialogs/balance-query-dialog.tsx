@@ -165,7 +165,7 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
   }
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={props.open}
       onOpenChange={handleClose}
       title={t('Query Balance')}
@@ -175,7 +175,6 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
           <strong>{currentRow.name}</strong>
         </>
       }
-      contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
         <Button variant='outline' onClick={handleClose} disabled={isQuerying}>

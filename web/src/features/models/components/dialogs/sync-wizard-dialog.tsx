@@ -278,7 +278,7 @@ export function SyncWizardDialog(props: {
   }
 
   return (
-    <Dialog
+    <Dialog size='xl'
       open={props.open}
       onOpenChange={(open) => !busy && props.onOpenChange(open)}
       title={t('Sync model metadata')}
@@ -286,7 +286,6 @@ export function SyncWizardDialog(props: {
         'Review every addition and overwrite before applying. Pricing, channels, and group access are not changed.'
       )}
       contentClassName='sm:max-w-5xl'
-      contentHeight='min(68vh, 720px)'
       showCloseButton={!busy}
       footer={
         <>

@@ -245,12 +245,11 @@ export function RuleEditorDialog(props: Props) {
   }
 
   return (
-    <Dialog
+    <Dialog size='lg'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={isEdit ? t('Edit Rule') : t('Add Rule')}
       contentClassName='max-w-2xl'
-      contentHeight='auto'
       bodyClassName='pr-2'
       footer={
         <>

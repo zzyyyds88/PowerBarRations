@@ -89,12 +89,11 @@ function ChannelAffinityConfirmDialog(props: {
   const { t } = useTranslation()
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={props.open}
       onOpenChange={props.onOpenChange}
       title={props.title}
       contentClassName='sm:max-w-md'
-      contentHeight='auto'
       bodyClassName='flex items-start'
       footer={
         <>

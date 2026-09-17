@@ -60,7 +60,7 @@ export function ImageDialog({
   }
 
   return (
-    <Dialog
+    <Dialog size='md'
       open={open}
       onOpenChange={handleOpenChange}
       title={t('Image Preview')}
@@ -68,7 +68,6 @@ export function ImageDialog({
         taskId ? `${t('Task ID:')} ${taskId}` : t('View the generated image')
       }
       contentClassName='sm:max-w-3xl'
-      contentHeight='auto'
       bodyClassName='space-y-4'
     >
       <ScrollArea className='max-h-[600px]'>

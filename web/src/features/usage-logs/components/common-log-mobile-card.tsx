@@ -324,6 +324,7 @@ export function CommonLogMobileCard<TData>(props: {
         </div>
       )}
       <Dialog
+        size='md'
         open={!!activeField}
         onOpenChange={(open) => {
           if (!open) setSelectedField(null)

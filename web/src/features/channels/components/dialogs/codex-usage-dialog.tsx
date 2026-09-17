@@ -1083,13 +1083,12 @@ export function CodexUsageDialog({
   }, [response])
 
   return (
-    <Dialog
+    <Dialog size='lg'
       open={open}
       onOpenChange={handleDialogOpenChange}
       title={t('Codex Account & Usage')}
       contentClassName='sm:max-w-[900px]'
       titleClassName='flex items-center gap-2'
-      contentHeight='auto'
       bodyClassName='flex flex-col gap-4'
       footer={
         <Button
