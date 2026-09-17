@@ -316,6 +316,97 @@ func DeleteLaneByName(name string) error {
 	})
 }
 
+// RemovedModelLaneRefs 返回本次从渠道移除的模型名里，命中同名车道且该车道有本渠道成员
+// 的车道名（去重、升序）。用于在渠道编辑/同步模型时防止"车道对某个路由键失去成员
+// 来源"却无人知晓（api-spec §5.3、§5.7 的守卫口径）。
+func RemovedModelLaneRefs(channelId int, removed []string) ([]string, error) {
+	removedSet := map[string]bool{}
+	for _, m := range removed {
+		if m = strings.TrimSpace(m); m != "" {
+			removedSet[m] = true
+		}
+	}
+	if len(removedSet) == 0 {
+		return nil, nil
+	}
+	var members []LaneMember
+	if err := DB.Where("channel_id = ?", channelId).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, member := range members {
+		lane, err := GetLaneById(member.LaneId)
+		if err != nil {
+			continue
+		}
+		if removedSet[strings.TrimSpace(lane.Name)] {
+			names[lane.Name] = true
+		}
+	}
+	out := make([]string, 0, len(names))
+	for name := range names {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// LanesReferencingChannel 返回所有"有本渠道成员"的车道名（去重、升序）。
+// 用于删除渠道前的引用守卫：被显式车道引用时不得静默删除（api-spec §5.3）。
+func LanesReferencingChannel(channelId int) ([]string, error) {
+	var members []LaneMember
+	if err := DB.Where("channel_id = ?", channelId).Find(&members).Error; err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, member := range members {
+		lane, err := GetLaneById(member.LaneId)
+		if err != nil {
+			continue
+		}
+		names[lane.Name] = true
+	}
+	out := make([]string, 0, len(names))
+	for name := range names {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// CleanupLanesForRemovedModels 处理"渠道不再声明某些模型"后的车道一致性：从命中车道
+// 移除本渠道成员；成员被清空的车道整条删除。返回（被清理但保留的车道, 被删除的车道,
+// error）。被删除车道的运行态由调用方通过 route.Default.Remove 清理（model 层不能反向
+// import internal/route）。
+func CleanupLanesForRemovedModels(channelId int, removed []string) (cleaned, deleted []string, err error) {
+	lanes, err := RemovedModelLaneRefs(channelId, removed)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, name := range lanes {
+		lane, getErr := GetLaneByName(name)
+		if getErr != nil || lane == nil {
+			continue
+		}
+		if delErr := DB.Where("lane_id = ? AND channel_id = ?", lane.Id, channelId).Delete(&LaneMember{}).Error; delErr != nil {
+			return cleaned, deleted, delErr
+		}
+		var remaining int64
+		if countErr := DB.Model(&LaneMember{}).Where("lane_id = ?", lane.Id).Count(&remaining).Error; countErr != nil {
+			return cleaned, deleted, countErr
+		}
+		if remaining == 0 {
+			if delErr := DeleteLaneByName(name); delErr != nil {
+				return cleaned, deleted, delErr
+			}
+			deleted = append(deleted, name)
+		} else {
+			cleaned = append(cleaned, name)
+		}
+	}
+	return cleaned, deleted, nil
+}
+
 // UpsertLane 全量写：先写车道与成员，再由调用方重新读取作为回读。
 func UpsertLane(lane *Lane) error {
 	if strings.TrimSpace(lane.Name) == "" {

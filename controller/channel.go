@@ -13,6 +13,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/i18n"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	relaychannel "github.com/zzyyyds88/PowerBarRations/relay/channel"
 	"github.com/zzyyyds88/PowerBarRations/relay/channel/ollama"
@@ -701,6 +702,20 @@ func AddChannel(c *gin.Context) {
 
 func DeleteChannel(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
+	// 被显式车道引用时禁止删除：基座端点此前无守卫，控制台删除会静默留下悬空车道
+	// （契约 DELETE /api/v1/channels/{name} 一直有 409，这里补齐同一口径）。
+	if refs, refErr := model.LanesReferencingChannel(id); refErr != nil {
+		common.ApiError(c, refErr)
+		return
+	} else if len(refs) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"code":    "conflict",
+			"message": "渠道被以下车道引用：" + strings.Join(refs, ", "),
+			"data":    gin.H{"lanes": refs},
+		})
+		return
+	}
 	channelName := ""
 	channelProxy := ""
 	channelLookupFailed := false
@@ -734,6 +749,32 @@ func DeleteChannel(c *gin.Context) {
 }
 
 func DeleteDisabledChannel(c *gin.Context) {
+	// 同批量删除：任一"已禁用渠道"被车道引用就整批拒绝并列出引用清单。
+	var disabled []model.Channel
+	if findErr := model.DB.Where("status <> ?", common.ChannelStatusEnabled).Find(&disabled).Error; findErr != nil {
+		common.ApiError(c, findErr)
+		return
+	}
+	blocked := map[string][]string{}
+	for _, ch := range disabled {
+		refs, refErr := model.LanesReferencingChannel(ch.Id)
+		if refErr != nil {
+			common.ApiError(c, refErr)
+			return
+		}
+		if len(refs) > 0 {
+			blocked[ch.Name] = refs
+		}
+	}
+	if len(blocked) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"code":    "conflict",
+			"message": "部分已禁用渠道被车道引用，已取消删除",
+			"data":    gin.H{"blocked": blocked},
+		})
+		return
+	}
 	rows, err := model.DeleteDisabledChannel()
 	if err != nil {
 		common.ApiError(c, err)
@@ -887,6 +928,32 @@ func DeleteChannelBatch(c *gin.Context) {
 		})
 		return
 	}
+	// 任一渠道被车道引用就整批拒绝，不留"删了一半"的中间态；返回被引用清单供前端展示。
+	blocked := map[string][]string{}
+	for _, id := range channelBatch.Ids {
+		refs, refErr := model.LanesReferencingChannel(id)
+		if refErr != nil {
+			common.ApiError(c, refErr)
+			return
+		}
+		if len(refs) == 0 {
+			continue
+		}
+		name := strconv.Itoa(id)
+		if ch, getErr := model.GetChannelById(id, false); getErr == nil && ch != nil {
+			name = ch.Name
+		}
+		blocked[name] = refs
+	}
+	if len(blocked) > 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"code":    "conflict",
+			"message": "部分渠道被车道引用，已取消整批删除（避免删一半）",
+			"data":    gin.H{"blocked": blocked},
+		})
+		return
+	}
 	deletedCount, err := model.BatchDeleteChannels(channelBatch.Ids)
 	if err != nil {
 		common.ApiError(c, err)
@@ -961,6 +1028,32 @@ func UpdateChannel(c *gin.Context) {
 		})
 		return
 	}
+	// 收窄模型清单时的车道引用守卫（与契约 PUT /api/v1/channels/{name}、sync-models 同口径）：
+	// 被移除的路由键若命中同名车道且该车道有本渠道成员，默认阻断；带 cleanup_models=true
+	// 表示"同时从这些车道移除本渠道成员（空车道删除）"，避免静默留下悬空车道。
+	var removedModels, referencedLanes, cleanedLanes, deletedLanes []string
+	if _, modelsProvided := requestData["models"]; modelsProvided {
+		removedModels = diffRemovedModels(originChannel.GetModels(), channel.GetModels())
+		refs, refErr := model.RemovedModelLaneRefs(originChannel.Id, removedModels)
+		if refErr != nil {
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": refErr.Error()})
+			return
+		}
+		if len(refs) > 0 {
+			cleanupModels, _ := requestData["cleanup_models"].(bool)
+			if !cleanupModels {
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"code":    "models_referenced_by_lanes",
+					"message": "以下模型仍被车道引用：" + strings.Join(refs, ", "),
+					"data":    gin.H{"lanes": refs},
+				})
+				return
+			}
+			referencedLanes = refs
+		}
+	}
+
 	originProxy := originChannel.GetSetting().Proxy
 	proxyChanged := false
 	if _, settingProvided := requestData["setting"]; settingProvided {
@@ -1063,6 +1156,20 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
+
+	// cleanup_models 覆盖后的清理：从受影响车道移除本渠道成员；空车道删除并清运行态。
+	if len(referencedLanes) > 0 {
+		cleaned, deleted, cleanupErr := model.CleanupLanesForRemovedModels(originChannel.Id, removedModels)
+		if cleanupErr != nil {
+			common.ApiError(c, cleanupErr)
+			return
+		}
+		for _, laneName := range deleted {
+			route.Default.Remove(laneName)
+		}
+		cleanedLanes, deletedLanes = cleaned, deleted
+	}
+
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)
 	}
@@ -1092,11 +1199,34 @@ func UpdateChannel(c *gin.Context) {
 	channel.Key = ""
 	clearChannelInfo(&channel.Channel)
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    channel,
+		"success":       true,
+		"message":       "",
+		"data":          channel,
+		"cleaned_lanes": cleanedLanes,
+		"deleted_lanes": deletedLanes,
 	})
 	return
+}
+
+// diffRemovedModels 返回 old 中有、new 中没有的模型名（trim、去重、保持 old 顺序）。
+func diffRemovedModels(oldModels, newModels []string) []string {
+	newSet := map[string]bool{}
+	for _, m := range newModels {
+		if m = strings.TrimSpace(m); m != "" {
+			newSet[m] = true
+		}
+	}
+	out := make([]string, 0)
+	seen := map[string]bool{}
+	for _, m := range oldModels {
+		m = strings.TrimSpace(m)
+		if m == "" || newSet[m] || seen[m] {
+			continue
+		}
+		seen[m] = true
+		out = append(out, m)
+	}
+	return out
 }
 
 func UpdateChannelStatus(c *gin.Context) {

@@ -11,6 +11,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
@@ -189,6 +190,27 @@ func PutChannel(c *gin.Context) {
 		return
 	}
 
+	// 从渠道模型清单移除的模型，若命中同名车道且该车道有本渠道成员，默认拒绝
+	// （与 DELETE 渠道、sync-models 同一口径）；?force=1 则继续并在落库后清理这些
+	// 车道上的本渠道成员（成员清空的空车道整条删除）。否则会出现"渠道不再声明、
+	// 路由页仍显示可调用"的静默不一致。
+	var removedModels, referencedLanes, cleanedLanes, deletedLanes []string
+	if !isCreate && payload.Models != nil {
+		_, removedModels = diffModels(existing.GetModels(), channel.GetModels())
+		refs, refErr := model.RemovedModelLaneRefs(existing.Id, removedModels)
+		if refErr != nil {
+			writeAPIError(c, refErr)
+			return
+		}
+		if len(refs) > 0 && !isForce(c) {
+			apierr.Write(c, http.StatusConflict, apierr.CodeConflict,
+				"refusing to remove models still referenced by lanes: "+strings.Join(refs, ", "),
+				"retry with ?force=1 to also remove this channel's members from those lanes")
+			return
+		}
+		referencedLanes = refs
+	}
+
 	if isCreate {
 		channel.CreatedTime = time.Now().Unix()
 		channel.UpdatedAt = channel.CreatedTime
@@ -213,6 +235,19 @@ func PutChannel(c *gin.Context) {
 	}
 	model.InitChannelCache()
 
+	// force 覆盖后的清理：从受影响车道移除本渠道成员；空车道删除并清运行态。
+	if len(referencedLanes) > 0 {
+		cleaned, deleted, cleanupErr := model.CleanupLanesForRemovedModels(existing.Id, removedModels)
+		if cleanupErr != nil {
+			writeAPIError(c, cleanupErr)
+			return
+		}
+		for _, laneName := range deleted {
+			route.Default.Remove(laneName)
+		}
+		cleanedLanes, deletedLanes = cleaned, deleted
+	}
+
 	// 写后回读：响应体是落库后重新读取的最终状态（api-spec §2.2）。
 	saved, err := findChannelByName(name)
 	if err != nil {
@@ -220,6 +255,10 @@ func PutChannel(c *gin.Context) {
 		return
 	}
 	response := channelResponse(saved)
+	if len(cleanedLanes) > 0 || len(deletedLanes) > 0 {
+		response["cleaned_lanes"] = cleanedLanes
+		response["deleted_lanes"] = deletedLanes
+	}
 	action := "update"
 	if isCreate {
 		action = "create"

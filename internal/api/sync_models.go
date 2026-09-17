@@ -12,6 +12,7 @@ import (
 
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 
@@ -109,8 +110,12 @@ func SyncChannelModels(c *gin.Context) {
 	// 那些"靠渠道声明做候选来源"的模型会失去来源。空清单默认拒绝，需 ?force=1。
 	emptyWipe := len(remote) == 0 && len(local) > 0
 	// 被本次移除命中的同名车道（且该车道有本渠道成员）要先处理，否则该车道对
-	// 这个路由键就失去成员来源。见 findRemovedModelReferences 的判据说明。
-	referenced := findRemovedModelReferences(channel.Id, removed)
+	// 这个路由键就失去成员来源（api-spec §5.3 守卫口径）。
+	referenced, refErr := model.RemovedModelLaneRefs(channel.Id, removed)
+	if refErr != nil {
+		writeAPIError(c, refErr)
+		return
+	}
 
 	// dry_run 是预览：始终返回差异与"是否会被拦截"，不写库、不报错，让调用方先看清楚。
 	if dryRun(c) {
@@ -134,8 +139,8 @@ func SyncChannelModels(c *gin.Context) {
 	}
 	if len(referenced) > 0 && !force {
 		apierr.Write(c, http.StatusConflict, apierr.CodeConflict,
-			"refusing to remove models still referenced: "+strings.Join(referenced, ", "),
-			"update the lanes first, or retry with ?force=1 to override")
+			"refusing to remove models still referenced by lanes: "+strings.Join(referenced, ", "),
+			"update the lanes first, or retry with ?force=1 to also remove this channel's members from those lanes")
 		return
 	}
 
@@ -151,14 +156,30 @@ func SyncChannelModels(c *gin.Context) {
 	}
 	model.InitChannelCache()
 
+	// force 覆盖后同样要清理受影响车道上的本渠道成员（空车道删除并清运行态），
+	// 否则"渠道已不再声明、路由页仍显示可调用"的不一致只是被推迟到下一次同步。
+	var cleanedLanes, deletedLanes []string
+	if len(referenced) > 0 {
+		cleaned, deleted, cleanupErr := model.CleanupLanesForRemovedModels(channel.Id, removed)
+		if cleanupErr != nil {
+			writeAPIError(c, cleanupErr)
+			return
+		}
+		for _, laneName := range deleted {
+			route.Default.Remove(laneName)
+		}
+		cleanedLanes, deletedLanes = cleaned, deleted
+	}
+
 	saved, err := findChannelByName(channel.Name)
 	if err != nil {
 		writeAPIError(c, err)
 		return
 	}
 	response := channelResponse(saved)
-	writeAudit(c, "sync-models", "channel", channel.Name, gin.H{"add": added, "remove": removed})
-	c.JSON(http.StatusOK, gin.H{"channel": channel.Name, "models": response["models"], "added": added, "removed": removed})
+	writeAudit(c, "sync-models", "channel", channel.Name, gin.H{"add": added, "remove": removed, "cleaned_lanes": cleanedLanes, "deleted_lanes": deletedLanes})
+	c.JSON(http.StatusOK, gin.H{"channel": channel.Name, "models": response["models"], "added": added, "removed": removed,
+		"cleaned_lanes": cleanedLanes, "deleted_lanes": deletedLanes})
 }
 
 // isForce 解析 ?force=1/true/yes 覆盖开关。
@@ -169,57 +190,6 @@ func isForce(c *gin.Context) bool {
 	default:
 		return false
 	}
-}
-
-// findRemovedModelReferences 找出**会因本次移除而失去成员来源的车道**。
-//
-// 判据是**车道名 ∈ 被移除的路由键**且该车道里有本渠道的成员：车道名就是路由键，
-// 渠道不再声明该路由键（也不再有映射）后，这条成员链对该模型名就失去意义，
-// 抽取同步前应先让运维处理这条车道。
-//
-// 回归背景（审查 F11）：此前拿被移除的**路由键**去比成员的 `upstream_model`
-// （那是上游真名），既漏报（成员留空用渠道映射时完全不触发）又误报
-// （上游真名恰好等于某个被删路由键时阻断合法同步）。
-// 返回形如 "lane lane-a has a member on this channel" 的清单，供 409 提示。
-func findRemovedModelReferences(channelID int, removed []string) []string {
-	removedSet := map[string]bool{}
-	for _, m := range removed {
-		if m = strings.TrimSpace(m); m != "" {
-			removedSet[m] = true
-		}
-	}
-	if len(removedSet) == 0 {
-		return nil
-	}
-	var members []model.LaneMember
-	if err := model.DB.Where("channel_id = ?", channelID).Find(&members).Error; err != nil {
-		return nil
-	}
-	laneNames := map[int]string{}
-	refs := make([]string, 0, len(members))
-	seenLanes := map[int]bool{}
-	for _, member := range members {
-		if seenLanes[member.LaneId] {
-			continue
-		}
-		name, ok := laneNames[member.LaneId]
-		if !ok {
-			var lane model.Lane
-			laneName := strconv.Itoa(member.LaneId)
-			if err := model.DB.Select("name").Where("id = ?", member.LaneId).First(&lane).Error; err == nil {
-				laneName = lane.Name
-			}
-			laneNames[member.LaneId] = laneName
-			name = laneName
-		}
-		seenLanes[member.LaneId] = true
-		if !removedSet[strings.TrimSpace(name)] {
-			continue
-		}
-		refs = append(refs, "lane "+name+" has a member on this channel")
-	}
-	sort.Strings(refs)
-	return refs
 }
 
 func diffModels(local, remote []string) (added, removed []string) {
