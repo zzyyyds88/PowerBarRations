@@ -107,16 +107,15 @@ echo
 echo "=== 渠道：写 → 回读一致；密钥只写不读 ==="
 curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
-  "priority":20,"models":["w3-model"],"enabled":true,"param_override":{"temperature":1}
+  "models":["w3-model"],"enabled":true,"param_override":{"temperature":1}
 }' "$BASE/api/v1/channels/channel-a" > /dev/null
 curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
-  "priority":10,"models":["w3-model"],"enabled":true
+  "models":["w3-model"],"enabled":true
 }' "$BASE/api/v1/channels/channel-b" > /dev/null
 CH=$(curl -s "${A[@]}" "$BASE/api/v1/channels/channel-a")
 echo "  $CH"
 check "回读 type 一致" "$CH" '"type":"openai"'
-check "回读 priority 一致" "$CH" '"priority":20'
 check "回读 models 一致" "$CH" '"models":["w3-model"]'
 check "回读 param_override 一致" "$CH" '"temperature":1'
 check "key_set=true" "$CH" '"key_set":true'
@@ -131,7 +130,7 @@ curl -s "${A[@]}" -X PUT -d '{
             "member_cooldown_seconds":5,"member_affinity_seconds":0},
   "members":[
     {"channel":"channel-a","upstream_model":"w3-model","priority":20},
-    {"channel":"channel-b","upstream_model":"w3-model","priority":10,"weight":3}
+    {"channel":"channel-b","upstream_model":"w3-model","priority":10}
   ]
 }' "$BASE/api/v1/lanes/lane-verify" > /dev/null
 LANE=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/lane-verify")
@@ -139,7 +138,17 @@ echo "  $(echo "$LANE" | head -c 400)"
 check "回读 mode 一致" "$LANE" '"mode":"failover"'
 assert_json "回读成员数与优先级顺序一致" "$LANE" "[m['channel'] for m in d['members']]==['channel-a','channel-b'] and [m['priority'] for m in d['members']]==[20,10]"
 assert_json "回读六键一致" "$LANE" "d['config']['member_max_attempts']==1 and d['config']['member_cooldown_seconds']==5"
-assert_json "回读成员权重一致" "$LANE" "d['members'][1]['weight']==3"
+
+# ADR 0005：车道是唯一路由入口。模型面要用 w3-model，必须先把它固化成同名车道。
+curl -s "${A[@]}" -X PUT -d '{
+  "enabled":true,"mode":"failover",
+  "members":[
+    {"channel":"channel-a","upstream_model":"w3-model","priority":2},
+    {"channel":"channel-b","upstream_model":"w3-model","priority":1}
+  ]
+}' "$BASE/api/v1/lanes/w3-model" > /dev/null
+LANE_W3=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/w3-model")
+check "w3-model 车道已固化" "$LANE_W3" '"name":"w3-model"'
 
 echo
 echo "=== 客户端密钥：创建回显一次；此后只有前缀 ==="
@@ -213,7 +222,8 @@ assert "/channels/{name}" in doc["paths"]
 assert "/keys/{name}/rotate" in doc["paths"]
 PY
 CAP=$(curl -s "${A[@]}" "$BASE/api/v1/capabilities")
-check "capabilities 列出四种模式" "$CAP" '"round_robin"'
+check "capabilities 列出 failover 模式" "$CAP" '"failover"'
+check_not "capabilities 不含已删的 round_robin" "$CAP" 'round_robin'
 
 echo
 echo "=== export → import(dry_run) diff 为空 ==="
@@ -228,7 +238,9 @@ echo "  $(echo "$IMPORT" | head -c 500)"
 # options 为 {changed:[...]}。故只对前三者断言 add/update 为空。
 assert_json "import dry_run 的 add 全为空" "$IMPORT" "all(len(d['diff'][k]['add'])==0 for k in ('channels','lanes','keys'))"
 assert_json "import dry_run 的 update 全为空" "$IMPORT" "all(len(d['diff'][k]['update'])==0 for k in ('channels','lanes','keys'))"
-assert_json "import dry_run 标记 unchanged" "$IMPORT" "len(d['diff']['channels']['unchanged'])==2 and len(d['diff']['lanes']['unchanged'])==1"
+# 不做写死计数：只断言"每一类都有已存在的对象被识别为 unchanged"。
+# 上一版把 lanes 写死为 1，增删车道后立刻与事实脱节（本轮新增 w3-model 车道即命中）。
+assert_json "import dry_run 把已有的三类资源都标为 unchanged" "$IMPORT" "all(len(d['diff'][k]['unchanged'])>=1 for k in ('channels','lanes','keys'))"
 assert_json "import dry_run 的 options 无变更" "$IMPORT" "len(d['diff']['options']['changed'])==0"
 
 echo

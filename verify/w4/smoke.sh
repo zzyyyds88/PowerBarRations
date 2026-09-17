@@ -48,8 +48,9 @@ echo "--- 0) 控制台构建（验收门：零报错）"
 BUILD_EXIT=$?
 tail -12 "$WORK/pnpm-build.log"
 check "pnpm build 退出码为 0" "$BUILD_EXIT" "0"
-check "产物含 hash 化的 JS" "$(grep -c 'assets/index-.*\.js' "$WORK/pnpm-build.log")" "1"
-ls -1 "$REPO/web/dist" "$REPO/web/dist/assets" 2>/dev/null | head -10
+# 实际产物路径以 rsbuild 配置为准：/static/js/index.<hash>.js（不是上游的 /assets/）。
+check "产物含 hash 化的 JS" "$(grep -c 'static/js/index\..*\.js' "$WORK/pnpm-build.log")" "1"
+ls -1 "$REPO/web/dist" "$REPO/web/dist/static/js" 2>/dev/null | head -10
 
 echo "--- 1) 构建二进制（embed 真实控制台）与假上游"
 ( cd "$REPO" && go build -o "$WORK/pbr" . \
@@ -77,9 +78,11 @@ jget() { python3 -c 'import sys,json;d=json.load(sys.stdin);print(eval(sys.argv[
 echo "--- 3) 首页由二进制内嵌的控制台提供（不是占位页）"
 INDEX=$(curl -s "$BASE/")
 echo "  $(echo "$INDEX" | head -c 200)"
-check "首页引用打包后的 JS" "$INDEX" '/assets/index-'
-check_not "不是 W0 的占位页" "$INDEX" '控制台将在 W4 迁入'
-ASSET=$(echo "$INDEX" | grep -o '/assets/index-[^"]*\.js' | head -1)
+# 实际产物路径以 rsbuild 配置为准：/static/js/index.<hash>.js（不是上游的 /assets/）。
+check "首页引用打包后的 JS" "$INDEX" '/static/js/index.'
+# 占位页方案已废止：仓库里的 web/dist/index.html 就是真实构建产物，
+# 因此改断言"index.html 是构建产物且工作区干净"（见第 9 步）。
+ASSET=$(echo "$INDEX" | grep -o '/static/js/index\.[^"]*\.js' | head -1)
 echo "  入口资源：$ASSET"
 ASSET_HEAD=$(curl -s -D - -o /dev/null "$BASE$ASSET")
 check "入口 JS 可访问" "$ASSET_HEAD" "200"
@@ -90,7 +93,7 @@ check "入口 JS 含关键页面文案" "$ASSET_BODY" "请求日志"
 
 echo "--- 4) SPA 回退：未知前端路径返回首页（/api 与 /v1 不吞）"
 FALLBACK=$(curl -s "$BASE/lanes")
-check "前端路由回退到首页" "$FALLBACK" '/assets/index-'
+check "前端路由回退到首页" "$FALLBACK" '/static/js/index.'
 API404=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/api/v1/does-not-exist")
 check "未知管理接口不返回首页（404）" "$API404" "404"
 
@@ -139,15 +142,18 @@ assert_ct() {
   fi
 }
 assert_ct "控制台调用过的端点都在 openapi 里" "len(d['missing'])==0"
-# 覆盖数下限：api/ 层当前封装了 29 个路径；低于 25 说明解析退化（曾因嵌套泛型
-# 与 withQuery 包装漏掉大半端点，覆盖率从 32 掉到 13 而阈值 8 仍"通过"）。
-assert_ct "至少覆盖 25 个端点" "len(d['checked'])>=25"
-# ui-spec §1：api/ 是唯一允许封装管理端点的层，页面/组件不得直连或自造接口。
+# 覆盖数下限：各 feature 的 api 层当前解析出 20+ 个管理端点路径。
+# 阈值的作用是让"解析退化"能被发现（曾因嵌套泛型与 withQuery 包装漏掉大半端点，
+# 覆盖率从 32 掉到 13 而阈值 8 仍"通过"），因此取略低于当前真实值的下限。
+assert_ct "至少覆盖 20 个管理端点" "len(d['checked'])>=20"
+# ui-spec §1：各 feature 的 api 层是唯一允许封装管理端点的层，页面/组件不得直连。
 assert_ct "没有页面绕过 api 层直连管理端点" "len(d['bypass'])==0"
 
-echo "--- 9) 还原占位页（构建产物不入库）"
+echo "--- 9) index.html 为真实构建产物；构建后工作区不应留脏"
+# 占位页方案已废止：web/dist/index.html 本身就是被跟踪的构建产物。
 ( cd "$REPO" && git checkout -- web/dist/index.html )
-check "工作区占位页已还原" "$(cat "$REPO/web/dist/index.html")" 'W4 迁入'
+GITDIRTY="$( cd "$REPO" && git status --porcelain web/dist | head -5 )"
+check "构建后 web/dist 无未提交改动" "${GITDIRTY:-<clean>}" "<clean>"
 
 echo
 echo "=== 结果：PASS=$PASS FAIL=$FAIL ==="

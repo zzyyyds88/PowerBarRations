@@ -107,12 +107,11 @@ curl -s "${A[@]}" -X PUT -d '{"circuit_failure_threshold":1,"circuit_open_second
 OPTS=$(curl -s "${A[@]}" "$BASE/api/v1/system/options")
 check "选项已落库并可回读" "$OPTS" '"circuit_failure_threshold":1'
 
-echo "--- 6) 建两个渠道（同一假上游，"'"$GOOD_KEY"'"，priority 20/10）"
-for name in channel-a:20 channel-b:10; do
-  ch="${name%%:*}"; pr="${name##*:}"
+echo "--- 6) 建两个渠道（同一假上游，"'"$GOOD_KEY"'"，PBR 渠道没有 priority）"
+for ch in channel-a channel-b; do
   curl -s "${A[@]}" -X PUT -d '{
     "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
-    "priority":'"$pr"',"models":["mode-failover","mode-rr","mode-weighted"],"enabled":true
+    "models":["mode-failover"],"enabled":true
   }' "$BASE/api/v1/channels/$ch" > /dev/null
 done
 echo "  渠道：$(curl -s "${A[@]}" "$BASE/api/v1/channels" | jq1 "','.join(c['name'] for c in d['items'])")"
@@ -231,7 +230,7 @@ echo "  channel test: $CH_TEST"
 check "单渠道探活成功" "$CH_TEST" '"ok":true'
 
 echo
-echo "=== 验收门 4：四模式各跑通一条 ==="
+echo "=== 验收门 4：两种现存模式各跑通一条；已删模式必须 422 invalid_mode ==="
 curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"manual","active_member":"channel-b/mode-failover",
   "members":[
@@ -239,20 +238,6 @@ curl -s "${A[@]}" -X PUT -d '{
     {"channel":"channel-b","upstream_model":"mode-failover","priority":10}
   ]
 }' "$BASE/api/v1/lanes/mode-manual" > /dev/null
-curl -s "${A[@]}" -X PUT -d '{
-  "enabled":true,"mode":"weighted",
-  "members":[
-    {"channel":"channel-a","upstream_model":"mode-weighted","priority":20,"weight":1},
-    {"channel":"channel-b","upstream_model":"mode-weighted","priority":10,"weight":0}
-  ]
-}' "$BASE/api/v1/lanes/mode-weighted" > /dev/null
-curl -s "${A[@]}" -X PUT -d '{
-  "enabled":true,"mode":"round_robin",
-  "members":[
-    {"channel":"channel-a","upstream_model":"mode-rr","priority":20},
-    {"channel":"channel-b","upstream_model":"mode-rr","priority":10}
-  ]
-}' "$BASE/api/v1/lanes/mode-rr" > /dev/null
 # failover 车道用上游模型名 mode-failover，但请求名也叫 mode-failover，已在上一步建好。
 
 CODE=$(chat mode-failover); echo "  failover : HTTP $CODE served=$(served_by)"
@@ -262,15 +247,17 @@ CODE=$(chat mode-manual); echo "  manual   : HTTP $CODE served=$(served_by)"
 check "manual 只用 active_member" "$CODE" "200"
 check "manual 命中指定成员 channel-b" "$(served_by)" 'channel=2:channel-b'
 
-CODE=$(chat mode-weighted); echo "  weighted : HTTP $CODE served=$(served_by)"
-check "weighted 权重为 0 的成员不被选中" "$CODE" "200"
-check "weighted 命中权重 1 的成员" "$(served_by)" 'channel=1:channel-a'
-
-CODE=$(chat mode-rr); S1=$(served_by)
-CODE=$(chat mode-rr); S2=$(served_by)
-echo "  round_robin: 第1发 $(echo "$S1"|tr -d '\n') / 第2发 $(echo "$S2"|tr -d '\n')"
-check "round_robin 第 1 发 channel-a" "$S1" 'channel=1:channel-a'
-check "round_robin 第 2 发 channel-b" "$S2" 'channel=2:channel-b'
+# routing-spec §2.3：weighted / round_robin 已删除，传入返回 422 invalid_mode
+# （成员 weight 也会被忽略）。
+echo "  -- 已删模式拒绝 --"
+for mode in weighted round_robin; do
+  BODY=$(curl -s -o /tmp/pbr-w2-mode.json -w '%{http_code}' "${A[@]}" -X PUT -d '{
+    "enabled":true,"mode":"'"$mode"'",
+    "members":[{"channel":"channel-a","upstream_model":"mode-x","priority":1}]
+  }' "$BASE/api/v1/lanes/mode-rejected-$mode")
+  check "$mode 被拒绝为 422" "$BODY" "422"
+  check "$mode 错误码为 invalid_mode" "$(cat /tmp/pbr-w2-mode.json)" 'invalid_mode'
+done
 
 echo
 echo "=== 验收门 5：上游挂起（不发响应头）→ 按真实超时换人，不得当成客户端取消 ==="

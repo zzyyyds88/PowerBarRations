@@ -54,9 +54,9 @@ A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
 
 echo "--- 0) 造一份可迁移的配置（渠道 + 车道 + 密钥）"
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/channels/a4-ch1" \
-  -d '{"type":"openai","base_url":"http://127.0.0.1:1","key":"'"$GOOD_KEY"'","models":["a4-m1","a4-m2"],"priority":20,"enabled":true}' >/dev/null
+  -d '{"type":"openai","base_url":"http://127.0.0.1:1","key":"'"$GOOD_KEY"'","models":["a4-m1","a4-m2"],"enabled":true}' >/dev/null
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/channels/a4-ch2" \
-  -d '{"type":"openai","base_url":"http://127.0.0.1:1","key":"'"$GOOD_KEY"'","models":["a4-m1"],"priority":10,"enabled":true}' >/dev/null
+  -d '{"type":"openai","base_url":"http://127.0.0.1:1","key":"'"$GOOD_KEY"'","models":["a4-m1"],"enabled":true}' >/dev/null
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/lanes/a4-m1" \
   -d '{"enabled":true,"mode":"failover","members":[{"channel":"a4-ch1","upstream_model":"a4-m1","priority":20},{"channel":"a4-ch2","upstream_model":"a4-m1","priority":10}]}' >/dev/null
 curl -s "${A[@]}" -X POST "$BASE/api/v1/keys" -d '{"name":"a4-key"}' >/dev/null
@@ -89,7 +89,8 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 for ch in d["channels"]:
     if ch["name"] == "a4-ch1":
-        ch["priority"] = 99          # 只改这一项
+        # 只改这一项。渠道已无 priority/weight，这里用 models 作为探针。
+        ch["models"] = ["a4-m1", "a4-m2", "a4-m3"]
 json.dump(d, open(sys.argv[2], "w"))
 PY
 R3=$(curl -s "${A[@]}" -X POST --data-binary @"$WORK/bundle2.json" "$BASE/api/v1/import?dry_run=true")
@@ -100,7 +101,7 @@ check "车道未受影响" "$(echo "$R3" | jget 'len(d["diff"]["lanes"]["update"
 
 echo "--- 5) 真跑一次改动导入，然后回读验证落库一致"
 curl -s "${A[@]}" -X POST --data-binary @"$WORK/bundle2.json" "$BASE/api/v1/import" >/dev/null
-check "a4-ch1 优先级已落库" "$(curl -s "${A[@]}" "$BASE/api/v1/channels/a4-ch1" | jget 'd["priority"]')" "99"
+check "a4-ch1 模型清单变更已落库" "$(curl -s "${A[@]}" "$BASE/api/v1/channels/a4-ch1" | jget '"a4-m3" in d["models"]')" "True"
 R4=$(curl -s "${A[@]}" -X POST --data-binary @"$WORK/bundle2.json" "$BASE/api/v1/import?dry_run=true")
 check "再次导入回到幂等（无 update）" "$(echo "$R4" | jget 'len(d["diff"]["channels"]["update"])')" "0"
 

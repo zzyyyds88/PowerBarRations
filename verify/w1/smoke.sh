@@ -111,14 +111,14 @@ BADKEY=$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer wrong-
 check "错误管理密钥返回 401" "$BADKEY" "401"
 
 echo
-echo "--- 6) 建两个渠道，都声明同一模型名 wire-model（P1=channel-a priority 20, P2=channel-b priority 10）"
+echo "--- 6) 建两个渠道，都声明同一模型名 wire-model（PBR 渠道没有 priority：顺序只在车道）"
 curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
-  "priority":20,"models":["wire-model"],"enabled":true,"param_override":{}
+  "models":["wire-model"],"enabled":true,"param_override":{}
 }' "$BASE/api/v1/channels/channel-a" | head -c 400; echo
 curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
-  "priority":10,"models":["wire-model"],"enabled":true,"param_override":{}
+  "models":["wire-model"],"enabled":true,"param_override":{}
 }' "$BASE/api/v1/channels/channel-b" | head -c 400; echo
 
 echo "--- 6.1) 写后回读：GET /channels/channel-a 不应出现 key 明文"
@@ -128,19 +128,31 @@ check_not "读渠道不回显密钥明文" "$CH_A" "$GOOD_KEY"
 check "读渠道有 key_set=true" "$CH_A" '"key_set":true'
 
 echo
-echo "--- 7) 模型清单与成员链（零配置即可路由）"
+echo "--- 7) 未固化车道的模型：候选可见但不可调用（ADR 0005：车道是唯一路由入口）"
 MODELS=$(curl -s "${A[@]}" "$BASE/api/v1/models")
-echo "$MODELS" | head -c 400; echo
+echo "$MODELS" | head -c 500; echo
 check "GET /models 含 wire-model" "$MODELS" '"model":"wire-model"'
-check "wire-model 来源为隐式链" "$MODELS" '"source":"implicit"'
+check "未配车道时 source 为 unconfigured" "$MODELS" '"source":"unconfigured"'
+check "未配车道时 routable 为 false" "$MODELS" '"routable":false'
 
 ROUTE=$(curl -s "${A[@]}" "$BASE/api/v1/routes/wire-model")
 echo "$ROUTE"
-# 用解析后的顺序断言，避免依赖 JSON 字段排序。
-ORDER=$(echo "$ROUTE" | python3 -c "import sys,json;ms=json.load(sys.stdin)['members'];print(','.join(m['channel']+'@'+str(m['priority']) for m in ms))")
-SHAPE=$(echo "$ROUTE" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["model"],d["source"],len(d["members"]))')
-check "成员链按 priority 降序（P1 channel-a → P2 channel-b）" "$ORDER" 'channel-a@20,channel-b@10'
-check "路由来源为隐式、成员数 2" "$SHAPE" 'wire-model implicit 2'
+# 未配车道 → 返回渠道声明的候选成员，按渠道 id 升序，source=unconfigured。
+SHAPE=$(echo "$ROUTE" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["model"],d["source"],d["routable"],len(d["members"]))')
+check "未配车道时路由为 unconfigured、不可调用、候选 2 个" "$SHAPE" 'wire-model unconfigured False 2'
+
+echo "--- 7.1) 固化车道（顺序人工排定：channel-a → channel-b）"
+curl -s "${A[@]}" -X PUT -d '{
+  "enabled":true,"mode":"failover",
+  "members":[{"channel":"channel-a","upstream_model":"wire-model","priority":2},{"channel":"channel-b","upstream_model":"wire-model","priority":1}]
+}' "$BASE/api/v1/lanes/wire-model" | head -c 400; echo
+ROUTE2=$(curl -s "${A[@]}" "$BASE/api/v1/routes/wire-model")
+ORDER=$(echo "$ROUTE2" | python3 -c "import sys,json;ms=json.load(sys.stdin)['members'];print(','.join(m['channel']+'@'+str(m['priority']) for m in ms))")
+SHAPE2=$(echo "$ROUTE2" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["model"],d["source"],d["routable"],len(d["members"]))')
+check "固化后成员链顺序为车道成员顺序（channel-a → channel-b）" "$ORDER" 'channel-a@2,channel-b@1'
+check "固化后路由为 explicit、可调用、成员数 2" "$SHAPE2" 'wire-model explicit True 2'
+MODELS2=$(curl -s "${A[@]}" "$BASE/api/v1/models")
+check "固化后 /models 中该模型可路由" "$MODELS2" '"routable":true'
 
 echo
 echo
@@ -170,7 +182,7 @@ echo
 echo "--- 10) 验收门 2：改坏 P1 的 key → 落 P2，响应 model 不变"
 curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$BAD_KEY"'",
-  "priority":20,"models":["wire-model"],"enabled":true
+  "models":["wire-model"],"enabled":true
 }' "$BASE/api/v1/channels/channel-a" > /dev/null
 : > "$WORK/upstream.log"
 RESP2=$(chat wire-model)
@@ -197,7 +209,7 @@ echo
 echo "--- 12) 附加：显式车道成员改名 + 响应 model 回填（design-v1 §3.3/§4.1）"
 curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"failover",
-  "members":[{"channel":"channel-b","upstream_model":"vendor-real-name","priority":1,"weight":1}]
+  "members":[{"channel":"channel-b","upstream_model":"vendor-real-name","priority":1}]
 }' "$BASE/api/v1/lanes/alias-model" | head -c 400; echo
 : > "$WORK/upstream.log"
 RESP3=$(chat alias-model)

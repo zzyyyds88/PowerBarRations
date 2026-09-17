@@ -42,14 +42,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 import { summarizeAttempts } from '../attempt-status'
 import {
+  getPBRRequestLog,
   listPBRRequestLogs,
   type PBRLogFilters,
-  type PBRRequestLogListItem,
 } from '../pbr-logs-api'
 import { PBRAttemptTimeline } from './pbr-attempt-timeline'
 
@@ -88,12 +87,7 @@ export function PBRLaneLogsSection() {
   const detailQuery = useQuery({
     queryKey: ['pbr-request-log', detailId],
     enabled: detailId !== null,
-    queryFn: async () => {
-      const res = await api.get<PBRRequestLogListItem>(
-        `/api/v1/logs/${detailId}`
-      )
-      return res.data
-    },
+    queryFn: () => getPBRRequestLog(detailId as number),
   })
 
   const applyFilter = (patch: PBRLogFilters) => {
