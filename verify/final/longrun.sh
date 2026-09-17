@@ -77,7 +77,7 @@ echo "--- 1) 配置"
 ADMIN_KEY=$(curl -s $H -d '{"password":"'"$PBR_PW"'"}' "$BASE/api/v1/setup" | jget 'd["admin_key"]')
 A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
 for m in lr-a lr-b lr-c; do
-  curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","priority":10,"models":["'"$m"'"],"enabled":true}' "$BASE/api/v1/channels/ch-$m" > /dev/null
+  curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["'"$m"'"],"enabled":true}' "$BASE/api/v1/channels/ch-$m" > /dev/null
   curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":30,"member_cooldown_seconds":5,"member_affinity_seconds":0},"members":[{"channel":"ch-'"$m"'","upstream_model":"'"$m"'","priority":1}]}' "$BASE/api/v1/lanes/$m" > /dev/null
 done
 CLIENT=$(curl -s "${A[@]}" -X POST -d '{"name":"longrun-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')

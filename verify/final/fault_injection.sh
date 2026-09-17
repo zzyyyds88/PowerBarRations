@@ -73,12 +73,12 @@ control() { curl -s $H -X POST -d "$1" "http://127.0.0.1:$UPSTREAM_PORT/__contro
 echo "--- 1) 初始化与配置（两条车道：双成员用于换人，单成员用于熔断/快抛）"
 ADMIN_KEY=$(curl -s $H -d '{"password":"'"$PBR_PW"'"}' "$BASE/api/v1/setup" | jget 'd["admin_key"]')
 A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
-for n in channel-a:20 channel-b:10; do
-  ch="${n%%:*}"; pr="${n##*:}"
-  curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","priority":'"$pr"',"models":["fi-model"],"enabled":true}' "$BASE/api/v1/channels/$ch" > /dev/null
+# PBR 渠道没有 priority：两个渠道只是"都声明同一模型"，顺序由车道成员决定。
+for ch in channel-a channel-b; do
+  curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["fi-model"],"enabled":true}' "$BASE/api/v1/channels/$ch" > /dev/null
 done
 # 死渠道：指向一个没人监听的端口，用于验证"连接失败"分类
-curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$DEAD_PORT"'","key":"sk-dead","priority":5,"models":["fi-model"],"enabled":true}' "$BASE/api/v1/channels/channel-dead" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$DEAD_PORT"'","key":"sk-dead","models":["fi-model"],"enabled":true}' "$BASE/api/v1/channels/channel-dead" > /dev/null
 # 双成员车道：非流式超时 1s、冷却 1s
 curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-a","upstream_model":"fi-model","priority":20},{"channel":"channel-b","upstream_model":"fi-model","priority":10}]}' "$BASE/api/v1/lanes/fi-model" > /dev/null
 # 单成员车道（含死渠道兜底），用于"全挂快抛"

@@ -85,7 +85,7 @@ for name in channel-a:20:"$GOOD_KEY" channel-b:10:"$GOOD_KEY"; do
   ch=$(echo "$name" | cut -d: -f1); pr=$(echo "$name" | cut -d: -f2); ky=$(echo "$name" | cut -d: -f3)
   curl -s "${A[@]}" -X PUT -d '{
     "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$ky"'",
-    "priority":'"$pr"',"models":["w5-model"],"enabled":true
+    "models":["w5-model"],"enabled":true
   }' "$BASE/api/v1/channels/$ch" > /dev/null
 done
 curl -s "${A[@]}" -X PUT -d '{
@@ -145,7 +145,7 @@ done
 control '{"model":"w5-model","status":401,"body":"{\"error\":{\"message\":\"invalid key\"}}"}'
 curl -s "${A[@]}" -X PUT -d '{
   "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$BAD_KEY"'",
-  "priority":20,"models":["w5-model"],"enabled":true
+  "models":["w5-model"],"enabled":true
 }' "$BASE/api/v1/channels/channel-a" > /dev/null
 control '{"model":"w5-model","status":200}'
 for i in 1 2; do
