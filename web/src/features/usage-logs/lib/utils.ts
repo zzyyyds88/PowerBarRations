@@ -19,23 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 /**
  * Utility functions for usage logs feature
  */
-import {
-  getAllLogs,
-  getUserLogs,
-  getAllMidjourneyLogs,
-  getUserMidjourneyLogs,
-} from '../api'
+import { getAllLogs, getUserLogs } from '../api'
 import {
   LOG_TYPES,
   DISPLAYABLE_LOG_TYPES,
   TIMING_LOG_TYPES,
 } from '../constants'
-import type {
-  GetLogsParams,
-  GetLogsResponse,
-  FetchLogsConfig,
-  GetMidjourneyLogsParams,
-} from '../types'
+import type { GetLogsParams, GetLogsResponse, FetchLogsConfig } from '../types'
 
 export { buildQueryParams } from './query-params'
 
@@ -115,36 +105,6 @@ function buildTimeRangeParams(
       defaultTimeRange?.start
     ),
     end_timestamp: getTimestamp(searchParams.endTime, defaultTimeRange?.end),
-  }
-}
-
-/**
- * Build base parameters with time range (for drawing and task logs)
- * @param useMilliseconds - Whether to use millisecond timestamps (true for drawing logs, false for task logs)
- */
-export function buildBaseParams(config: {
-  page: number
-  pageSize: number
-  searchParams: Record<string, unknown>
-  useMilliseconds?: boolean
-}): {
-  p: number
-  page_size: number
-  channel_id?: string
-  start_timestamp?: number
-  end_timestamp?: number
-} {
-  const { page, pageSize, searchParams, useMilliseconds = false } = config
-
-  return {
-    p: page,
-    page_size: pageSize,
-    ...(searchParams.channel
-      ? {
-          channel_id: String(searchParams.channel),
-        }
-      : {}),
-    ...buildTimeRangeParams(searchParams, useMilliseconds),
   }
 }
 
@@ -254,22 +214,13 @@ export async function fetchLogsByCategory(
     return isAdmin ? await getAllLogs(params) : await getUserLogs(params)
   }
 
-  // For drawing logs
-  const baseParams = buildBaseParams({
+  // PBR 车道日志走 pbr/ 目录的独立数据源；此处仅剩 common。
+  const params = buildApiParams({
     page,
     pageSize,
     searchParams,
-    useMilliseconds: logCategory === 'drawing',
+    columnFilters,
+    isAdmin,
   })
-
-  const paramsWithFilter = {
-    ...baseParams,
-    ...(logCategory === 'drawing'
-      ? { mj_id: searchParams.filter as string | undefined }
-      : {}),
-  }
-
-  return isAdmin
-    ? await getAllMidjourneyLogs(paramsWithFilter as GetMidjourneyLogsParams)
-    : await getUserMidjourneyLogs(paramsWithFilter as GetMidjourneyLogsParams)
+  return isAdmin ? await getAllLogs(params) : await getUserLogs(params)
 }

@@ -689,8 +689,6 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 			return GenRelayInfoAlphaSearch(c, request), nil
 		}
 		return nil, errors.New("request is not a AlphaSearchRequest")
-	case types.RelayFormatMjProxy:
-		info = genBaseRelayInfo(c, nil)
 	default:
 		err = errors.New("invalid relay format")
 	}

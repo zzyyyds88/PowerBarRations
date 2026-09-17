@@ -348,7 +348,6 @@ func migrateDB() error {
 		&LoginEncryptionKey{},
 		&Ability{},
 		&Log{},
-		&Midjourney{},
 		&Model{},
 		&PrefillGroup{},
 		&Setup{},

@@ -20,30 +20,5 @@ For commercial licensing, please contact support@quantumnous.com
  * Status mappers for different log types
  * Centralized mapper instances for consistent usage across components
  */
-import {
-  MJ_TASK_TYPE_MAPPINGS,
-  MJ_STATUS_MAPPINGS,
-  MJ_SUBMIT_RESULT_MAPPINGS,
-} from '../constants'
-import { createStatusMapper } from './status'
 
 // ============================================================================
-// MjProxy (Drawing) Logs Mappers
-// ============================================================================
-
-/**
- * MjProxy task type mapper
- */
-export const mjTaskTypeMapper = createStatusMapper(MJ_TASK_TYPE_MAPPINGS)
-
-/**
- * MjProxy task status mapper
- */
-export const mjStatusMapper = createStatusMapper(MJ_STATUS_MAPPINGS)
-
-/**
- * MjProxy submit result mapper
- */
-export const mjSubmitResultMapper = createStatusMapper(
-  MJ_SUBMIT_RESULT_MAPPINGS
-)

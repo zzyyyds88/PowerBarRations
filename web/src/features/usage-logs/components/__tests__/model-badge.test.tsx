@@ -237,10 +237,6 @@ const providers = [
   },
   { category: 'Nous Research', models: ['nousresearch/hermes-3', 'hermes-3'] },
   { category: '360 AI', models: ['360gpt-pro', '360zhinao'] },
-  {
-    category: 'Midjourney',
-    models: ['midjourney', 'mj_imagine', 'mj-blend', 'swap_face'],
-  },
   { category: 'Kling', models: ['kling-v2'] },
   { category: 'Vidu', models: ['vidu-q2'] },
   { category: 'Suno', models: ['suno-v4'] },

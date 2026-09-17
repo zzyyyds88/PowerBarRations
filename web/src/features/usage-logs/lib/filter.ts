@@ -24,7 +24,6 @@ import type {
   LogCategory,
   LogFilters,
   CommonLogFilters,
-  DrawingLogFilters,
 } from '../types'
 
 // ============================================================================
@@ -57,13 +56,6 @@ export function buildSearchParams(
         ...(commonFilters.upstreamRequestId && {
           upstreamRequestId: commonFilters.upstreamRequestId,
         }),
-      }
-    }
-    case 'drawing': {
-      const drawingFilters = filters as DrawingLogFilters
-      return {
-        ...baseParams,
-        ...(drawingFilters.mjId && { filter: drawingFilters.mjId }),
       }
     }
     default:

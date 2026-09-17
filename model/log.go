@@ -470,49 +470,6 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 }
 
-// MidjourneyBillingLogParams is the legacy Midjourney task billing log payload
-// (refunds and consume entries written outside the relay pipeline).
-type MidjourneyBillingLogParams struct {
-	UserId    int
-	LogType   int
-	Content   string
-	ChannelId int
-	ModelName string
-	Quota     int
-	TokenId   int
-	Group     string
-	Other     *LogOther
-	NodeName  string // 任务发起节点；为空时回退当前节点
-}
-
-func RecordMidjourneyBillingLog(params MidjourneyBillingLogParams) {
-	if params.LogType == LogTypeConsume && !common.LogConsumeEnabled {
-		return
-	}
-	username, _ := GetUsernameById(params.UserId, false)
-	// W7：基座 Token 表随多用户面删除，日志不再记录令牌名。
-	tokenName := ""
-	createdAt := common.GetTimestamp()
-	log := &Log{
-		UserId:    params.UserId,
-		Username:  username,
-		CreatedAt: createdAt,
-		Type:      params.LogType,
-		Content:   params.Content,
-		TokenName: tokenName,
-		ModelName: params.ModelName,
-		Quota:     params.Quota,
-		ChannelId: params.ChannelId,
-		TokenId:   params.TokenId,
-		Group:     params.Group,
-		Other:     params.Other.JSONString(),
-	}
-	err := createLog(log)
-	if err != nil {
-		common.SysLog("failed to record Midjourney billing log: " + err.Error())
-	}
-}
-
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {

@@ -95,10 +95,6 @@ func SetApiRouter(router *gin.Engine) {
 			prefillGroupRoute.DELETE("/:id", controller.DeletePrefillGroup)
 		}
 
-		// Midjourney 的管理员视图保留；用户自助视图（/mj/self）随多用户删除。
-		mjRoute := apiRouter.Group("/mj")
-		mjRoute.GET("/", middleware.PBRAuth(), controller.GetAllMidjourney)
-
 		modelsRoute := apiRouter.Group("/console/models")
 		modelsRoute.Use(middleware.PBRAuth())
 		{
