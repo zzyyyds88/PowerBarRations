@@ -2842,9 +2842,9 @@ export function ChannelMutateDialog({
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel required>
-                      {t('Full Base URL (supports')} {'{'}
-                      {t('model')}
-                      {'}'} {t('variable)')}
+                      {t(
+                        'Base URL (supports {model} variable, or fill to /v1 to auto-complete)'
+                      )}
                     </FormLabel>
                     <FormControl>
                       <Input
@@ -2855,9 +2855,9 @@ export function ChannelMutateDialog({
                       />
                     </FormControl>
                     <FormDescription>
-                      {t('Enter the complete URL, supports')} {'{'}
-                      {t('model')}
-                      {'}'} {t('variable')}
+                      {t(
+                        'Enter the full endpoint URL (supports the {model} variable); if it only goes up to a version segment (e.g. https://host/v1), the gateway appends /chat/completions automatically'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

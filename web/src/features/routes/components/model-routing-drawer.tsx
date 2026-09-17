@@ -30,18 +30,17 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 
-import type { Model } from '../../types'
-import { ModelRoutingPanel } from '../model-routing-panel'
+import { ModelRoutingPanel } from './model-routing-panel'
 
 /**
  * 成员链（路由与故障切换）抽屉：仅作为既有 {@link ModelRoutingPanel} 的
- * 抽屉容器，编辑逻辑仍由面板负责（W7 再手工化）。
+ * 抽屉容器，编辑逻辑仍由面板负责。挂在「路由与故障切换」页（ui-spec §6.3）。
  */
 export function ModelRoutingDrawer(props: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** 从行内操作打开时点中的模型：面板据此预选该模型的成员链。 */
-  currentRow?: Model | null
+  currentRow?: { model_name?: string } | null
 }) {
   const { t } = useTranslation()
 

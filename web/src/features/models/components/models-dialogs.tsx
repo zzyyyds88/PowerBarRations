@@ -21,7 +21,6 @@ import { MissingModelsDialog } from './dialogs/missing-models-dialog'
 import { PrefillGroupManagement } from './dialogs/prefill-group-management'
 import { SyncWizardDialog } from './dialogs/sync-wizard-dialog'
 import { ModelMutateDrawer } from './drawers/model-mutate-drawer'
-import { ModelRoutingDrawer } from './drawers/model-routing-drawer'
 import { useModels } from './models-provider'
 
 export function ModelsDialogs() {
@@ -33,13 +32,6 @@ export function ModelsDialogs() {
       {/* Model Create/Update Drawer */}
       <ModelMutateDrawer
         open={open === 'create-model' || open === 'update-model'}
-        onOpenChange={(v) => !v && setOpen(null)}
-        currentRow={currentRow}
-      />
-
-      {/* Member chain (routing & failover) Drawer */}
-      <ModelRoutingDrawer
-        open={open === 'model-routing'}
         onOpenChange={(v) => !v && setOpen(null)}
         currentRow={currentRow}
       />

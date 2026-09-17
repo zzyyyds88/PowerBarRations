@@ -1,9 +1,9 @@
 /*
-PowerBarRations —— 模型成员链（故障切换）面板
+PowerBarRations —— 模型成员链（故障切换）面板（ui-spec §6.3）
 
-用户心智：渠道里填好上游与模型后，在**模型管理**里为每个模型定"优先打谁、再打谁"。
-成员顺序即故障切换顺序：**顺序就是优先级**，界面不暴露 priority 数字输入，保存时按
-数组位置生成 priority（首位最大）。只保留 failover/manual 两种模式（weighted /
+用户心智：渠道里填好上游与模型后，在**路由与故障切换**页为每个模型定"优先打谁、
+再打谁"。成员顺序即故障切换顺序：**顺序就是优先级**，界面不暴露 priority 数字输入，
+保存时按数组位置生成 priority（首位最大）。只保留 failover/manual 两种模式（weighted /
 round_robin 已删除）。保存即把成员链固化为显式 failover 车道
 （PUT /api/v1/lanes/{model}）；未配车道时成员列表为空，添加成员后保存即固化。
 */
@@ -34,10 +34,11 @@ import {
   listPBRModels,
   savePBRFailover,
   seedPBRLanes,
+  pbrModelsQueryKey,
   type PBRModelSummary,
-} from '../pbr-routing-api'
+} from '../api'
 
-const modelsKey = ['pbr-routable-models'] as const
+const modelsKey = pbrModelsQueryKey
 const routeKey = (model: string) => ['pbr-route', model] as const
 
 export function ModelRoutingPanel(props: { initialModel?: string }) {

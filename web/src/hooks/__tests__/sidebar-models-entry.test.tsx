@@ -21,15 +21,22 @@ import { expect, it } from 'vitest'
 
 import { useSidebarData } from '../use-sidebar-data'
 
-it('exposes exactly one models entry and no independent routing entry', () => {
+// ui-spec §6.3：「路由与故障切换」是侧边栏独立页（/routes），紧跟在「模型」之后；
+// 模型入口仍只有一个。
+it('exposes one models entry followed by the routing & failover page', () => {
   const { result } = renderHook(() => useSidebarData())
-  const items = result.current.navGroups.flatMap((group) => group.items)
+  const adminItems = result.current.navGroups.find(
+    (group) => group.id === 'admin'
+  )?.items
+  expect(adminItems).toBeDefined()
 
-  const modelsEntries = items.filter((item) =>
-    item.url?.startsWith('/models')
-  )
-  expect(modelsEntries.map((item) => item.url)).toEqual(['/models/metadata'])
-  expect(
-    items.some((item) => item.title === 'Routing & Failover')
-  ).toBe(false)
+  const urls = adminItems?.map((item) => item.url) ?? []
+  expect(urls.filter((url) => url?.startsWith('/models'))).toEqual([
+    '/models/metadata',
+  ])
+
+  const routingIndex = urls.indexOf('/routes')
+  expect(routingIndex).toBeGreaterThan(-1)
+  expect(urls[routingIndex - 1]).toBe('/models/metadata')
+  expect(adminItems?.[routingIndex]?.title).toBe('Routing & Failover')
 })

@@ -38,7 +38,6 @@ import { getModelChannelState } from '../lib/model-utils'
 import type { Model } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
-import { ModelUnitPriceCell } from './model-unit-price-cell'
 import { useModels } from './models-provider'
 
 export function useModelsColumns(): ColumnDef<Model>[] {
@@ -115,39 +114,6 @@ export function useModelsColumns(): ColumnDef<Model>[] {
               </div>
             </div>
           </div>
-        )
-      },
-    },
-    {
-      id: 'upstream_unit_price',
-      header: () => (
-        <Tooltip>
-          <TooltipTrigger render={<span tabIndex={0} />}>
-            {t('Upstream unit price')}
-          </TooltipTrigger>
-          <TooltipContent role='tooltip'>
-            {t(
-              'Channel upstream price only; cost conversion only, never affects billing or admission.'
-            )}
-          </TooltipContent>
-        </Tooltip>
-      ),
-      meta: { label: t('Upstream unit price') },
-      size: 225,
-      enableSorting: false,
-      cell: ({ row }) => {
-        if (row.original.name_rule !== 0) {
-          return (
-            <span className='text-muted-foreground text-xs'>
-              {t('Per matched model')}
-            </span>
-          )
-        }
-        return (
-          <ModelUnitPriceCell
-            modelName={row.original.model_name}
-            nameRule={row.original.name_rule}
-          />
         )
       },
     },
