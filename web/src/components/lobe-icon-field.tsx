@@ -27,6 +27,11 @@ export function LobeIconField(props: {
   id?: string
   value: string
   onChange: (value: string) => void
+  /**
+   * 按模型名推断出的图标（ui-spec §6.3）。仅在未显式填写时用于展示与一键采用，
+   * 不会自动写入表单。
+   */
+  suggestedIcon?: string
 }) {
   const { t } = useTranslation()
   const options = useMemo(
@@ -38,6 +43,9 @@ export function LobeIconField(props: {
       })),
     []
   )
+  const suggestedIcon = props.suggestedIcon?.trim() ?? ''
+  const showSuggestion = Boolean(suggestedIcon) && !props.value
+  const effectiveIcon = props.value || suggestedIcon
   return (
     <div className='space-y-3'>
       <div className='flex min-w-0 items-center gap-2'>
@@ -62,14 +70,35 @@ export function LobeIconField(props: {
           </Button>
         )}
       </div>
+      {showSuggestion && (
+        <div className='border-primary/30 bg-primary/5 flex items-center gap-3 rounded-lg border px-3 py-2'>
+          <span className='flex size-8 shrink-0 items-center justify-center'>
+            {getLobeIcon(suggestedIcon, 24)}
+          </span>
+          <div className='min-w-0 flex-1 text-xs'>
+            <p className='font-medium'>
+              {t('Detected from the model name')}
+            </p>
+            <p className='text-muted-foreground break-all'>{suggestedIcon}</p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => props.onChange(suggestedIcon)}
+          >
+            {t('Use this icon')}
+          </Button>
+        </div>
+      )}
       <div className='bg-muted/40 flex items-center gap-3 rounded-lg border p-3'>
         <span className='flex size-9 shrink-0 items-center justify-center'>
-          {getLobeIcon(props.value, 28)}
+          {getLobeIcon(effectiveIcon, 28)}
         </span>
         <div className='min-w-0 text-xs'>
           <p className='font-medium'>{t('Effective icon')}</p>
           <p className='text-muted-foreground break-all'>
-            {props.value || t('Default placeholder')}
+            {effectiveIcon || t('Default placeholder')}
           </p>
         </div>
       </div>

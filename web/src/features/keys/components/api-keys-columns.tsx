@@ -22,12 +22,10 @@ import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { toIntlLocale } from '@/i18n/languages'
-import { getCurrencyDisplay } from '@/lib/currency'
-import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { API_KEY_STATUSES } from '../constants'
 import type { ApiKey } from '../types'
-import { ApiKeyQuotaCell } from './api-key-quota-cell'
+import { ApiKeyCostCell } from './api-key-cost-cell'
 import {
   ApiKeyActivityCell,
   ApiKeyTimestampCell,
@@ -41,9 +39,6 @@ import { DataTableRowActions } from './data-table-row-actions'
 
 export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { t, i18n } = useTranslation()
-  useSystemConfigStore((state) => state.config.currency)
-  const { meta: currency } = getCurrencyDisplay()
-  const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
   return [
@@ -107,12 +102,13 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       size: 260,
     },
     {
-      id: 'quota',
-      accessorKey: 'remain_quota',
-      header: `${t('Quota')} (${quotaUnit})`,
-      cell: ({ row }) => <ApiKeyQuotaCell apiKey={row.original} now={now} />,
-      size: 260,
-      minSize: 260,
+      id: 'cost',
+      accessorKey: 'cost',
+      // 消耗 = 该令牌的上游折算花费（元）；列头固定 ¥，后端 cost 即以元计。
+      header: `${t('Consumed')} (¥)`,
+      cell: ({ row }) => <ApiKeyCostCell apiKey={row.original} />,
+      size: 180,
+      minSize: 180,
     },
     {
       id: 'model_limits',

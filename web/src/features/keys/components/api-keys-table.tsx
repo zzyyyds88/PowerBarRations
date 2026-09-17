@@ -52,7 +52,7 @@ import {
   ERROR_MESSAGES,
 } from '../constants'
 import type { ApiKey } from '../types'
-import { ApiKeyQuotaCell } from './api-key-quota-cell'
+import { ApiKeyCostCell } from './api-key-cost-cell'
 import { ApiKeyActivityCell } from './api-key-timestamp-cell'
 import {
   ApiKeyCell,
@@ -173,7 +173,7 @@ function ApiKeysMobileList({
             </div>
 
             <div className='min-w-0 space-y-3 py-1'>
-              <ApiKeyQuotaCell apiKey={apiKey} now={now} variant='card' />
+              <ApiKeyCostCell apiKey={apiKey} variant='card' />
             </div>
 
             <div className='flex flex-wrap items-center gap-x-5 gap-y-1'>

@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { DescriptionDialog } from './dialogs/description-dialog'
 import { MissingModelsDialog } from './dialogs/missing-models-dialog'
-import { PrefillGroupManagement } from './dialogs/prefill-group-management'
 import { SyncWizardDialog } from './dialogs/sync-wizard-dialog'
 import { ModelMutateDrawer } from './drawers/model-mutate-drawer'
 import { useModels } from './models-provider'
@@ -29,7 +28,7 @@ export function ModelsDialogs() {
 
   return (
     <>
-      {/* Model Create/Update Drawer */}
+      {/* Model Create/Update centered dialog（ui-spec §6.3） */}
       <ModelMutateDrawer
         open={open === 'create-model' || open === 'update-model'}
         onOpenChange={(v) => !v && setOpen(null)}
@@ -45,12 +44,6 @@ export function ModelsDialogs() {
       {/* Sync Wizard Dialog */}
       <SyncWizardDialog
         open={open === 'sync-wizard'}
-        onOpenChange={(v) => !v && setOpen(null)}
-      />
-
-      {/* Prefill Groups Management */}
-      <PrefillGroupManagement
-        open={open === 'prefill-groups'}
         onOpenChange={(v) => !v && setOpen(null)}
       />
 

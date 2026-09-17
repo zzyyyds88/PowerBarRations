@@ -33,7 +33,7 @@ import type {
 // 且没有配额/分组语义：
 //   - 允许的模型（model_limits）↔ lane_policy.allow_lanes（路由键即模型名）
 //   - 允许的 IP ↔ ip_allowlist；过期时间 ↔ expires_at；启用状态 ↔ enabled
-//   - quota/分组等 PBR 没有的字段固定为"无限/默认"，仅供界面展示
+//   - cost 是只读统计（元），直接照抄后端响应，不参与任何写请求
 // 明文只在创建/轮换时出现一次，"查看明文"通过轮换实现。
 
 type PbrLanePolicy = {
@@ -57,6 +57,8 @@ type PbrClientKey = {
   updated_at?: string
   last_used_at?: string | null
   key?: string
+  // 只读统计：上游折算花费（元），由后端按 key_name 聚合 pbr_stats_hourly 派生。
+  cost?: number
 }
 
 const idToName = new Map<number, string>()
@@ -89,9 +91,7 @@ function toApiKey(item: PbrClientKey): ApiKey {
     name: item.name,
     key: item.key_prefix ?? '',
     status: item.enabled ? 1 : 2,
-    remain_quota: 0,
-    used_quota: 0,
-    unlimited_quota: true,
+    cost: item.cost ?? 0,
     expired_time: item.expires_at ? unixSeconds(item.expires_at) : -1,
     created_time: unixSeconds(item.created_at),
     accessed_time: unixSeconds(item.last_used_at),

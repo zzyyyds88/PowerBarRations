@@ -38,8 +38,9 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { channelRouteKeys, matchesName } from '../lib/channel-price'
+import { resolveModelIconKey } from '../lib/model-icon'
 
-// 模型抽屉「渠道关联」（模型页 = 元数据页，ui-spec §6.3）：列出声明该模型
+// 模型弹窗「渠道关联」（模型页 = 元数据页，ui-spec §6.3）：列出声明该模型
 // （或经 model_mapping 映射它）的渠道，展示渠道名、类型与可用状态徽章，
 // 并给出跳转到渠道编辑的入口。此处只读；计价只在渠道编辑「上游单价」页签，
 // 不在此展示。
@@ -48,7 +49,7 @@ const PAGE_SIZE = 100
 export function ModelLinkedChannels(props: {
   modelName: string
   nameRule?: number
-  /** 模型元数据图标（与模型列表同源：model.icon || model_name 首字符）。 */
+  /** 模型元数据图标（与模型列表同源：显式 icon > 厂商推断 > 首字符）。 */
   icon?: string
 }) {
   const { t } = useTranslation()
@@ -83,7 +84,10 @@ export function ModelLinkedChannels(props: {
     <SideDrawerSection>
       <div className='flex items-start gap-2.5'>
         <span className='mt-0.5 flex size-6 shrink-0 items-center justify-center'>
-          {getLobeIcon(props.icon || props.modelName[0], 24)}
+          {getLobeIcon(
+            resolveModelIconKey({ model_name: props.modelName, icon: props.icon }),
+            24
+          )}
         </span>
         <div className='flex min-w-0 flex-col gap-1'>
           <h3 className='text-sm font-semibold'>{t('Channel association')}</h3>

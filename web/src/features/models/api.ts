@@ -27,7 +27,6 @@ import type {
   SyncUpstreamResponse,
   PreviewUpstreamDiffResponse,
   MissingModelsResponse,
-  PrefillGroupsResponse,
   SyncLocale,
   SyncSource,
   MetadataSyncRequest,
@@ -159,60 +158,13 @@ export async function previewUpstreamDiff(params?: {
 // Utility Operations
 // ============================================================================
 
+// 前端不再调用 /api/prefill_group/**（ui-spec §6.3）；后端端点保留（api-spec §9）。
+
 /**
  * Get missing models (used but not configured)
  */
 export async function getMissingModels(): Promise<MissingModelsResponse> {
   const res = await api.get('/api/console/models/missing')
-  return res.data
-}
-
-/**
- * Get prefill groups
- */
-export async function getPrefillGroups(
-  type?: 'model' | 'tag' | 'endpoint'
-): Promise<PrefillGroupsResponse> {
-  const res = await api.get('/api/prefill_group', {
-    params: type ? { type } : undefined,
-  })
-  return res.data
-}
-
-/**
- * Create prefill group
- */
-export async function createPrefillGroup(data: {
-  name: string
-  type: 'model' | 'tag' | 'endpoint'
-  items: string | string[]
-  description?: string
-}): Promise<{ success: boolean; message?: string }> {
-  const res = await api.post('/api/prefill_group', data)
-  return res.data
-}
-
-/**
- * Update prefill group
- */
-export async function updatePrefillGroup(data: {
-  id: number
-  type?: 'model' | 'tag' | 'endpoint'
-  name?: string
-  items?: string | string[]
-  description?: string
-}): Promise<{ success: boolean; message?: string }> {
-  const res = await api.put('/api/prefill_group', data)
-  return res.data
-}
-
-/**
- * Delete prefill group
- */
-export async function deletePrefillGroup(
-  id: number
-): Promise<{ success: boolean; message?: string }> {
-  const res = await api.delete(`/api/prefill_group/${id}`)
   return res.data
 }
 

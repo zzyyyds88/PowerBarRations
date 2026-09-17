@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Plus, MoreHorizontal, List, AlertCircle } from 'lucide-react'
+import { Plus, MoreHorizontal, AlertCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -24,11 +24,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useModels } from './models-provider'
+
+// 模型页入口收敛（ui-spec §6.3）：保留「同步资料」「缺失的模型」；
+// 删除「预填充分组」——模型清单不做预设分组，前端不再调用 /api/prefill_group。
 
 export function ModelsPrimaryButtons() {
   const { t } = useTranslation()
@@ -45,10 +47,6 @@ export function ModelsPrimaryButtons() {
 
   const handleSync = () => {
     setOpen('sync-wizard')
-  }
-
-  const handlePrefillGroups = () => {
-    setOpen('prefill-groups')
   }
 
   return (
@@ -76,15 +74,6 @@ export function ModelsPrimaryButtons() {
             {t('Missing Models')}
             <DropdownMenuShortcut>
               <AlertCircle className='h-4 w-4' />
-            </DropdownMenuShortcut>
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem onClick={handlePrefillGroups}>
-            {t('Prefill Groups')}
-            <DropdownMenuShortcut>
-              <List className='h-4 w-4' />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuContent>

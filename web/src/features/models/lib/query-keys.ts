@@ -29,12 +29,3 @@ export const modelsQueryKeys = {
   detail: (id: number) => [...modelsQueryKeys.all, 'detail', id] as const,
   missing: () => [...modelsQueryKeys.all, 'missing'] as const,
 }
-
-/**
- * React Query cache keys for prefill groups
- */
-export const prefillGroupsQueryKeys = {
-  all: ['prefill-groups'] as const,
-  lists: () => [...prefillGroupsQueryKeys.all, 'list'] as const,
-  list: (type?: string) => [...prefillGroupsQueryKeys.lists(), type] as const,
-}

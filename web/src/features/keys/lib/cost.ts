@@ -16,12 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// Query keys
-export * from './query-keys'
+// 令牌「消耗」金额展示（ui-spec §6.5 / token-spec §3.7）。
+// cost 的单位是元（与看板/日志的 estimated_cost 同口径），与看板 formatCost 一致：
+// 0 显示 ¥0，小额保留 4 位小数，其余两位。
 
-// Utilities
-export * from './model-utils'
-export * from './model-icon'
-
-// Form schemas and transformers
-export * from './model-form'
+/** 把「元」金额格式化为展示字符串；非法值按 0 处理。 */
+export function formatCostYuan(value: number | null | undefined): string {
+  const amount = typeof value === 'number' && Number.isFinite(value) ? value : 0
+  if (amount === 0) return '¥0'
+  if (Math.abs(amount) < 0.01) return `¥${amount.toFixed(4)}`
+  return `¥${amount.toFixed(2)}`
+}

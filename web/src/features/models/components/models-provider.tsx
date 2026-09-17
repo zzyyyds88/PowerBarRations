@@ -30,7 +30,6 @@ type DialogType =
   | 'update-model'
   | 'missing-models'
   | 'sync-wizard'
-  | 'prefill-groups'
   | 'description'
   | null
 

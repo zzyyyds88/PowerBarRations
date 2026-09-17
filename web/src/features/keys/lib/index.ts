@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 // ============================================================================
 // Form Utilities
 // ============================================================================
+export { formatCostYuan } from './cost'
 export {
   getApiKeyFormSchema,
   type ApiKeyFormValues,

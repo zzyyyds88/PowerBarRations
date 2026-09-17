@@ -156,21 +156,30 @@ afterEach(async () => {
   await i18n.changeLanguage('en')
 })
 
-it('requests channel models and distinguishes metadata from configured routes', async () => {
+it('requests channel models and lists only the four model-catalog columns', async () => {
   const { get } = await renderList()
   expect(get).toHaveBeenCalledWith('/api/console/models/', {
     params: expect.objectContaining({ include_channel_models: true }),
   })
   expect(screen.getAllByText('Missing metadata')).toHaveLength(2)
-  expect(screen.getAllByText('Channels 0 · Groups 0')).toHaveLength(3)
-  expect(
-    screen.getByTitle('No channel is configured. This model will not be listed.')
-  ).toBeInTheDocument()
-  expect(
-    screen.getAllByTitle(
-      'No channel is currently available. This model will not be listed.'
-    )
-  ).toHaveLength(2)
+  const headers = screen
+    .getAllByRole('columnheader')
+    .map((header) => header.textContent?.trim())
+  expect(headers).toEqual(['', 'Model', 'Description', 'Tags', 'Actions'])
+  for (const removed of [
+    'Channels and groups',
+    'Sync policy',
+    'Display policy',
+    'ID',
+    'Match Type',
+    'Custom endpoints',
+    'Created',
+    'Updated',
+  ]) {
+    expect(
+      screen.queryByRole('columnheader', { name: removed })
+    ).not.toBeInTheDocument()
+  }
 })
 
 it('keeps channel rows individually selectable and disables metadata mutations for mixed selection', async () => {
@@ -206,7 +215,7 @@ it('keeps channel rows individually selectable and disables metadata mutations f
   ).toBeEnabled()
 })
 
-it('keeps long model names and translated channel labels truncated inside their existing cells', async () => {
+it('keeps long model names and the metadata hint truncated inside the model cell', async () => {
   const longName =
     'provider/very-long-channel-model-with-detailed-version-and-context-window'
   await renderList([
@@ -218,19 +227,11 @@ it('keeps long model names and translated channel labels truncated inside their 
   await act(async () => {
     await i18n.changeLanguage('fr')
   })
-  const label = screen.getAllByText(
-    i18n.t('Channels {{channels}} · Groups {{groups}}', {
-      channels: 0,
-      groups: 0,
-    })
-  )[0]
-  expect(label).toHaveClass('whitespace-normal', 'sm:truncate')
-  expect(label).toHaveAttribute('tabindex', '0')
   await act(async () => {
     await i18n.changeLanguage('zhCN')
   })
   expect(screen.getByText('缺元数据')).toBeVisible()
-  expect(screen.getAllByText('渠道 0 · 分组 0')).toHaveLength(2)
+  expect(screen.queryByText(/渠道|分组/)).not.toBeInTheDocument()
 })
 
 it('prefills and creates metadata only when the user explicitly saves it', async () => {
@@ -254,41 +255,17 @@ it('prefills and creates metadata only when the user explicitly saves it', async
   )
 })
 
-it('filters by display policy and restores filters through browser history', async () => {
-  const { get, router } = await renderList([channel], {
-    initialUrl: '/models/metadata?page=3&status=%5B%22enabled%22%5D',
-    total: 100,
-  })
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: /Display policy/ }))
-  await user.click(screen.getByRole('option', { name: 'Not listed' }))
-  await waitFor(() =>
-    expect(get).toHaveBeenCalledWith('/api/console/models/search', {
-      params: expect.objectContaining({ status: 'disabled', p: 1 }),
-    })
-  )
-  expect(router.state.location.search).toMatchObject({ status: ['disabled'] })
-  await user.keyboard('{Escape}')
-  await act(async () => {
-    router.history.back()
-  })
-  await waitFor(() =>
-    expect(router.state.location.search).toMatchObject({ status: ['enabled'] })
-  )
-  await act(async () => {
-    router.history.forward()
-  })
-  await waitFor(() =>
-    expect(router.state.location.search).toMatchObject({ status: ['disabled'] })
-  )
-  await user.click(screen.getByRole('button', { name: /Display policy/ }))
-  await user.click(screen.getByRole('option', { name: 'Clear filters' }))
-  await waitFor(() =>
-    expect(router.state.location.search).not.toHaveProperty('status')
-  )
+it('no longer offers display-policy or sync-policy filters', async () => {
+  await renderList([channel])
+  expect(
+    screen.queryByRole('button', { name: /Display policy/ })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: /Sync policy/ })
+  ).not.toBeInTheDocument()
 })
 
-it('keeps all columns while collapsing tags and connection counts', async () => {
+it('keeps the Tags column while collapsing its overflow', async () => {
   await renderList([
     {
       ...channel,
@@ -297,11 +274,8 @@ it('keeps all columns while collapsing tags and connection counts', async () => 
       enable_groups: ['default', 'premium'],
     },
   ])
-  expect(screen.getByText('Channels 1 · Groups 2')).toBeVisible()
-  expect(
-    screen.getByRole('columnheader', { name: 'Sync policy' })
-  ).toBeVisible()
   expect(screen.getByRole('columnheader', { name: 'Tags' })).toBeVisible()
+  expect(screen.queryByText('Channels 1 · Groups 2')).not.toBeInTheDocument()
   expect(screen.getByText('Tools')).toBeVisible()
   expect(screen.queryByText('Files')).not.toBeInTheDocument()
   await userEvent.click(screen.getByRole('button', { name: 'Show all tags' }))
