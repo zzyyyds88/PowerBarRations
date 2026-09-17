@@ -47,23 +47,26 @@
 
 **路由与数据面**：`weighted` / `round_robin` 模式与成员 `weight`（§7.2）；渠道 `priority` / `weight` 字段（含 DB 列）；隐式成链（[ADR 0005](adr/0005-lane-required-and-channel-model-mapping.md)）。
 
-**基座子系统**：任务插件/异步生成任务子系统（JS 插件、`/v1/tasks`、任务日志、任务插件管理页）；Midjourney 全链路（`/mj` 转发、`/api/mj` 管理端点、Drawing 日志分节、轮询 handler、图片免鉴权代理）；厂商（Vendors）与 io.net 部署（Deployments）前后端；系统更新检查（直连上游 releases）。
+**基座子系统**：任务插件/异步生成任务子系统（JS 插件、`/v1/tasks`、任务日志、任务插件管理页）；Midjourney 全链路（`/mj` 转发、`/api/mj` 管理端点、Drawing 日志分节、轮询 handler、图片免鉴权代理）；厂商（Vendors）与 io.net 部署（Deployments）前后端；系统更新检查（直连上游 releases）；**系统信息页与多节点实例视图**（`features/system-info` 页面、`/api/system-info/**` 端点、`system_instances` 表与实例上报 reporter）——PBR 只支持单节点 SQLite（§1.5），多实例"角色/节点"面板无意义。
 
 **单价层**：全局默认单价表（原 `PBRModelPrices`，§16.9#7）。
 
-**对应 UI 页面删除**：wallet、pricing、redemption-codes、subscriptions、users、rankings、legal、about、security(2FA/passkey)、profile、部分 home 营销页、task-plugins、model-pricing、system-update。完整清单见 ui-spec-v1.md §4。
+**对应 UI 页面删除**：wallet、pricing、redemption-codes、subscriptions、users、rankings、legal、about、security(2FA/passkey)、profile、部分 home 营销页、task-plugins、model-pricing、system-update、**system-info**。完整清单见 ui-spec-v1.md §5。
 
 ### 1.4 保留范围（**默认全部保留**，不因个人自用而裁剪）
 
 渠道、车道（新）、模型目录与厂商适配层、客户端密钥、请求日志、用量与记账统计、Dashboard、Playground、系统设置（relay 相关）、初始化向导、错误页、WebSocket 上游池。已删除的子系统清单见 §1.3。
 
 > 与"正确转发"无关的重型子系统**不物理删除**，也不在控制台隐藏；默认保持可用。
+> **例外**：明确列入 §1.3 删除范围的条目按其口径处理（如系统信息页与多节点实例视图是物理删除）。
 > **部署形态**：仅 Docker（单容器）。不考虑桌面端，不 vendor electron。
 > **思考参数**：各厂商等价字段**沿用适配器现状**，不重新梳理映射表（详见 §16.1）。
 
 ### 1.5 唯一部署约束
 
-只支持 **SQLite** 单节点部署（多数据库/多节点代码保留，但不在部署矩阵内），以避免接口分叉。
+只支持 **SQLite** 单节点部署（多数据库代码保留，但不在部署矩阵内），以避免接口分叉。
+
+**多节点实例视图已删除**：PBR 不做多实例部署，基座继承的「实例上报 + `/api/system-info/**` + `system_instances` 表」随之物理删除（§1.3）；这不影响单节点启动，也不需要 `NODE_NAME` 配置（`NODE_NAME` 仅继续用于日志与任务 runner 标识）。
 
 ---
 
@@ -225,7 +228,7 @@ AI 侧的全部运维动作——建渠道、建/改车道、调成员顺序、�
 
 - **蓝本 = new-api 上游前端**（Rsbuild + React + TanStack Router + Base UI + Tailwind）：**直接整体搬迁，做减法（删多用户/计费）+ 接线（认证、成员链）**，而非另起炉灶。
 - **认证极简**：无账号，只有登录口令；首启设置口令，之后登录换取 **HttpOnly 会话 Cookie**（浏览器不存管理密钥）。无注册/找回/OAuth/passkey/2FA。
-- **页面集合**（保留上游页面，删多用户/计费）：数据看板、渠道管理、模型管理、路由与故障切换（**独立页 `/routes`**）、令牌、请求日志、系统信息、性能指标、系统设置、试打台、关于/法律页等。
+- **页面集合**（保留上游页面，删多用户/计费）：数据看板、渠道管理、模型管理、路由与故障切换（**独立页 `/routes`**）、令牌、请求日志、系统任务（**独立页 `/system-tasks`**）、性能指标、系统设置、试打台、关于/法律页等。**「系统信息」页已删除**（多节点实例视图，单节点部署不需要），其任务面板提为「系统任务」独立页。
 - **构建**：Rsbuild（上游默认），产物交 Go `embed`；包管理沿用上游 `bun.lock`（如环境不便可用 pnpm）。
 - **保留/删除**：除多用户/计费外全部上游页面保留；保留与删除的完整清单见 §1.3/§1.4 与 ui-spec §5。
 - **实时机制**：车道运行态经 SSE 推送 + 30s 轮询兜底（PBR 自有 `/api/route-events`）。
