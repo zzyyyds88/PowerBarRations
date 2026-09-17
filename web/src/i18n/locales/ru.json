@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "Добавлено моделей: {{count}}",
     "Model name (separate multiple with commas or newlines)": "Имя модели (несколько разделяйте запятыми или переносами строк)",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "Эта страница управляет только метаданными моделей. Модель становится доступной только после сохранения маршрута: объявите её в",
-    "then add members and save in": "затем добавьте участников и сохраните в"
+    "then add members and save in": "затем добавьте участников и сохраните в",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "Предохранитель",
+    "Cooldown & Affinity": "Охлаждение и привязка",
+    "Failover & Cooldown": "Переключение и охлаждение",
+    "Lane Failover": "Переключение маршрута",
+    "Member failover with cooldown, affinity, and circuit breaker": "Переключение участников с охлаждением, привязкой и предохранителем",
+    "One binary and SQLite; no external database, cache, or queue": "Один бинарник и SQLite; без внешней БД, кэша и очереди",
+    "One operator, one node — no user groups or wallet": "Один оператор, один узел — без групп пользователей и кошелька",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "Ключ администратора выводится из пароля; клиентские ключи хранятся хешированными и не возвращаются",
+    "Single-node Simplicity": "Простота одного узла",
+    "Single-user by Design": "Однопользовательский по замыслу",
+    "Upstream Cost Visibility": "Прозрачность затрат вышестоящего",
+    "Upstream spend in CNY, derived from hourly aggregates": "Затраты вышестоящего в CNY по часовым агрегатам",
+    "lane control keys": "ключей управления маршрутом",
+    "lane modes": "режима маршрутов",
+    "protocols supported": "поддерживаемых протокола",
+    "vendor adapters reused": "переиспользованных адаптеров"
   }
 }

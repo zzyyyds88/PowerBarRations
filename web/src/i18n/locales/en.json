@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "Added {{count}} models",
     "Model name (separate multiple with commas or newlines)": "Model name (separate multiple with commas or newlines)",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in",
-    "then add members and save in": "then add members and save in"
+    "then add members and save in": "then add members and save in",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "Circuit Breaker",
+    "Cooldown & Affinity": "Cooldown & Affinity",
+    "Failover & Cooldown": "Failover & Cooldown",
+    "Lane Failover": "Lane Failover",
+    "Member failover with cooldown, affinity, and circuit breaker": "Member failover with cooldown, affinity, and circuit breaker",
+    "One binary and SQLite; no external database, cache, or queue": "One binary and SQLite; no external database, cache, or queue",
+    "One operator, one node — no user groups or wallet": "One operator, one node — no user groups or wallet",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "Passphrase-derived admin key; client keys are hashed and never returned",
+    "Single-node Simplicity": "Single-node Simplicity",
+    "Single-user by Design": "Single-user by Design",
+    "Upstream Cost Visibility": "Upstream Cost Visibility",
+    "Upstream spend in CNY, derived from hourly aggregates": "Upstream spend in CNY, derived from hourly aggregates",
+    "lane control keys": "lane control keys",
+    "lane modes": "lane modes",
+    "protocols supported": "protocols supported",
+    "vendor adapters reused": "vendor adapters reused"
   }
 }

@@ -31,12 +31,6 @@ interface FooterProps {
   className?: string
 }
 
-const NEW_API_FOOTER_ATTRIBUTION_KEY = [
-  'footer',
-  'new' + 'api',
-  'projectAttributionSuffix',
-].join('.')
-
 // Renders User Agreement / Privacy Policy links inline with the parent's
 // copyright row when either is configured in System Settings → Site. Emits
 // fragmented siblings so the parent flex container's gap controls spacing.
@@ -89,15 +83,8 @@ function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
   const content = (
     <span className='text-muted-foreground/45'>
       &copy; {props.currentYear}{' '}
-      <a
-        href='https://github.com/QuantumNous/new-api'
-        target='_blank'
-        rel='noopener noreferrer'
-        className='text-foreground/70 hover:text-foreground font-medium transition-colors'
-      >
-        {t('New API')}
-      </a>
-      . {t(NEW_API_FOOTER_ATTRIBUTION_KEY)}
+      <span className='text-foreground/70 font-medium'>PowerBarRations</span>.{' '}
+      {t('footer.defaultCopyright')}
     </span>
   )
   if (props.inline) {
@@ -115,7 +102,7 @@ export function Footer(props: FooterProps) {
   const { systemName, logo: systemLogo, footerHtml } = useSystemConfig()
 
   const displayLogo = systemLogo || props.logo || '/logo.png'
-  const displayName = systemName || props.name || 'New API'
+  const displayName = systemName || props.name || 'PowerBarRations'
   const currentYear = new Date().getFullYear()
 
   if (footerHtml) {

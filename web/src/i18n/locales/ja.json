@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "{{count}} 件のモデルを追加しました",
     "Model name (separate multiple with commas or newlines)": "モデル名（複数はカンマまたは改行で区切る）",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "このページはモデルのメタデータのみを管理します。モデルを呼び出せるのはレーンを保存した後です。まず",
-    "then add members and save in": "で宣言し、次に"
+    "then add members and save in": "で宣言し、次に",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "サーキットブレーカー",
+    "Cooldown & Affinity": "クールダウンとアフィニティ",
+    "Failover & Cooldown": "フェイルオーバーとクールダウン",
+    "Lane Failover": "レーンフェイルオーバー",
+    "Member failover with cooldown, affinity, and circuit breaker": "クールダウン・アフィニティ・サーキットブレーカーを備えたメンバーフェイルオーバー",
+    "One binary and SQLite; no external database, cache, or queue": "単一バイナリ + SQLite。外部データベース・キャッシュ・キューは不要",
+    "One operator, one node — no user groups or wallet": "単一管理者・単一ノード — ユーザーグループやウォレットはありません",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "管理キーはパスフレーズから派生。クライアントキーはハッシュのみ保存し、返却しません",
+    "Single-node Simplicity": "単一ノードのシンプルさ",
+    "Single-user by Design": "単一ユーザー設計",
+    "Upstream Cost Visibility": "上流コストの可視化",
+    "Upstream spend in CNY, derived from hourly aggregates": "上流コスト（人民元）。時間別集計から算出",
+    "lane control keys": "レーン制御キー",
+    "lane modes": "レーンモード",
+    "protocols supported": "対応プロトコル",
+    "vendor adapters reused": "再利用したベンダーアダプタ"
   }
 }

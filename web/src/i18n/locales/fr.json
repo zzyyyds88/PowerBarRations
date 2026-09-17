@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "{{count}} modèles ajoutés",
     "Model name (separate multiple with commas or newlines)": "Nom du modèle (séparez-en plusieurs par des virgules ou des retours à la ligne)",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "Cette page ne gère que les métadonnées des modèles. Un modèle n'est appelable qu'après l'enregistrement de sa voie : déclarez-le dans",
-    "then add members and save in": "puis ajoutez des membres et enregistrez dans"
+    "then add members and save in": "puis ajoutez des membres et enregistrez dans",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "Disjoncteur",
+    "Cooldown & Affinity": "Refroidissement et affinité",
+    "Failover & Cooldown": "Basculement et refroidissement",
+    "Lane Failover": "Basculement de voie",
+    "Member failover with cooldown, affinity, and circuit breaker": "Basculement de membre avec refroidissement, affinité et disjoncteur",
+    "One binary and SQLite; no external database, cache, or queue": "Un seul binaire + SQLite ; aucune base de données, de cache ou de file d'attente externe",
+    "One operator, one node — no user groups or wallet": "Un seul opérateur, un seul nœud — pas de groupes d'utilisateurs ni de portefeuille",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "Clé d'administration dérivée de la phrase secrète ; les clés client sont hachées et jamais renvoyées",
+    "Single-node Simplicity": "Simplicité mono-nœud",
+    "Single-user by Design": "Mono-utilisateur par conception",
+    "Upstream Cost Visibility": "Visibilité des coûts amont",
+    "Upstream spend in CNY, derived from hourly aggregates": "Dépense amont en CNY, calculée à partir des agrégats horaires",
+    "lane control keys": "clés de contrôle de voie",
+    "lane modes": "modes de voie",
+    "protocols supported": "protocoles pris en charge",
+    "vendor adapters reused": "adaptateurs de fournisseurs réutilisés"
   }
 }

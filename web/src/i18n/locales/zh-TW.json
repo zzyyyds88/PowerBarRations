@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "已新增 {{count}} 個模型",
     "Model name (separate multiple with commas or newlines)": "模型名稱（多個可用逗號或換行分隔）",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "本頁只維護模型檔案；模型要能呼叫，必須儲存過車道：先在",
-    "then add members and save in": "宣告，再到"
+    "then add members and save in": "宣告，再到",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "斷路器",
+    "Cooldown & Affinity": "冷卻與親和",
+    "Failover & Cooldown": "故障轉移與冷卻",
+    "Lane Failover": "車道故障轉移",
+    "Member failover with cooldown, affinity, and circuit breaker": "成員故障轉移，支援冷卻、親和與熔斷",
+    "One binary and SQLite; no external database, cache, or queue": "單一二進位檔 + SQLite；無需外部資料庫、快取或佇列",
+    "One operator, one node — no user groups or wallet": "單管理員、單節點——沒有使用者群組與錢包",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "管理金鑰由口令派生；用戶端金鑰只存雜湊且從不回顯",
+    "Single-node Simplicity": "單節點極簡部署",
+    "Single-user by Design": "天生單使用者",
+    "Upstream Cost Visibility": "上游成本可見",
+    "Upstream spend in CNY, derived from hourly aggregates": "上游花費（人民幣），由小時聚合表折算",
+    "lane control keys": "車道控制鍵",
+    "lane modes": "車道模式",
+    "protocols supported": "支援的協定",
+    "vendor adapters reused": "複用的廠商介接器"
   }
 }

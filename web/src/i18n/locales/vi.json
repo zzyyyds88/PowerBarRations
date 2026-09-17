@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "Đã thêm {{count}} mô hình",
     "Model name (separate multiple with commas or newlines)": "Tên mô hình (phân tách nhiều mô hình bằng dấu phẩy hoặc xuống dòng)",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "Trang này chỉ quản lý siêu dữ liệu mô hình. Mô hình chỉ gọi được sau khi lưu làn: khai báo nó trong",
-    "then add members and save in": "rồi thêm thành viên và lưu trong"
+    "then add members and save in": "rồi thêm thành viên và lưu trong",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "Cầu dao",
+    "Cooldown & Affinity": "Hạ nhiệt & gắn kết",
+    "Failover & Cooldown": "Chuyển đổi & hạ nhiệt",
+    "Lane Failover": "Chuyển đổi làn",
+    "Member failover with cooldown, affinity, and circuit breaker": "Chuyển đổi thành viên với hạ nhiệt, gắn kết và cầu dao",
+    "One binary and SQLite; no external database, cache, or queue": "Một tệp nhị phân + SQLite; không cần cơ sở dữ liệu, bộ nhớ đệm hay hàng đợi bên ngoài",
+    "One operator, one node — no user groups or wallet": "Một quản trị viên, một nút — không có nhóm người dùng hay ví",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "Khóa quản trị dẫn xuất từ mật khẩu; khóa máy khách chỉ lưu băm và không bao giờ trả về",
+    "Single-node Simplicity": "Đơn giản một nút",
+    "Single-user by Design": "Thiết kế cho một người dùng",
+    "Upstream Cost Visibility": "Hiển thị chi phí thượng nguồn",
+    "Upstream spend in CNY, derived from hourly aggregates": "Chi tiêu thượng nguồn bằng CNY, tính từ tổng hợp theo giờ",
+    "lane control keys": "khóa điều khiển làn",
+    "lane modes": "chế độ làn",
+    "protocols supported": "giao thức được hỗ trợ",
+    "vendor adapters reused": "bộ điều hợp nhà cung cấp tái sử dụng"
   }
 }

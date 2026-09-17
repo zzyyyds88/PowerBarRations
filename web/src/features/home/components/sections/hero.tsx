@@ -49,7 +49,8 @@ export function Hero(props: HeroProps) {
   const { t } = useTranslation()
   const { status } = useStatus()
   const docsUrl =
-    (status?.docs_link as string | undefined) || 'https://docs.newapi.pro'
+    (status?.docs_link as string | undefined) ||
+    'https://github.com/zzyyyds88/PowerBarRations#readme'
 
   const renderDocsButton = () => {
     const isExternal = docsUrl.startsWith('http')

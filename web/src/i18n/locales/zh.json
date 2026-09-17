@@ -6289,6 +6289,23 @@
     "Added {{count}} models": "已添加 {{count}} 个模型",
     "Model name (separate multiple with commas or newlines)": "模型名（多个可用逗号或换行分隔）",
     "This page only maintains model metadata. A model is callable only after its lane is saved: declare it in": "本页只维护模型档案；模型要能调用，必须保存过车道：先在",
-    "then add members and save in": "声明，再到"
+    "then add members and save in": "声明，再到",
+    "PowerBarRations <noreply@example.com>": "PowerBarRations <noreply@example.com>",
+    "Circuit Breaker": "熔断器",
+    "Cooldown & Affinity": "冷却与亲和",
+    "Failover & Cooldown": "故障转移与冷却",
+    "Lane Failover": "车道故障转移",
+    "Member failover with cooldown, affinity, and circuit breaker": "成员故障转移，支持冷却、亲和与熔断",
+    "One binary and SQLite; no external database, cache, or queue": "单个二进制 + SQLite；无需外部数据库、缓存或队列",
+    "One operator, one node — no user groups or wallet": "单管理员、单节点——没有用户分组与钱包",
+    "Passphrase-derived admin key; client keys are hashed and never returned": "管理密钥由口令派生；客户端密钥只存哈希且从不回显",
+    "Single-node Simplicity": "单节点极简部署",
+    "Single-user by Design": "天生单用户",
+    "Upstream Cost Visibility": "上游成本可见",
+    "Upstream spend in CNY, derived from hourly aggregates": "上游花费（人民币），由小时聚合表折算",
+    "lane control keys": "车道控制键",
+    "lane modes": "车道模式",
+    "protocols supported": "支持的协议",
+    "vendor adapters reused": "复用的厂商适配器"
   }
 }

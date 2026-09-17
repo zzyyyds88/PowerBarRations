@@ -67,7 +67,7 @@ export function Features(_props: FeaturesProps) {
       num: '02',
       title: t('Secure & Reliable'),
       desc: t(
-        'Enterprise-grade security with comprehensive permission management'
+        'Passphrase-derived admin key; client keys are hashed and never returned'
       ),
       span: 'md:col-span-1',
       icon: <Shield className='size-4 text-emerald-400' />,
@@ -102,29 +102,31 @@ export function Features(_props: FeaturesProps) {
     {
       id: 'global',
       num: '03',
-      title: t('Global Coverage'),
-      desc: t('Multi-region deployment for stable global access'),
+      title: t('Single-node Simplicity'),
+      desc: t('One binary and SQLite; no external database, cache, or queue'),
       span: 'md:col-span-1',
       icon: <Globe className='size-4 text-violet-400' />,
       visual: (
         <div className='mt-4 space-y-2'>
-          {[t('Load Balancing'), t('Rate Limiting'), t('Cost Tracking')].map(
-            (step, i) => (
-              <div key={step} className='flex items-center gap-2'>
-                <div
-                  className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold ${
-                    i === 1
-                      ? 'border border-blue-500/30 bg-blue-500/20 text-blue-500'
-                      : 'border-border/40 bg-muted text-muted-foreground border'
-                  }`}
-                >
-                  {i + 1}
-                </div>
-                <div className='bg-border/40 h-px flex-1' />
-                <span className='text-muted-foreground text-xs'>{step}</span>
+          {[
+            t('Lane Failover'),
+            t('Cooldown & Affinity'),
+            t('Circuit Breaker'),
+          ].map((step, i) => (
+            <div key={step} className='flex items-center gap-2'>
+              <div
+                className={`flex size-6 items-center justify-center rounded-full text-[10px] font-bold ${
+                  i === 1
+                    ? 'border border-blue-500/30 bg-blue-500/20 text-blue-500'
+                    : 'border-border/40 bg-muted text-muted-foreground border'
+                }`}
+              >
+                {i + 1}
               </div>
-            )
-          )}
+              <div className='bg-border/40 h-px flex-1' />
+              <span className='text-muted-foreground text-xs'>{step}</span>
+            </div>
+          ))}
         </div>
       ),
     },
@@ -159,18 +161,18 @@ export function Features(_props: FeaturesProps) {
   const additionalFeatures = [
     {
       icon: <Gauge className='size-5' strokeWidth={1.5} />,
-      title: t('High Performance'),
-      desc: t('Support for high concurrency with automatic load balancing'),
+      title: t('Failover & Cooldown'),
+      desc: t('Member failover with cooldown, affinity, and circuit breaker'),
     },
     {
       icon: <DollarSign className='size-5' strokeWidth={1.5} />,
-      title: t('Transparent Billing'),
-      desc: t('Pay-as-you-go with real-time usage monitoring'),
+      title: t('Upstream Cost Visibility'),
+      desc: t('Upstream spend in CNY, derived from hourly aggregates'),
     },
     {
       icon: <Users className='size-5' strokeWidth={1.5} />,
-      title: t('Team Collaboration'),
-      desc: t('Multi-user management with flexible permission allocation'),
+      title: t('Single-user by Design'),
+      desc: t('One operator, one node — no user groups or wallet'),
     },
     {
       icon: <HeartHandshake className='size-5' strokeWidth={1.5} />,
