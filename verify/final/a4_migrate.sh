@@ -9,7 +9,7 @@
 # 安全边界：绝不写源库；渠道名/地址/key 只落在 /tmp 工作目录与报告文件，不打印到日志。
 set -uo pipefail
 
-REPO=/root/powerbar-rations
+REPO="${PBR_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 WORK=/tmp/pbr-a4-migrate
 STAMP=$(date +%Y%m%d-%H%M%S)
 EVID="$REPO/verify/final/a4-migrate-$STAMP.log"

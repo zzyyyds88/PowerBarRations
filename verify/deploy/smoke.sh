@@ -6,7 +6,7 @@
 # 只绑定 docker 网桥 IP 给容器内的假上游，不占 LAN；绝不触碰现网容器与数据卷。
 set -uo pipefail
 
-REPO=/root/powerbar-rations
+REPO="${PBR_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 WORK=/tmp/pbr-deploy
 STAMP=$(date +%Y%m%d-%H%M%S)
 EVID="$REPO/verify/deploy/run-$STAMP.log"

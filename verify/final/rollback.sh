@@ -9,7 +9,7 @@
 # 全程本地：独立端口、独立 SQLite；不触碰任何现网容器与凭据。
 set -uo pipefail
 
-REPO=/root/powerbar-rations
+REPO="${PBR_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 WORK=/tmp/pbr-rollback
 STAMP=$(date +%Y%m%d-%H%M%S)
 EVID="$REPO/verify/final/rollback-$STAMP.log"

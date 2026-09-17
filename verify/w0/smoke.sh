@@ -3,7 +3,7 @@
 # 全程本地：独立端口 6790、独立 SQLite、假上游 6801；不触碰任何现网容器与凭据。
 set -uo pipefail
 
-REPO=/root/powerbar-rations
+REPO="${PBR_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 WORK=/tmp/pbr-w0
 STAMP=$(date +%Y%m%d-%H%M%S)
 EVID="$REPO/verify/w0/run-$STAMP.log"
