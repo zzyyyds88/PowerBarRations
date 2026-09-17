@@ -1,16 +1,21 @@
 # Third-Party Licenses
 
 This file summarizes direct third-party dependencies used by distributed builds of this project.
-It is an engineering compliance artifact and should be kept with Docker images, standalone binaries, frontend bundles, and Electron installers.
+It is an engineering compliance artifact and should be kept with Docker images, standalone binaries, and frontend bundles.
 
-Scope: direct dependencies from `go.mod`, `web/package.json`, and `electron/package.json`.
+Scope: direct dependencies from `go.mod` and `web/package.json`.
 Transitive dependencies should be audited before a final external release.
+
+## Upstream Attribution
+
+Parts of the relay pipeline and vendor adapters are derived from [QuantumNous/new-api](https://github.com/QuantumNous/new-api) (AGPL-3.0).
+Routing order / cooldown / affinity / circuit-breaker semantics reference [bestruirui/octopus](https://github.com/bestruirui/octopus).
+Required attribution notices are reproduced in [`NOTICE`](NOTICE).
 
 ## Dependency Inventory
 
 | Area        | Scope       | Ecosystem | Dependency                                            | Version                              | License                                            |
 |-------------|-------------|-----------|-------------------------------------------------------|--------------------------------------|----------------------------------------------------|
-| backend     | production  | Go        | `github.com/Calcium-Ion/go-epay`                      | `v0.0.4`                             | Proprietary/Internal - owned by project maintainer |
 | backend     | production  | Go        | `github.com/abema/go-mp4`                             | `v1.4.1`                             | MIT                                                |
 | backend     | test        | Go        | `github.com/alicebob/miniredis/v2`                    | `v2.38.0`                            | MIT                                                |
 | backend     | production  | Go        | `github.com/andybalholm/brotli`                       | `v1.1.1`                             | MIT                                                |
@@ -141,9 +146,6 @@ Transitive dependencies should be audited before a final external release.
 | web | development | npm | `oxfmt` | `0.57.0` | MIT |
 | web | development | npm | `oxlint` | `1.74.0` | MIT |
 | web | development | npm | `shadcn` | `4.13.1` | MIT |
-| electron    | development | npm       | `cross-env`                                           | `7.0.3`                              | MIT                                                |
-| electron    | development | npm       | `electron`                                            | `39.8.5`                             | MIT                                                |
-| electron    | development | npm       | `electron-builder`                                    | `26.7.0`                             | MIT                                                |
 
 ## License Texts
 
@@ -307,10 +309,6 @@ https://openfontlicense.org/open-font-license-official-text/
 
 When distributing font files, preserve the OFL license text, copyright notices,
 and reserved font name restrictions supplied by the upstream font project.
-
-### Proprietary/Internal - owned by project maintainer
-
-This dependency is owned by the project maintainer and is not treated as a third-party open source dependency for this review.
 
 ### Unlicense
 

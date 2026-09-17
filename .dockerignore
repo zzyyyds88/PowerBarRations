@@ -1,0 +1,52 @@
+# 上游只读参考源码：体积大、不参与构建
+reference/
+
+# 文档与验收证据：只在仓库里，不进镜像
+docs/
+verify/
+AGENTS.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+MIGRATION.md
+web/AGENTS.md
+
+# 版本控制与 CI 配置
+.git
+.gitignore
+.github
+
+# 本地凭据与运行时数据（含嵌套目录，避免 web/.env 被 COPY 进构建）
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+*.db
+*.db-wal
+*.db-shm
+data/
+uploads/
+.uploads/
+logs/
+tmp/
+spike/
+verify/**/*.log
+
+# 依赖与构建产物（镜像内会重新构建）
+bin/
+dist/
+pbr
+*.exe
+web/node_modules/
+web/dist
+
+# 编辑器与缓存
+.DS_Store
+*.swp
+*~
+__pycache__/
+*.pyc
+*.pyo
