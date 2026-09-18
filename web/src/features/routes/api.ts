@@ -154,11 +154,20 @@ export interface PBRMemberInput {
   priority: number
 }
 
+export type PBRLaneMode = 'failover' | 'manual'
+
+/** 成员链保存选项：模式与 manual 的 active member。 */
+export interface PBRSaveLaneOptions {
+  mode?: PBRLaneMode
+  /** 仅 manual 模式：成员别名，或 "channel/upstream_model" 标签。 */
+  activeMember?: string
+}
+
 /**
- * 把某模型的成员链固化为顺序（故障切换）。
+ * 把某模型的成员链固化为顺序。
  *
- * 车道名 = 模型名，模式固定 failover：请求先打 priority 最高的成员，
- * 失败后按 routing-spec 的冷却/熔断逃逸到下一个。
+ * 车道名 = 模型名。`mode` 默认 failover（按 priority 逃逸）；
+ * `manual` 时由 `active_member` 指定唯一生效成员（routing-spec §5）。
  *
  * `config` 取系统设置里的**默认六键**（`GET /api/v1/system/options.lane_defaults`）：
  * 前端写死六键会在"用界面改一次成员顺序"时把该车道自定义过的超时/冷却/亲和
@@ -166,16 +175,18 @@ export interface PBRMemberInput {
  */
 export async function savePBRFailover(
   model: string,
-  members: PBRMemberInput[]
+  members: PBRMemberInput[],
+  options?: PBRSaveLaneOptions
 ): Promise<void> {
   const config = await loadLaneDefaults()
   // 已有车道：保留其自身六键，只提交顺序（避免用默认值覆盖自定义配置）。
-  const existing = await getPBRLaneConfig(model)
+  const existing = await getPBRLaneDetail(model)
   await api.put(`/api/v1/lanes/${encodeURIComponent(model)}`, {
     // 保存即让这条车道生效：被停用的车道在用户点保存后重新启用。
     enabled: true,
-    mode: 'failover',
-    config: existing ?? config,
+    mode: options?.mode ?? existing?.mode ?? 'failover',
+    active_member: options?.activeMember ?? existing?.activeMember ?? '',
+    config: existing?.config ?? config,
     members,
   })
 }
@@ -195,17 +206,30 @@ async function loadLaneDefaults(): Promise<Record<string, number>> {
   return BUILTIN_LANE_DEFAULTS
 }
 
-/** 取已存在车道的六键；不存在或读取失败返回 null。 */
-async function getPBRLaneConfig(
-  model: string
-): Promise<Record<string, number> | null> {
+/** 已存在车道的六键与模式；不存在或读取失败返回 null。 */
+async function getPBRLaneDetail(model: string): Promise<{
+  config: Record<string, number> | null
+  mode: PBRLaneMode | null
+  activeMember: string | null
+}> {
   try {
-    const res = await api.get<{ config?: Record<string, number> }>(
-      `/api/v1/lanes/${encodeURIComponent(model)}`
-    )
-    return res.data.config ?? null
+    const res = await api.get<{
+      config?: Record<string, number>
+      mode?: string
+      active_member?: string
+    }>(`/api/v1/lanes/${encodeURIComponent(model)}`)
+    const mode = res.data.mode
+    let parsedMode: PBRLaneMode | null = null
+    if (mode === 'manual' || mode === 'failover') {
+      parsedMode = mode
+    }
+    return {
+      config: res.data.config ?? null,
+      mode: parsedMode,
+      activeMember: res.data.active_member ?? null,
+    }
   } catch {
-    return null
+    return { config: null, mode: null, activeMember: null }
   }
 }
 

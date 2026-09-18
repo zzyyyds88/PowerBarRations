@@ -3054,6 +3054,14 @@
     "Enter a route key first.": "請先輸入路由鍵。",
     "No channel declares this key. Add the model to a channel first.": "沒有任何渠道宣告此路由鍵，請先在渠道宣告這個模型。",
     "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "目前尚無渠道宣告此路由鍵；你仍可先建立車道，再從宣告它的渠道加入成員。",
-    "Lane saved": "車道已儲存"
+    "Lane saved": "車道已儲存",
+    "failover": "故障切換",
+    "manual": "手動指定",
+    "Active member": "目前成員",
+    "Select a member": "選擇成員",
+    "Pick the active member for manual mode before saving.": "手動指定模式下請先選擇目前成員再儲存。",
+    "Add members": "新增成員",
+    "Add member channels from the candidates below.": "從下方候選中新增成員渠道。",
+    "All candidate channels are already added.": "所有候選渠道都已新增。"
   }
 }

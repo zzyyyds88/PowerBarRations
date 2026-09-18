@@ -3054,6 +3054,14 @@
     "Enter a route key first.": "Сначала введите ключ маршрута.",
     "No channel declares this key. Add the model to a channel first.": "Ни один канал не объявляет этот ключ. Сначала добавьте модель в канал.",
     "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "Пока ни один канал не объявляет этот ключ; можно создать полосу и добавить участников из каналов, которые его объявляют.",
-    "Lane saved": "Полоса сохранена"
+    "Lane saved": "Полоса сохранена",
+    "failover": "отказоустойчивый",
+    "manual": "ручной",
+    "Active member": "Активный участник",
+    "Select a member": "Выберите участника",
+    "Pick the active member for manual mode before saving.": "Для ручного режима выберите активного участника перед сохранением.",
+    "Add members": "Добавить участников",
+    "Add member channels from the candidates below.": "Добавьте каналы-участники из кандидатов ниже.",
+    "All candidate channels are already added.": "Все каналы-кандидаты уже добавлены."
   }
 }

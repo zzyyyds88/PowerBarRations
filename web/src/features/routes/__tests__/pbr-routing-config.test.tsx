@@ -284,6 +284,7 @@ describe('savePBRFailover 六键来源', () => {
     expect(mockedPut).toHaveBeenCalledWith('/api/v1/lanes/model-1', {
       enabled: true,
       mode: 'failover',
+      active_member: '',
       config: {
         member_max_attempts: 5,
         member_retry_interval_seconds: 0,
@@ -559,5 +560,45 @@ describe('手工成员链（无一键固化入口）', () => {
       'channel-a',
       'channel-c',
     ])
+  })
+
+  // manual 模式：保存时必须带上 mode 与 active_member（routing-spec §5）。
+  test('manual 模式保存带上 active_member', async () => {
+    mockConfiguredLane()
+    mockedPut.mockResolvedValue({ data: {} } as never)
+    const user = userEvent.setup()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    // 切换到 manual 并指定 channel-a 为当前成员。
+    await user.click(screen.getByRole('combobox', { name: 'Mode' }))
+    await user.click(await screen.findByRole('option', { name: 'manual' }))
+    await user.click(screen.getByRole('combobox', { name: 'Active member' }))
+    await user.click(await screen.findByRole('option', { name: /channel-a/ }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      { mode: string; active_member: string },
+    ]
+    expect(body.mode).toBe('manual')
+    expect(body.active_member).toBe('channel-a/real-a')
+  })
+
+  // manual 模式未选 active member 时保存必须被拦截。
+  test('manual 模式未选 active member 时禁止保存', async () => {
+    mockConfiguredLane()
+    const user = userEvent.setup()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    await user.click(screen.getByRole('combobox', { name: 'Mode' }))
+    await user.click(await screen.findByRole('option', { name: 'manual' }))
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(
+      screen.getByText('Pick the active member for manual mode before saving.')
+    ).toBeVisible()
   })
 })

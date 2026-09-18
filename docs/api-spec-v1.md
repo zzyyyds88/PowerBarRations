@@ -256,9 +256,11 @@
   `GET /api/stats?group_by=key` 中同名 `key_name` 的 `estimated_cost` 跨时间总计。
   数据源是**小时聚合表**（与看板/日志同源），因此 `POST /logs/prune` 清理明细后该值不变。
   从无请求或聚合表为空时为 `0`。该字段是**统计展示**，不参与任何鉴权、限额或拒绝逻辑。
-- **`lane_policy.allow_lanes` 必须是存在的路由键**：写入既无同名车道、也无任何启用渠道声明的键
-  会被拒绝（422 `validation_failed`，message 列出未知键）。否则令牌表面"允许了模型 X"，实际是死键——
-  请求得到 503 而非 403，用户分不清是权限还是没配车道（token-spec §3.2）。
+- **`lane_policy.allow_lanes` / `deny_lanes` 必须是存在的路由键**：写入既无同名车道、也无任何启用渠道
+  声明的键会被拒绝（422 `validation_failed`，message 列出未知键）。否则令牌表面"允许/拒绝了模型 X"，
+  实际是死键——请求得到 503 而非 403，用户分不清是权限还是没配车道（token-spec §3.2）。两个字段对称校验。
+- **`lane_policy.mode` 非法值在写入时报错**（422）：只接受 `all` / `allow`。读取历史数据仍宽容回落
+  `all`（避免存量脏数据让密钥不可用），但写入不得静默放宽权限。
 - PBR **没有额度语义**：不存在 `remain_quota` / `used_quota` / `unlimited_quota` /
   钱包 / 订阅字段（design-v1 §1.3、token-spec-v1.md §5）。创建/更新请求体也**不接受**额度字段。
 
@@ -278,15 +280,15 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`model_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`）与 `system_options`。 |
-| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。导出文件可跨实例还原配置，但**密钥明文不在文件里**（需另行注入） |
+| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。**导出文件可跨实例还原配置**（bundle 内声明的渠道在构造车道时即视为存在，成员按名字回填真实渠道 id）；只有"bundle 与库里都没有"的成员才被跳过，并在 `warnings` / `diff.skipped` 列出，成员清空的启用车道转为停用。**密钥明文不在文件里**（需另行注入） |
 
 ### 5.7 模型路由（车道）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计渠道存在且启用的成员，供界面标注"含不可用"）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（全部成员当前不可选时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
-| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（声明了该模型但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
-| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它 |
+| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（**声明或 `model_mapping` 映射**了该模型、但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
+| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/upstream_model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它 |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
 

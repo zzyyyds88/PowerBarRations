@@ -17,14 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -46,7 +45,10 @@ export function NewLaneDialog(props: {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [name, setName] = useState('')
-  const [picked, setPicked] = useState<string[]>([])
+  // 已选成员：顺序即优先级，可上移/下移/移除，并可改上游真名（空 = 用渠道映射）。
+  const [picked, setPicked] = useState<
+    { channel: string; upstream_model: string }[]
+  >([])
 
   const modelsQuery = useQuery({
     queryKey: pbrModelsQueryKey,
@@ -66,14 +68,11 @@ export function NewLaneDialog(props: {
   const save = useMutation({
     mutationFn: async () => {
       const trimmed = name.trim()
-      const members = picked.map((channel, index) => {
-        const found = candidates.find((c) => c.channel === channel)
-        return {
-          channel,
-          upstream_model: found?.upstream_model ?? '',
-          priority: picked.length - index,
-        }
-      })
+      const members = picked.map((member, index) => ({
+        channel: member.channel,
+        upstream_model: member.upstream_model,
+        priority: picked.length - index,
+      }))
       await savePBRFailover(trimmed, members)
     },
     onSuccess: async () => {
@@ -87,6 +86,31 @@ export function NewLaneDialog(props: {
       toast.error(error instanceof Error ? error.message : String(error))
     },
   })
+
+  const addMember = (channel: string, upstream: string) => {
+    setPicked((prev) => {
+      if (prev.some((m) => m.channel === channel)) return prev
+      return [...prev, { channel, upstream_model: upstream }]
+    })
+  }
+  const removeMember = (channel: string) => {
+    setPicked((prev) => prev.filter((m) => m.channel !== channel))
+  }
+  const moveMember = (index: number, delta: number) => {
+    setPicked((prev) => {
+      const target = index + delta
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      const [item] = next.splice(index, 1)
+      next.splice(target, 0, item)
+      return next
+    })
+  }
+  const renameMember = (index: number, value: string) => {
+    setPicked((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, upstream_model: value } : m))
+    )
+  }
 
   const trimmed = name.trim()
   const canSave = trimmed.length > 0 && picked.length > 0 && !save.isPending
@@ -113,32 +137,32 @@ export function NewLaneDialog(props: {
       </p>
     )
   } else {
-    memberPicker = (
-      <div className='space-y-1.5'>
-        {candidates.map((candidate) => (
-          <label
-            key={candidate.channel}
-            className='flex cursor-pointer items-center gap-2 text-sm'
-          >
-            <Checkbox
-              checked={picked.includes(candidate.channel)}
-              onCheckedChange={(checked) =>
-                setPicked((prev) =>
-                  checked
-                    ? [...prev, candidate.channel]
-                    : prev.filter((c) => c !== candidate.channel)
-                )
-              }
-              aria-label={candidate.channel}
-            />
-            <span className='font-mono'>{candidate.channel}</span>
-            <span className='text-muted-foreground text-xs'>
-              {candidate.upstream_model}
-            </span>
-          </label>
-        ))}
-      </div>
+    const remaining = candidates.filter(
+      (candidate) => !picked.some((m) => m.channel === candidate.channel)
     )
+    memberPicker =
+      remaining.length === 0 ? (
+        <p className='text-muted-foreground text-xs'>
+          {t('All candidate channels are already added.')}
+        </p>
+      ) : (
+        <div className='flex flex-wrap gap-2'>
+          {remaining.map((candidate) => (
+            <Button
+              key={candidate.channel}
+              type='button'
+              size='sm'
+              variant='outline'
+              onClick={() =>
+                addMember(candidate.channel, candidate.upstream_model)
+              }
+            >
+              <Plus className='size-3.5' />
+              <span className='font-mono'>{candidate.channel}</span>
+            </Button>
+          ))}
+        </div>
+      )
   }
 
   return (
@@ -192,6 +216,69 @@ export function NewLaneDialog(props: {
 
         <div className='space-y-1.5'>
           <Label>{t('Member channels')}</Label>
+          {picked.length === 0 ? (
+            <p className='text-muted-foreground text-xs'>
+              {t('Add member channels from the candidates below.')}
+            </p>
+          ) : (
+            <div className='space-y-1.5'>
+              {picked.map((member, index) => (
+                <div
+                  key={member.channel}
+                  className='flex items-center gap-2 rounded-md border p-2'
+                >
+                  <span className='text-muted-foreground w-5 text-center text-xs'>
+                    {index + 1}
+                  </span>
+                  <span className='font-mono text-sm'>{member.channel}</span>
+                  <Input
+                    className='h-8 flex-1'
+                    aria-label={t('Upstream model for {{channel}}', {
+                      channel: member.channel,
+                    })}
+                    placeholder={t('Use channel mapping')}
+                    value={member.upstream_model}
+                    onChange={(event) =>
+                      renameMember(index, event.target.value)
+                    }
+                  />
+                  <Button
+                    type='button'
+                    size='icon'
+                    variant='ghost'
+                    aria-label={t('Move up')}
+                    disabled={index === 0}
+                    onClick={() => moveMember(index, -1)}
+                  >
+                    <ArrowUp className='size-4' />
+                  </Button>
+                  <Button
+                    type='button'
+                    size='icon'
+                    variant='ghost'
+                    aria-label={t('Move down')}
+                    disabled={index === picked.length - 1}
+                    onClick={() => moveMember(index, 1)}
+                  >
+                    <ArrowDown className='size-4' />
+                  </Button>
+                  <Button
+                    type='button'
+                    size='icon'
+                    variant='ghost'
+                    aria-label={t('Remove member')}
+                    onClick={() => removeMember(member.channel)}
+                  >
+                    <Trash2 className='size-4' />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className='space-y-1.5'>
+          <Label>{t('Add members')}</Label>
           {memberPicker}
         </div>
       </div>

@@ -3054,6 +3054,14 @@
     "Enter a route key first.": "Saisissez d abord une clé de route.",
     "No channel declares this key. Add the model to a channel first.": "Aucun canal ne déclare cette clé. Ajoutez d abord le modèle à un canal.",
     "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "Aucun canal ne déclare encore cette clé ; vous pouvez créer la voie puis ajouter des membres depuis les canaux qui la déclarent.",
-    "Lane saved": "Voie enregistrée"
+    "Lane saved": "Voie enregistrée",
+    "failover": "bascule",
+    "manual": "manuel",
+    "Active member": "Membre actif",
+    "Select a member": "Choisir un membre",
+    "Pick the active member for manual mode before saving.": "Choisissez le membre actif pour le mode manuel avant d enregistrer.",
+    "Add members": "Ajouter des membres",
+    "Add member channels from the candidates below.": "Ajoutez des canaux membres depuis les candidats ci-dessous.",
+    "All candidate channels are already added.": "Tous les canaux candidats sont déjà ajoutés."
   }
 }

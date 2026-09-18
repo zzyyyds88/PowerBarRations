@@ -3054,6 +3054,14 @@
     "Enter a route key first.": "Hãy nhập khoá định tuyến trước.",
     "No channel declares this key. Add the model to a channel first.": "Chưa có kênh nào khai báo khoá này. Hãy thêm model vào kênh trước.",
     "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "Chưa có kênh nào khai báo khoá này; bạn vẫn có thể tạo làn rồi thêm thành viên từ các kênh khai báo nó.",
-    "Lane saved": "Đã lưu làn"
+    "Lane saved": "Đã lưu làn",
+    "failover": "chuyển đổi dự phòng",
+    "manual": "thủ công",
+    "Active member": "Thành viên hoạt động",
+    "Select a member": "Chọn thành viên",
+    "Pick the active member for manual mode before saving.": "Chế độ thủ công cần chọn thành viên hoạt động trước khi lưu.",
+    "Add members": "Thêm thành viên",
+    "Add member channels from the candidates below.": "Thêm kênh thành viên từ danh sách bên dưới.",
+    "All candidate channels are already added.": "Tất cả kênh ứng viên đã được thêm."
   }
 }

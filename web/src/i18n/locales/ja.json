@@ -3054,6 +3054,14 @@
     "Enter a route key first.": "先にルートキーを入力してください。",
     "No channel declares this key. Add the model to a channel first.": "このルートキーを宣言するチャネルがありません。先にチャネルへモデルを追加してください。",
     "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "このルートキーを宣言するチャネルはまだありません。先にレーンを作成し、宣言するチャネルからメンバーを追加できます。",
-    "Lane saved": "レーンを保存しました"
+    "Lane saved": "レーンを保存しました",
+    "failover": "フェイルオーバー",
+    "manual": "手動指定",
+    "Active member": "使用メンバー",
+    "Select a member": "メンバーを選択",
+    "Pick the active member for manual mode before saving.": "手動指定モードでは保存前に使用メンバーを選択してください。",
+    "Add members": "メンバーを追加",
+    "Add member channels from the candidates below.": "下の候補からメンバーチャネルを追加します。",
+    "All candidate channels are already added.": "すべての候補チャネルが追加済みです。"
   }
 }

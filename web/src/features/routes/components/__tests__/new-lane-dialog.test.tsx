@@ -77,9 +77,8 @@ describe('新建车道', () => {
     renderDialog()
 
     await user.type(screen.getByLabelText('Route key'), 'custom-key')
-    // 点击候选渠道所在 label（base-ui Checkbox 的可访问名不在 checkbox 角色上）。
-    const candidateLabel = await screen.findByText('channel-a')
-    await user.click(candidateLabel)
+    // 候选渠道以「添加」按钮呈现。
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
@@ -91,5 +90,63 @@ describe('新建车道', () => {
     expect(body.members).toEqual([
       { channel: 'channel-a', upstream_model: 'real-a', priority: 1 },
     ])
+  })
+
+  test('成员可排序、可改上游真名，顺序与 upstream_model 随保存提交', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return { data: { items: [] } } as never
+      }
+      if (url.startsWith('/api/v1/routes/')) {
+        return {
+          data: {
+            model: 'pooled',
+            source: 'unconfigured',
+            routable: false,
+            members: [
+              {
+                channel_id: 1,
+                channel: 'channel-a',
+                upstream_model: 'real-a',
+                priority: 2,
+              },
+              {
+                channel_id: 2,
+                channel: 'channel-b',
+                upstream_model: 'real-b',
+                priority: 1,
+              },
+            ],
+          },
+        } as never
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const user = userEvent.setup()
+    renderDialog()
+
+    await user.type(screen.getByLabelText('Route key'), 'pooled')
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /channel-b/ }))
+    // 把第二个成员上移，并给它改名。
+    await user.click(screen.getAllByRole('button', { name: 'Move up' })[1])
+    const renameInput = screen.getByLabelText('Upstream model for channel-b')
+    await user.clear(renameInput)
+    await user.type(renameInput, 'vendor-b')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      {
+        members: { channel: string; upstream_model: string; priority: number }[]
+      },
+    ]
+    expect(body.members.map((m) => m.channel)).toEqual([
+      'channel-b',
+      'channel-a',
+    ])
+    expect(body.members[0].upstream_model).toBe('vendor-b')
+    expect(body.members[0].priority).toBeGreaterThan(body.members[1].priority)
   })
 })

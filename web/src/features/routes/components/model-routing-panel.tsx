@@ -37,6 +37,13 @@ import { EmptyState } from '@/components/empty-state'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 
@@ -46,6 +53,7 @@ import {
   listPBRModels,
   savePBRFailover,
   pbrModelsQueryKey,
+  type PBRLaneMode,
   type PBRModelSummary,
 } from '../api'
 
@@ -230,6 +238,9 @@ function RouteEditor({
   const { t } = useTranslation()
   const [draft, setDraft] = useState<EditableMember[] | null>(null)
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  // 模式与 active member 也走草稿语义：改动即 dirty，关闭/切换时一并确认放弃。
+  const [modeDraft, setModeDraft] = useState<PBRLaneMode | null>(null)
+  const [activeDraft, setActiveDraft] = useState<string | null>(null)
 
   const routeQuery = useQuery({
     queryKey: routeKey(model),
@@ -258,6 +269,18 @@ function RouteEditor({
       )
 
   const members: EditableMember[] = [...(draft ?? sourceMembers)]
+  const currentMode: PBRLaneMode =
+    modeDraft ?? (routeQuery.data?.mode === 'manual' ? 'manual' : 'failover')
+  const currentActive = activeDraft ?? routeQuery.data?.active_member ?? ''
+  // manual 的 active member 取值：优先成员别名，其次 "channel/upstream_model" 标签
+  // （与后端 activeMemberIndex 的匹配规则一致）。
+  const memberOptions = members.map((m) => {
+    const alias = routeQuery.data?.members.find(
+      (x) => x.channel === m.channel
+    )?.public_alias
+    const value = alias ? alias : m.channel + '/' + m.upstream_model
+    return { value, label: alias ? alias + ' (' + m.channel + ')' : value }
+  })
 
   // 统一维护草稿并同步脏状态，避免切换/关闭时静默丢弃。
   const updateDraft = (next: EditableMember[] | null) => {
@@ -324,11 +347,17 @@ function RouteEditor({
           channel: m.channel,
           upstream_model: m.upstream_override,
           priority: m.priority,
-        }))
+        })),
+        {
+          mode: currentMode,
+          activeMember: currentMode === 'manual' ? currentActive : '',
+        }
       ),
     onSuccess: async () => {
       toast.success(t('Failover order saved'))
       updateDraft(null)
+      setModeDraft(null)
+      setActiveDraft(null)
       await onSaved()
     },
     onError: (error: unknown) => {
@@ -350,7 +379,9 @@ function RouteEditor({
     },
   })
 
-  const dirty = draft !== null
+  const dirty = draft !== null || modeDraft !== null || activeDraft !== null
+  // manual 模式必须指定 active member，否则车道无可选成员（后端 activeMemberIndex 返回 -1）。
+  const manualMissingActive = currentMode === 'manual' && currentActive === ''
 
   let body
   if (routeQuery.isLoading) {
@@ -374,6 +405,59 @@ function RouteEditor({
             {t(
               'No lane configured yet — add members and save to make this model callable.'
             )}
+          </p>
+        )}
+        <div className='flex flex-wrap items-center gap-3'>
+          <div className='flex items-center gap-2'>
+            <span className='text-xs font-medium'>{t('Mode')}</span>
+            <Select
+              value={currentMode}
+              onValueChange={(value) => {
+                setModeDraft(value === 'manual' ? 'manual' : 'failover')
+                if (value !== 'manual') setActiveDraft('')
+              }}
+            >
+              <SelectTrigger
+                size='sm'
+                aria-label={t('Mode')}
+                className='w-[140px]'
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='failover'>{t('failover')}</SelectItem>
+                <SelectItem value='manual'>{t('manual')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {currentMode === 'manual' && (
+            <div className='flex items-center gap-2'>
+              <span className='text-xs font-medium'>{t('Active member')}</span>
+              <Select
+                value={currentActive}
+                onValueChange={(value) => setActiveDraft(value ?? '')}
+              >
+                <SelectTrigger
+                  size='sm'
+                  aria-label={t('Active member')}
+                  className='w-[220px]'
+                >
+                  <SelectValue placeholder={t('Select a member')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {memberOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+        {manualMissingActive && (
+          <p className='text-destructive text-xs'>
+            {t('Pick the active member for manual mode before saving.')}
           </p>
         )}
         <p className='text-muted-foreground text-xs'>
@@ -478,15 +562,26 @@ function RouteEditor({
     )
   }
 
+  // 单层判定，避免嵌套三元（AGENTS §3.2）。
+  let saveDisabledReason: string | undefined
+  if (emptyDraft) {
+    saveDisabledReason = t('Keep at least one member, or remove the lane.')
+  } else if (manualMissingActive) {
+    saveDisabledReason = t(
+      'Pick the active member for manual mode before saving.'
+    )
+  }
+
   const saveButton = (
     <Button
       size='sm'
-      disabled={(!dirty && !laneDisabled) || emptyDraft || save.isPending}
-      title={
-        emptyDraft
-          ? t('Keep at least one member, or remove the lane.')
-          : undefined
+      disabled={
+        (!dirty && !laneDisabled) ||
+        emptyDraft ||
+        manualMissingActive ||
+        save.isPending
       }
+      title={saveDisabledReason}
       onClick={() => save.mutate()}
     >
       {save.isPending ? (

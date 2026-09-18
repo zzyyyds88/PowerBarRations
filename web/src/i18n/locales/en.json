@@ -3054,6 +3054,14 @@
     "Enter a route key first.": "Enter a route key first.",
     "No channel declares this key. Add the model to a channel first.": "No channel declares this key. Add the model to a channel first.",
     "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "No channel declares this key yet — you can still create the lane and add members from channels that declare it.",
-    "Lane saved": "Lane saved"
+    "Lane saved": "Lane saved",
+    "failover": "failover",
+    "manual": "manual",
+    "Active member": "Active member",
+    "Select a member": "Select a member",
+    "Pick the active member for manual mode before saving.": "Pick the active member for manual mode before saving.",
+    "Add members": "Add members",
+    "Add member channels from the candidates below.": "Add member channels from the candidates below.",
+    "All candidate channels are already added.": "All candidate channels are already added."
   }
 }
