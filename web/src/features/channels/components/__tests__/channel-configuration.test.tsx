@@ -28,6 +28,7 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError } from 'axios'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
@@ -46,13 +47,38 @@ let editingChannel: Channel
 
 function deferredResponse<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((finish) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((finish, fail) => {
     resolve = finish
+    reject = fail
   })
-  return { promise, resolve }
+  // 避免未处理的 rejection 噪声；调用方仍可用 await/catch 观察。
+  promise.catch(() => undefined)
+  return { promise, resolve, reject }
 }
 
 type UserEventInstance = ReturnType<typeof userEvent.setup>
+
+/**
+ * 车道引用冲突（api-spec §3）：基座面 PUT /api/channel/ 是
+ * 409 + code=models_referenced_by_lanes + details.lanes；稳定面是
+ * 409 + code=conflict + details.lanes。details 是权威来源。
+ */
+function referencedModelsFailure(
+  message: string,
+  lanes: string[] = ['custom-model'],
+  code = 'models_referenced_by_lanes'
+): AxiosError {
+  const failure = new AxiosError(message)
+  failure.response = {
+    data: { error: { code, message, details: { lanes } } },
+    status: 409,
+    statusText: 'Conflict',
+    headers: {},
+    config: { headers: {} },
+  } as typeof failure.response
+  return failure
+}
 
 // 基本信息区现在只选 4 个上游协议（ui-spec §6.4）。下拉展示的是选项 label，
 // 因此先把「短协议名」映射到完整 i18n label，再按 label 选择。
@@ -149,26 +175,23 @@ beforeEach(() => {
   })
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/channel/42') {
-      return { data: { success: true, data: editingChannel } }
+      return { data: editingChannel }
     }
     if (url === '/api/channel/fetch_models/42') {
-      return { data: { success: true, data: ['upstream-model'] } }
+      return { data: ['upstream-model'] }
     }
     if (url === '/api/channel/default_base_urls') {
       return {
         data: {
-          success: true,
-          data: {
-            22: 'https://fastgpt.server.example/api/openapi',
-            24: 'https://gemini.server.example',
-            43: 'https://deepseek.server.example',
-            45: 'https://volcengine.server.example',
-          },
+          22: 'https://fastgpt.server.example/api/openapi',
+          24: 'https://gemini.server.example',
+          43: 'https://deepseek.server.example',
+          45: 'https://volcengine.server.example',
         },
       }
     }
     if (url === '/api/prefill_group') {
-      return { data: { success: true, data: [] } }
+      return { data: [] }
     }
     throw new Error(`Unexpected GET ${url}`)
   })
@@ -238,9 +261,7 @@ test.each([
   'editing legacy type $type keeps the server URL placeholder out of the saved address and keeps the type',
   async ({ type, label, url, savedUrl, legacyOption }) => {
     editingChannel.type = type
-    const put = vi
-      .spyOn(api, 'put')
-      .mockResolvedValue({ data: { success: true } })
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
     const user = userEvent.setup()
     render(<ConfigurationHarness currentRow={editingChannel} />)
     await screen.findByDisplayValue('Existing channel')
@@ -282,9 +303,7 @@ test('an unavailable default URL endpoint keeps the fallback placeholder and all
     }
     return originalGet?.(url, config)
   })
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -451,17 +470,13 @@ test('an invalid setting in another category is revealed and focused on submissi
 })
 
 test('a failed creation keeps its draft and prevents duplicate submission while pending', async () => {
-  const reply = deferredResponse<{
-    data: { success: boolean; message: string }
-  }>()
+  const reply = deferredResponse<{ data: unknown }>()
   // Only the channel-create call stays pending; model discovery resolves so a
   // late debounced fetch cannot be counted as a duplicate submission.
   const post = vi
     .spyOn(api, 'post')
     .mockImplementation(async (url) =>
-      url === '/api/channel'
-        ? reply.promise
-        : { data: { success: true, data: [] } }
+      url === '/api/channel' ? reply.promise : { data: [] }
     )
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
@@ -484,10 +499,22 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
     post.mock.calls.filter(([url]) => url === '/api/channel')
   ).toHaveLength(1)
   await act(async () => {
-    reply.resolve({
-      data: { success: false, message: 'Upstream configuration rejected' },
-    })
-    await reply.promise
+    // 新契约：失败是非 2xx + 错误包络，由 axios 拒绝承载。
+    const failure = new AxiosError('Upstream configuration rejected')
+    failure.response = {
+      data: {
+        error: {
+          code: 'validation_failed',
+          message: 'Upstream configuration rejected',
+        },
+      },
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {},
+      config: { headers: {} },
+    } as typeof failure.response
+    reply.reject(failure)
+    await reply.promise.catch(() => undefined)
   })
   await waitFor(() =>
     expect(screen.getByRole('button', { name: 'Create Channel' })).toBeEnabled()
@@ -499,14 +526,10 @@ test('a failed creation keeps its draft and prevents duplicate submission while 
 })
 
 test('model discovery discards a response for old credentials and retains manually selected models', async () => {
-  const oldReply = deferredResponse<{
-    data: { success: boolean; data: string[] }
-  }>()
+  const oldReply = deferredResponse<{ data: unknown }>()
   vi.spyOn(api, 'post')
     .mockReturnValueOnce(oldReply.promise)
-    .mockResolvedValueOnce({
-      data: { success: true, data: ['current-upstream-model'] },
-    })
+    .mockResolvedValueOnce({ data: ['current-upstream-model'] })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
   // The form opens on the default OpenAI type, so only the key is needed.
@@ -527,7 +550,7 @@ test('model discovery discards a response for old credentials and retains manual
     )
   ).toBeVisible()
   await act(async () => {
-    oldReply.resolve({ data: { success: true, data: ['old-upstream-model'] } })
+    oldReply.resolve({ data: ['old-upstream-model'] })
     await oldReply.promise
   })
   // The stale response must not open the dialog nor leak its candidates.
@@ -550,11 +573,20 @@ test('model discovery discards a response for old credentials and retains manual
 })
 
 test('model discovery reports failures inline and allows an empty result to fall back to manual models', async () => {
+  // 新契约：探测失败是 axios 拒绝（§3 错误包络）。
+  const discoveryFailure = new AxiosError('Upstream rejected the key')
+  discoveryFailure.response = {
+    data: {
+      error: { code: 'upstream_error', message: 'Upstream rejected the key' },
+    },
+    status: 502,
+    statusText: 'Bad Gateway',
+    headers: {},
+    config: { headers: {} },
+  } as typeof discoveryFailure.response
   vi.spyOn(api, 'post')
-    .mockResolvedValueOnce({
-      data: { success: false, message: 'Upstream rejected the key' },
-    })
-    .mockResolvedValueOnce({ data: { success: true, data: [] } })
+    .mockRejectedValueOnce(discoveryFailure)
+    .mockResolvedValueOnce({ data: [] })
   const user = userEvent.setup()
   render(<ConfigurationHarness />)
   // The form opens on the default OpenAI type, so only the key is needed.
@@ -593,13 +625,11 @@ test('editing opens the shared configuration and omits an unchanged key on updat
   const originalGet = vi.mocked(api.get).getMockImplementation()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
     if (url === '/api/channel/42') {
-      return { data: { success: true, data: channel } }
+      return { data: channel }
     }
     return originalGet?.(url, config)
   })
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={channel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
@@ -626,9 +656,7 @@ test('editing opens the shared configuration and omits an unchanged key on updat
 
 test('editing a legacy channel shows only its current type and does not rewrite type or protocol', async () => {
   editingChannel = { ...editingChannel, type: 55 }
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -875,9 +903,7 @@ test('the Models area keeps no always-on combobox and focuses the manual input w
 test('probing opens a centered dialog that seeds the current selection and persists changes only when the channel is saved', async () => {
   editingChannel.models = 'gpt-one,manual-model,alias'
   const post = vi.spyOn(api, 'post')
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -962,12 +988,7 @@ test('the discovery dialog distinguishes existing from new candidates and applie
   const originalGet = vi.mocked(api.get).getMockImplementation()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
     if (url === '/api/channel/fetch_models/42') {
-      return {
-        data: {
-          success: true,
-          data: ['gpt-one', 'gpt-two', 'fresh-alpha', 'fresh-beta'],
-        },
-      }
+      return { data: ['gpt-one', 'gpt-two', 'fresh-alpha', 'fresh-beta'] }
     }
     return originalGet?.(url, config)
   })
@@ -1091,7 +1112,7 @@ test('advanced custom edits preview draft connection settings with the saved key
   }
   const post = vi
     .spyOn(api, 'post')
-    .mockResolvedValue({ data: { success: true, data: ['preview-model'] } })
+    .mockResolvedValue({ data: ['preview-model'] })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -1138,9 +1159,7 @@ test('an operator without sensitive write permission can discover saved models a
       },
     },
   })
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -1192,9 +1211,7 @@ test.each([
       multi_key_size: 2,
       multi_key_mode: initialMode,
     }
-    const put = vi
-      .spyOn(api, 'put')
-      .mockResolvedValue({ data: { success: true } })
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
     const user = userEvent.setup()
     render(<ConfigurationHarness currentRow={editingChannel} />)
     await screen.findByDisplayValue('Existing channel')
@@ -1217,9 +1234,7 @@ test.each([
 )
 
 test('single-key editing omits the multi-key strategy control and update field', async () => {
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   expect(
@@ -1241,9 +1256,7 @@ test.each(['append', 'replace'])(
         multi_key_size: 2,
       },
     }
-    const put = vi
-      .spyOn(api, 'put')
-      .mockResolvedValue({ data: { success: true } })
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
     const user = userEvent.setup()
     render(<ConfigurationHarness currentRow={editingChannel} />)
     await screen.findByDisplayValue('Existing channel')
@@ -1268,9 +1281,16 @@ test.each(['append', 'replace'])(
 )
 
 test('a failed update retains the draft through a background detail refetch', async () => {
-  vi.spyOn(api, 'put').mockResolvedValue({
-    data: { success: false, message: 'Update failed' },
-  })
+  // 新契约：更新失败是 axios 拒绝（§3 错误包络）。
+  const updateFailure = new AxiosError('Update failed')
+  updateFailure.response = {
+    data: { error: { code: 'validation_failed', message: 'Update failed' } },
+    status: 400,
+    statusText: 'Bad Request',
+    headers: {},
+    config: { headers: {} },
+  } as typeof updateFailure.response
+  vi.spyOn(api, 'put').mockRejectedValue(updateFailure)
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -1288,18 +1308,16 @@ test('a failed update retains the draft through a background detail refetch', as
 })
 
 test('switching edited channels discards a pending model list from the previous channel', async () => {
-  const reply = deferredResponse<{
-    data: { success: boolean; data: string[] }
-  }>()
+  const reply = deferredResponse<{ data: unknown }>()
   const otherChannel = { ...editingChannel, id: 43, name: 'Second channel' }
   const originalGet = vi.mocked(api.get).getMockImplementation()
   vi.mocked(api.get).mockImplementation(async (url, config) => {
     if (url === '/api/channel/fetch_models/42') return reply.promise
     if (url === '/api/channel/43') {
-      return { data: { success: true, data: otherChannel } }
+      return { data: otherChannel }
     }
     if (url === '/api/channel/fetch_models/43') {
-      return { data: { success: true, data: ['second-model'] } }
+      return { data: ['second-model'] }
     }
     return originalGet?.(url, config)
   })
@@ -1320,7 +1338,7 @@ test('switching edited channels discards a pending model list from the previous 
   const dialog = await openDiscoveryDialog()
   expect(dialog.getByRole('checkbox', { name: 'second-model' })).toBeVisible()
   await act(async () => {
-    reply.resolve({ data: { success: true, data: ['first-model'] } })
+    reply.resolve({ data: ['first-model'] })
   })
   // The late first-channel response must not replace the second channel's
   // candidates inside the open picker.
@@ -1332,9 +1350,7 @@ test('switching edited channels discards a pending model list from the previous 
 
 test('an unknown saved type remains editable without selecting a new provider', async () => {
   editingChannel = { ...editingChannel, type: 999 }
-  const put = vi
-    .spyOn(api, 'put')
-    .mockResolvedValue({ data: { success: true } })
+  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: {} })
   render(<ConfigurationHarness currentRow={editingChannel} />)
   expect(await screen.findByDisplayValue('Existing channel')).toBeVisible()
   // Unknown saved types stay editable and keep their own "Current" option.
@@ -1408,20 +1424,11 @@ test('removing a model still referenced by a lane confirms and retries with clea
   editingChannel.models = 'custom-model,keep-model'
   const put = vi
     .spyOn(api, 'put')
+    .mockRejectedValueOnce(
+      referencedModelsFailure('以下模型仍被车道引用：custom-model')
+    )
     .mockResolvedValueOnce({
-      data: {
-        success: false,
-        code: 'models_referenced_by_lanes',
-        message: '以下模型仍被车道引用：custom-model',
-        data: { lanes: ['custom-model'] },
-      },
-    })
-    .mockResolvedValueOnce({
-      data: {
-        success: true,
-        cleaned_lanes: ['custom-model'],
-        deleted_lanes: [],
-      },
+      data: { cleaned_lanes: ['custom-model'], deleted_lanes: [] },
     })
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
@@ -1447,16 +1454,48 @@ test('removing a model still referenced by a lane confirms and retries with clea
   })
 })
 
+// 稳定面口径：409 + code=conflict + details.lanes（与基座面的
+// models_referenced_by_lanes 并存）。details 是权威来源，确认框必须照常弹出。
+test('a stable-surface 409 conflict with details.lanes also opens the cleanup confirmation', async () => {
+  editingChannel.models = 'custom-model,keep-model'
+  const put = vi
+    .spyOn(api, 'put')
+    .mockRejectedValueOnce(
+      referencedModelsFailure(
+        'refusing to remove models still referenced by lanes: custom-model',
+        ['custom-model'],
+        'conflict'
+      )
+    )
+    .mockResolvedValueOnce({
+      data: { cleaned_lanes: ['custom-model'], deleted_lanes: [] },
+    })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    modelsGroup().getByRole('button', { name: 'Remove custom-model' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+
+  const confirm = await screen.findByRole('alertdialog', {
+    name: 'Models still referenced by lanes',
+  })
+  expect(within(confirm).getByText('custom-model')).toBeVisible()
+  await user.click(
+    within(confirm).getByRole('button', { name: 'Remove and save' })
+  )
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(2))
+  expect(put.mock.calls[1]?.[1]).toMatchObject({ cleanup_models: true })
+})
+
 test('cancelling the referenced-model cleanup keeps the draft and the save dialog open', async () => {
   editingChannel.models = 'custom-model,keep-model'
-  const put = vi.spyOn(api, 'put').mockResolvedValue({
-    data: {
-      success: false,
-      code: 'models_referenced_by_lanes',
-      message: '以下模型仍被车道引用：custom-model',
-      data: { lanes: ['custom-model'] },
-    },
-  })
+  const put = vi
+    .spyOn(api, 'put')
+    .mockRejectedValue(
+      referencedModelsFailure('以下模型仍被车道引用：custom-model')
+    )
   const user = userEvent.setup()
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')

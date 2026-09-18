@@ -84,27 +84,18 @@ export interface SearchModelsParams {
 }
 
 /**
- * Get models response
+ * 模型目录列表（基座面 \`GET /api/console/models/\`）：仍按 page/page_size 分页并
+ * 返回 total（分页参数由请求端控制）。
  */
 export interface GetModelsResponse {
-  success: boolean
-  message?: string
-  data?: {
-    items: Model[]
-    total: number
-    page: number
-    page_size: number
-  }
+  items: Model[]
+  total: number
+  page: number
+  page_size: number
 }
 
-/**
- * Get model detail response
- */
-export interface GetModelResponse {
-  success: boolean
-  message?: string
-  data?: Model
-}
+/** \`GET /api/console/models/:id\` 成功即裸模型对象。 */
+export type GetModelResponse = Model
 
 /**
  * Sync diff data
@@ -160,25 +151,14 @@ export type MetadataSyncResult = {
   created_models: string[]
   updated_models: MetadataSyncSelection[]
 }
-export interface SyncUpstreamResponse {
-  success: boolean
-  message?: string
-  data?: MetadataSyncResult
-}
-export interface PreviewUpstreamDiffResponse {
-  success: boolean
-  message?: string
-  data?: MetadataSyncPreview
-}
+/** \`POST /api/console/models/sync_upstream\` 成功即裸同步结果。 */
+export type SyncUpstreamResponse = MetadataSyncResult
 
-/**
- * Missing models response
- */
-export interface MissingModelsResponse {
-  success: boolean
-  message?: string
-  data?: string[]
-}
+/** \`GET /api/console/models/sync_upstream/preview\` 成功即裸预览。 */
+export type PreviewUpstreamDiffResponse = MetadataSyncPreview
+
+/** \`GET /api/console/models/missing\` 成功即裸模型名数组。 */
+export type MissingModelsResponse = string[]
 
 // ============================================================================
 // Form Data Types

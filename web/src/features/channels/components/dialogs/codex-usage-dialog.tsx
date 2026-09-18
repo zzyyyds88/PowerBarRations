@@ -76,7 +76,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import dayjs from '@/lib/dayjs'
 import { formatDateTimeStr, formatTimestampToDate } from '@/lib/format'
-import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import {
@@ -146,11 +145,13 @@ type CodexUsagePayload = {
   }
 }
 
+/**
+ * Codex 用量/重置额度响应（api-spec §5.3.1）：成功 `{upstream_status,body}`，
+ * 上游非 2xx 时后端回 502 `upstream_error`（由 axios 拒绝承载）。
+ */
 export type CodexUsageDialogData = {
-  success: boolean
-  message?: string
   upstream_status?: number
-  data?: Record<string, unknown>
+  body?: unknown
 }
 
 type CodexUsageDialogProps = {
@@ -926,20 +927,20 @@ export function CodexUsageDialog({
   const [resetActionMessage, setResetActionMessage] = useState('')
 
   const payload: CodexUsagePayload | null = useMemo(() => {
-    const raw = response?.data
+    const raw = response?.body
     if (!raw || typeof raw !== 'object') {
       return null
     }
     return raw as CodexUsagePayload
-  }, [response?.data])
+  }, [response?.body])
 
   const resetCreditsPayload: CodexResetCreditsPayload | null = useMemo(() => {
-    const raw = resetCreditsResponse?.data
+    const raw = resetCreditsResponse?.body
     if (!raw || typeof raw !== 'object') {
       return null
     }
     return raw as CodexResetCreditsPayload
-  }, [resetCreditsResponse?.data])
+  }, [resetCreditsResponse?.body])
 
   const rateLimit = payload?.rate_limit
   const accountType = payload?.plan_type ?? rateLimit?.plan_type
@@ -964,10 +965,8 @@ export function CodexUsageDialog({
   const channelLabel = `${channelLabelName}${channelLabelId}`
   const { fiveHourWindow, weeklyWindow } = resolveRateLimitWindows(payload)
 
-  const errorMessage =
-    response?.success === false
-      ? response?.message?.trim() || t('Failed to fetch usage')
-      : ''
+  // 新契约下获取失败会被 axios 拒绝并在调用点提示；这里只保留"未取到用量体"的降级。
+  const errorMessage = response && !payload ? t('Failed to fetch usage') : ''
 
   const loadResetCredits = useCallback(
     async (force = false) => {
@@ -983,12 +982,6 @@ export function CodexUsageDialog({
       setResetCreditsError('')
       try {
         const res = await getCodexResetCredits(channelId)
-        if (!res.success) {
-          throw createServerError(
-            res,
-            t('Failed to fetch reset credit details')
-          )
-        }
         setResetCreditsResponse(res)
       } catch (error) {
         setResetCreditsError(
@@ -1035,12 +1028,10 @@ export function CodexUsageDialog({
     setResetActionMessage('')
     try {
       const res = await resetCodexUsage(channelId)
-      if (!res.success) {
-        throw createServerError(res, t('Failed to reset usage'))
-      }
 
-      const resetPayload = res.data as
+      const resetPayload = res.body as
         | { windows_reset?: number; code?: string }
+        | null
         | undefined
       const windowsReset = Number(resetPayload?.windows_reset)
       setResetActionMessage(
@@ -1069,16 +1060,14 @@ export function CodexUsageDialog({
     try {
       return JSON.stringify(
         {
-          success: response.success,
-          message: response.message,
           upstream_status: response.upstream_status,
-          data: response.data,
+          body: response.body,
         },
         null,
         2
       )
     } catch {
-      return String(response?.data ?? '')
+      return String(response?.body ?? '')
     }
   }, [response])
 

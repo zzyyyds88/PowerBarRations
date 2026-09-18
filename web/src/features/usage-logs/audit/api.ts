@@ -16,11 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { t } from 'i18next'
-
 import { api } from '@/lib/api'
-import type { ApiResponse } from '@/lib/api-response'
-import { createServerError } from '@/lib/server-error-message'
 
 export interface AuditLog {
   event_id: string
@@ -58,13 +54,13 @@ export async function getAuditLogs(
   scope: 'all' | 'self',
   params: AuditFilters
 ): Promise<{ items: AuditLog[]; total: number }> {
-  const response = await api.get<
-    ApiResponse<{ items: AuditLog[]; total: number }>
-  >(scope === 'all' ? '/api/console/audit' : '/api/console/audit/self', {
-    params,
-  })
-  if (!response.data.success || !response.data.data) {
-    throw createServerError(response.data, t('Failed to load audit records'))
+  // 基座面列表成功即裸 `{items,total,...}`；失败由 axios 拒绝。
+  const response = await api.get<{ items?: AuditLog[]; total?: number }>(
+    scope === 'all' ? '/api/console/audit' : '/api/console/audit/self',
+    { params }
+  )
+  return {
+    items: response.data?.items ?? [],
+    total: response.data?.total ?? 0,
   }
-  return response.data.data
 }

@@ -35,7 +35,6 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { useIsMobile } from '@/hooks/use-mobile'
-import { createServerError } from '@/lib/server-error-message'
 
 import { getMissingModels } from '../../api'
 import { DEFAULT_PAGE_SIZE } from '../../constants'
@@ -60,17 +59,12 @@ export function MissingModelsDialog({
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: modelsQueryKeys.missing(),
-    queryFn: async () => {
-      const response = await getMissingModels()
-      if (!response.success) {
-        throw createServerError(response, t('Operation failed'))
-      }
-      return response
-    },
+    // 成功即裸模型名数组；失败由 axios 拒绝。
+    queryFn: async () => getMissingModels(),
     enabled: open,
   })
 
-  const missingModels = useMemo(() => data?.data || [], [data?.data])
+  const missingModels = useMemo(() => data ?? [], [data])
   const pageSize = DEFAULT_PAGE_SIZE
 
   const handleConfigureModel = (modelName: string) => {

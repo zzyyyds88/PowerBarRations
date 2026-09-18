@@ -62,10 +62,6 @@ import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
-import {
-  requireServerSuccess,
-  createServerError,
-} from '@/lib/server-error-message'
 
 import {
   getCurrentLogCleanupTask,
@@ -171,9 +167,9 @@ export function LogSettingsSection({
 
   const fetchServerLogInfo = useCallback(async () => {
     try {
-      const res = await api.get('/api/performance/logs')
-      requireServerSuccess(res.data)
-      if (res.data.success) setServerLogInfo(res.data.data)
+      // 成功即裸日志文件信息；失败由 axios 拒绝。
+      const res = await api.get<ServerLogInfo>('/api/performance/logs')
+      setServerLogInfo(res.data)
     } catch (error) {
       handleServerError(error)
     }
@@ -192,9 +188,10 @@ export function LogSettingsSection({
 
     async function fetchCurrentLogCleanupTask() {
       try {
-        const res = await getCurrentLogCleanupTask()
-        if (!cancelled && res.success && res.data) {
-          setLogCleanupTask(res.data)
+        // 成功即裸任务对象；无任务时后端回 204（无实体）。
+        const task = await getCurrentLogCleanupTask()
+        if (!cancelled && task) {
+          setLogCleanupTask(task)
         }
       } catch {
         /* ignore */
@@ -234,21 +231,24 @@ export function LogSettingsSection({
     let cancelled = false
     const interval = window.setInterval(async () => {
       try {
-        const res = await getSystemTask(logCleanupTaskId)
-        if (cancelled || !res.success || !res.data) return
+        const task = await getSystemTask(logCleanupTaskId)
+        if (cancelled || !task) return
 
-        setLogCleanupTask(res.data)
-        if (!isActiveLogCleanupTask(res.data)) {
-          if (res.data.status === 'succeeded') {
+        setLogCleanupTask(task)
+        if (!isActiveLogCleanupTask(task)) {
+          if (task.status === 'succeeded') {
             const count =
-              res.data.result?.deleted_count ?? res.data.state?.processed ?? 0
+              task.result?.deleted_count ?? task.state?.processed ?? 0
             toast.success(
               count > 0
                 ? t('{{count}} log entries removed.', { count })
                 : t('No log entries matched the selected time.')
             )
-          } else if (res.data.status === 'failed') {
-            handleServerError(res.data, t('Failed to clean logs'))
+          } else if (task.status === 'failed') {
+            handleServerError(
+              { message: task.error || t('Failed to clean logs') },
+              t('Failed to clean logs')
+            )
           }
         }
       } catch {
@@ -287,14 +287,9 @@ export function LogSettingsSection({
 
     setIsStartingLogCleanup(true)
     try {
-      const res = await startLogCleanupTask(purgeTimestamp)
-      if (!res.success) {
-        throw createServerError(res, t('Failed to clean logs'))
-      }
-      if (!res.data) {
-        throw new Error(t('Failed to clean logs'))
-      }
-      setLogCleanupTask(res.data)
+      // 成功即裸任务对象；失败由 axios 拒绝。
+      const task = await startLogCleanupTask(purgeTimestamp)
+      setLogCleanupTask(task)
       setShowConfirmDialog(false)
       toast.success(t('Log cleanup task started.'))
     } catch (error) {
@@ -318,20 +313,19 @@ export function LogSettingsSection({
 
     setServerLogCleanupLoading(true)
     try {
-      const res = await api.delete(
+      const res = await api.delete<{
+        deleted_count: number
+        freed_bytes: number
+      }>(
         `/api/performance/logs?mode=${serverLogCleanupMode}&value=${serverLogCleanupValue}`
       )
-      if (res.data.success) {
-        const { deleted_count, freed_bytes } = res.data.data
-        toast.success(
-          t('Cleaned up {{count}} log files, freed {{size}}', {
-            count: deleted_count,
-            size: formatBytes(freed_bytes),
-          })
-        )
-      } else {
-        handleServerError(res.data, t('Cleanup failed'))
-      }
+      const { deleted_count, freed_bytes } = res.data
+      toast.success(
+        t('Cleaned up {{count}} log files, freed {{size}}', {
+          count: deleted_count,
+          size: formatBytes(freed_bytes),
+        })
+      )
       fetchServerLogInfo()
     } catch (error) {
       handleServerError(error, t('Cleanup failed'))

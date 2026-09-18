@@ -41,13 +41,10 @@ async function renderAssociation(channels: unknown[]) {
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/channel/search') {
       return {
-        data: {
-          success: true,
-          data: { items: channels, total: channels.length },
-        },
+        data: { items: channels, total: channels.length },
       }
     }
-    return { data: { success: true, data: { items: [] } } }
+    return { data: { items: [] } }
   })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

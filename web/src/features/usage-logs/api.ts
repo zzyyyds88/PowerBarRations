@@ -62,7 +62,7 @@ async function fetchLogStats<T>(
   void endpoint
   void params
   void isAdmin
-  return { success: true, data: { quota: 0, rpm: 0, tpm: 0 } }
+  return { quota: 0, rpm: 0, tpm: 0 }
 }
 
 // ============================================================================
@@ -83,10 +83,9 @@ export const getUserLogStats = (
   params: Omit<GetLogStatsParams, 'username' | 'channel'> = {}
 ) => fetchLogStats('/api/log/', params, false)
 
-export async function getUserInfo(
-  userId: number
-): Promise<{ success: boolean; message?: string; data?: UserInfo }> {
-  const res = await api.get(`/api/user/${userId}`)
+export async function getUserInfo(userId: number): Promise<UserInfo> {
+  // 成功即裸用户对象；失败由 axios 拒绝（多用户面已删除，此端点通常 404）。
+  const res = await api.get<UserInfo>(`/api/user/${userId}`)
   return res.data
 }
 

@@ -24,7 +24,6 @@ import { DataTablePage, useDataTable } from '@/components/data-table'
 import { ErrorState } from '@/components/error-state'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getModels, searchModels } from '../api'
 import { DEFAULT_PAGE_SIZE } from '../constants'
@@ -72,28 +71,25 @@ export function ModelsTable() {
       page_size: pagination.pageSize,
     }),
     queryFn: async () => {
+      // 基座面列表仍返回 {items,total,...}（分页参数由请求端控制）。
       if (shouldSearch) {
-        return requireServerSuccess(
-          await searchModels({
-            include_channel_models: true,
-            keyword: globalFilter,
-            p: pagination.pageIndex + 1,
-            page_size: pagination.pageSize,
-          })
-        )
-      }
-      return requireServerSuccess(
-        await getModels({
+        return searchModels({
           include_channel_models: true,
+          keyword: globalFilter,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
-      )
+      }
+      return getModels({
+        include_channel_models: true,
+        p: pagination.pageIndex + 1,
+        page_size: pagination.pageSize,
+      })
     },
   })
 
-  const models = data?.data?.items || []
-  const totalCount = data?.data?.total || 0
+  const models = data?.items || []
+  const totalCount = data?.total || 0
 
   // Columns configuration
   const columns = useModelsColumns()
@@ -119,12 +115,9 @@ export function ModelsTable() {
     ensurePageInRange,
   })
 
-  if (isError || data?.success === false) {
+  if (isError) {
     return (
-      <ErrorState
-        description={error?.message ?? data?.message}
-        onRetry={() => void refetch()}
-      />
+      <ErrorState description={error?.message} onRetry={() => void refetch()} />
     )
   }
 

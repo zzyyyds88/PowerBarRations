@@ -174,44 +174,42 @@ export type AdvancedCustomAuthType = 'none' | 'header' | 'query'
 
 // ============================================================================
 // API Response Types
+//
+// 管理面已统一响应信封（api-spec §2.3）：成功一律返回**裸资源**，没有
+// `{success,message,data}` 包装；失败是 §3 错误包络 + 真实 HTTP 状态码，由 axios
+// 拒绝承载。因此下列响应类型直接描述裸形状。
 // ============================================================================
 
+/**
+ * 基座兼容面 `GET /api/channel/` 与 `/search` 的成功体。
+ *
+ * 注意：这是**基座面**端点（api-spec §9 列为"参数/响应随控制台变动"），仍按
+ * page/page_size 分页并返回 total；稳定面的 cursor 列表是 `{items,next_cursor}`。
+ * 控制台分页参数由请求端控制，因此保留 total 用于页码计算。
+ */
 export interface GetChannelsResponse {
-  success: boolean
-  message?: string
-  data?: {
-    items: Channel[]
-    total: number
-    page: number
-    page_size: number
-    type_counts?: Record<string, number>
-  }
+  items: Channel[]
+  total: number
+  page?: number
+  page_size?: number
+  type_counts?: Record<string, number>
 }
 
 export interface SearchChannelsResponse {
-  success: boolean
-  message?: string
-  data?: {
-    items: Channel[]
-    total: number
-    type_counts?: Record<string, number>
-  }
+  items: Channel[]
+  total: number
+  type_counts?: Record<string, number>
 }
 
-export interface GetChannelResponse {
-  success: boolean
-  message?: string
-  data?: Channel
-}
+/** `GET /api/channel/:id` 成功即裸渠道对象。 */
+export type GetChannelResponse = Channel
 
+/** `GET /api/channel/ops` 成功即 `{retry_times}`。 */
 export interface ChannelOpsResponse {
-  success: boolean
-  message?: string
-  data?: {
-    retry_times: number
-  }
+  retry_times: number
 }
 
+/** `GET /api/channel/test/:id` 成功即 `{success:true,time}`（基座面裸化）。 */
 export interface ChannelTestResponse {
   success: boolean
   message?: string
@@ -223,18 +221,12 @@ export interface ChannelTestResponse {
   }
 }
 
-export interface FetchModelsResponse {
-  success: boolean
-  message?: string
-  data?: string[]
-}
+/** `GET|POST /api/channel/fetch_models*` 成功即裸字符串数组。 */
+export type FetchModelsResponse = string[]
 
+/** `POST /api/channel/copy/:id` 成功即裸 `{id}`。 */
 export interface CopyChannelResponse {
-  success: boolean
-  message?: string
-  data?: {
-    id: number
-  }
+  id: number
 }
 
 // ============================================================================
@@ -249,31 +241,13 @@ export interface ChannelReferenceInfo {
   blocked?: Record<string, string[]>
 }
 
-/** DELETE /api/channel/:id：被车道引用时返回 code=conflict。 */
-export interface ChannelDeleteResponse {
-  success: boolean
-  code?: string
-  message?: string
-  data?: ChannelReferenceInfo
-}
-
-/** POST /api/channel/batch 与 DELETE /api/channel/disabled：整批拒绝时返回 blocked。 */
-export interface ChannelBatchDeleteResponse {
-  success: boolean
-  code?: string
-  message?: string
-  data?: number | ChannelReferenceInfo
-}
-
-/** PUT /api/channel/：收窄模型命中车道时返回 code=models_referenced_by_lanes。 */
+/** `PUT /api/channel/` 收窄模型命中车道时回 409 conflict + details.blocked（稳定面）或 code=models_referenced_by_lanes（基座面）。 */
 export interface ChannelUpdateResponse {
-  success: boolean
-  code?: string
-  message?: string
-  data?: (Channel & ChannelReferenceInfo) | ChannelReferenceInfo
-  /** 成功清理后返回：被移除成员但保留的车道 / 成员清空被删除的车道。 */
+  /** 成功时为写后回读的渠道对象；失败时不会到达这里（axios 拒绝）。 */
+  id?: number
   cleaned_lanes?: string[]
   deleted_lanes?: string[]
+  [key: string]: unknown
 }
 
 // ============================================================================
@@ -299,19 +273,19 @@ export type MultiKeyConfirmAction = {
   keyIndex?: number
 }
 
+/**
+ * `POST /api/channel/multi_key/manage` 的 `get_key_status` 成功体：
+ * 基座面分页对象裸化（`keys/total/page/...`）。
+ */
 export interface MultiKeyStatusResponse {
-  success: boolean
-  message?: string
-  data?: {
-    keys: KeyStatus[]
-    total: number
-    page: number
-    page_size: number
-    total_pages: number
-    enabled_count: number
-    manual_disabled_count: number
-    auto_disabled_count: number
-  }
+  keys: KeyStatus[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+  enabled_count: number
+  manual_disabled_count: number
+  auto_disabled_count: number
 }
 
 // ============================================================================

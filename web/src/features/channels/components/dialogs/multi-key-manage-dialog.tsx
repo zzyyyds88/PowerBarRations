@@ -128,18 +128,15 @@ export function MultiKeyManageDialog({
         status === null ? undefined : status
       )
 
-      if (response.success && response.data) {
-        setKeys(response.data.keys || [])
-        setTotal(response.data.total || 0)
-        setCurrentPage(response.data.page || 1)
-        setPageSize(response.data.page_size || 10)
-        setTotalPages(response.data.total_pages || 0)
-        setEnabledCount(response.data.enabled_count || 0)
-        setManualDisabledCount(response.data.manual_disabled_count || 0)
-        setAutoDisabledCount(response.data.auto_disabled_count || 0)
-      } else {
-        handleServerError(response, t('Failed to load key status'))
-      }
+      // 成功即裸分页对象（基座面 data 裸化）；失败由 axios 拒绝。
+      setKeys(response.keys || [])
+      setTotal(response.total || 0)
+      setCurrentPage(response.page || 1)
+      setPageSize(response.page_size || 10)
+      setTotalPages(response.total_pages || 0)
+      setEnabledCount(response.enabled_count || 0)
+      setManualDisabledCount(response.manual_disabled_count || 0)
+      setAutoDisabledCount(response.auto_disabled_count || 0)
     } catch (error: unknown) {
       handleServerError(error, t('Failed to load key status'))
     } finally {
@@ -173,37 +170,34 @@ export function MultiKeyManageDialog({
     setIsPerformingAction(true)
     try {
       const { type, keyIndex } = confirmAction
-      let response
 
-      // Execute the appropriate action
+      // Execute the appropriate action. 非 2xx 会被 axios 拒绝，走到这里即成功。
+      let message: string | undefined
       if (type === 'enable' && keyIndex !== undefined) {
-        response = await enableMultiKey(currentRow.id, keyIndex)
+        await enableMultiKey(currentRow.id, keyIndex)
       } else if (type === 'disable' && keyIndex !== undefined) {
-        response = await disableMultiKey(currentRow.id, keyIndex)
+        await disableMultiKey(currentRow.id, keyIndex)
       } else if (type === 'delete' && keyIndex !== undefined) {
-        response = await deleteMultiKey(currentRow.id, keyIndex)
+        await deleteMultiKey(currentRow.id, keyIndex)
       } else if (type === 'enable-all') {
-        response = await enableAllMultiKeys(currentRow.id)
+        await enableAllMultiKeys(currentRow.id)
       } else if (type === 'disable-all') {
-        response = await disableAllMultiKeys(currentRow.id)
+        await disableAllMultiKeys(currentRow.id)
       } else if (type === 'delete-disabled') {
-        response = await deleteDisabledMultiKeys(currentRow.id)
+        const result = await deleteDisabledMultiKeys(currentRow.id)
+        message = result.message
       }
 
-      if (response?.success) {
-        toast.success(response.message || t('Operation successful'))
-        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      toast.success(message || t('Operation successful'))
+      queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
 
-        // Reload data - reset to page 1 for bulk actions
-        const isBulkAction = type.includes('all') || type === 'delete-disabled'
-        if (isBulkAction) {
-          setCurrentPage(1)
-          loadKeyStatus(1, pageSize)
-        } else {
-          loadKeyStatus(currentPage, pageSize)
-        }
+      // Reload data - reset to page 1 for bulk actions
+      const isBulkAction = type.includes('all') || type === 'delete-disabled'
+      if (isBulkAction) {
+        setCurrentPage(1)
+        loadKeyStatus(1, pageSize)
       } else {
-        handleServerError(response, t('Operation failed'))
+        loadKeyStatus(currentPage, pageSize)
       }
     } catch (error: unknown) {
       handleServerError(error, t('Operation failed'))

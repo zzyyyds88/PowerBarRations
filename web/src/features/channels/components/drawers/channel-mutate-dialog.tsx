@@ -102,11 +102,7 @@ import {
   type ChannelConnectionInfo,
 } from '@/lib/channel-connection-info'
 import { handleServerError } from '@/lib/handle-server-error'
-import {
-  requireServerSuccess,
-  createServerError,
-  getServerErrorMessage,
-} from '@/lib/server-error-message'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -432,7 +428,7 @@ export function ChannelMutateDialog({
     refetch: refetchChannel,
   } = useQuery({
     queryKey: channelsQueryKeys.detail(channelId || 0),
-    queryFn: async () => requireServerSuccess(await getChannel(channelId || 0)),
+    queryFn: async () => getChannel(channelId || 0),
     enabled: open && isEditing && Boolean(channelId),
     meta: { errorToast: false },
   })
@@ -441,7 +437,7 @@ export function ChannelMutateDialog({
 
   // Check if this is a multi-key channel
   const isMultiKeyChannel =
-    isEditing && channelData?.data?.channel_info?.is_multi_key === true
+    isEditing && channelData?.channel_info?.is_multi_key === true
 
   // Form setup
   const form = useForm<ChannelFormValues>({
@@ -765,7 +761,7 @@ export function ChannelMutateDialog({
       setPendingErrorFocus(null)
       return
     }
-    if (isEditing && channelData?.data) {
+    if (isEditing && channelData) {
       const isNewChannel = loadedForm.current?.channelId !== channelId
       // Model selectors also change values without setting RHF's dirty flag.
       // Refresh untouched forms, while retaining every kind of unsaved input.
@@ -775,10 +771,10 @@ export function ChannelMutateDialog({
       ) {
         return
       }
-      const defaults = transformChannelToFormDefaults(channelData.data)
+      const defaults = transformChannelToFormDefaults(channelData)
       form.reset(defaults)
       loadedForm.current = {
-        channelId: channelData.data.id,
+        channelId: channelData.id,
         snapshot: JSON.stringify(form.getValues()),
       }
       if (isNewChannel) {
@@ -789,12 +785,10 @@ export function ChannelMutateDialog({
         setPendingErrorFocus(null)
       }
       // Store initial values for comparison
-      initialModelsRef.current = parseModelsString(
-        channelData.data.models || ''
-      )
-      initialModelMappingRef.current = channelData.data.model_mapping || ''
+      initialModelsRef.current = parseModelsString(channelData.models || '')
+      initialModelMappingRef.current = channelData.model_mapping || ''
       initialStatusCodeMappingRef.current =
-        channelData.data.status_code_mapping || ''
+        channelData.status_code_mapping || ''
     } else if (!isEditing) {
       form.reset(CHANNEL_FORM_DEFAULT_VALUES)
       initialModelsRef.current = []
@@ -892,10 +886,7 @@ export function ChannelMutateDialog({
     if (!channelId) return
     setIsCodexCredentialRefreshing(true)
     try {
-      const res = await refreshCodexCredential(channelId)
-      if (!res.success) {
-        throw createServerError(res, t('Failed to refresh credential'))
-      }
+      await refreshCodexCredential(channelId)
       toast.success(t('Credential refreshed'))
       queryClient.invalidateQueries({
         queryKey: channelsQueryKeys.detail(channelId),
@@ -959,7 +950,7 @@ export function ChannelMutateDialog({
   // existing ones (the saved request reuses the stored credential).
   const discoveryConnectionReady = useMemo(() => {
     if (!MODEL_FETCHABLE_TYPES.has(currentType)) return false
-    if (!previewModels) return Boolean(channelData?.data)
+    if (!previewModels) return Boolean(channelData)
     if (
       !isEditing &&
       currentType !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
@@ -975,7 +966,7 @@ export function ChannelMutateDialog({
     }
     return true
   }, [
-    channelData?.data,
+    channelData,
     currentBaseUrl,
     currentKey,
     currentType,
@@ -988,7 +979,7 @@ export function ChannelMutateDialog({
       open &&
       canDiscoverModels &&
       MODEL_FETCHABLE_TYPES.has(currentType) &&
-      (!isEditing || Boolean(channelData?.data)),
+      (!isEditing || Boolean(channelData)),
     request: previewModels ? previewRequest : savedRequest,
     // 探测一律手动触发（「探测上游模型」按钮），不自动拉取。
     autoFetch: false,
@@ -1245,7 +1236,7 @@ export function ChannelMutateDialog({
   // Submit handler
   const onSubmit = useCallback(
     async (data: ChannelFormValues) => {
-      if (isEditing && !channelData?.data) return
+      if (isEditing && !channelData) return
       if (!isEditing && !canEditSensitive) return
       // Validate key is required when creating
       if (!isEditing && !data.key?.trim()) {
@@ -3808,7 +3799,7 @@ export function ChannelMutateDialog({
   )
 
   let formContent: ReactNode
-  if (isEditing && isChannelError && !channelData?.data) {
+  if (isEditing && isChannelError && !channelData) {
     formContent = (
       <ErrorState
         title={t('Failed to load channel')}
@@ -3935,7 +3926,7 @@ export function ChannelMutateDialog({
                     </span>
                   </DialogTitle>
                 </div>
-                {isEditing && channelData?.data && (
+                {isEditing && channelData && (
                   <Badge variant='secondary' className='mt-2'>
                     {t(
                       CHANNEL_STATUS_LABELS[
@@ -4027,7 +4018,7 @@ export function ChannelMutateDialog({
               disabled={
                 isSubmitting ||
                 (!isEditing && !canEditSensitive) ||
-                (isEditing && !channelData?.data)
+                (isEditing && !channelData)
               }
             >
               {isSubmitting && (

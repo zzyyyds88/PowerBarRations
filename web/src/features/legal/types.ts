@@ -16,8 +16,5 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type LegalDocumentResponse = {
-  success: boolean
-  message?: string
-  data?: string
-}
+/** \`GET /api/user-agreement\` / \`/api/privacy-policy\` 成功即裸字符串。 */
+export type LegalDocumentResponse = string

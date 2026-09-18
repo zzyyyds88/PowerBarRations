@@ -21,7 +21,6 @@ import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getUserModels } from '../api'
 import {
@@ -54,7 +53,7 @@ export function usePlaygroundOptions({
     isLoading: isLoadingModels,
   } = useQuery({
     queryKey: ['playground-models'],
-    queryFn: async () => requireServerSuccess(await getUserModels()),
+    queryFn: async () => getUserModels(),
   })
 
   useEffect(() => {

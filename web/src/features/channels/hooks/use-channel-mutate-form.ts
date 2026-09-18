@@ -26,7 +26,6 @@ import {
   hasPermission,
 } from '@/lib/admin-permissions'
 import { handleServerError } from '@/lib/handle-server-error'
-import { createServerError } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { createChannel, updateChannel } from '../api'
@@ -36,6 +35,10 @@ import {
   transformFormDataToUpdatePayload,
   type ChannelFormValues,
 } from '../lib'
+import {
+  isChannelReferenceConflict,
+  parseChannelReferenceConflict,
+} from '../lib/channel-reference-conflict'
 import type { Channel } from '../types'
 
 type UseChannelMutateFormParams = {
@@ -44,9 +47,10 @@ type UseChannelMutateFormParams = {
   isMultiKeyChannel: boolean
   onSuccess: () => void
   /**
-   * 更新时若移除了仍被车道引用的模型，后端返回 code=models_referenced_by_lanes。
-   * 调用方（channel-mutate-dialog）据此弹出确认框；resolve true 表示用户确认
-   * "同时从这些车道移除本渠道成员"，此时以 cleanup_models:true 重试。
+   * 更新时若移除了仍被车道引用的模型，后端回 409 conflict（稳定面）或
+   * code=models_referenced_by_lanes（基座面）。调用方（channel-mutate-dialog）
+   * 据此弹出确认框；resolve true 表示用户确认"同时从这些车道移除本渠道成员"，
+   * 此时以 cleanup_models:true 重试。
    */
   onReferencedModels?: (lanes: string[]) => Promise<boolean>
 }
@@ -114,12 +118,21 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
             : {}),
         }
 
-        const response = await updateChannel(currentRow.id, updatePayload)
-        if (
-          !response.success &&
-          response.code === 'models_referenced_by_lanes'
-        ) {
-          const lanes = response.data?.lanes ?? []
+        // 失败一律走 axios 拒绝：先从错误包络里取车道引用明细，命中则确认后重试。
+        try {
+          const response = await updateChannel(currentRow.id, updatePayload)
+          return {
+            status: 'success',
+            messageKey: SUCCESS_MESSAGES.UPDATED,
+            cleanedLanes: response.cleaned_lanes ?? [],
+            deletedLanes: response.deleted_lanes ?? [],
+          }
+        } catch (error) {
+          // details 是权威来源（api-spec §3）：conflict / models_referenced_by_lanes。
+          if (!isChannelReferenceConflict(error)) {
+            throw error
+          }
+          const { lanes } = parseChannelReferenceConflict(error)
           const confirmed = props.onReferencedModels
             ? await props.onReferencedModels(lanes)
             : false
@@ -131,9 +144,6 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
             ...updatePayload,
             cleanup_models: true,
           })
-          if (!cleaned.success) {
-            throw createServerError(cleaned, t(ERROR_MESSAGES.UPDATE_FAILED))
-          }
           return {
             status: 'success',
             messageKey: SUCCESS_MESSAGES.UPDATED,
@@ -141,17 +151,10 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
             deletedLanes: cleaned.deleted_lanes ?? [],
           }
         }
-        if (!response.success) {
-          throw createServerError(response, t(ERROR_MESSAGES.UPDATE_FAILED))
-        }
-        return { status: 'success', messageKey: SUCCESS_MESSAGES.UPDATED }
       }
 
       const payload = transformFormDataToCreatePayload(data)
-      const response = await createChannel(payload)
-      if (!response.success) {
-        throw createServerError(response, t(ERROR_MESSAGES.CREATE_FAILED))
-      }
+      await createChannel(payload)
       return { status: 'success', messageKey: SUCCESS_MESSAGES.CREATED }
     },
     onSuccess: (outcome) => {

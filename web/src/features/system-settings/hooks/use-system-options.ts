@@ -18,14 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 
-import { requireServerSuccess } from '@/lib/server-error-message'
-
 import { getSystemOptions } from '../api'
 
 export function useSystemOptions() {
   return useQuery({
     queryKey: ['system-options'],
-    queryFn: async () => requireServerSuccess(await getSystemOptions()),
+    // 成功即裸选项数组；失败由 axios 拒绝。
+    queryFn: async () => getSystemOptions(),
     staleTime: 5 * 60 * 1000,
   })
 }

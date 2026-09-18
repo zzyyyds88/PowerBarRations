@@ -44,10 +44,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { resolveModelProvider } from '@/lib/model-provider'
-import {
-  createServerError,
-  getServerErrorMessage,
-} from '@/lib/server-error-message'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import { createModel, updateModel, getModel } from '../../api'
 import { modelsQueryKeys } from '../../lib'
@@ -98,13 +95,10 @@ export function ModelMutateDrawer(props: {
   })
   const modelQuery = useQuery({
     queryKey: modelsQueryKeys.detail(currentRow?.id ?? 0),
+    // 成功即裸模型对象；失败由 axios 拒绝。
     queryFn: async () => {
       if (!currentRow?.id) throw new Error(t('Model ID is required'))
-      const response = await getModel(currentRow.id)
-      if (!response.success || !response.data) {
-        throw createServerError(response, t('Failed to load model'))
-      }
-      return response.data
+      return getModel(currentRow.id)
     },
     enabled: props.open && isEditing,
   })
@@ -145,24 +139,17 @@ export function ModelMutateDrawer(props: {
     onMutate: () => form.clearErrors('root.server'),
     mutationFn: async (values: ModelFormValues) => {
       const payload = transformFormDataToModelPayload(values)
-      const response = currentRow?.id
-        ? await updateModel({ ...payload, id: currentRow.id })
-        : await createModel(payload)
-      if (!response.success) {
-        throw createServerError(response, t('Operation failed'))
-      }
-      return response
+      return currentRow?.id
+        ? updateModel({ ...payload, id: currentRow.id })
+        : createModel(payload)
     },
-    onSuccess: async (response) => {
+    onSuccess: async (saved) => {
       form.reset(form.getValues())
-      if (response.data?.id) {
+      if (saved?.id) {
         if (!currentRow?.id) {
-          setCreatedModel({ source: props.currentRow, model: response.data })
+          setCreatedModel({ source: props.currentRow, model: saved })
         }
-        queryClient.setQueryData(
-          modelsQueryKeys.detail(response.data.id),
-          response.data
-        )
+        queryClient.setQueryData(modelsQueryKeys.detail(saved.id), saved)
       }
       await queryClient.invalidateQueries({ queryKey: modelsQueryKeys.all })
       toast.success(t('Model metadata saved'))

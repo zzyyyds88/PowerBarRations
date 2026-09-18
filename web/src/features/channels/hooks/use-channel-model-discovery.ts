@@ -18,8 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { createServerError } from '@/lib/server-error-message'
-
 import { fetchModels, fetchUpstreamModels } from '../api'
 
 type DiscoveryState = {
@@ -75,10 +73,8 @@ export function useChannelModelDiscovery(props: ChannelModelDiscoveryProps) {
           ? await fetchUpstreamModels(props.request.channelId)
           : await fetchModels(props.request.data)
       if (requestSequence !== sequence.current) return
-      if (!response.success) {
-        throw createServerError(response, 'Failed to fetch models')
-      }
-      setState({ status: 'success', models: response.data ?? [] })
+      // 新契约：失败由 axios 拒绝，成功即裸模型名数组。
+      setState({ status: 'success', models: response ?? [] })
     } catch (error) {
       if (requestSequence !== sequence.current) return
       setState((previous) => ({

@@ -38,7 +38,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { handleServerError } from '@/lib/handle-server-error'
-import { createServerError } from '@/lib/server-error-message'
 
 import { previewUpstreamDiff, syncUpstream } from '../../api'
 import { getSyncLocaleOptions } from '../../constants'
@@ -100,13 +99,8 @@ export function SyncWizardDialog(props: {
       setStep(0)
       setPage(0)
     },
-    mutationFn: async () => {
-      const response = await previewUpstreamDiff({ locale })
-      if (!response.success || !response.data) {
-        throw createServerError(response, t('Failed to preview metadata'))
-      }
-      return response.data
-    },
+    // 成功即裸预览对象；失败由 axios 拒绝。
+    mutationFn: async () => previewUpstreamDiff({ locale }),
     onSuccess: (data) => {
       setPreview(data)
     },
@@ -116,15 +110,11 @@ export function SyncWizardDialog(props: {
   const apply = useMutation({
     mutationFn: async (selections: MetadataSyncSelection[]) => {
       if (!preview) throw new Error(t('Preview metadata first'))
-      const response = await syncUpstream({
+      return syncUpstream({
         locale: preview.source.locale,
         source_version: preview.source.version,
         selections,
       })
-      if (!response.success || !response.data) {
-        throw createServerError(response, t('Metadata sync failed'))
-      }
-      return response.data
     },
     onSuccess: async () => {
       await Promise.all(

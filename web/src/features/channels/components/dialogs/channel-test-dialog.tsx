@@ -490,11 +490,10 @@ function ChannelTestDialogContent({
       queryClient.setQueriesData<ChannelListCache>(
         { queryKey: channelsQueryKeys.lists() },
         (oldData) => {
-          const data = oldData?.data
-          if (!oldData || !data?.items.length) return oldData
+          if (!oldData?.items.length) return oldData
 
           let changed = false
-          const nextItems = data.items.map((channel) => {
+          const nextItems = oldData.items.map((channel) => {
             if (channel.id !== currentChannelId) return channel
 
             changed = true
@@ -509,10 +508,7 @@ function ChannelTestDialogContent({
 
           return {
             ...oldData,
-            data: {
-              ...data,
-              items: nextItems,
-            },
+            items: nextItems,
           }
         }
       )

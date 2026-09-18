@@ -41,7 +41,8 @@ it('a retry after 404 revalidates HTTP caches instead of accepting a stored erro
       })
     })
     .mockImplementationOnce(async (config) => ({
-      data: { success: true, data: { exists: false } },
+      // 新契约：成功即裸资源（不再有 {success,data} 包装）。
+      data: { exists: false },
       status: 200,
       statusText: 'OK',
       headers: {},
@@ -53,7 +54,7 @@ it('a retry after 404 revalidates HTTP caches instead of accepting a stored erro
     { response: { status: 404 } }
   )
   const response = await api.get('/api/user/token/status', config)
-  expect(response.data.data.exists).toBe(false)
+  expect(response.data.exists).toBe(false)
   expect(adapter).toHaveBeenCalledTimes(2)
   for (const [request] of adapter.mock.calls) {
     const directives = String(request.headers.get('Cache-Control'))

@@ -26,7 +26,6 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { normalizeModelList } from '../lib/upstream-update-utils'
 
 const upstreamUpdateRequestConfig = {
-  skipBusinessError: true,
   skipErrorHandler: true,
 } satisfies ApiRequestConfig
 
@@ -117,7 +116,12 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
         const selectedAddSet = new Set(normSelectedAdd)
         const ignoreModels = addModels.filter((m) => !selectedAddSet.has(m))
 
-        const res = await api.post(
+        // 成功即裸结果对象（基座面 data 裸化）；失败由 axios 拒绝。
+        const res = await api.post<{
+          added_models?: string[]
+          removed_models?: string[]
+          settings?: unknown
+        }>(
           '/api/channel/upstream_updates/apply',
           {
             id: channel.id,
@@ -127,11 +131,7 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
           },
           upstreamUpdateRequestConfig
         )
-        const { success, data } = res.data || {}
-        if (!success) {
-          handleServerError(res.data, t('Operation failed'))
-          return
-        }
+        const data = res.data
 
         toast.success(
           t(
@@ -161,16 +161,18 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
     applyAllRef.current = true
     setApplyAllLoading(true)
     try {
-      const res = await api.post(
+      // 成功即裸结果对象；失败由 axios 拒绝。
+      const res = await api.post<{
+        processed_channels?: number
+        added_models?: number
+        removed_models?: number
+        failed_channel_ids?: number[]
+      }>(
         '/api/channel/upstream_updates/apply_all',
         {},
         upstreamUpdateRequestConfig
       )
-      const { success, data } = res.data || {}
-      if (!success) {
-        handleServerError(res.data, t('Batch processing failed'))
-        return
-      }
+      const data = res.data
 
       toast.success(
         t(
@@ -197,16 +199,16 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
       if (detectRef.current || !ch?.id) return
       detectRef.current = true
       try {
-        const res = await api.post(
+        // 成功即裸结果对象；失败由 axios 拒绝。
+        const res = await api.post<{
+          add_models?: string[]
+          remove_models?: string[]
+        }>(
           '/api/channel/upstream_updates/detect',
           { id: ch.id },
           upstreamUpdateRequestConfig
         )
-        const { success, data } = res.data || {}
-        if (!success) {
-          handleServerError(res.data, t('Detection failed'))
-          return
-        }
+        const data = res.data
 
         toast.success(
           t('Detection complete: {{add}} to add, {{remove}} to remove', {
@@ -229,16 +231,12 @@ export function useChannelUpstreamUpdates(refresh: () => Promise<void>) {
     detectAllRef.current = true
     setDetectAllLoading(true)
     try {
-      const res = await api.post(
+      // 成功即裸 `{task_id,status}`；失败由 axios 拒绝。
+      await api.post(
         '/api/channel/upstream_updates/detect_all',
         {},
         upstreamUpdateRequestConfig
       )
-      const { success } = res.data || {}
-      if (!success) {
-        handleServerError(res.data, t('Batch detection failed'))
-        return
-      }
 
       toast.success(
         t(

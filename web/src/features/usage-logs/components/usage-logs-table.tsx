@@ -28,7 +28,6 @@ import {
 } from '@/components/data-table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
-import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import {
@@ -136,6 +135,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       t,
     ],
     queryFn: async () => {
+      // 基座面列表成功即裸 {items,total,...}；失败由 axios 拒绝。
       const result = await fetchLogsByCategory({
         logCategory,
         isAdmin,
@@ -145,11 +145,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         columnFilters,
       })
 
-      if (!result?.success) {
-        throw createServerError(result, t('Failed to load logs'))
-      }
-
-      return result.data || DEFAULT_LOGS_DATA
+      return result || DEFAULT_LOGS_DATA
     },
     placeholderData: (previousData, previousQuery) => {
       if (

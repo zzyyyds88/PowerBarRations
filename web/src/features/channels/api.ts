@@ -17,15 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api, type ApiRequestConfig } from '@/lib/api'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
   AddChannelRequest,
   BatchDeleteParams,
   BatchSetTagParams,
   Channel,
-  ChannelBatchDeleteResponse,
-  ChannelDeleteResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
   ChannelUpdateResponse,
@@ -42,45 +39,24 @@ import type {
   TagOperationParams,
 } from './types'
 
+// 基座面写操作使用 skipErrorHandler：调用方自己决定失败时展示什么（api-spec §3 的
+// 失败包络由 axios 拒绝承载，不再是 200 + success:false）。
 const channelActionConfig = (
   config: ApiRequestConfig = {}
 ): ApiRequestConfig => ({
   ...config,
-  skipBusinessError: true,
   skipErrorHandler: true,
 })
-
-export type CodexUsageResponse = {
-  success: boolean
-  message?: string
-  upstream_status?: number
-  data?: Record<string, unknown>
-}
-
-export type CodexResetCreditsResponse = CodexUsageResponse
-
-export type CodexUsageResetResponse = CodexUsageResponse
-
-export type CodexCredentialRefreshResponse = {
-  success: boolean
-  message?: string
-  data?: {
-    expires_at?: string
-    last_refresh?: string
-    account_id?: string
-    email?: string
-    channel_id?: number
-    channel_type?: number
-    channel_name?: string
-  }
-}
 
 // ============================================================================
 // Base Channel CRUD Operations
 // ============================================================================
 
 /**
- * Get paginated list of channels
+ * Get paginated list of channels.
+ *
+ * 基座面 `GET /api/channel/` 仍返回 `{items,total,page,page_size,type_counts}`
+ * （分页参数由请求端控制），不是稳定面的 cursor 形状；见 types 里的契约注释。
  */
 export async function getChannels(
   params: GetChannelsParams = {}
@@ -118,22 +94,18 @@ export async function getChannelOps(): Promise<ChannelOpsResponse> {
 export async function getChannelDefaultBaseURLs(): Promise<
   Partial<Record<number, string>>
 > {
-  const response = await api.get<{
-    success: boolean
-    data: Partial<Record<number, string>>
-  }>('/api/channel/default_base_urls')
-  return requireServerSuccess(response.data).data
+  const response = await api.get<Partial<Record<number, string>>>(
+    '/api/channel/default_base_urls'
+  )
+  return response.data ?? {}
 }
 
 /**
  * Create new channel(s)
  * Supports single, batch, and multi-key modes
  */
-export async function createChannel(
-  data: AddChannelRequest
-): Promise<{ success: boolean; message?: string }> {
-  const res = await api.post('/api/channel', data, channelActionConfig())
-  return res.data
+export async function createChannel(data: AddChannelRequest): Promise<void> {
+  await api.post('/api/channel', data, channelActionConfig())
 }
 
 /**
@@ -153,52 +125,55 @@ export async function updateChannel(
 
 /**
  * Update channel enabled/disabled status.
+ *
+ * 成功体是裸布尔（基座面 data 裸化），失败由 axios 拒绝。
  */
 export async function updateChannelStatus(
   id: number,
   status: number
-): Promise<{ success: boolean; message?: string; data?: boolean }> {
+): Promise<boolean> {
   const res = await api.post(
     `/api/channel/${id}/status`,
     { status },
     channelActionConfig()
   )
-  return res.data
+  return Boolean(res.data)
 }
 
 /**
  * Batch update channel enabled/disabled status.
+ *
+ * 成功体是裸变更数。
  */
 export async function batchUpdateChannelStatus(
   ids: number[],
   status: number
-): Promise<{ success: boolean; message?: string; data?: number }> {
+): Promise<number> {
   const res = await api.post(
     '/api/channel/status/batch',
     { ids, status },
     channelActionConfig()
   )
-  return res.data
+  return typeof res.data === 'number' ? res.data : 0
 }
 
 /**
  * Delete single channel
  */
-export async function deleteChannel(
-  id: number
-): Promise<ChannelDeleteResponse> {
-  const res = await api.delete(`/api/channel/${id}`, channelActionConfig())
-  return res.data
+export async function deleteChannel(id: number): Promise<void> {
+  await api.delete(`/api/channel/${id}`, channelActionConfig())
 }
 
 /**
  * Batch delete channels
+ *
+ * 成功体是裸删除数（失败时整批拒绝并返回 409 + details.blocked）。
  */
 export async function batchDeleteChannels(
   data: BatchDeleteParams
-): Promise<ChannelBatchDeleteResponse> {
+): Promise<number> {
   const res = await api.post('/api/channel/batch', data, channelActionConfig())
-  return res.data
+  return typeof res.data === 'number' ? res.data : 0
 }
 
 /**
@@ -206,13 +181,13 @@ export async function batchDeleteChannels(
  */
 export async function batchSetChannelTag(
   data: BatchSetTagParams
-): Promise<{ success: boolean; message?: string; data?: number }> {
+): Promise<number> {
   const res = await api.post(
     '/api/channel/batch/tag',
     data,
     channelActionConfig()
   )
-  return res.data
+  return typeof res.data === 'number' ? res.data : 0
 }
 
 // ============================================================================
@@ -265,9 +240,8 @@ export async function copyChannel(
  * Fix channel abilities
  */
 export async function fixChannelAbilities(): Promise<{
-  success: boolean
-  message?: string
-  data?: { success: number; fails: number }
+  success: number
+  fails: number
 }> {
   const res = await api.post(
     '/api/channel/fix',
@@ -279,10 +253,12 @@ export async function fixChannelAbilities(): Promise<{
 
 /**
  * Delete all disabled channels
+ *
+ * 成功体是裸删除数；被车道引用时整批拒绝（409 + details.blocked）。
  */
-export async function deleteDisabledChannels(): Promise<ChannelBatchDeleteResponse> {
+export async function deleteDisabledChannels(): Promise<number> {
   const res = await api.delete('/api/channel/disabled', channelActionConfig())
-  return res.data
+  return typeof res.data === 'number' ? res.data : 0
 }
 
 /**
@@ -292,7 +268,7 @@ export async function getChannelKey(
   id: number,
   proofToken: string,
   signal?: AbortSignal
-): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
+): Promise<{ key: string }> {
   const res = await api.post(
     `/api/channel/${id}/key`,
     undefined,
@@ -331,7 +307,7 @@ export async function getCodexUsage(
 
 export async function getCodexResetCredits(
   channelId: number
-): Promise<CodexResetCreditsResponse> {
+): Promise<CodexUsageResponse> {
   const res = await api.get(
     `/api/channel/${channelId}/codex/usage/reset-credits`,
     channelActionConfig({ disableDuplicate: true })
@@ -341,7 +317,7 @@ export async function getCodexResetCredits(
 
 export async function resetCodexUsage(
   channelId: number
-): Promise<CodexUsageResetResponse> {
+): Promise<CodexUsageResponse> {
   const res = await api.post(
     `/api/channel/${channelId}/codex/usage/reset`,
     {},
@@ -355,11 +331,14 @@ export async function resetCodexUsage(
 // ============================================================================
 
 /**
- * Manage multi-key channel operations
+ * Manage multi-key channel operations.
+ *
+ * `get_key_status` 成功为分页对象；其余动作成功为 `{applied:true,message}`。
+ * 两者都直接是裸资源。
  */
 export async function manageMultiKeys(
   params: MultiKeyManageParams
-): Promise<MultiKeyStatusResponse | { success: boolean; message?: string }> {
+): Promise<MultiKeyStatusResponse | { applied: boolean; message?: string }> {
   const res = await api.post(
     '/api/channel/multi_key/manage',
     params,
@@ -377,13 +356,14 @@ export async function getMultiKeyStatus(
   pageSize = 50,
   status?: number
 ): Promise<MultiKeyStatusResponse> {
-  return manageMultiKeys({
+  const res = await manageMultiKeys({
     channel_id: channelId,
     action: 'get_key_status',
     page,
     page_size: pageSize,
     status,
-  }) as Promise<MultiKeyStatusResponse>
+  })
+  return res as MultiKeyStatusResponse
 }
 
 /**
@@ -392,12 +372,12 @@ export async function getMultiKeyStatus(
 export async function enableMultiKey(
   channelId: number,
   keyIndex: number
-): Promise<{ success: boolean; message?: string }> {
-  return manageMultiKeys({
+): Promise<void> {
+  await manageMultiKeys({
     channel_id: channelId,
     action: 'enable_key',
     key_index: keyIndex,
-  }) as Promise<{ success: boolean; message?: string }>
+  })
 }
 
 /**
@@ -406,12 +386,12 @@ export async function enableMultiKey(
 export async function disableMultiKey(
   channelId: number,
   keyIndex: number
-): Promise<{ success: boolean; message?: string }> {
-  return manageMultiKeys({
+): Promise<void> {
+  await manageMultiKeys({
     channel_id: channelId,
     action: 'disable_key',
     key_index: keyIndex,
-  }) as Promise<{ success: boolean; message?: string }>
+  })
 }
 
 /**
@@ -420,36 +400,32 @@ export async function disableMultiKey(
 export async function deleteMultiKey(
   channelId: number,
   keyIndex: number
-): Promise<{ success: boolean; message?: string }> {
-  return manageMultiKeys({
+): Promise<void> {
+  await manageMultiKeys({
     channel_id: channelId,
     action: 'delete_key',
     key_index: keyIndex,
-  }) as Promise<{ success: boolean; message?: string }>
+  })
 }
 
 /**
  * Enable all keys in multi-key channel
  */
-export async function enableAllMultiKeys(
-  channelId: number
-): Promise<{ success: boolean; message?: string }> {
-  return manageMultiKeys({
+export async function enableAllMultiKeys(channelId: number): Promise<void> {
+  await manageMultiKeys({
     channel_id: channelId,
     action: 'enable_all_keys',
-  }) as Promise<{ success: boolean; message?: string }>
+  })
 }
 
 /**
  * Disable all keys in multi-key channel
  */
-export async function disableAllMultiKeys(
-  channelId: number
-): Promise<{ success: boolean; message?: string }> {
-  return manageMultiKeys({
+export async function disableAllMultiKeys(channelId: number): Promise<void> {
+  await manageMultiKeys({
     channel_id: channelId,
     action: 'disable_all_keys',
-  }) as Promise<{ success: boolean; message?: string }>
+  })
 }
 
 /**
@@ -457,11 +433,12 @@ export async function disableAllMultiKeys(
  */
 export async function deleteDisabledMultiKeys(
   channelId: number
-): Promise<{ success: boolean; message?: string; data?: number }> {
-  return manageMultiKeys({
+): Promise<{ applied: boolean; message?: string }> {
+  const res = await manageMultiKeys({
     channel_id: channelId,
     action: 'delete_disabled_keys',
-  }) as Promise<{ success: boolean; message?: string; data?: number }>
+  })
+  return res as { applied: boolean; message?: string }
 }
 
 // ============================================================================
@@ -471,29 +448,15 @@ export async function deleteDisabledMultiKeys(
 /**
  * Enable all channels with a specific tag
  */
-export async function enableTagChannels(
-  tag: string
-): Promise<{ success: boolean; message?: string }> {
-  const res = await api.post(
-    '/api/channel/tag/enabled',
-    { tag },
-    channelActionConfig()
-  )
-  return res.data
+export async function enableTagChannels(tag: string): Promise<void> {
+  await api.post('/api/channel/tag/enabled', { tag }, channelActionConfig())
 }
 
 /**
  * Disable all channels with a specific tag
  */
-export async function disableTagChannels(
-  tag: string
-): Promise<{ success: boolean; message?: string }> {
-  const res = await api.post(
-    '/api/channel/tag/disabled',
-    { tag },
-    channelActionConfig()
-  )
-  return res.data
+export async function disableTagChannels(tag: string): Promise<void> {
+  await api.post('/api/channel/tag/disabled', { tag }, channelActionConfig())
 }
 
 /**
@@ -501,19 +464,16 @@ export async function disableTagChannels(
  */
 export async function editTagChannels(
   params: TagOperationParams
-): Promise<{ success: boolean; message?: string }> {
-  const res = await api.put('/api/channel/tag', params, channelActionConfig())
-  return res.data
+): Promise<void> {
+  await api.put('/api/channel/tag', params, channelActionConfig())
 }
 
 /**
- * Get models for a specific tag
+ * Get models for a specific tag（成功体是逗号分隔的裸字符串）。
  */
-export async function getTagModels(
-  tag: string
-): Promise<{ success: boolean; message?: string; data?: string }> {
+export async function getTagModels(tag: string): Promise<string> {
   const res = await api.get('/api/channel/tag/models', { params: { tag } })
-  return res.data
+  return typeof res.data === 'string' ? res.data : ''
 }
 
 // ============================================================================
@@ -546,47 +506,36 @@ export async function fetchModels(data: {
 export async function deleteOllamaModel(params: {
   channel_id: number
   model_name: string
-}): Promise<{ success: boolean; message?: string }> {
-  const res = await api.delete(
+}): Promise<void> {
+  await api.delete(
     '/api/channel/ollama/delete',
     channelActionConfig({ data: params })
   )
-  return res.data
 }
 
 /**
  * Test all enabled channels
  */
-export async function testAllChannels(): Promise<{
-  success: boolean
-  message?: string
-}> {
-  const res = await api.get('/api/channel/test', channelActionConfig())
-  return res.data
+export async function testAllChannels(): Promise<void> {
+  await api.get('/api/channel/test', channelActionConfig())
 }
 
 /**
  * Get all available models
  */
-export async function getAllModels(): Promise<{
-  success: boolean
-  message?: string
-  data?: Array<{ id: string; [key: string]: unknown }>
-}> {
+export async function getAllModels(): Promise<
+  Array<{ id: string; [key: string]: unknown }>
+> {
   const res = await api.get('/api/channel/models')
-  return res.data
+  return Array.isArray(res.data) ? res.data : []
 }
 
 /**
  * Get all enabled models
  */
-export async function getEnabledModels(): Promise<{
-  success: boolean
-  message?: string
-  data?: string[]
-}> {
+export async function getEnabledModels(): Promise<string[]> {
   const res = await api.get('/api/channel/models_enabled')
-  return res.data
+  return Array.isArray(res.data) ? res.data : []
 }
 
 // ============================================================================
@@ -598,11 +547,35 @@ export async function getEnabledModels(): Promise<{
  */
 export async function getOllamaVersion(
   channelId: number
-): Promise<{ success: boolean; message?: string; data?: { version: string } }> {
+): Promise<{ version: string }> {
   const res = await api.get(`/api/channel/ollama/version/${channelId}`)
   return res.data
 }
 
 // ============================================================================
-// Group Management
+// Codex Response Types
 // ============================================================================
+
+/**
+ * Codex 用量/重置额度响应（api-spec §5.3.1）：
+ * 成功 `{upstream_status, body}`；上游非 2xx 时后端回 502 upstream_error。
+ */
+export type CodexUsageResponse = {
+  upstream_status: number
+  body: unknown
+}
+
+export type CodexResetCreditsResponse = CodexUsageResponse
+
+export type CodexUsageResetResponse = CodexUsageResponse
+
+/** 刷新 Codex 凭据成功体（api-spec §5.3.1）。 */
+export type CodexCredentialRefreshResponse = {
+  expires_at?: string
+  last_refresh?: string
+  account_id?: string
+  email?: string
+  channel_id?: number
+  channel_type?: number
+  channel_name?: string
+}

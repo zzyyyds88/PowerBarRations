@@ -239,13 +239,12 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
 
   const handleSaveAll = async () => {
     try {
-      const result = await updateOption.mutateAsync({
+      // 成功无实体（204）；失败由 axios 拒绝。
+      await updateOption.mutateAsync({
         key: 'console_setting.api_info',
         value: JSON.stringify(apiInfoList),
       })
-      if (result.success) {
-        setDraftApiInfoList(null)
-      }
+      setDraftApiInfoList(null)
     } catch (error) {
       handleServerError(error, t('Failed to save API info'))
     }

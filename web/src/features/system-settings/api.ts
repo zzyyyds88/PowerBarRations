@@ -20,24 +20,36 @@ import { api } from '@/lib/api'
 
 import type {
   LogCleanupTask,
-  SystemOptionsResponse,
-  SystemTaskListResponse,
+  SystemOption,
+  SystemTask,
   SystemTaskResponse,
+  SystemTaskListResponse,
   UpdateOptionRequest,
-  UpdateOptionResponse,
 } from './types'
 
-export async function getSystemOptions() {
-  const res = await api.get<SystemOptionsResponse>('/api/option/')
-  return res.data
+/** `GET /api/option/`（基座面）成功即裸选项数组；稳定面 `/api/system/options/all` 是 `{items}`。 */
+export async function getSystemOptions(): Promise<SystemOption[]> {
+  const res = await api.get<SystemOption[] | { items?: SystemOption[] }>(
+    '/api/option/'
+  )
+  const body = res.data
+  if (Array.isArray(body)) return body
+  return body?.items ?? []
 }
 
-export async function updateSystemOption(request: UpdateOptionRequest) {
-  const res = await api.put<UpdateOptionResponse>('/api/option/', request)
-  return res.data
+/** `PUT /api/option/` 成功无实体（204）。 */
+export async function updateSystemOption(
+  request: UpdateOptionRequest
+): Promise<void> {
+  await api.put('/api/option/', request)
 }
 
-export async function startLogCleanupTask(targetTimestamp: number) {
+/**
+ * `POST /api/system-task/log-cleanup` 成功即裸任务对象。
+ */
+export async function startLogCleanupTask(
+  targetTimestamp: number
+): Promise<SystemTaskResponse<LogCleanupTask>> {
   const res = await api.post<SystemTaskResponse<LogCleanupTask>>(
     '/api/system-task/log-cleanup',
     null,
@@ -48,26 +60,42 @@ export async function startLogCleanupTask(targetTimestamp: number) {
   return res.data
 }
 
-export async function getCurrentLogCleanupTask() {
+/**
+ * `GET /api/system-task/current` 成功即裸任务对象；无任务时后端回 204（无实体）。
+ */
+export async function getCurrentLogCleanupTask(): Promise<
+  SystemTaskResponse<LogCleanupTask | null>
+> {
   const res = await api.get<SystemTaskResponse<LogCleanupTask | null>>(
     '/api/system-task/current',
     {
       params: { type: 'log_cleanup' },
     }
   )
-  return res.data
+  return res.data ?? null
 }
 
-export async function getSystemTask(taskId: string) {
+/** `GET /api/system-task/{id}` 成功即裸任务对象。 */
+export async function getSystemTask(
+  taskId: string
+): Promise<SystemTaskResponse<LogCleanupTask>> {
   const res = await api.get<SystemTaskResponse<LogCleanupTask>>(
     `/api/system-task/${taskId}`
   )
   return res.data
 }
 
-export async function listSystemTasks(limit = 20) {
-  const res = await api.get<SystemTaskListResponse>('/api/system-task/list', {
-    params: { limit },
-  })
-  return res.data
+/** `GET /api/system-task/list` 成功即裸任务数组。 */
+export async function listSystemTasks(
+  limit = 20
+): Promise<SystemTaskListResponse> {
+  const res = await api.get<SystemTask[] | { items?: SystemTask[] }>(
+    '/api/system-task/list',
+    { params: { limit } }
+  )
+  const body = res.data
+  if (Array.isArray(body)) return body
+  return body?.items ?? []
 }
+
+export type { SystemTask }

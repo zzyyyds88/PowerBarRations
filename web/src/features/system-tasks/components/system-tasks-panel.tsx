@@ -40,7 +40,6 @@ import type {
 } from '@/features/system-settings/types'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampRelative, formatTimestampToDate } from '@/lib/format'
-import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 const TASK_LIMIT = 20
@@ -206,13 +205,8 @@ export function SystemTasksPanel() {
   const { t } = useTranslation()
   const tasksQuery = useQuery({
     queryKey: ['system-tasks', 'list'],
-    queryFn: async () => {
-      const res = await listSystemTasks(TASK_LIMIT)
-      if (!res.success || !Array.isArray(res.data)) {
-        throw createServerError(res, t('We could not load system tasks.'))
-      }
-      return res.data
-    },
+    // 成功即裸任务数组；失败由 axios 拒绝。
+    queryFn: async () => listSystemTasks(TASK_LIMIT),
     staleTime: 30 * 1000,
     retry: false,
     refetchInterval: (query) =>

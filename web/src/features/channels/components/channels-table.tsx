@@ -44,7 +44,6 @@ import {
 } from '@/components/ui/tooltip'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getChannels, searchChannels } from '../api'
 import {
@@ -210,44 +209,40 @@ export function ChannelsTable() {
       page_size: pagination.pageSize,
     }),
     queryFn: async () => {
+      // 基座面列表仍返回 {items,total,...}（分页参数由请求端控制）。
       if (shouldSearch) {
-        return requireServerSuccess(
-          await searchChannels({
-            keyword: globalFilter,
-            model: modelFilter,
-            status:
-              statusFilter.length > 0 && !statusFilter.includes('all')
-                ? statusFilter[0]
-                : undefined,
-            tag_mode: enableTagMode,
-            id_sort: idSort,
-            ...sortParams,
-            p: pagination.pageIndex + 1,
-            page_size: pagination.pageSize,
-          })
-        )
-      } else {
-        return requireServerSuccess(
-          await getChannels({
-            status:
-              statusFilter.length > 0 && !statusFilter.includes('all')
-                ? statusFilter[0]
-                : undefined,
-            tag_mode: enableTagMode,
-            id_sort: idSort,
-            ...sortParams,
-            p: pagination.pageIndex + 1,
-            page_size: pagination.pageSize,
-          })
-        )
+        return searchChannels({
+          keyword: globalFilter,
+          model: modelFilter,
+          status:
+            statusFilter.length > 0 && !statusFilter.includes('all')
+              ? statusFilter[0]
+              : undefined,
+          tag_mode: enableTagMode,
+          id_sort: idSort,
+          ...sortParams,
+          p: pagination.pageIndex + 1,
+          page_size: pagination.pageSize,
+        })
       }
+      return getChannels({
+        status:
+          statusFilter.length > 0 && !statusFilter.includes('all')
+            ? statusFilter[0]
+            : undefined,
+        tag_mode: enableTagMode,
+        id_sort: idSort,
+        ...sortParams,
+        p: pagination.pageIndex + 1,
+        page_size: pagination.pageSize,
+      })
     },
     placeholderData: (previousData) => previousData,
   })
 
   // Apply tag aggregation if tag mode is enabled
   const channels = useMemo(() => {
-    const rawChannels = data?.data?.items || []
+    const rawChannels = data?.items || []
 
     if (enableTagMode && rawChannels.length > 0) {
       return aggregateChannelsByTag(rawChannels)
@@ -256,7 +251,7 @@ export function ChannelsTable() {
     return rawChannels
   }, [data, enableTagMode])
 
-  const totalCount = data?.data?.total || 0
+  const totalCount = data?.total || 0
 
   // Columns configuration
   const columns = useChannelsColumns({ enableSelection: batchMode })

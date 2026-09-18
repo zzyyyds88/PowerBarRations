@@ -16,8 +16,5 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export type AboutResponse = {
-  success: boolean
-  message: string
-  data?: string
-}
+/** \`GET /api/about\` 成功即裸字符串（HTML/Markdown 内容）。 */
+export type AboutResponse = string

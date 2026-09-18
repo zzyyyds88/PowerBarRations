@@ -67,10 +67,7 @@ async function renderModelsPage() {
       url === '/api/console/models/search'
     ) {
       return {
-        data: {
-          success: true,
-          data: { items: [metadata, channel], total: 2 },
-        },
+        data: { items: [metadata, channel], total: 2 },
       }
     }
     if (url === '/api/v1/models') {
@@ -87,7 +84,7 @@ async function renderModelsPage() {
         },
       }
     }
-    return { data: { success: true, data: { items: [] } } }
+    return { data: { items: [] } }
   })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

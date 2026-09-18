@@ -29,7 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { pbrModelsQueryKey } from '@/features/routes/api'
 import { ROLE } from '@/lib/roles'
-import { createServerError } from '@/lib/server-error-message'
+import { getServerErrorDetails } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { deleteModel, deleteModels, type ModelDeleteResult } from '../../api'
@@ -63,29 +63,31 @@ export function ModelDeleteDialog(props: ModelDeleteDialogProps) {
     mutationFn: async (): Promise<ModelDeleteResult> => {
       const ids = props.models.map((model) => model.id)
       setLaneConflict(null)
-      const response =
-        ids.length === 1
-          ? await deleteModel(
-              ids[0],
-              removeFromChannels && supportsChannelRemoval,
-              removePricing && canEditPricing
-            )
-          : await deleteModels(
-              ids,
-              removeFromChannels && supportsChannelRemoval,
-              removePricing && canEditPricing
-            )
-      if (!response.success) {
-        // 被车道引用：后端返回 code=conflict + data.blocked，弹窗内列出受影响渠道/车道。
-        if (response.code === 'conflict' && response.data?.blocked) {
-          setLaneConflict(response.data.blocked)
+      try {
+        if (ids.length === 1) {
+          return await deleteModel(
+            ids[0],
+            removeFromChannels && supportsChannelRemoval,
+            removePricing && canEditPricing
+          )
         }
-        throw createServerError(response, t('Failed to delete model'))
+        return await deleteModels(
+          ids,
+          removeFromChannels && supportsChannelRemoval,
+          removePricing && canEditPricing
+        )
+      } catch (error) {
+        // 被车道引用：新契约把明细放在 error.details.blocked（api-spec §3），
+        // 弹窗内列出受影响渠道/车道。
+        const details = getServerErrorDetails(error)
+        if (details.code === 'conflict') {
+          const raw = details.details as
+            | { blocked?: Record<string, string[]> }
+            | undefined
+          if (raw?.blocked) setLaneConflict(raw.blocked)
+        }
+        throw error
       }
-      if (!response.data) {
-        throw createServerError(response, t('Failed to delete model'))
-      }
-      return response.data
     },
     onSuccess: async (result) => {
       await client.invalidateQueries({ queryKey: modelsQueryKeys.lists() })

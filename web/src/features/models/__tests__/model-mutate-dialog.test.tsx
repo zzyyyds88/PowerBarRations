@@ -44,12 +44,12 @@ function renderDialog(onOpenChange = vi.fn()) {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     if (url === '/api/console/models/7') {
-      return { data: { success: true, data: model } }
+      return { data: model }
     }
     if (url === '/api/channel/search') {
-      return { data: { success: true, data: { items: [], total: 0 } } }
+      return { data: { items: [], total: 0 } }
     }
-    return { data: { success: true, data: { items: [] } } }
+    return { data: { items: [] } }
   })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

@@ -134,11 +134,7 @@ export function OllamaModelsDialog({
             type: CHANNEL_TYPE_OLLAMA,
             key: typeof currentRow?.key === 'string' ? currentRow.key : '',
           })
-          if (payloadLive?.success) {
-            normalized = normalizeOllamaModels(payloadLive.data)
-          } else if (payloadLive?.message) {
-            lastErr = String(payloadLive.message)
-          }
+          normalized = normalizeOllamaModels(payloadLive)
         } catch (err: unknown) {
           lastErr = err instanceof Error ? err.message : ''
         }
@@ -147,12 +143,8 @@ export function OllamaModelsDialog({
       // 2) Fallback to server-side fetch by channelId
       if (!normalized.length) {
         const payload = await fetchUpstreamModels(Number(channelId))
-        if (payload?.success) {
-          normalized = normalizeOllamaModels(payload.data)
-          lastErr = ''
-        } else {
-          lastErr = String(payload?.message || '')
-        }
+        normalized = normalizeOllamaModels(payload)
+        lastErr = ''
       }
 
       if (!normalized.length && lastErr) {
@@ -207,17 +199,13 @@ export function OllamaModelsDialog({
         : [...new Set([...existingModels, ...selected])]
 
     try {
-      const res = await updateChannel(currentRow.id, { models: next.join(',') })
-      if (res.success) {
-        toast.success(
-          mode === 'replace'
-            ? t('Models updated successfully')
-            : t('Models appended successfully')
-        )
-        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      } else {
-        handleServerError(res, t('Failed to update models'))
-      }
+      await updateChannel(currentRow.id, { models: next.join(',') })
+      toast.success(
+        mode === 'replace'
+          ? t('Models updated successfully')
+          : t('Models appended successfully')
+      )
+      queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
     } catch (err: unknown) {
       handleServerError(err, t('Failed to update models'))
     }
@@ -339,19 +327,15 @@ export function OllamaModelsDialog({
     if (!channelId) return
     try {
       setIsDeleting(true)
-      const payload = await deleteOllamaModel({
+      await deleteOllamaModel({
         channel_id: Number(channelId),
         model_name: modelName,
       })
-      if (payload?.success) {
-        toast.success(t('Model deleted'))
-        await fetchOllamaModels()
-        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-        setDeleteOpen(false)
-        setDeleteTarget(null)
-      } else {
-        handleServerError(payload, t('Failed to delete model'))
-      }
+      toast.success(t('Model deleted'))
+      await fetchOllamaModels()
+      queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      setDeleteOpen(false)
+      setDeleteTarget(null)
     } catch (err: unknown) {
       handleServerError(err, t('Failed to delete model'))
     } finally {
