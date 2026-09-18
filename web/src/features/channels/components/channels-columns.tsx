@@ -31,7 +31,6 @@ import { useTranslation } from 'react-i18next'
 
 import { BadgeListCell } from '@/components/data-table'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -52,11 +51,18 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { truncateText } from '@/lib/utils'
 
 import { getCodexUsage } from '../api'
-import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
+import {
+  CHANNEL_PROTOCOL_CUSTOM_VALUE,
+  CHANNEL_STATUS_CONFIG,
+  MODEL_FETCHABLE_TYPES,
+} from '../constants'
 import {
   formatRelativeTime,
   formatResponseTime,
   getBalanceVariant,
+  getChannelProtocolFromChannel,
+  getChannelProtocolIconType,
+  getChannelProtocolLabelKey,
   getResponseTimeConfig,
   isMultiKeyChannel,
   parseModelsList,
@@ -67,6 +73,7 @@ import {
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
+import { ChannelTypeLogo } from './channel-type-badge'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
@@ -145,6 +152,70 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
  */
 const MAX_INLINE_BALANCE_CHARS = 8
 const SENSITIVE_MASK = '••••'
+
+/**
+ * Protocol cell. Value comes from the single shared normalizer
+ * (`getChannelProtocolFromChannel`) that also drives the editor's protocol
+ * dropdown, so list and dialog can never disagree (ui-spec §6.4). Channels
+ * whose adapter type is outside the 4 protocols show "Custom" instead of being
+ * silently rewritten to one of them.
+ */
+export function ProtocolCell({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+
+  if (isTagAggregateRow(channel)) {
+    return <span className='text-muted-foreground text-xs'>-</span>
+  }
+
+  const protocol = getChannelProtocolFromChannel(channel)
+  const labelKey = getChannelProtocolLabelKey(protocol)
+
+  return (
+    <div className='flex min-w-0 items-center gap-1.5'>
+      {/* 相邻文本已承载协议名；图标纯属装饰，其 SVG <title> 不得让读屏念两遍。 */}
+      <span aria-hidden='true' className='contents'>
+        <ChannelTypeLogo
+          type={getChannelProtocolIconType(protocol, channel.type)}
+          size={16}
+        />
+      </span>
+      <TruncatedText text={t(labelKey)} maxWidth='max-w-full' />
+    </div>
+  )
+}
+
+/**
+ * Second line of the merged Response column: when the channel was last probed.
+ * The absolute timestamp stays in the tooltip so the narrow cell can show a
+ * scannable relative time.
+ */
+function ResponseTestedTime(props: {
+  testTime: number
+  locale: Intl.LocalesArgument
+}) {
+  if (!props.testTime || props.testTime === 0) {
+    return <span className='text-muted-foreground text-xs'>-</span>
+  }
+
+  const fullDate = formatTimestampToDate(props.testTime)
+
+  return (
+    <TooltipProvider delay={100}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className='text-muted-foreground w-fit text-xs whitespace-nowrap' />
+          }
+        >
+          {formatRelativeTime(props.testTime, props.locale)}
+        </TooltipTrigger>
+        <TooltipContent side='top'>
+          <p className='font-mono text-sm'>{fullDate}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
 
 /**
  * Balance/usage cell. Codex channels open their account usage dialog from the
@@ -404,21 +475,10 @@ export function useChannelsColumns(
           ]
         : []),
 
-      // ID column
-      {
-        accessorKey: 'id',
-        header: t('ID'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => {
-          const id = row.getValue('id') as number
-          return <TableId value={sensitiveVisible ? id : SENSITIVE_MASK} />
-        },
-        size: 80,
-      },
-      // Name column
+      // Channel column (name + protocol glyph + multi-key rotation badge)
       {
         accessorKey: 'name',
-        header: t('Name'),
+        header: t('Channel'),
         meta: { mobileTitle: true },
         cell: ({ row }) => {
           const isTagRow = isTagAggregateRow(row.original)
@@ -461,6 +521,13 @@ export function useChannelsColumns(
           const settings = parseChannelSettings(channel.setting)
           const isPassThrough = settings.pass_through_body_enabled === true
           const hasParamOverride = Boolean(channel.param_override?.trim())
+          // 协议图标（ui-spec §6.4）：与「协议」列共用同一套归一化判定，名称单元格
+          // 只放图标、文字留给协议列。
+          const protocol = getChannelProtocolFromChannel(channel)
+          const protocolIconType = getChannelProtocolIconType(
+            protocol,
+            channel.type
+          )
           // 多密钥轮询模式标记：原在「类型」列，该列移除后移到名称单元格，
           // 避免丢掉"随机/轮询"这一运维信号。
           const isMultiKey = isMultiKeyChannel(channel)
@@ -476,6 +543,7 @@ export function useChannelsColumns(
             <div className='flex max-w-full min-w-0 items-center gap-2'>
               <div className='flex max-w-full min-w-0 flex-col gap-1'>
                 <div className='flex max-w-full min-w-0 items-center gap-1.5'>
+                  <ChannelTypeLogo type={protocolIconType} size={16} />
                   <TruncatedText
                     text={sensitiveVisible ? name : SENSITIVE_MASK}
                     className='font-medium'
@@ -551,6 +619,91 @@ export function useChannelsColumns(
         },
         size: 260,
         minSize: 200,
+      },
+
+      // Protocol column (4 upstream protocols + "Custom" for legacy vendor types)
+      {
+        id: 'protocol',
+        accessorFn: (row) =>
+          isTagAggregateRow(row)
+            ? undefined
+            : (getChannelProtocolFromChannel(row) ??
+              CHANNEL_PROTOCOL_CUSTOM_VALUE),
+        header: t('Protocol'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => <ProtocolCell channel={row.original} />,
+        filterFn: (row, id, value) => {
+          const selected = value as string[] | undefined
+          if (!selected || selected.length === 0) {
+            return true
+          }
+
+          // Tag rows aggregate channels of mixed protocols; keep them visible so
+          // filtering never hides a whole group by accident.
+          if (isTagAggregateRow(row.original)) {
+            return true
+          }
+
+          return selected.includes(String(row.getValue(id) ?? ''))
+        },
+        size: 170,
+        minSize: 140,
+        enableSorting: false,
+      },
+
+      // Models column (declared count + list summary)
+      {
+        accessorKey: 'models',
+        header: t('Models'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const models = row.getValue('models') as string
+          const modelArray = parseModelsList(models)
+          return (
+            <div className='flex min-w-0 flex-col gap-0.5'>
+              <span className='text-muted-foreground text-xs whitespace-nowrap'>
+                {t('{{count}} models', { count: modelArray.length })}
+              </span>
+              <BadgeListCell
+                items={modelArray.map((model) => (
+                  <StatusBadge
+                    key={model}
+                    label={model}
+                    autoColor={model}
+                    size='sm'
+                    className='font-mono'
+                  />
+                ))}
+              />
+            </div>
+          )
+        },
+        size: 200,
+        enableSorting: false,
+      },
+
+      // Tag column
+      {
+        accessorKey: 'tag',
+        header: t('Tag'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const tag = row.getValue('tag') as string | null
+          if (!tag) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+
+          return (
+            <StatusBadge
+              label={tag}
+              autoColor={tag}
+              size='sm'
+              className='-ml-1.5'
+            />
+          )
+        },
+        size: 120,
+        enableSorting: false,
       },
 
       // Status column
@@ -684,65 +837,7 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
-      // Models column
-      {
-        accessorKey: 'models',
-        header: t('Models'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => {
-          const models = row.getValue('models') as string
-          const modelArray = parseModelsList(models)
-          return (
-            <BadgeListCell
-              items={modelArray.map((model) => (
-                <StatusBadge
-                  key={model}
-                  label={model}
-                  autoColor={model}
-                  size='sm'
-                  className='font-mono'
-                />
-              ))}
-            />
-          )
-        },
-        size: 200,
-        enableSorting: false,
-      },
-
-      // Tag column
-      {
-        accessorKey: 'tag',
-        header: t('Tag'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => {
-          const tag = row.getValue('tag') as string | null
-          if (!tag) {
-            return <span className='text-muted-foreground text-xs'>-</span>
-          }
-
-          return (
-            <StatusBadge
-              label={tag}
-              autoColor={tag}
-              size='sm'
-              className='-ml-1.5'
-            />
-          )
-        },
-        size: 120,
-        enableSorting: false,
-      },
-
-      // Balance column (Used/Remaining)
-      {
-        accessorKey: 'balance',
-        header: t('Used / Remaining'),
-        cell: ({ row }) => <BalanceCell channel={row.original} />,
-        size: 180,
-      },
-
-      // Response Time column
+      // Response column (probe latency + last tested time)
       {
         accessorKey: 'response_time',
         header: t('Response'),
@@ -750,59 +845,53 @@ export function useChannelsColumns(
         cell: ({ row }) => {
           const responseTime = row.getValue('response_time') as number
           const config = getResponseTimeConfig(responseTime)
-
-          return (
-            <StatusBadge
-              label={formatResponseTime(responseTime, t)}
-              variant={config.variant}
-              size='sm'
-              copyable={false}
-              className='-ml-1.5'
-            />
-          )
-        },
-        size: 110,
-      },
-
-      // Test Time column
-      {
-        accessorKey: 'test_time',
-        header: t('Last Tested'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => {
           const testTime = row.getValue('test_time') as number
 
-          // For invalid timestamps, show "Never" badge
-          if (!testTime || testTime === 0) {
+          return (
+            <div className='flex min-w-0 flex-col gap-0.5'>
+              <StatusBadge
+                label={formatResponseTime(responseTime, t)}
+                variant={config.variant}
+                size='sm'
+                copyable={false}
+                className='-ml-1.5'
+              />
+              <ResponseTestedTime testTime={testTime} locale={locale} />
+            </div>
+          )
+        },
+        size: 150,
+        minSize: 130,
+      },
+
+      // Usage column (read-only upstream balance reference; PBR has no billing)
+      {
+        accessorKey: 'balance',
+        header: t('Usage'),
+        cell: ({ row }) => <BalanceCell channel={row.original} />,
+        size: 180,
+      },
+
+      // Created column
+      {
+        accessorKey: 'created_time',
+        header: t('Created'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const createdTime = row.getValue('created_time') as number
+          if (!createdTime || createdTime === 0) {
             return <span className='text-muted-foreground text-xs'>-</span>
           }
 
-          const timeText = formatRelativeTime(testTime, locale)
-          const fullDate = formatTimestampToDate(testTime)
-
-          // For valid timestamps, show tooltip with full date
           return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <StatusBadge
-                      label={timeText}
-                      variant='neutral'
-                      size='sm'
-                      copyable={false}
-                      className='-ml-1.5 cursor-pointer'
-                    />
-                  }
-                />
-                <TooltipContent side='top'>
-                  <p className='font-mono text-sm'>{fullDate}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <TruncatedText
+              text={formatTimestampToDate(createdTime)}
+              maxWidth='max-w-full'
+              className='text-muted-foreground text-xs'
+            />
           )
         },
-        size: 120,
+        size: 160,
         enableSorting: false,
       },
 

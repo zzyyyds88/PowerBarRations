@@ -200,11 +200,11 @@ describe('quota adjustment log localization', () => {
         within(screen.getByRole('dialog')).getByText(scenario.chinese)
       ).toBeInTheDocument()
       expect(screen.queryByText('English export fallback')).toBeNull()
+      // PBR 无额度语义：详情弹窗只渲染本地化的操作描述，不再有额度调整字段。
       if ('target_user_id' in scenario.params) {
         const dialog = within(screen.getByRole('dialog'))
-        expect(dialog.getByText('quota-owner')).toBeVisible()
-        expect(dialog.getByText('调整前额度')).toBeVisible()
-        expect(dialog.getByText('调整后额度')).toBeVisible()
+        expect(dialog.queryByText('调整前额度')).toBeNull()
+        expect(dialog.queryByText('调整后额度')).toBeNull()
       }
     }
   )

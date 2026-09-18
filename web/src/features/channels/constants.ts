@@ -217,6 +217,44 @@ export const CHANNEL_PROTOCOL_OPTIONS = [
 
 export const DEFAULT_CHANNEL_PROTOCOL = 'openai-chat' as const
 
+/**
+ * 「自定义」桶：适配器类型不在 4 协议内的旧渠道（ui-spec §6.4）。列表该列显示
+ * 自定义，编辑弹窗仍以 (Current) 保留原厂商类型，保存不静默改写。
+ */
+export const CHANNEL_PROTOCOL_CUSTOM_VALUE = 'custom'
+
+/**
+ * 协议的展示文案（label 为 i18n 键，组件中用 t(label) 渲染）：
+ * - `label`：编辑器「协议」下拉使用的完整端点名；
+ * - `shortLabel`：列表「协议」列与工具栏协议筛选使用的短名（端点路径在窄列里只会溢出成噪音）。
+ * 两处都必须取自这里，禁止各写一份 label 表。
+ */
+export const CHANNEL_PROTOCOL_PRESENTATION = {
+  'openai-chat': {
+    label: 'OpenAI compatible (/v1/chat/completions)',
+    shortLabel: 'OpenAI compatible',
+  },
+  'openai-responses': {
+    label: 'OpenAI Responses (/v1/responses)',
+    shortLabel: 'OpenAI Responses',
+  },
+  anthropic: {
+    label: 'Anthropic (/v1/messages)',
+    shortLabel: 'Anthropic',
+  },
+  gemini: {
+    label: 'Gemini (/v1beta/models/{model}:generateContent)',
+    shortLabel: 'Gemini',
+  },
+  [CHANNEL_PROTOCOL_CUSTOM_VALUE]: {
+    label: 'Custom',
+    shortLabel: 'Custom',
+  },
+} as const satisfies Record<
+  import('./types').ChannelProtocol | typeof CHANNEL_PROTOCOL_CUSTOM_VALUE,
+  { readonly label: string; readonly shortLabel: string }
+>
+
 // ============================================================================
 // Channel Status (label values are i18n keys; use t(config.label) in components)
 // ============================================================================

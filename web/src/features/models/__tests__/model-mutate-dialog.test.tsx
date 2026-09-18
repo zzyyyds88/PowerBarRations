@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -102,10 +108,81 @@ it('keeps only the basic information and channel association sections', async ()
     'Matching Rules',
     'Endpoints',
     'Status & Sync',
-    'Name Rule',
+    'Sync policy',
+    'Display policy',
+    'Custom endpoints',
   ]) {
     expect(screen.queryByText(removed)).not.toBeInTheDocument()
   }
+})
+
+it('offers the four-level match type selector defaulting to exact', async () => {
+  renderDialog()
+  const trigger = await screen.findByRole('combobox', { name: 'Match Type' })
+  expect(trigger).toHaveTextContent('Exact')
+  expect(screen.getByText('Match model name exactly')).toBeVisible()
+  await userEvent.click(trigger)
+  const listbox = await screen.findByRole('listbox')
+  expect(
+    within(listbox)
+      .getAllByRole('option')
+      .map((option) => option.textContent)
+  ).toEqual(['Exact', 'Prefix', 'Contains', 'Suffix'])
+})
+
+it('explains auto-matching when a non-exact rule is selected and submits name_rule', async () => {
+  renderDialog()
+  const user = userEvent.setup()
+  const trigger = await screen.findByRole('combobox', { name: 'Match Type' })
+  expect(
+    screen.queryByText(/automatically matches model names declared by channels/)
+  ).not.toBeInTheDocument()
+  await user.click(trigger)
+  await user.click(await screen.findByRole('option', { name: 'Prefix' }))
+  // 选中非精确档后，字段下方出现"自动命中渠道声明的模型名"提示。
+  expect(
+    screen.getByText(
+      'This rule automatically matches model names declared by channels by prefix, contains or suffix (no need to add them one by one).'
+    )
+  ).toBeVisible()
+  expect(trigger).toHaveTextContent('Prefix')
+  const put = vi.spyOn(api, 'put').mockResolvedValue({
+    data: { ...model, name_rule: 1 },
+  })
+  await user.click(screen.getByRole('button', { name: 'Save metadata' }))
+  await waitFor(() =>
+    expect(put).toHaveBeenCalledWith(
+      '/api/console/models/',
+      expect.objectContaining({ id: 7, name_rule: 1 }),
+      expect.anything()
+    )
+  )
+})
+
+it('preselects the stored rule when editing a matching-rule record', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 100 })
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/console/models/7') {
+      return { data: { ...model, name_rule: 3 } }
+    }
+    if (url === '/api/channel/search') {
+      return { data: { items: [], total: 0 } }
+    }
+    return { data: { items: [] } }
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <ModelsProvider>
+        <ModelMutateDrawer open onOpenChange={vi.fn()} currentRow={model} />
+      </ModelsProvider>
+    </QueryClientProvider>
+  )
+  const trigger = await screen.findByRole('combobox', { name: 'Match Type' })
+  await waitFor(() => expect(trigger).toHaveTextContent('Suffix'))
+  expect(screen.getByText('Match models ending with this name')).toBeVisible()
 })
 
 it('auto-applies the icon detected from the model name', async () => {

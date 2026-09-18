@@ -42,19 +42,28 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { resolveModelProvider } from '@/lib/model-provider'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 
 import { createModel, updateModel, getModel } from '../../api'
-import { modelsQueryKeys } from '../../lib'
+import { getNameRuleOptions } from '../../constants'
+import { modelsQueryKeys, getNameRuleConfigByRule } from '../../lib'
 import {
   modelFormSchema,
   transformModelToFormDefaults,
   transformFormDataToModelPayload,
   type ModelFormValues,
 } from '../../lib/model-form'
-import type { Model } from '../../types'
+import type { Model, NameRule } from '../../types'
 import { ModelLinkedChannels } from '../model-linked-channels'
 
 // 编辑模型走居中弹窗（ui-spec §6.3 / §6.9）：分区只保留「基本信息」与「渠道关联」，
@@ -92,6 +101,10 @@ export function ModelMutateDrawer(props: {
   const watchedModelName = useWatch({
     control: form.control,
     name: 'model_name',
+  })
+  const watchedNameRule = useWatch({
+    control: form.control,
+    name: 'name_rule',
   })
   const modelQuery = useQuery({
     queryKey: modelsQueryKeys.detail(currentRow?.id ?? 0),
@@ -171,6 +184,9 @@ export function ModelMutateDrawer(props: {
     }
     props.onOpenChange(open)
   }
+  // 匹配类型四档：label/description 一律取 getNameRuleConfig（ui-spec §6.3），
+  // 弹窗与列表共用同一份来源。
+  const nameRuleOptions = useMemo(() => getNameRuleOptions(t), [t])
   // 只取"真实命中的厂商图标"：resolveModelIconKey 的"首字母兜底"只用于渲染，
   // 不能自动写库（否则 example-model 会存下一个无意义的 "e"）。
   const suggestedIcon = useMemo(
@@ -288,6 +304,58 @@ export function ModelMutateDrawer(props: {
                           <FormMessage />
                         </FormItem>
                       )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name='name_rule'
+                      render={({ field }) => {
+                        const ruleName = (watchedNameRule ?? 0) as NameRule
+                        const ruleConfig = getNameRuleConfigByRule(ruleName, t)
+                        return (
+                          <FormItem>
+                            <FormLabel>{t('Match Type')}</FormLabel>
+                            <Select
+                              items={nameRuleOptions}
+                              value={String(ruleName)}
+                              onValueChange={(value) => {
+                                const next = Number(value)
+                                if (next === ruleName) return
+                                field.onChange(next)
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger className='w-full'>
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent alignItemWithTrigger={false}>
+                                <SelectGroup>
+                                  {nameRuleOptions.map((option) => (
+                                    <SelectItem
+                                      key={option.value}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              {ruleConfig.description}
+                              {ruleName !== 0 && (
+                                <span className='mt-1 block'>
+                                  {t(
+                                    'This rule automatically matches model names declared by channels by prefix, contains or suffix (no need to add them one by one).'
+                                  )}
+                                </span>
+                              )}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )
+                      }}
                     />
 
                     <FormField

@@ -17,7 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { SystemTask } from '@/features/system-settings/types'
@@ -89,4 +90,51 @@ test('splits active and historical tasks into separate sections', async () => {
   expect(await screen.findByText('Active Tasks')).toBeVisible()
   expect(screen.getByText('Task History')).toBeVisible()
   expect(screen.getByText('40%')).toBeVisible()
+})
+
+// ui-spec §6.10：采用上游 task-logs 的详细形态，详情展开 payload/state/result/error。
+test('opens the task details dialog with payload, state, result and error', async () => {
+  const mock = await listSystemTasksMock()
+  mock.mockResolvedValue([
+    makeTask({
+      task_id: 'cleanup-9',
+      status: 'failed',
+      payload: { target_timestamp: 1700000000, batch_size: 500 },
+      state: { processed: 250, progress: 50 },
+      result: { deleted_count: 250 },
+      error: 'database is locked',
+    }),
+  ])
+
+  renderPage()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'View details' }))
+
+  const dialog = await screen.findByRole('dialog', { name: 'Task Details' })
+  expect(within(dialog).getByText('Payload')).toBeVisible()
+  expect(within(dialog).getByText('State')).toBeVisible()
+  expect(within(dialog).getByText('Result')).toBeVisible()
+  expect(within(dialog).getByText('database is locked')).toBeVisible()
+  expect(within(dialog).getByText(/target_timestamp/)).toBeVisible()
+})
+
+// ui-spec §6.10：task-plugins 子系统已删，任务详情不得出现 plugin/作者/厂商。
+test('task details never mention plugins, authors or vendors', async () => {
+  const mock = await listSystemTasksMock()
+  mock.mockResolvedValue([
+    makeTask({
+      task_id: 'cleanup-1',
+      status: 'succeeded',
+      payload: { batch_size: 100 },
+    }),
+  ])
+
+  renderPage()
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole('button', { name: 'View details' }))
+
+  const dialog = await screen.findByRole('dialog', { name: 'Task Details' })
+  for (const forbidden of ['Plugin', 'Plugin author', 'Vendor']) {
+    expect(within(dialog).queryByText(forbidden)).toBeNull()
+  }
 })

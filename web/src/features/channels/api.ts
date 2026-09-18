@@ -501,6 +501,35 @@ export async function fetchModels(data: {
 }
 
 /**
+ * Fetch the upstream model list through the stable ops surface.
+ *
+ * 稳定面 `POST /api/channels/batch/fetch-models`（api-spec §5.3.1）按**渠道名**
+ * 或**草稿连接信息**拉取，不落库：成功即裸 `{models:[...]}`，上游失败由 axios
+ * 以真实状态码（502 `upstream_error`）拒绝。控制台的「获取模型列表」弹窗走这里，
+ * 已保存渠道也能带着草稿改动重新探测。
+ */
+export async function fetchUpstreamModelsBatch(params: {
+  channel?: string
+  channel_id?: number
+  base_url?: string
+  type?: number
+  key?: string
+  advanced_custom?: string
+  header_override?: string
+  proxy?: string
+}): Promise<FetchModelsResponse> {
+  const res = await api.post(
+    '/api/channels/batch/fetch-models',
+    params,
+    channelActionConfig()
+  )
+  const models = (res.data as { models?: unknown } | undefined)?.models
+  return Array.isArray(models)
+    ? models.filter((model): model is string => typeof model === 'string')
+    : []
+}
+
+/**
  * Delete an Ollama model from a channel
  */
 export async function deleteOllamaModel(params: {

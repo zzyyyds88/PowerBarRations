@@ -156,7 +156,7 @@ afterEach(async () => {
   await i18n.changeLanguage('en')
 })
 
-it('requests channel models and lists only the four model-catalog columns', async () => {
+it('requests channel models and lists the model-catalog columns', async () => {
   const { get } = await renderList()
   expect(get).toHaveBeenCalledWith('/api/console/models/', {
     params: expect.objectContaining({ include_channel_models: true }),
@@ -165,21 +165,54 @@ it('requests channel models and lists only the four model-catalog columns', asyn
   const headers = screen
     .getAllByRole('columnheader')
     .map((header) => header.textContent?.trim())
-  expect(headers).toEqual(['', 'Model', 'Description', 'Tags', 'Actions'])
+  expect(headers).toEqual([
+    '',
+    'Model',
+    'Match Type',
+    'Matched models',
+    'Description',
+    'Tags',
+    'Actions',
+  ])
   for (const removed of [
     'Channels and groups',
     'Sync policy',
     'Display policy',
     'ID',
-    'Match Type',
     'Custom endpoints',
     'Created',
     'Updated',
+    'Vendor',
+    'Available groups',
+    'Billing type',
   ]) {
     expect(
       screen.queryByRole('columnheader', { name: removed })
     ).not.toBeInTheDocument()
   }
+})
+
+it('renders the match type badge and hit count for a rule row only', async () => {
+  await renderList([
+    {
+      ...metadata,
+      model_name: 'qwen3-',
+      name_rule: 1,
+      matched_count: 2,
+      matched_models: ['qwen3-max', 'qwen3-mini'],
+    },
+    metadata,
+  ])
+  // 规则行：四档标签 + 命中数，且可查看命中的具体模型名清单。
+  expect(screen.getByText('Prefix')).toBeVisible()
+  const trigger = screen.getByRole('button', { name: 'View matched models' })
+  expect(within(trigger).getByText('2')).toBeVisible()
+  await userEvent.click(trigger)
+  const dialog = await screen.findByRole('dialog')
+  expect(within(dialog).getByText('qwen3-max')).toBeVisible()
+  // 精确行：命中数恒为自身，显示 —。
+  expect(screen.getByText('Exact')).toBeVisible()
+  expect(screen.getAllByText('—')).toHaveLength(1)
 })
 
 it('keeps channel rows individually selectable and disables metadata mutations for mixed selection', async () => {

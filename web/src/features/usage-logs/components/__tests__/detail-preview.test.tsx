@@ -28,10 +28,6 @@ import { I18nextProvider } from 'react-i18next'
 import { afterAll, afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import en from '@/i18n/locales/en.json'
-import {
-  DEFAULT_CURRENCY_CONFIG,
-  useSystemConfigStore,
-} from '@/stores/system-config-store'
 
 import type { UsageLog } from '../../data/schema'
 import type { LogOtherData } from '../../types'
@@ -47,16 +43,16 @@ vi.hoisted(() => {
 })
 afterAll(() => vi.unstubAllGlobals())
 
-function makeLog(other: LogOtherData): UsageLog {
+function makeLog(other: LogOtherData, type = 2): UsageLog {
   return {
     id: 1,
     user_id: 1,
     created_at: 1,
-    type: 2,
+    type,
     content: '',
     username: 'user',
     token_name: 'token',
-    model_name: 'wan2.5-i2v-preview',
+    model_name: 'gpt-test',
     quota: 5000,
     prompt_tokens: 0,
     completion_tokens: 0,
@@ -73,9 +69,13 @@ function makeLog(other: LogOtherData): UsageLog {
   }
 }
 
-function DetailPreview(props: { other: LogOtherData; isAdmin: boolean }) {
+function DetailPreview(props: {
+  other: LogOtherData
+  isAdmin: boolean
+  type?: number
+}) {
   const table = useReactTable({
-    data: [makeLog(props.other)],
+    data: [makeLog(props.other, props.type ?? 2)],
     columns: useCommonLogsColumns(props.isAdmin, false),
     getCoreRowModel: getCoreRowModel(),
   })
@@ -86,7 +86,7 @@ function DetailPreview(props: { other: LogOtherData; isAdmin: boolean }) {
   if (!cell) throw new Error('The log must have a content column')
   return flexRender(cell.column.columnDef.cell, cell.getContext())
 }
-const previousConfig = useSystemConfigStore.getState().config
+
 let client: QueryClient
 const i18n = createInstance()
 beforeEach(async () => {
@@ -95,89 +95,88 @@ beforeEach(async () => {
     resources: { en },
     interpolation: { escapeValue: false },
   })
-  useSystemConfigStore
-    .getState()
-    .setConfig({ currency: { ...DEFAULT_CURRENCY_CONFIG } })
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  client.setQueryData(['status'], {}, { updatedAt: Date.now() + 60_000 })
-  client.setQueryData(
-    ['pricing'],
-    { data: [], vendors: [] },
-    { updatedAt: Date.now() + 60_000 }
-  )
 })
 afterEach(() => {
   client.clear()
-  useSystemConfigStore.getState().setConfig(previousConfig)
 })
-function renderPreview(other: LogOtherData, isAdmin = true) {
+
+function renderPreview(other: LogOtherData, isAdmin = true, type = 2) {
   render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
-        <DetailPreview other={other} isAdmin={isAdmin} />
+        <DetailPreview other={other} isAdmin={isAdmin} type={type} />
       </QueryClientProvider>
     </I18nextProvider>
   )
-  return screen.getByRole('button', { name: /./ })
+  return screen.getByRole('button')
 }
 
+// PBR 通用日志只存元数据：详情预览只展示排障相关的状态/原因，
+// 不渲染上游的计费/额度/分组/倍率文案。
 test.each([
   {
-    name: 'fixed expression zero price',
+    name: 'stream failure shows the end reason',
     other: {
-      billing_mode: 'tiered_expr',
-      billing_unit: 'request' as const,
-      fixed_price: 0,
-      matched_tier: 'free',
-      expr_b64: btoa('tier("free", fixed(0))'),
+      stream_status: { status: 'error', end_reason: 'upstream closed' },
     },
-    expected: 'free · Per-call $0/request',
+    expected: 'Stream Status: upstream closed',
   },
   {
-    name: 'fixed expression trace outside the display grammar',
-    other: {
-      billing_mode: 'tiered_expr',
-      billing_unit: 'request' as const,
-      fixed_price: 0.01,
-      matched_tier: 'priority',
-      expr_b64: btoa(
-        'param("fast") == true ? tier("priority", fixed(0.01)) : tier("tokens", p * 2)'
-      ),
-    },
-    expected: 'priority · Per-call $0.01/request',
+    name: 'system prompt override is flagged',
+    other: { is_system_prompt_overwritten: true },
+    expected: 'System Prompt Override',
   },
   {
-    name: 'per-call',
-    other: { model_price: 0.25 },
-    expected: 'Per-call · $0.25',
+    name: 'missing details fall back to the content placeholder',
+    other: {},
+    expected: '—',
   },
-  {
-    name: 'standard',
-    other: { model_ratio: 1, completion_ratio: 2 },
-    expected: 'Standard · $2 / $4/M',
-  },
-  {
-    name: 'zero price fallback',
-    other: { model_price: 0, group_ratio: 1 },
-    expected: 'Group Ratio 1x',
-  },
-  { name: 'missing price fallback', other: {}, expected: '—' },
-])('$name stays visible', ({ other, expected }) => {
+])('$name', ({ other, expected }) => {
   const preview = renderPreview(other)
   expect(preview.textContent).toBe(expected)
 })
 
-test('quota saturation remains first and only billing adds to the counter', () => {
-  const preview = renderPreview({
-    model_price: 0.25,
-    admin_info: {
-      quota_saturation: {
-        op: 'round',
-        kind: 'overflow',
-        original: 3e9,
-        clamped: 2147483647,
-      },
+const saturationOther: LogOtherData = {
+  admin_info: {
+    quota_saturation: {
+      op: 'round',
+      kind: 'overflow',
+      original: 3e9,
+      clamped: 2147483647,
     },
-  })
-  expect(preview.textContent).toBe('Quota clamped+1')
+  },
+}
+
+test('quota saturation is first for admins', () => {
+  const preview = renderPreview(saturationOther, true)
+  expect(preview.textContent).toBe('Quota clamped')
+})
+
+test('quota saturation never leaks to non-admins', () => {
+  const preview = renderPreview(saturationOther, false)
+  expect(preview.textContent).toBe('—')
+})
+
+test('refund logs preview their recorded reason', () => {
+  const preview = renderPreview({ reason: 'upstream timeout' }, false, 6)
+  expect(preview.textContent).toBe('upstream timeout')
+})
+
+test('billing and quota wording never appears in the details preview', () => {
+  renderPreview(
+    {
+      model_ratio: 1,
+      completion_ratio: 2,
+      group_ratio: 1,
+      model_price: 0.25,
+      billing_mode: 'tiered_expr',
+      fixed_price: 0.04,
+      matched_tier: 'image',
+    },
+    true
+  )
+  const preview = screen.getByRole('button')
+  expect(preview.textContent).toBe('—')
+  expect(preview.textContent).not.toMatch(/Per-call|Standard|Group Ratio|\$/i)
 })

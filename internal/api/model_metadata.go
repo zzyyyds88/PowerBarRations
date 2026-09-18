@@ -94,6 +94,9 @@ func findModelMetadataByName(name string) (*model.Model, error) {
 // ListModelMetadata GET /api/model-metadata
 //
 // 模型目录元数据（不分页）：has_metadata=false 表示仅由渠道声明、尚无目录记录。
+// 本面保持轻量，**不返回** matched_count / matched_models（命中清单只在控制台面
+// /api/console/models/** 计算，api-spec §5.7）；非精确条目的 configured_channel_count
+// 按 MatchesName 命中集统计去重渠道数。
 func ListModelMetadata(c *gin.Context) {
 	// 不分页：直接取全部目录记录（GetAllModels 的 limit=0 会被 GORM 当成 LIMIT 0）。
 	var records []*model.Model
@@ -101,23 +104,20 @@ func ListModelMetadata(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
-	connections, connErr := model.GetModelConnections()
+	configured, declaredNames, connErr := channelDeclarationIndex()
 	if connErr != nil {
 		writeAPIError(c, connErr)
 		return
-	}
-	configured := map[string]map[int]bool{}
-	for _, conn := range connections {
-		if configured[conn.Model] == nil {
-			configured[conn.Model] = map[int]bool{}
-		}
-		configured[conn.Model][conn.ChannelId] = true
 	}
 	seen := map[string]bool{}
 	items := make([]gin.H, 0, len(records))
 	for _, record := range records {
 		seen[record.ModelName] = true
-		items = append(items, modelMetadataItem(record, len(configured[record.ModelName]), true))
+		items = append(items, modelMetadataItem(
+			record,
+			countConfiguredChannels(record, configured, declaredNames),
+			true,
+		))
 	}
 	for name, channelIDs := range configured {
 		if seen[name] {
@@ -133,6 +133,52 @@ func ListModelMetadata(c *gin.Context) {
 		return items[i]["model"].(string) < items[j]["model"].(string)
 	})
 	c.JSON(http.StatusOK, gin.H{"items": items, "next_cursor": nil})
+}
+
+// channelDeclarationIndex 一次性把渠道声明整理成"模型名 → 去重渠道 id 集合"。
+//
+// 供稳定面的列表与写后回读共用同一份口径；declaredNames 为去重排序后的模型名，
+// 规则条目按它逐个 MatchesName，全程不查库（避免 N+1）。
+func channelDeclarationIndex() (map[string]map[int]bool, []string, error) {
+	connections, err := model.GetModelConnections()
+	if err != nil {
+		return nil, nil, err
+	}
+	configured := map[string]map[int]bool{}
+	declaredNames := make([]string, 0, len(connections))
+	for _, conn := range connections {
+		if configured[conn.Model] == nil {
+			configured[conn.Model] = map[int]bool{}
+			declaredNames = append(declaredNames, conn.Model)
+		}
+		configured[conn.Model][conn.ChannelId] = true
+	}
+	sort.Strings(declaredNames)
+	return configured, declaredNames, nil
+}
+
+// countConfiguredChannels 统计声明了该目录条目的去重渠道数。
+//
+// 精确条目直接查表；非精确（前缀/包含/后缀）条目必须按 MatchesName 命中集统计，
+// 否则恒为 0。declaredNames 由调用方一次预计算，循环内不查库（避免 N+1）。
+func countConfiguredChannels(
+	record *model.Model,
+	configured map[string]map[int]bool,
+	declaredNames []string,
+) int {
+	if record.NameRule == model.NameRuleExact {
+		return len(configured[record.ModelName])
+	}
+	channelIDs := map[int]bool{}
+	for _, name := range declaredNames {
+		if !record.MatchesName(name) {
+			continue
+		}
+		for id := range configured[name] {
+			channelIDs[id] = true
+		}
+	}
+	return len(channelIDs)
 }
 
 func modelMetadataItem(record *model.Model, configuredChannels int, hasMetadata bool) gin.H {
@@ -161,7 +207,10 @@ func splitTagList(raw string) []string {
 
 // PutModelMetadata PUT /api/model-metadata/{model}
 //
-// 全量幂等 upsert：body 为完整对象，响应为写后回读。仅允许精确名规则（与 DELETE 约束一致）。
+// 全量幂等 upsert：body 为完整对象，响应为写后回读。`name_rule` 允许 0/1/2/3
+// （精确 / 前缀 / 包含 / 后缀），非精确条目是一条匹配规则即控制台上的"自动匹配"；
+// 越界由 model.ValidateMetadataValues 统一返回 422 validation_failed（api-spec §5.7）。
+// 响应保持轻量，不含 matched_count / matched_models——命中清单只在控制台面返回。
 func PutModelMetadata(c *gin.Context) {
 	// catch-all 路由 (/model-metadata/*model) 会带上前导 "/"，与 routes.go 同一处理。
 	name := strings.TrimPrefix(strings.TrimSpace(c.Param("model")), "/")
@@ -178,13 +227,25 @@ func PutModelMetadata(c *gin.Context) {
 	if payload.NameRule != nil {
 		nameRule = *payload.NameRule
 	}
-	if nameRule != model.NameRuleExact {
-		apierr.Unprocessable(c, apierr.CodeValidationFailed, "only exact-match (name_rule=0) metadata is supported")
-		return
-	}
 	status := 1
 	if payload.Status != nil {
 		status = *payload.Status
+	}
+	// api-spec §5.7：name_rule 放开为 0/1/2/3（精确/前缀/包含/后缀），
+	// 与控制台面走同一个 model.ValidateMetadataValues 校验，越界返回 422。
+	if err := model.ValidateMetadataValues(model.MetadataValues{
+		Status:   status,
+		NameRule: nameRule,
+	}); err != nil {
+		apierr.Unprocessable(c, apierr.CodeValidationFailed, err.Error())
+		return
+	}
+	// 先取声明索引再落库：读失败时写入尚未发生，不会留下"已写入却报 500"的歧义，
+	// 且写后回读的 configured_channel_count 与 GET 列表同口径（规则条目按命中集统计）。
+	configured, declaredNames, idxErr := channelDeclarationIndex()
+	if idxErr != nil {
+		writeAPIError(c, idxErr)
+		return
 	}
 	if dryRun(c) {
 		dryRunResult(c, "model_metadata", "update", name)
@@ -221,7 +282,11 @@ func PutModelMetadata(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, modelMetadataItem(saved, 0, true))
+	c.JSON(http.StatusOK, modelMetadataItem(
+		saved,
+		countConfiguredChannels(saved, configured, declaredNames),
+		true,
+	))
 }
 
 // DeleteModelMetadataByModel DELETE /api/model-metadata/{model}
@@ -240,6 +305,13 @@ func DeleteModelMetadataByModel(c *gin.Context) {
 		return
 	}
 	removeFromChannels := strings.EqualFold(c.Query("remove_from_channels"), "true")
+	if removeFromChannels && record.NameRule != model.NameRuleExact {
+		// 规则条目的命中集是"一批"模型名，批量摘除渠道声明语义不明确（api-spec §5.7）。
+		apierr.Write(c, http.StatusUnprocessableEntity, apierr.CodeValidationFailed,
+			"only exact-match (name_rule=0) records support ?remove_from_channels=true",
+			"delete the rule record without that flag, or edit the channels declaring the matched models")
+		return
+	}
 	force := isForce(c)
 	if removeFromChannels && !force {
 		blocked := map[string][]string{}

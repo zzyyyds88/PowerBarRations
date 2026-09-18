@@ -280,3 +280,31 @@ test('a failed manual probe offers an inline retry and the next success opens th
     within(dialog).getByRole('checkbox', { name: 'upstream-new' })
   ).toBeVisible()
 })
+
+test('the Models field offers Fetch model list which pulls the batch endpoint and fills the form', async () => {
+  mockChannelGet()
+  const post = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue({ data: { models: ['upstream-new'] } })
+  const user = userEvent.setup()
+  render(<DiscoveryHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+
+  await user.click(screen.getByRole('button', { name: 'Fetch model list' }))
+  const dialog = await screen.findByRole('dialog', { name: 'Fetch Models' })
+  // Unsaved/draft connection info goes through the stable batch ops endpoint
+  // (bare {models:[...]} success body), not the legacy base endpoint.
+  expect(post).toHaveBeenCalledWith(
+    '/api/channels/batch/fetch-models',
+    expect.objectContaining({ type: 1, base_url: 'https://saved.example' }),
+    expect.anything()
+  )
+
+  await user.click(
+    within(dialog).getByRole('checkbox', { name: 'upstream-new' })
+  )
+  await user.click(within(dialog).getByRole('button', { name: 'Save Models' }))
+
+  const models = screen.getByRole('group', { name: 'Models' })
+  expect(within(models).getByText('upstream-new')).toBeVisible()
+})

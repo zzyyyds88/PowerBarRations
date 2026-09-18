@@ -18,27 +18,17 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
-import i18next from 'i18next'
-import { afterEach, beforeAll, describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test } from 'vitest'
 
 import type { UsageLog } from '../../data/schema'
 import type { LogOtherData } from '../../types'
 import { DetailsDialog } from '../dialogs/details-dialog'
 
-const i18nKeys = {
-  'Log Details': 'Log Details',
-  Consume: 'Consume',
-  'Billing Details': 'Billing Details',
-  'Billing Mode': 'Billing Mode',
-  'Per-token': 'Per-token',
-  'Dynamic Pricing': 'Dynamic Pricing',
-  'Matched Tier': 'Matched Tier',
-  'Group Ratio': 'Group Ratio',
-  'Total Cost': 'Total Cost',
-  'Usage parameters': 'Usage parameters',
-}
-
-function makeLog(other: LogOtherData): UsageLog {
+function makeLog(
+  other: LogOtherData,
+  promptTokens = 0,
+  completionTokens = 20
+): UsageLog {
   return {
     id: 1,
     user_id: 1,
@@ -47,14 +37,14 @@ function makeLog(other: LogOtherData): UsageLog {
     content: '',
     username: 'user',
     token_name: 'token',
-    model_name: 'wan2.5-i2v-preview',
+    model_name: 'gpt-test',
     quota: 5000,
-    prompt_tokens: 0,
-    completion_tokens: 0,
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
     use_time: 0,
     is_stream: false,
     channel: 1,
-    channel_name: '',
+    channel_name: 'channel-a',
     token_id: 1,
     group: 'default',
     ip: '',
@@ -64,22 +54,21 @@ function makeLog(other: LogOtherData): UsageLog {
   }
 }
 
-function renderDetails(other: LogOtherData, promptTokens = 0): QueryClient {
+const queryClients: QueryClient[] = []
+
+function renderDetails(
+  other: LogOtherData,
+  promptTokens = 0,
+  completionTokens = 20
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
-  const freshAt = Date.now() + 60_000
-  queryClient.setQueryData(['status'], {}, { updatedAt: freshAt })
-  queryClient.setQueryData(
-    ['pricing'],
-    { data: [], vendors: [] },
-    { updatedAt: freshAt }
-  )
-
+  queryClients.push(queryClient)
   render(
     <QueryClientProvider client={queryClient}>
       <DetailsDialog
-        log={{ ...makeLog(other), prompt_tokens: promptTokens }}
+        log={makeLog(other, promptTokens, completionTokens)}
         isAdmin={false}
         isRoot={false}
         open
@@ -87,133 +76,100 @@ function renderDetails(other: LogOtherData, promptTokens = 0): QueryClient {
       />
     </QueryClientProvider>
   )
-  return queryClient
 }
 
 function rowValue(label: string): string | null {
   return screen.getByText(label).nextElementSibling?.textContent ?? null
 }
 
-describe('usage facts billing details', () => {
-  test('shows the settled image count and a per-image price', () => {
-    const queryClient = renderDetails({
-      billing_mode: 'tiered_expr',
-      expr_b64: btoa('tier("image", fixed(0.04)) * image_count'),
-      billing_unit: 'request',
-      fixed_price: 0.04,
-      image_count: 2,
-      matched_tier: 'image',
+afterEach(() => {
+  for (const queryClient of queryClients) queryClient.clear()
+  queryClients.length = 0
+})
+
+describe('localized log details dialog', () => {
+  test('shows the token breakdown with cache read and write quantities', () => {
+    renderDetails(
+      { cache_tokens: 300, cache_creation_tokens: 50, image_cache_tokens: 10 },
+      1000
+    )
+
+    expect(screen.getByText('Token Breakdown')).toBeInTheDocument()
+    expect(rowValue('Input Tokens')).toBe('1,000')
+    expect(rowValue('Output Tokens')).toBe('20')
+    expect(rowValue('Cache Read')).toBe('300')
+    expect(rowValue('Cache Write')).toBe('50')
+    expect(rowValue('Image Cache')).toBe('10')
+  })
+
+  test('shows the request and actual model for mapped logs', () => {
+    renderDetails({
+      is_model_mapped: true,
+      upstream_model_name: 'upstream-gpt-test',
     })
-    expect(
-      screen.getByText('Billable image count').parentElement
-    ).toHaveTextContent('2')
-    expect(screen.getAllByText(/\/image/).length).toBeGreaterThan(0)
-    queryClient.clear()
-  })
-  const queryClients: QueryClient[] = []
 
-  test('shows actual billable image and cache tokens while retaining the aggregate cache count', () => {
-    queryClients.push(
-      renderDetails(
-        {
-          billing_mode: 'tiered_expr',
-          expr_b64: btoa(
-            'tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)'
-          ),
-          matched_tier: 'standard',
-          cache_tokens: 300,
-          image_cache_tokens: 200,
-          billing_tokens: { p: 300, cr: 100, img: 400, img_cr: 200, c: 100 },
-        },
-        1000
-      )
-    )
-    const billable = within(
-      screen.getByRole('group', { name: 'Billable token breakdown' })
-    )
-    expect(
-      billable.getByText('Image Cache').nextElementSibling
-    ).toHaveTextContent('200')
-    expect(
-      billable.getByText('Cache Read').nextElementSibling
-    ).toHaveTextContent('100')
-    expect(billable.getByText('Image In').nextElementSibling).toHaveTextContent(
-      '400'
-    )
-    expect(
-      screen.getByText('Input Tokens').nextElementSibling
-    ).toHaveTextContent('1,000')
-    expect(
-      screen
-        .getAllByText('Cache Read')
-        .some((label) => label.nextElementSibling?.textContent === '300')
-    ).toBe(true)
+    expect(screen.getByText('Model Mapping')).toBeInTheDocument()
+    expect(rowValue('Request Model')).toBe('gpt-test')
+    expect(rowValue('Actual Model')).toBe('upstream-gpt-test')
   })
 
-  beforeAll(() => {
-    i18next.addResourceBundle('en', 'translation', i18nKeys)
+  test('renders param override audit lines with their localized action', () => {
+    renderDetails({ po: ['set temperature=0.2'] })
+
+    expect(screen.getByText('Param Override (1)')).toBeInTheDocument()
+    expect(screen.getByText('Set')).toBeInTheDocument()
+    expect(screen.getByText('temperature=0.2')).toBeInTheDocument()
   })
 
-  afterEach(() => {
-    for (const queryClient of queryClients) {
-      queryClient.clear()
+  test('shows stream status errors with their reason and messages', () => {
+    renderDetails({
+      stream_status: {
+        status: 'error',
+        end_reason: 'upstream closed',
+        error_count: 1,
+        errors: ['chunk decode failed'],
+      },
+    })
+
+    const section = screen.getByText('Stream Status').closest('div')
+    expect(section).not.toBeNull()
+    expect(
+      within(section as HTMLElement).getByText('upstream closed')
+    ).toBeVisible()
+    expect(
+      within(section as HTMLElement).getByText('chunk decode failed')
+    ).toBeVisible()
+  })
+
+  test('never renders quota, billing, group or subscription wording', () => {
+    renderDetails({
+      model_ratio: 1,
+      completion_ratio: 2,
+      group_ratio: 1,
+      model_price: 0.25,
+      billing_mode: 'tiered_expr',
+      fixed_price: 0.04,
+      matched_tier: 'image',
+      usage_facts: { resolution: '720P' },
+      billing_source: 'subscription',
+      subscription_plan_id: 'plan-1',
+    })
+
+    const dialog = screen.getByRole('dialog')
+    for (const forbidden of [
+      'Billing Details',
+      'Total Cost',
+      'Group Ratio',
+      'Subscription Billing',
+      'Usage parameters',
+      'Quota',
+    ]) {
+      expect(within(dialog).queryByText(forbidden)).toBeNull()
     }
-    queryClients.length = 0
   })
 
-  test('renders one raw-key row per usage fact before total cost', () => {
-    const expression = 'tier("720P", u("seconds") * 5)'
-    queryClients.push(
-      renderDetails({
-        group_ratio: 1,
-        billing_mode: 'tiered_expr',
-        expr_b64: Buffer.from(expression, 'utf8').toString('base64'),
-        matched_tier: '720P',
-        usage_facts: {
-          resolution: '720P',
-          seconds: 5,
-        },
-      })
-    )
-
-    expect(screen.getByText('Usage parameters')).toBeInTheDocument()
-    expect(rowValue('resolution')).toBe('720P')
-    expect(rowValue('seconds')).toBe('5')
-    expect(rowValue('Billing Mode')).toBe('Dynamic Pricing')
-    expect(rowValue('Matched Tier')).toBe('720P')
-
-    const usageHeader = screen.getByText('Usage parameters')
-    const totalCost = screen.getByText('Total Cost')
-    expect(
-      usageHeader.compareDocumentPosition(totalCost) &
-        Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy()
-  })
-
-  test('does not render usage parameter rows when usage_facts is absent', () => {
-    queryClients.push(
-      renderDetails({
-        group_ratio: 1,
-      })
-    )
-
-    expect(screen.queryByText('Usage parameters')).toBeNull()
-    expect(screen.queryByText('resolution')).toBeNull()
-    expect(screen.queryByText('seconds')).toBeNull()
-    expect(screen.getByText('Total Cost')).toBeInTheDocument()
-  })
-
-  test('does not render usage parameter rows when usage_facts is empty', () => {
-    queryClients.push(
-      renderDetails({
-        group_ratio: 1,
-        usage_facts: {},
-      })
-    )
-
-    expect(screen.queryByText('Usage parameters')).toBeNull()
-    expect(screen.queryByText('resolution')).toBeNull()
-    expect(screen.queryByText('seconds')).toBeNull()
-    expect(screen.getByText('Total Cost')).toBeInTheDocument()
+  test('omits the token breakdown when no tokens were reported', () => {
+    renderDetails({ cache_tokens: 0 }, 0, 0)
+    expect(screen.queryByText('Token Breakdown')).toBeNull()
   })
 })
