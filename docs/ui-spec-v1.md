@@ -143,10 +143,11 @@
 
 规格：
 
-- **单一平面列表**（**没有分区 Tab**）：一页列出全部模型元数据（`GET /api/console/models/**`）。列集合为 **模型（含图标）/ 匹配类型 / 命中模型数 / 描述 / 标签 / 操作**；仍不出现「渠道与分组」「同步策略」「展示策略」「自定义端点」「ID」「创建/更新时间」「供应商」「可用分组」「计费类型」等列（PBR 无用户分组，`enable_groups` 恒空；多用户/计费/厂商目录语义已删）。
+- **单一平面列表**（**没有分区 Tab**）：一页列出全部模型元数据（`GET /api/console/models/**`）。列集合为 **模型（含图标，规则命中数内联在副行）/ 匹配类型 / 已绑定渠道 / 描述 / 标签 / 操作**；仍不出现「可用分组」「同步策略」「展示策略」「自定义端点」「ID」「创建/更新时间」「供应商」「计费类型」等列（PBR 无用户分组，`enable_groups` 恒空，故 New API 的「Channels and groups」列只保留渠道计数、不带分组；多用户/计费/厂商目录语义已删）。
 - **匹配类型与自动匹配**：`name_rule` 共四档——**精确（`0`）/ 前缀（`1`）/ 包含（`2`）/ 后缀（`3`）**，解析优先级为 **精确 > 前缀 > 后缀 > 包含**（引擎在 `model/model_meta.go` 的 `MatchesName` 与 `resolveModelMetadata`，已存在）。这就是 New API 的"自动匹配"：一条 `qwen3-` 前缀规则即可覆盖上游全部 `qwen3-*` 模型，无需逐个建目录记录，也不必在渠道改模型后回来补。
   - 「匹配类型」列用带色四档标签展示，label/颜色/说明**必须**复用 `features/models/constants.ts` 的 `getNameRuleConfig` 与 `lib/model-utils.ts` 的 `getNameRuleLabelByRule`（两处均已存在），禁止在列里另写一份 label 表。
-  - 「命中模型数」列：`name_rule != 0` 时显示 `matched_count`，并提供查看 `matched_models`（命中的具体模型名清单）的入口；`name_rule = 0` 时显示 `—`——精确条目命中数恒为自身，重复计数只是噪音。
+  - **命中数内联在「模型」列副行**（对齐 New API 模型名旁的"规则 · 命中数"）：`name_rule != 0` 时显示 `{规则 label} · {matched_count}`，规则 label 复用 `getNameRuleConfig`，点击数字弹出 `matched_models`（命中的具体模型名清单）；`name_rule = 0` 时不显示——精确条目命中数恒为自身，重复计数只是噪音。**不再有独立的「命中模型数」列**。
+- **「已绑定渠道」列**：计数来自后端 `bound_channels`（`enrichModels` 按启用路由聚合，与 New API 同名列口径一致；PBR 无分组，不带分组数），悬浮说明复用 `lib/model-utils.ts` 的 `getModelChannelState` 文案。**禁止前端自行重算匹配**（后端已按 `MatchesName` 聚合，前端重算必然漂移）。
 - **命中数只在控制台面计算**：`matched_count` / `matched_models` 仅由 `/api/console/models/**` 返回（该路径本就遍历渠道模型做全量填充）。稳定面 `GET /api/model-metadata` 是**不分页全量列表**，为保持轻量**不返回**这两项，只回 `name_rule`（见 api-spec §5.7）。
 - **图标按模型名推断，且编辑时自动采用**：列表与详情渲染图标时，取值顺序为 **显式配置的 `icon` > 按模型名推断（`resolveModelProvider(model_name).icon`）> 模型名首字符兜底**。渲染侧推断是只读兜底；**编辑弹窗在模型名能识别出厂商图标时自动写入 `icon` 字段**（如 `qwen3.8-flash` → `Qwen.Color`），保存即持久化，用户**不再需要点「生效图标」**。自动采用只在用户尚未手动改过图标时发生；用户手动改过/清空后不再覆盖。
 - **编辑模型走居中弹窗**（与「编辑渠道」同一规范，见 §6.9）：分区为**基本信息（模型名 / 匹配类型 / 描述 / 图标 / 标签）+ 渠道关联**；仍不出现"同步策略/展示策略/自定义端点"等与本项目无关的开关。**匹配类型是四档下拉**（精确 / 前缀 / 包含 / 后缀，默认精确），每档的说明文案取自 `getNameRuleConfig` 的 `description`；选中非精确档时在字段下方提示该规则将按前缀/包含/后缀自动命中渠道声明的模型名（无需逐个添加）。Escape/Cancel 关闭并丢弃未保存草稿。

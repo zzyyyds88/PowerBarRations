@@ -7,6 +7,8 @@
     "Applies to newly created or seeded lanes, and to lanes that do not configure these keys themselves. Existing explicit lane config still wins.": "作用於新建或一鍵固化的車道，以及自身未顯式配置這些鍵的車道；已顯式配置的車道仍以自身為準。",
     "Attempt chain: which member served the request and why the others were skipped.": "嘗試鏈：最終由哪個成員服務，以及其他成員為什麼被跳過。",
     "Attempts": "嘗試鏈",
+    "Bound channels": "已綁定渠道",
+    "Channels {{count}}": "渠道 {{count}}",
     "Channel association": "渠道關聯",
     "circuit_break": "熔斷開啟",
     "Client Key": "客戶端密鑰",
