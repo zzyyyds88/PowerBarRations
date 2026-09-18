@@ -117,6 +117,7 @@ import {
   ADD_MODE_OPTIONS,
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_PROTOCOL_OPTIONS,
+  CHANNEL_PROTOCOL_PRESENTATION,
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OPTIONS,
@@ -139,6 +140,8 @@ import {
   channelFormSchema,
   channelsQueryKeys,
   getAdvancedCustomStats,
+  getChannelProtocol,
+  parseChannelOtherSettings,
   transformChannelToFormDefaults,
   type ChannelFormValues,
   deduplicateKeys,
@@ -587,14 +590,16 @@ export function ChannelMutateDialog({
     [currentModels]
   )
 
-  // 当前上游协议（ui-spec §6.4）：优先读 channel 级 protocol；旧数据按 type 推断。
-  const currentProtocol: ChannelProtocol | '' = useMemo(() => {
-    if (isChannelProtocol(formValues.protocol)) return formValues.protocol
-    if (currentType === 14) return 'anthropic'
-    if (currentType === 24) return 'gemini'
-    if (currentType === 1) return 'openai-chat'
-    return ''
-  }, [formValues.protocol, currentType])
+  // 当前上游协议（ui-spec §6.4）：归一化逻辑唯一实现于 getChannelProtocol，
+  // 与渠道列表的「协议」列/工具栏筛选共用同一套判定。
+  const currentProtocol: ChannelProtocol | '' = useMemo(
+    () =>
+      getChannelProtocol(
+        currentType,
+        parseChannelOtherSettings(formValues.settings)
+      ) ?? '',
+    [formValues.settings, currentType]
+  )
 
   const selectChannelProtocol = useCallback(
     (protocol: ChannelProtocol) => {
@@ -606,7 +611,7 @@ export function ChannelMutateDialog({
       form.setValue('type', option.type, { shouldDirty: true })
       form.setValue('protocol', protocol, { shouldDirty: true })
       if (!isEditing && !form.getValues('name').trim()) {
-        form.setValue('name', t(option.label))
+        form.setValue('name', t(CHANNEL_PROTOCOL_PRESENTATION[protocol].label))
       }
     },
     [canEditSensitive, isEditing, form, t]
@@ -617,7 +622,7 @@ export function ChannelMutateDialog({
   const channelProtocolComboboxOptions = useMemo(() => {
     const options = CHANNEL_PROTOCOL_OPTIONS.map((option) => ({
       value: `protocol:${option.value}`,
-      label: t(option.label),
+      label: t(CHANNEL_PROTOCOL_PRESENTATION[option.value].label),
       icon: <ChannelTypeLogo type={option.type} size={16} />,
     }))
     if (currentProtocol === '' && currentType > 0) {

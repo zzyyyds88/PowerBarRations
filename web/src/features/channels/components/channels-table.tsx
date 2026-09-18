@@ -56,6 +56,7 @@ import {
   aggregateChannelsByTag,
   getChannelTableRowId,
   isTagAggregateRow,
+  CHANNEL_PROTOCOL_FILTER_OPTIONS,
 } from '../lib'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
@@ -127,7 +128,9 @@ export function ChannelsTable() {
           return stored === 'enabled' || stored === 'disabled' ? [stored] : []
         },
       },
-      { columnId: 'type', searchKey: 'type', type: 'array' },
+      // 协议筛选走列表「协议」列的归一化取值（4 协议 + custom），厂商 `type`
+      // 不再是用户面维度（ui-spec §6.4）。
+      { columnId: 'protocol', searchKey: 'protocol', type: 'array' },
       { columnId: 'model', searchKey: 'model', type: 'string' },
     ],
   })
@@ -256,6 +259,16 @@ export function ChannelsTable() {
   // Columns configuration
   const columns = useChannelsColumns({ enableSelection: batchMode })
 
+  // 「协议」「标签」筛选都作用于列表侧的列值，选项与列共用同一来源（ui-spec §6.4）。
+  const tagFilterOptions = useMemo(() => {
+    const tags = new Set<string>()
+    for (const channel of channels) {
+      if (isTagAggregateRow(channel)) continue
+      if (channel.tag) tags.add(channel.tag)
+    }
+    return [...tags].sort().map((tag) => ({ value: tag, label: tag }))
+  }, [channels])
+
   // React Table instance
   const { table } = useDataTable({
     data: channels,
@@ -284,7 +297,9 @@ export function ChannelsTable() {
     getSubRows: (row: Channel & { children?: Channel[] }) => row.children,
     manualPagination: true,
     manualSorting: true,
-    manualFiltering: true,
+    // 分页与搜索由服务端处理，但「协议」「标签」筛选作用于列表侧归一化出来的列值
+    // （服务端没有这两个维度），因此行内过滤交给 TanStack。
+    manualFiltering: false,
     withExpandedRowModel: true,
     enableColumnResizing: !isMobile,
     ensurePageInRange,
@@ -334,12 +349,23 @@ export function ChannelsTable() {
             className='w-full sm:w-[150px] lg:w-[180px]'
           />
         ),
+        hasAdditionalFilters: Boolean(modelFilter.trim()),
         filters: [
+          {
+            columnId: 'protocol',
+            title: t('Protocol'),
+            options: [...CHANNEL_PROTOCOL_FILTER_OPTIONS],
+          },
           {
             columnId: 'status',
             title: t('Status'),
             options: [...CHANNEL_STATUS_OPTIONS],
             singleSelect: true,
+          },
+          {
+            columnId: 'tag',
+            title: t('Tag'),
+            options: tagFilterOptions,
           },
         ],
         preActions: (

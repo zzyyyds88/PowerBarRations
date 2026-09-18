@@ -20,6 +20,9 @@ import { formatCurrencyFromUSD, formatQuotaWithCurrency } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
+  CHANNEL_PROTOCOL_CUSTOM_VALUE,
+  CHANNEL_PROTOCOL_OPTIONS,
+  CHANNEL_PROTOCOL_PRESENTATION,
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPES,
   MULTI_KEY_STATUS_CONFIG,
@@ -27,7 +30,13 @@ import {
   RESPONSE_TIME_THRESHOLDS,
   TYPE_TO_KEY_PROMPT,
 } from '../constants'
-import type { Channel, ChannelSettings, ChannelOtherSettings } from '../types'
+import {
+  isChannelProtocol,
+  type Channel,
+  type ChannelProtocol,
+  type ChannelSettings,
+  type ChannelOtherSettings,
+} from '../types'
 
 // ============================================================================
 // Channel Type Utilities
@@ -158,6 +167,128 @@ export function isChannelEnabled(channel: Channel): boolean {
 export function isMultiKeyChannel(channel: Channel): boolean {
   return channel.channel_info?.is_multi_key || false
 }
+
+// ============================================================================
+// Channel Upstream Protocol (ui-spec §6.4)
+// 控制台只暴露 4 种上游协议；这里是协议归一化的唯一实现，编辑弹窗的「协议」下拉与
+// 列表的「协议」列/工具栏筛选都必须走它，禁止两处各写一份判定。
+// 取值顺序：渠道级 other_settings.protocol > 按适配器 type 推断（CHANNEL_PROTOCOL_OPTIONS）
+// > 旧厂商类型不在 4 协议内时为 undefined（列表显示「自定义」，编辑弹窗以 (Current) 保留原值）。
+// ============================================================================
+
+/**
+ * 适配器 type → 候选协议。openai-chat / openai-responses 共用 type 1，因此该档
+ * 存在歧义：只有渠道级 `other_settings.protocol` 能区分两者。
+ */
+const PROTOCOLS_BY_ADAPTER_TYPE: ReadonlyMap<
+  number,
+  readonly ChannelProtocol[]
+> = new Map(
+  Object.entries(
+    CHANNEL_PROTOCOL_OPTIONS.reduce<Record<number, ChannelProtocol[]>>(
+      (groups, option) => {
+        const group = groups[option.type] ?? []
+        group.push(option.value)
+        groups[option.type] = group
+        return groups
+      },
+      {}
+    )
+  ).map(([type, protocols]) => [Number(type), protocols])
+)
+
+/**
+ * Resolve the upstream protocol of a channel, or `undefined` when the channel's
+ * adapter type is a legacy vendor type outside the 4 console protocols.
+ */
+export function getChannelProtocol(
+  type: number,
+  otherSettings?: ChannelOtherSettings | null
+): ChannelProtocol | undefined {
+  if (isChannelProtocol(otherSettings?.protocol)) {
+    return otherSettings.protocol
+  }
+
+  const candidates = PROTOCOLS_BY_ADAPTER_TYPE.get(type)
+  if (!candidates || candidates.length === 0) {
+    return undefined
+  }
+
+  // 单一候选可直接判定；多候选（type 1）未配置渠道级协议时按该适配器的默认端点归档。
+  if (candidates.length === 1) {
+    return candidates[0]
+  }
+
+  return CHANNEL_PROTOCOL_OPTIONS[0].value
+}
+
+/**
+ * Resolve the upstream protocol directly from a channel record.
+ */
+export function getChannelProtocolFromChannel(
+  channel: Channel
+): ChannelProtocol | undefined {
+  return getChannelProtocol(
+    channel.type,
+    parseChannelOtherSettings(channel.settings)
+  )
+}
+
+/**
+ * i18n key for the short protocol label shown by the list column and the
+ * toolbar filter. Legacy vendor types that fall outside the 4 protocols resolve
+ * to "Custom" instead of being rewritten to one of the 4.
+ */
+export function getChannelProtocolLabelKey(
+  protocol: ChannelProtocol | undefined
+): string {
+  if (!protocol) {
+    return CHANNEL_PROTOCOL_PRESENTATION[CHANNEL_PROTOCOL_CUSTOM_VALUE]
+      .shortLabel
+  }
+
+  return CHANNEL_PROTOCOL_PRESENTATION[protocol].shortLabel
+}
+
+/**
+ * Adapter type backing a protocol — used to render the same provider glyph the
+ * editor dropdown uses. Unknown protocols keep the channel's own type.
+ */
+export function getChannelProtocolIconType(
+  protocol: ChannelProtocol | undefined,
+  fallbackType: number
+): number {
+  if (!protocol) {
+    return fallbackType
+  }
+
+  const option = CHANNEL_PROTOCOL_OPTIONS.find(
+    (item) => item.value === protocol
+  )
+  return option ? option.type : fallbackType
+}
+
+/**
+ * Toolbar filter values for the protocol column: the 4 console protocols plus
+ * the legacy "custom" bucket. Vendor `type` is never exposed as a filter.
+ */
+export const CHANNEL_PROTOCOL_FILTER_CUSTOM_VALUE =
+  CHANNEL_PROTOCOL_CUSTOM_VALUE
+
+export const CHANNEL_PROTOCOL_FILTER_OPTIONS: ReadonlyArray<{
+  value: ChannelProtocol | typeof CHANNEL_PROTOCOL_FILTER_CUSTOM_VALUE
+  label: string
+}> = [
+  ...CHANNEL_PROTOCOL_OPTIONS.map((option) => ({
+    value: option.value,
+    label: CHANNEL_PROTOCOL_PRESENTATION[option.value].shortLabel,
+  })),
+  {
+    value: CHANNEL_PROTOCOL_FILTER_CUSTOM_VALUE,
+    label:
+      CHANNEL_PROTOCOL_PRESENTATION[CHANNEL_PROTOCOL_CUSTOM_VALUE].shortLabel,
+  },
+]
 
 // ============================================================================
 // Key Formatting

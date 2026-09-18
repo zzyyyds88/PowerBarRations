@@ -28,8 +28,10 @@ const channelsSearchSchema = z.object({
   pageSize: z.number().optional().catch(undefined),
   filter: z.string().optional().catch(''),
   status: z.array(z.string()).optional().catch([]),
-  // 渠道不再有分组与厂商类型维度（ui-spec §6.4 / design-v1 §1.3）：
-  // 不接受 group / type 搜索参数。
+  // 工具栏协议筛选（ui-spec §6.4）：取值是「协议」列的归一化结果
+  // （openai-chat / openai-responses / anthropic / gemini / custom），
+  // 厂商 `type` 与分组仍不作为用户面搜索参数（design-v1 §1.3）。
+  protocol: z.array(z.string()).optional().catch([]),
   model: z.string().optional().catch(''),
 })
 
