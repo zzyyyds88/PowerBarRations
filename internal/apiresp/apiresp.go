@@ -37,20 +37,25 @@ const (
 )
 
 // envelope 是基座信封的解析结果。
+//
+// UpstreamStatus 是部分端点（Codex 系列）在顶层额外携带的上游 HTTP 状态码——
+// 它不在 data 里，必须单独捕获，否则成功体会丢掉它。
 type envelope struct {
-	Success *bool           `json:"success"`
-	Code    string          `json:"code"`
-	Message string          `json:"message"`
-	Data    json.RawMessage `json:"data"`
+	Success        *bool           `json:"success"`
+	Code           string          `json:"code"`
+	Message        string          `json:"message"`
+	Data           json.RawMessage `json:"data"`
+	UpstreamStatus int             `json:"upstream_status"`
 }
 
 // Base 是基座信封的公开视图，供策略函数使用。
 type Base struct {
-	Success bool
-	Code    string
-	Message string
-	Data    json.RawMessage
-	Status  int
+	Success        bool
+	Code           string
+	Message        string
+	Data           json.RawMessage
+	Status         int
+	UpstreamStatus int
 }
 
 // DataValue 把基座 data 原文解成 any；无 data 时返回 nil。
@@ -379,7 +384,7 @@ func (w *bufferedWriter) finish(c *gin.Context) {
 		return
 	}
 
-	base := Base{Success: *env.Success, Code: env.Code, Message: env.Message, Data: env.Data, Status: status}
+	base := Base{Success: *env.Success, Code: env.Code, Message: env.Message, Data: env.Data, Status: status, UpstreamStatus: env.UpstreamStatus}
 	if base.Success {
 		out := base.DataValue()
 		if w.policy.Success != nil {

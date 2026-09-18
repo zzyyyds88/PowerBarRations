@@ -76,6 +76,13 @@ func opsPolicyUpstreamWith(success apiresp.SuccessFunc) apiresp.Policy {
 	return p
 }
 
+// opsPolicyCodex 是 Codex 端点的策略：失败按上游 502，并带上游状态码明细。
+func opsPolicyCodex() apiresp.Policy {
+	p := opsPolicyUpstreamWith(codexSuccess)
+	p.Details = codexDetails
+	return p
+}
+
 // opsRoutes 是运维端点的唯一声明表。
 func opsRoutes() []OpsRoute {
 	return []OpsRoute{
@@ -148,15 +155,15 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodGet, Path: "/channels/:name/codex/usage", Handler: CodexUsageByName,
-			Policy: opsPolicyWith(codexSuccess),
+			Policy: opsPolicyCodex(),
 		},
 		{
 			Method: http.MethodGet, Path: "/channels/:name/codex/reset-credits", Handler: CodexResetCreditsByName,
-			Policy: opsPolicyWith(codexSuccess),
+			Policy: opsPolicyCodex(),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/codex/reset", Handler: CodexResetUsageByName,
-			Policy: opsPolicyWith(codexSuccess),
+			Policy: opsPolicyCodex(),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/ollama/pull", Handler: OllamaPullByName,
@@ -397,15 +404,16 @@ func flagSuccess(flag string) apiresp.SuccessFunc {
 }
 
 func codexSuccess(_ *gin.Context, base apiresp.Base) any {
-	value, ok := base.DataValue().(map[string]any)
-	if !ok {
-		return gin.H{"upstream_status": 0, "body": nil}
+	// upstream_status 在基座信封顶层，payload 在 data。
+	return gin.H{"upstream_status": base.UpstreamStatus, "body": base.DataValue()}
+}
+
+// codexDetails 把上游状态码带进错误明细，便于调用方区分"上游 401/429"等。
+func codexDetails(base apiresp.Base) any {
+	if base.UpstreamStatus == 0 {
+		return nil
 	}
-	status := 0
-	if raw, ok := value["upstream_status"]; ok {
-		status = intOf(raw)
-	}
-	return gin.H{"upstream_status": status, "body": value["data"]}
+	return gin.H{"upstream_status": base.UpstreamStatus}
 }
 
 func ollamaPullSuccess(c *gin.Context, base apiresp.Base) any {
