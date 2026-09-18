@@ -493,4 +493,71 @@ describe('手工成员链（无一键固化入口）', () => {
 
     expect(await screen.findByText('channel-b')).toBeInTheDocument()
   })
+
+  // 已配车道的模型也要能看到「声明了该模型但不在成员链里」的候选渠道（后端 candidates），
+  // 否则新增渠道声明后只能删掉车道重建（ui-spec §6.3）。
+  test('已配车道时展示后端 candidates 并可加入成员', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 1,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/routes/model-1') {
+        return {
+          data: {
+            model: 'model-1',
+            source: 'explicit',
+            routable: true,
+            mode: 'failover',
+            members: [
+              {
+                channel_id: 1,
+                channel: 'channel-a',
+                upstream_model: 'real-a',
+                priority: 1,
+              },
+            ],
+            candidates: [
+              {
+                channel_id: 3,
+                channel: 'channel-c',
+                upstream_model: 'real-c',
+                priority: 1,
+              },
+            ],
+          },
+        } as never
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const user = userEvent.setup()
+    renderPanel('model-1')
+
+    expect(await screen.findByText('channel-a')).toBeInTheDocument()
+    expect(
+      screen.getByText('Candidate channels (declared in channels)')
+    ).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'channel-c' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      { members: { channel: string }[] },
+    ]
+    expect(body.members.map((m) => m.channel)).toEqual([
+      'channel-a',
+      'channel-c',
+    ])
+  })
 })

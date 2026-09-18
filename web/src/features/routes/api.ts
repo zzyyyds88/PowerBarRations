@@ -61,6 +61,11 @@ export interface PBRRouteDetail {
   route_key?: string
   active_member?: string
   members: PBRRouteMember[]
+  /**
+   * 已配车道时，后端额外返回「声明了该模型但不在成员链里」的候选渠道，
+   * 让新增渠道声明后可以直接加成员，不必删掉车道重建（ui-spec §6.3）。
+   */
+  candidates?: PBRRouteMember[]
 }
 
 interface ListResponse<T> {

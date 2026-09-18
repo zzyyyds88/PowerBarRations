@@ -246,10 +246,14 @@ function RouteEditor({
         priority: m.priority,
       }))
     : []
-  // 未配车道时，建议链（带 channel_id）作为"可添加成员"候选。
-  const candidates = (routeQuery.data?.members ?? []).filter(
-    (m) => !sourceMembers.some((s) => s.channel === m.channel)
-  )
+  // 可添加成员候选：
+  // - 已配车道：后端在 candidates 里给"声明了该模型但不在成员链里"的渠道；
+  // - 未配车道：members 本身就是渠道声明形成的建议链（去掉已在草稿里的）。
+  const candidates = routable
+    ? (routeQuery.data?.candidates ?? [])
+    : (routeQuery.data?.members ?? []).filter(
+        (m) => !sourceMembers.some((s) => s.channel === m.channel)
+      )
 
   const members: EditableMember[] = [...(draft ?? sourceMembers)]
 
