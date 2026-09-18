@@ -169,13 +169,14 @@ it('requests channel models and lists the model-catalog columns', async () => {
     '',
     'Model',
     'Match Type',
-    'Matched models',
+    'Bound channels',
     'Description',
     'Tags',
     'Actions',
   ])
   for (const removed of [
     'Channels and groups',
+    'Matched models',
     'Sync policy',
     'Display policy',
     'ID',
@@ -192,7 +193,7 @@ it('requests channel models and lists the model-catalog columns', async () => {
   }
 })
 
-it('renders the match type badge and hit count for a rule row only', async () => {
+it('renders the inline rule hit and bound channel count for a rule row', async () => {
   await renderList([
     {
       ...metadata,
@@ -200,19 +201,26 @@ it('renders the match type badge and hit count for a rule row only', async () =>
       name_rule: 1,
       matched_count: 2,
       matched_models: ['qwen3-max', 'qwen3-mini'],
+      bound_channels: [
+        { name: 'dashscope', type: 1 },
+        { name: 'local', type: 2 },
+      ],
     },
     metadata,
   ])
-  // 规则行：四档标签 + 命中数，且可查看命中的具体模型名清单。
+  // 规则行：模型名副行内联「Prefix · 2」，点击可看命中的具体模型名清单。
   expect(screen.getByText('Prefix')).toBeVisible()
+  expect(screen.getByText(/Prefix ·/)).toBeVisible()
   const trigger = screen.getByRole('button', { name: 'View matched models' })
   expect(within(trigger).getByText('2')).toBeVisible()
   await userEvent.click(trigger)
   const dialog = await screen.findByRole('dialog')
   expect(within(dialog).getByText('qwen3-max')).toBeVisible()
-  // 精确行：命中数恒为自身，显示 —。
-  expect(screen.getByText('Exact')).toBeVisible()
-  expect(screen.getAllByText('—')).toHaveLength(1)
+  // 已绑定渠道列：计数来自后端 bound_channels（启用路由口径）。
+  expect(screen.getByText('Channels 2')).toBeVisible()
+  expect(screen.getByText('Channels 0')).toBeVisible()
+  // 精确行：不出现内联命中（命中数恒为自身）。
+  expect(screen.getAllByText(/·/)).toHaveLength(1)
 })
 
 it('keeps channel rows individually selectable and disables metadata mutations for mixed selection', async () => {
@@ -264,7 +272,9 @@ it('keeps long model names and the metadata hint truncated inside the model cell
     await i18n.changeLanguage('zhCN')
   })
   expect(screen.getByText('缺元数据')).toBeVisible()
-  expect(screen.queryByText(/渠道|分组/)).not.toBeInTheDocument()
+  // 已绑定渠道列只带渠道数，不带分组（PBR 无用户分组）。
+  expect(screen.getByText('已绑定渠道')).toBeVisible()
+  expect(screen.queryByText(/分组/)).not.toBeInTheDocument()
 })
 
 it('prefills and creates metadata only when the user explicitly saves it', async () => {

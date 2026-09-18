@@ -25,23 +25,34 @@ import { BadgeListCell } from '@/components/data-table'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { listPBRModels, pbrModelsQueryKey } from '@/features/routes/api'
 import { getLobeIcon } from '@/lib/lobe-icon'
 
-import { parseModelTags, resolveModelIconKey } from '../lib'
+import {
+  getModelChannelState,
+  parseModelTags,
+  resolveModelIconKey,
+} from '../lib'
 import type { Model } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
+import { MatchRuleHitCell } from './match-rule-hit-cell'
 import { MatchTypeCell } from './match-type-cell'
-import { MatchedCountCell } from './matched-count-cell'
 import { useModels } from './models-provider'
 
 // 模型页 = 模型目录（ui-spec §6.3）：列集合为
-// 模型（含推断图标）/ 匹配类型 / 命中模型数 / 描述 / 标签 / 操作。
-// 「匹配类型 + 命中模型数」即 New API 的"自动匹配"：一条前缀/包含/后缀规则
-// 就能覆盖渠道声明的一批模型名，无需逐个建目录记录。
-// 仍不出现「渠道与分组」「同步策略」「展示策略」「自定义端点」「ID」「创建/更新时间」
-// 「供应商」「可用分组」「计费类型」等列。
+// 模型（含推断图标 + 内联「规则 · 命中数」）/ 匹配类型 / 已绑定渠道 / 描述 / 标签 / 操作。
+// 「匹配类型 + 内联命中数 + 已绑定渠道」即 New API 的"自动匹配"呈现：
+// 一条前缀/包含/后缀规则就能覆盖渠道声明的一批模型名，无需逐个建目录记录，
+// 且规则命中了多少渠道模型在列表一眼可见。
+// 仍不出现「可用分组」「同步策略」「展示策略」「自定义端点」「ID」「创建/更新时间」
+// 「供应商」「计费类型」等列（PBR 无用户分组，渠道数不带分组维度）。
 
 export function useModelsColumns(): ColumnDef<Model>[] {
   const { t } = useTranslation()
@@ -129,6 +140,11 @@ export function useModelsColumns(): ColumnDef<Model>[] {
                     {t('Missing metadata')}
                   </span>
                 )}
+                <MatchRuleHitCell
+                  nameRule={model.name_rule}
+                  matchedCount={model.matched_count}
+                  matchedModels={model.matched_models}
+                />
               </div>
             </div>
           </div>
@@ -144,18 +160,36 @@ export function useModelsColumns(): ColumnDef<Model>[] {
       cell: ({ row }) => <MatchTypeCell nameRule={row.original.name_rule} />,
     },
     {
-      id: 'matched_count',
-      header: t('Matched models'),
+      id: 'connections',
+      header: t('Bound channels'),
       size: 130,
       enableSorting: false,
       meta: { mobileHidden: true },
-      cell: ({ row }) => (
-        <MatchedCountCell
-          nameRule={row.original.name_rule}
-          matchedCount={row.original.matched_count}
-          matchedModels={row.original.matched_models}
-        />
-      ),
+      cell: ({ row }) => {
+        const model = row.original
+        const state = getModelChannelState(model)
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    tabIndex={0}
+                    className='text-muted-foreground block min-w-0 cursor-help truncate text-xs'
+                  />
+                }
+              >
+                {t('Channels {{count}}', {
+                  count: model.bound_channels?.length ?? 0,
+                })}
+              </TooltipTrigger>
+              <TooltipContent side='top' className='max-w-[280px]'>
+                {t(state.description)}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
+      },
     },
     {
       accessorKey: 'description',
