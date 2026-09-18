@@ -679,17 +679,23 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					before, err := model.GetModelPricingSnapshot([]string{name, keep})
 					require.NoError(t, err)
 					body := map[string]any{"model_ids": []int{metadata.Id}, "remove_from_channels": removeChannels, "remove_pricing": true}
+					// PBR 无用户体系：管理密钥即全量权限（token-spec §2），不存在"只有
+					// 超级管理员能删定价"的角色门——该门在 PBRAuth 下恒真，会让
+					// remove_pricing 永远 403。这里断言两条删除路径都不再返回 403
+					// （用一次性记录，避免影响后续定价断言）。
 					for _, single := range []bool{false, true} {
+						probe := model.Model{ModelName: fmt.Sprintf("perm-probe-%t", single), NameRule: model.NameRuleExact, Status: 1}
+						require.NoError(t, probe.Insert())
 						recorder := modelManagementRequest(t, func(c *gin.Context) {
-							c.Set("role", common.RoleAdminUser)
 							if single {
-								c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(metadata.Id)}}
+								c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(probe.Id)}}
 								DeleteModelMeta(c)
-							} else {
-								BatchDeleteModelMeta(c)
+								return
 							}
-						}, http.MethodPost, "/api/models/delete?remove_pricing=true", body, nil)
-						assert.Equal(t, http.StatusForbidden, recorder.Code, "pricing permissions cannot be bypassed through deletion")
+							BatchDeleteModelMeta(c)
+						}, http.MethodPost, "/api/models/delete?remove_pricing=true",
+							map[string]any{"model_ids": []int{probe.Id}, "remove_pricing": true}, nil)
+						assert.NotEqual(t, http.StatusForbidden, recorder.Code, "管理密钥即全量权限，remove_pricing 不得被角色门拒绝")
 					}
 					updates := 0
 					require.NoError(t, db.Callback().Update().Before("gorm:update").Register("fail_deleted_pricing", func(tx *gorm.DB) {

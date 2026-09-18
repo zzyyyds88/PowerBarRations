@@ -146,11 +146,14 @@ export interface ServerErrorDetails {
   message: string
   code?: string
   hint?: string
+  /** 可选结构化明细，当前用途是车道引用守卫的 \`blocked\` 映射（api-spec §3）。 */
+  details?: unknown
 }
 
 /**
- * Only raw API payloads carry the contract's code/hint. Axios/Error wrappers own
- * unrelated fields (e.g. ERR_NETWORK in `error.code`), so never read those.
+ * Only raw API payloads carry the contract's code/hint/details. Axios/Error
+ * wrappers own unrelated fields (e.g. ERR_NETWORK in \`error.code\`), so never read
+ * those.
  */
 function isRawPayloadSource(source: Record<string | symbol, unknown>): boolean {
   return !(
@@ -160,14 +163,38 @@ function isRawPayloadSource(source: Record<string | symbol, unknown>): boolean {
   )
 }
 
+/**
+ * 契约错误体是 \`{error:{code,message,hint,details?}}\`，但基座面/早期调用方也会把
+ * code/hint 平铺在顶层。两处都读，避免只认一种形状。
+ */
+function rawPayloadField(
+  source: Record<string | symbol, unknown>,
+  field: 'code' | 'hint' | 'details'
+): unknown {
+  if (source[field] !== undefined) return source[field]
+  if (isRecord(source.error)) return source.error[field]
+  return undefined
+}
+
 function rawPayloadStringField(
   sources: Record<string | symbol, unknown>[],
   field: 'code' | 'hint'
 ): string | undefined {
   for (const source of sources) {
     if (!isRawPayloadSource(source)) continue
-    const value = source[field]
+    const value = rawPayloadField(source, field)
     if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return undefined
+}
+
+function rawPayloadDetails(
+  sources: Record<string | symbol, unknown>[]
+): unknown {
+  for (const source of sources) {
+    if (!isRawPayloadSource(source)) continue
+    const value = rawPayloadField(source, 'details')
+    if (value !== undefined && value !== null) return value
   }
   return undefined
 }
@@ -189,6 +216,7 @@ export function getServerErrorDetails(
     message: getServerErrorMessage(value, fallback),
     code: rawPayloadStringField(sources, 'code'),
     hint: rawPayloadStringField(sources, 'hint'),
+    details: rawPayloadDetails(sources),
   }
 }
 
@@ -197,12 +225,4 @@ export function createServerError(value: unknown, fallback?: string): Error {
   return new Error(getServerErrorMessage(value, fallback ?? ''), {
     cause: value,
   })
-}
-
-/** Queries reject failed business responses without changing the raw API contract. */
-export function requireServerSuccess<T>(response: T): T {
-  if (isRecord(response) && response.success === false) {
-    throw createServerError(response)
-  }
-  return response
 }

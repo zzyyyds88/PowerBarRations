@@ -26,6 +26,7 @@ import {
 } from '@tanstack/react-router'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError } from 'axios'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -76,10 +77,7 @@ afterEach(() => {
 describe('model deletion', () => {
   it('defaults to keeping channels and resets the option after cancelling', async () => {
     const remove = vi.spyOn(api, 'delete').mockResolvedValue({
-      data: {
-        success: true,
-        data: { deleted_count: 1, updated_channels: 0 },
-      },
+      data: { deleted_count: 1, updated_channels: 0 },
     })
     const { onSuccess, invalidate } = mount()
     const user = userEvent.setup()
@@ -105,16 +103,12 @@ describe('model deletion', () => {
   })
 
   it('submits one batch with channel removal and preserves selection after failure for retry', async () => {
+    // 失败改为 axios 拒绝（新契约）；首次失败、重试成功。
     const post = vi
       .spyOn(api, 'post')
-      .mockResolvedValueOnce({
-        data: { success: false, message: 'Channel update failed' },
-      })
+      .mockRejectedValueOnce(new AxiosError('Channel update failed'))
       .mockResolvedValue({
-        data: {
-          success: true,
-          data: { deleted_count: 2, updated_channels: 3 },
-        },
+        data: { deleted_count: 2, updated_channels: 3 },
       })
     const { onSuccess, invalidate } = mount(true)
     const user = userEvent.setup()
@@ -168,9 +162,7 @@ describe('model deletion', () => {
     expect(remove).toHaveBeenCalledWith('/api/console/models/7', {
       params: { remove_from_channels: true, remove_pricing: false },
     })
-    complete({
-      data: { success: true, data: { deleted_count: 1, updated_channels: 2 } },
-    })
+    complete({ data: { deleted_count: 1, updated_channels: 2 } })
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce())
   })
 })
@@ -178,7 +170,7 @@ describe('model deletion', () => {
 it('lets a super administrator remove pricing independently of channel removal', async () => {
   useAuthStore.getState().auth.setUser({ id: 1, username: 'root', role: 100 })
   const post = vi.spyOn(api, 'post').mockResolvedValue({
-    data: { success: true, data: { deleted_count: 2, updated_channels: 0 } },
+    data: { deleted_count: 2, updated_channels: 0 },
   })
   const { onSuccess, invalidate } = mount(true)
   const user = userEvent.setup()
@@ -238,13 +230,24 @@ it.each([1, 2, 3])(
 )
 
 it('surfaces referenced lanes and a routing link when model removal is blocked', async () => {
-  const post = vi.spyOn(api, 'post').mockResolvedValue({
-    data: {
-      success: false,
-      code: 'conflict',
-      message: '模型仍被车道引用，已取消删除',
-      data: { blocked: { alpha: ['m-1'] } },
-    },
+  // 新契约：冲突失败是 409 + §3 错误包络（details.blocked），由 axios 拒绝承载。
+  const post = vi.spyOn(api, 'post').mockImplementation(async (url) => {
+    const error = new AxiosError('模型仍被车道引用，已取消删除')
+    error.response = {
+      data: {
+        error: {
+          code: 'conflict',
+          message: '模型仍被车道引用，已取消删除',
+          details: { blocked: { alpha: ['m-1'] } },
+        },
+      },
+      status: 409,
+      statusText: 'Conflict',
+      headers: {},
+      config: { headers: {} } as never,
+    } as never
+    void url
+    throw error
   })
   const root = createRootRoute()
   const authenticated = createRoute({

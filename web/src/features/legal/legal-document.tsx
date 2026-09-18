@@ -49,11 +49,10 @@ export function LegalDocument({
     staleTime: 10 * 60 * 1000,
   })
 
-  const rawContent = data?.data?.trim() ?? ''
+  const rawContent = data?.trim() ?? ''
   const hasContent = rawContent.length > 0
   const isUrl = hasContent && isHttpUrl(rawContent)
   const contentIsHtml = hasContent && isLikelyHtml(rawContent)
-  const success = data?.success ?? false
 
   if (isLoading) {
     return (
@@ -68,7 +67,7 @@ export function LegalDocument({
     )
   }
 
-  if (!success || !hasContent) {
+  if (!hasContent) {
     return (
       <PublicLayout>
         <div className='mx-auto max-w-2xl py-12'>
@@ -79,9 +78,7 @@ export function LegalDocument({
               </div>
               <div className='space-y-1'>
                 <CardTitle className='text-lg font-semibold'>{title}</CardTitle>
-                <p className='text-muted-foreground text-sm'>
-                  {data?.message || emptyMessage}
-                </p>
+                <p className='text-muted-foreground text-sm'>{emptyMessage}</p>
               </div>
             </CardHeader>
           </Card>

@@ -213,11 +213,13 @@ type Option     struct { Key, Value string }
 2. **幂等写**：`PUT /api/{resource}/{name}` 收全量对象 upsert。
 3. **写后回读**：任何写操作响应前重新读库，响应体即最终状态；集成测试断言"写完 GET == 提交值"。
 4. **`?dry_run=true`**：返回变更 diff，不落库。
-5. **统一错误包络**：`{"error":{"code","message","hint"}}`，`code` 为稳定字符串。
-6. **分页**：cursor 分页，`limit` 有上限。
-7. **审计**：每次变更写 `audit_logs`（只记元数据）。
-8. **导出/导入**：`GET /export` / `POST /import?dry_run=` 取代"拷库备份/回滚"。
-9. **自描述**：`GET /openapi.json`、`GET /capabilities`。
+5. **成功响应无信封**：成功即**裸资源对象**——单对象就是该对象本身，列表就是 `{"items":[...],"next_cursor":...}`；动作类端点（批量启停、清缓存、GC 等）返回**语义化最小对象**（如 `{"changed":3}`、`{"deleted":true}`）。**不存在"HTTP 200 承载业务失败"的管理端点**。
+6. **统一错误包络**：`{"error":{"code","message","hint","details"}}`，`code` 为稳定字符串、失败一律带**真实 HTTP 状态码**（`details` 为可选结构化明细，如车道引用的 `blocked` 映射）。
+7. **全管理面同一信封**：§5 的稳定契约端点与控制台内部接口（§9）共用上述成功形态与错误模型；两者的差别只在"字段是否随控制台实现变动"，不在信封。基座遗留路径（`/api/channel/**`、`/api/console/**`、`/api/option/**`、`/api/performance/**`、`/api/system-task/**`、`/api/prefill_group/**`、`/api/log/**`）同样收敛到该信封。
+8. **分页**：cursor 分页，`limit` 有上限。
+9. **审计**：每次变更写 `audit_logs`（只记元数据）。
+10. **导出/导入**：`GET /export` / `POST /import?dry_run=` 取代"拷库备份/回滚"。
+11. **自描述**：`GET /openapi.json`、`GET /capabilities`。
 
 ### 5.2 为什么这样设计（回答"AI 怎么用"）
 
@@ -471,6 +473,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 - **以代码为源**：在路由注册处维护端点表，`GET /api/openapi.json` 返回运行时结果。当前实现是 `internal/api/config_lifecycle.go` 的手写 `openAPIPaths()` 表（尚未改为结构体标签自动生成），靠下述守卫测试把"漏登记"变成构建期失败，效果等价于验收断言。
 - 验收断言：`openapi.json` 可被标准工具解析，且**所有已注册路由都出现在文档中**。落地为 `router/openapi_coverage_test.go` 的 `TestOpenAPICoversEveryRegisteredRoute`：对比 `engine.Routes()` 与端点表，双向校验（既不漏档、也不登记不存在的路由）。
 - 若将来改为标签生成，保留该守卫测试即可；漂移口径不变。
+- **响应契约以表为源**（与端点表同一取向）：管理端点的**路由、处理器与响应策略同处声明**——稳定面在 `internal/api/ops_routes.go` 的 `opsRoutes` 表（注册即登记，不可能漏）；基座遗留面按 `METHOD + c.FullPath()` 在 `internal/apiresp` 登记**需要定制成功体的路由**（与 `middleware/audit.go` 既有 `auditRouteActions` 同法），其余路由由 `apiresp.Default` 兜底。守卫测试 `router/envelope_coverage_test.go` 校验：稳定面策略不得登记不存在的路由、不得漏声明成功/失败/直通三者之一；基座面登记不得漂移。响应归一化（基座 `{success,message,data}` → 契约形态）由 `apiresp.Middleware` 按该表机械执行，**handler 不重复实现信封**；SSE 在写头/Flush 时立即直通，不缓冲。
 - **给人/AI 的入口**：`GET /doc`（默认 `text/markdown`，浏览器 `Accept: text/html` 返回说明页）、`GET /llms.txt`（`text/plain`）、`GET /doc/ui`（复用 GitHub 项目 Scalar 渲染 `/api/openapi.json`）。三者与 `/api/openapi.json` 均免鉴权，便于 AI 先读手册再自行派生管理密钥。
 - **前缀**：管理面规范前缀为 `/api`，`/api/v1` 为兼容别名（注册相同处理器）。与 AI 契约冲突的控制台内部资源（模型目录、审计）收在 `/api/console/*`；其余控制台内部接口仍在 `/api/*` 下同权限可用，但不属于稳定契约。
 

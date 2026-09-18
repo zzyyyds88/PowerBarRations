@@ -20,14 +20,8 @@ For commercial licensing, please contact support@quantumnous.com
 // Home Page Types
 // ============================================================================
 
-/**
- * Response from home page content API
- */
-export interface HomePageContentResponse {
-  success: boolean
-  message?: string
-  data?: string
-}
+/** \`GET /api/home_page_content\` 成功即裸字符串（Markdown/HTML 或 iframe URL）。 */
+export type HomePageContentResponse = string
 
 /**
  * Home page content result from hook

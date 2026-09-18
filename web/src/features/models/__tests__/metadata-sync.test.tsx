@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError } from 'axios'
 import { describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -62,18 +63,13 @@ const preview: MetadataSyncPreview = {
 
 describe('metadata sync preview', () => {
   it('shows additions and field effects and writes only after explicit confirmation', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: preview },
-    })
+    vi.spyOn(api, 'get').mockResolvedValue({ data: preview })
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       data: {
-        success: true,
-        data: {
-          created_models: ['new-model'],
-          updated_models: [
-            { model_name: 'existing-model', fields: ['description'] },
-          ],
-        },
+        created_models: ['new-model'],
+        updated_models: [
+          { model_name: 'existing-model', fields: ['description'] },
+        ],
       },
     })
     const client = new QueryClient({
@@ -172,18 +168,12 @@ describe('metadata sync preview', () => {
       fields: [],
     }))
     vi.spyOn(api, 'get').mockResolvedValue({
-      data: {
-        success: true,
-        data: { ...preview, candidates: [...skipped, ...syncable] },
-      },
+      data: { ...preview, candidates: [...skipped, ...syncable] },
     })
     const post = vi.spyOn(api, 'post').mockResolvedValue({
       data: {
-        success: true,
-        data: {
-          created_models: syncable.map((item) => item.model_name),
-          updated_models: [],
-        },
+        created_models: syncable.map((item) => item.model_name),
+        updated_models: [],
       },
     })
     const client = new QueryClient({
@@ -273,10 +263,7 @@ describe('metadata sync preview', () => {
       scope: 'catalog',
     }
     vi.spyOn(api, 'get').mockResolvedValue({
-      data: {
-        success: true,
-        data: { ...preview, candidates: [...preview.candidates, catalog] },
-      },
+      data: { ...preview, candidates: [...preview.candidates, catalog] },
     })
     const client = new QueryClient({
       defaultOptions: {
@@ -370,7 +357,7 @@ describe('metadata sync preview', () => {
       })
     )
     vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: { ...preview, candidates } },
+      data: { ...preview, candidates },
     })
     const client = new QueryClient({
       defaultOptions: {
@@ -424,12 +411,19 @@ describe('metadata sync preview', () => {
   })
 
   it('clears old selections when reloading fails and when the metadata language changes', async () => {
+    // 新契约：刷新失败是 axios 拒绝（§3 错误包络），不是 200 + success:false。
+    const refreshFailure = new AxiosError('Refresh failed')
+    refreshFailure.response = {
+      data: { error: { code: 'upstream_error', message: 'Refresh failed' } },
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: {},
+      config: { headers: {} },
+    } as typeof refreshFailure.response
     vi.spyOn(api, 'get')
-      .mockResolvedValueOnce({ data: { success: true, data: preview } })
-      .mockResolvedValueOnce({
-        data: { success: false, message: 'Refresh failed' },
-      })
-      .mockResolvedValue({ data: { success: true, data: preview } })
+      .mockResolvedValueOnce({ data: preview })
+      .mockRejectedValueOnce(refreshFailure)
+      .mockResolvedValue({ data: preview })
     const client = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -475,9 +469,17 @@ describe('metadata sync preview', () => {
   })
 
   it('keeps the write action unavailable when preview loading fails', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: false, message: 'Upstream unavailable' },
-    })
+    const loadFailure = new AxiosError('Upstream unavailable')
+    loadFailure.response = {
+      data: {
+        error: { code: 'upstream_error', message: 'Upstream unavailable' },
+      },
+      status: 502,
+      statusText: 'Bad Gateway',
+      headers: {},
+      config: { headers: {} },
+    } as typeof loadFailure.response
+    vi.spyOn(api, 'get').mockRejectedValue(loadFailure)
     const post = vi.spyOn(api, 'post')
     const client = new QueryClient({
       defaultOptions: {

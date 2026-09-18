@@ -32,7 +32,6 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { editTagChannels, getTagModels, getAllModels } from '../../api'
 import { channelsQueryKeys } from '../../lib'
@@ -59,22 +58,20 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
   // Fetch tag models
   const { data: tagModelsData, isLoading: isLoadingTagModels } = useQuery({
     queryKey: ['tag-models', currentTag],
+    // 成功体是逗号分隔的裸字符串（基座面 data 裸化）。
     queryFn: async () =>
-      requireServerSuccess(
-        await (currentTag ? getTagModels(currentTag) : null)
-      ),
+      currentTag ? getTagModels(currentTag) : Promise.resolve(''),
     enabled: open && !!currentTag,
   })
 
   // Fetch all available models
   const { data: allModelsData } = useQuery({
     queryKey: ['all-models'],
-    queryFn: async () => requireServerSuccess(await getAllModels()),
+    queryFn: async () => getAllModels(),
     enabled: open,
   })
 
-  const availableModels =
-    allModelsData?.data?.map((m) => m.id).filter(Boolean) || []
+  const availableModels = allModelsData?.map((m) => m.id).filter(Boolean) || []
 
   // Initialize form when tag changes
   useEffect(() => {
@@ -84,8 +81,8 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
       setCustomModel('')
 
       // Load tag models
-      if (tagModelsData?.data) {
-        const models = tagModelsData.data.split(',').filter(Boolean)
+      if (tagModelsData) {
+        const models = tagModelsData.split(',').filter(Boolean)
         setSelectedModels(models)
       } else {
         setSelectedModels([])
@@ -159,17 +156,10 @@ export function EditTagDialog({ open, onOpenChange }: EditTagDialogProps) {
         params.models = selectedModels.join(',')
       }
 
-      const response = await editTagChannels(
-        params as unknown as TagOperationParams
-      )
-
-      if (response.success) {
-        toast.success(t('Tag updated successfully'))
-        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-        onOpenChange(false)
-      } else {
-        handleServerError(response, t('Failed to update tag'))
-      }
+      await editTagChannels(params as unknown as TagOperationParams)
+      toast.success(t('Tag updated successfully'))
+      queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      onOpenChange(false)
     } catch (error: unknown) {
       handleServerError(error, t('Failed to update tag'))
     } finally {

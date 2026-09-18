@@ -141,23 +141,20 @@ it.each([
   async (action, params, headline, outcome) => {
     vi.spyOn(api, 'get').mockResolvedValue({
       data: {
-        success: true,
-        data: {
-          total: 1,
-          items: [
-            {
-              event_id: 'token-event',
-              created_at: 1788600600,
-              username: 'root',
-              actor_role: 100,
-              category: 'security',
-              action,
-              success: action !== 'generic',
-              status: 200,
-              other: { op: { action, params } },
-            },
-          ],
-        },
+        total: 1,
+        items: [
+          {
+            event_id: 'token-event',
+            created_at: 1788600600,
+            username: 'root',
+            actor_role: 100,
+            category: 'security',
+            action,
+            success: action !== 'generic',
+            status: 200,
+            other: { op: { action, params } },
+          },
+        ],
       },
     })
     const client = new QueryClient({
@@ -189,28 +186,25 @@ it.each([false, true])(
     const name = 'production-europe-primary-customer-routing-token'
     vi.spyOn(api, 'get').mockResolvedValue({
       data: {
-        success: true,
-        data: {
-          total: 1,
-          items: [
-            {
-              event_id: 'long-token-name',
-              created_at: 1788600600,
-              username: 'root',
-              actor_role: 100,
-              category: 'security',
-              action: 'token.status_update',
-              success: true,
-              status: 200,
-              other: {
-                op: {
-                  action: 'token.status_update',
-                  params: { id: 11, name, from: 1, to: 2 },
-                },
+        total: 1,
+        items: [
+          {
+            event_id: 'long-token-name',
+            created_at: 1788600600,
+            username: 'root',
+            actor_role: 100,
+            category: 'security',
+            action: 'token.status_update',
+            success: true,
+            status: 200,
+            other: {
+              op: {
+                action: 'token.status_update',
+                params: { id: 11, name, from: 1, to: 2 },
               },
             },
-          ],
-        },
+          },
+        ],
       },
     })
     const client = new QueryClient({
@@ -243,29 +237,26 @@ it.each([false, true])(
 it('uses the shared log toolbar and opens details in a keyboard-accessible dialog without expanding the row', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({
     data: {
-      success: true,
-      data: {
-        total: 1,
-        items: [
-          {
-            event_id: 'request-1',
-            created_at: 1788600600,
-            username: 'alice',
-            category: 'access_token',
-            action: 'access_token.request',
-            content: '',
-            other: {},
-            request_id: 'audit-request-42',
-            token_ref: 'a'.repeat(64),
-            user_agent: 'Browser client with a long version description',
-            method: 'GET',
-            route: '/api/user/self',
-            ip: '127.0.0.1',
-            status: 200,
-            success: true,
-          },
-        ],
-      },
+      total: 1,
+      items: [
+        {
+          event_id: 'request-1',
+          created_at: 1788600600,
+          username: 'alice',
+          category: 'access_token',
+          action: 'access_token.request',
+          content: '',
+          other: {},
+          request_id: 'audit-request-42',
+          token_ref: 'a'.repeat(64),
+          user_agent: 'Browser client with a long version description',
+          method: 'GET',
+          route: '/api/user/self',
+          ip: '127.0.0.1',
+          status: 200,
+          success: true,
+        },
+      ],
     },
   })
   renderViewer()
@@ -342,38 +333,35 @@ it.each([
     })
     vi.spyOn(api, 'get').mockResolvedValue({
       data: {
-        success: true,
-        data: {
-          total: 2,
-          items: [
-            {
-              event_id: 'single-status',
-              created_at: 0,
-              username: 'alice',
-              action: 'channel.status_update',
-              content: 'channel.status_update',
-              other: {
-                op: {
-                  action: 'channel.status_update',
-                  params: { id: 42, status: 2, changed: true },
-                },
+        total: 2,
+        items: [
+          {
+            event_id: 'single-status',
+            created_at: 0,
+            username: 'alice',
+            action: 'channel.status_update',
+            content: 'channel.status_update',
+            other: {
+              op: {
+                action: 'channel.status_update',
+                params: { id: 42, status: 2, changed: true },
               },
             },
-            {
-              event_id: 'batch-status',
-              created_at: 0,
-              username: 'alice',
-              action: 'channel.status_update_batch',
-              content: 'channel.status_update_batch',
-              other: {
-                op: {
-                  action: 'channel.status_update_batch',
-                  params: { count: 1, total: 2, status: 1 },
-                },
+          },
+          {
+            event_id: 'batch-status',
+            created_at: 0,
+            username: 'alice',
+            action: 'channel.status_update_batch',
+            content: 'channel.status_update_batch',
+            other: {
+              op: {
+                action: 'channel.status_update_batch',
+                params: { count: 1, total: 2, status: 1 },
               },
             },
-          ],
-        },
+          },
+        ],
       },
     })
     render(
@@ -424,7 +412,7 @@ function renderViewer(scope: 'all' | 'self' = 'self') {
 
 it('filters own access history by result, generation and time and resets pagination', async () => {
   const get = vi.spyOn(api, 'get').mockResolvedValue({
-    data: { success: true, data: { items: [], total: 45 } },
+    data: { items: [], total: 45 },
   })
   renderViewer()
   const user = userEvent.setup()
@@ -475,7 +463,7 @@ it('a failed history query exposes retry and no empty history claim', async () =
   vi.spyOn(api, 'get')
     .mockRejectedValueOnce(new Error('offline'))
     .mockResolvedValue({
-      data: { success: true, data: { items: [], total: 0 } },
+      data: { items: [], total: 0 },
     })
   renderViewer()
   expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -488,7 +476,7 @@ it('a failed history query exposes retry and no empty history claim', async () =
 
 it('administrator scope uses the admin endpoint and exposes the username filter', async () => {
   const get = vi.spyOn(api, 'get').mockResolvedValue({
-    data: { success: true, data: { items: [], total: 0 } },
+    data: { items: [], total: 0 },
   })
   renderViewer('all')
   await userEvent.click(screen.getByRole('button', { name: 'Expand' }))
@@ -504,7 +492,7 @@ it('administrator scope uses the admin endpoint and exposes the username filter'
 
 it('changing rows per page resets pagination and sends the selected page size', async () => {
   const get = vi.spyOn(api, 'get').mockResolvedValue({
-    data: { success: true, data: { items: [], total: 80 } },
+    data: { items: [], total: 80 },
   })
   renderViewer()
   const user = userEvent.setup()
@@ -538,7 +526,7 @@ it.each([10, 100])(
       permissions: { admin_permissions: { audit: { read: role === 10 } } },
     })
     const get = vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: { items: [], total: 0 } },
+      data: { items: [], total: 0 },
     })
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -571,7 +559,7 @@ it.each([1, 10])(
   async (role) => {
     useAuthStore.getState().auth.setUser({ id: 2, username: 'alice', role })
     const get = vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: { items: [], total: 0 } },
+      data: { items: [], total: 0 },
     })
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -618,34 +606,31 @@ it('clears cached records and open details when the admin audit endpoint denies 
     if (url === '/api/console/audit' && denied) throw forbidden
     return {
       data: {
-        success: true,
-        data: {
-          total: url === '/api/console/audit' ? 1 : 0,
-          items:
-            url === '/api/console/audit'
-              ? [
-                  {
-                    event_id: 'private-event',
-                    user_id: 2,
-                    username: 'other-account',
-                    actor_role: 10,
-                    created_at: 1788600600,
-                    category: 'operation',
-                    action: 'channel.update',
-                    content: 'Private operation',
-                    other: {},
-                    request_id: 'private-request',
-                    token_ref: '',
-                    user_agent: '',
-                    method: 'PUT',
-                    route: '/api/channel/',
-                    ip: '',
-                    status: 200,
-                    success: true,
-                  },
-                ]
-              : [],
-        },
+        total: url === '/api/console/audit' ? 1 : 0,
+        items:
+          url === '/api/console/audit'
+            ? [
+                {
+                  event_id: 'private-event',
+                  user_id: 2,
+                  username: 'other-account',
+                  actor_role: 10,
+                  created_at: 1788600600,
+                  category: 'operation',
+                  action: 'channel.update',
+                  content: 'Private operation',
+                  other: {},
+                  request_id: 'private-request',
+                  token_ref: '',
+                  user_agent: '',
+                  method: 'PUT',
+                  route: '/api/channel/',
+                  ip: '',
+                  status: 200,
+                  success: true,
+                },
+              ]
+            : [],
       },
     }
   })
@@ -702,7 +687,7 @@ it('mobile access history keeps pagination visible and puts result filters in a 
       matches: query === '(max-width: 640px)',
     }))
     const get = vi.spyOn(api, 'get').mockResolvedValue({
-      data: { success: true, data: { items: [], total: 0 } },
+      data: { items: [], total: 0 },
     })
     renderViewer()
     const user = userEvent.setup()

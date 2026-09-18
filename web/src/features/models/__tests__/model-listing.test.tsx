@@ -96,16 +96,13 @@ async function renderList(
       url === '/api/console/models/search'
     ) {
       return {
-        data: {
-          success: true,
-          data: { items, total: options.total ?? items.length },
-        },
+        data: { items, total: options.total ?? items.length },
       }
     }
     if (url === '/api/console/models/7') {
-      return { data: { success: true, data: metadata } }
+      return { data: metadata }
     }
-    return { data: { success: true, data: { items: [] } } }
+    return { data: { items: [] } }
   })
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -240,7 +237,7 @@ it('keeps long model names and the metadata hint truncated inside the model cell
 it('prefills and creates metadata only when the user explicitly saves it', async () => {
   await renderList([channel])
   const post = vi.spyOn(api, 'post').mockResolvedValue({
-    data: { success: true, data: { ...channel, id: 9, has_metadata: true } },
+    data: { ...channel, id: 9, has_metadata: true },
   })
   const user = userEvent.setup()
   await user.click(screen.getByRole('button', { name: 'Add metadata' }))

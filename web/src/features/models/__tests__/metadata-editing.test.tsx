@@ -49,34 +49,33 @@ afterEach(() => {
 describe('metadata editing', () => {
   it.each([
     {
-      name: 'business rejection',
-      response: { success: false, message: '模型名称已存在' },
+      name: 'error envelope rejection',
+      envelope: {
+        error: { code: 'conflict', message: '模型名称已存在' },
+      },
     },
-    { name: 'HTTP rejection', response: null },
+    { name: 'flat message rejection', envelope: { message: '模型名称已存在' } },
   ])(
     'shows the server reason for a $name and preserves the draft for retry',
-    async ({ response }) => {
+    async ({ envelope }) => {
       useAuthStore
         .getState()
         .auth.setUser({ id: 2, username: 'admin', role: 10 })
       vi.spyOn(api, 'get').mockResolvedValue({
-        data: { success: true, data: { items: [] } },
+        data: { items: [] },
       })
       const post = vi.spyOn(api, 'post')
-      if (response) {
-        post.mockResolvedValueOnce({ data: response })
-      } else {
-        const error = new AxiosError('Request failed with status code 409')
-        error.response = {
-          data: { message: '模型名称已存在' },
-          status: 409,
-          statusText: 'Conflict',
-          headers: {},
-          config: { headers: {} },
-        } as typeof error.response
-        post.mockRejectedValueOnce(error)
-      }
-      post.mockResolvedValue({ data: { success: true } })
+      // 新契约：失败一律是非 2xx + 错误包络，axios 直接拒绝。
+      const error = new AxiosError('Request failed with status code 409')
+      error.response = {
+        data: envelope,
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: {} },
+      } as typeof error.response
+      post.mockRejectedValueOnce(error)
+      post.mockResolvedValue({ data: model })
       const close = vi.fn()
       const fallbackError = vi.fn()
       const client = new QueryClient({
@@ -116,7 +115,7 @@ describe('metadata editing', () => {
           model_name: 'unique-model',
           description: 'Keep this draft',
         }),
-        { skipBusinessError: true, skipErrorHandler: true }
+        { skipErrorHandler: true }
       )
       client.clear()
     }
@@ -126,19 +125,17 @@ describe('metadata editing', () => {
     useAuthStore.getState().auth.setUser({ id: 2, username: 'admin', role: 10 })
     vi.spyOn(api, 'get').mockImplementation(async (url) => {
       if (url === '/api/console/models/7') {
-        return { data: { success: true, data: model } }
+        return { data: model }
       }
       if (url === '/api/option/') {
-        return { data: { success: true, data: [] } }
+        return { data: [] }
       }
       if (url === '/api/channel/search') {
-        return { data: { success: true, data: { items: [], total: 0 } } }
+        return { data: { items: [], total: 0 } }
       }
-      return { data: { success: false, message: 'Root only' } }
+      throw new AxiosError('Root only')
     })
-    const put = vi
-      .spyOn(api, 'put')
-      .mockResolvedValue({ data: { success: true, data: model } })
+    const put = vi.spyOn(api, 'put').mockResolvedValue({ data: model })
     const client = new QueryClient({
       defaultOptions: {
         queries: { retry: false },

@@ -163,7 +163,8 @@ func splitTagList(raw string) []string {
 //
 // 全量幂等 upsert：body 为完整对象，响应为写后回读。仅允许精确名规则（与 DELETE 约束一致）。
 func PutModelMetadata(c *gin.Context) {
-	name := strings.TrimSpace(c.Param("model"))
+	// catch-all 路由 (/model-metadata/*model) 会带上前导 "/"，与 routes.go 同一处理。
+	name := strings.TrimPrefix(strings.TrimSpace(c.Param("model")), "/")
 	if name == "" {
 		apierr.Validation(c, "model name is required")
 		return
@@ -227,14 +228,15 @@ func PutModelMetadata(c *gin.Context) {
 //
 // 删除目录记录；?remove_from_channels=true 同时从渠道声明移除；被车道引用时 409（force 覆盖并清理）。
 func DeleteModelMetadataByModel(c *gin.Context) {
-	name := strings.TrimSpace(c.Param("model"))
+	// catch-all 路由 (/model-metadata/*model) 会带上前导 "/"，与 routes.go 同一处理。
+	name := strings.TrimPrefix(strings.TrimSpace(c.Param("model")), "/")
 	record, err := findModelMetadataByName(name)
 	if err != nil {
 		writeAPIError(c, err)
 		return
 	}
 	if record == nil {
-		apierr.NotFound(c, apierr.CodeValidationFailed, "model metadata '"+name+"' not found", "GET /api/model-metadata")
+		apierr.NotFoundModel(c, name)
 		return
 	}
 	removeFromChannels := strings.EqualFold(c.Query("remove_from_channels"), "true")
@@ -272,7 +274,10 @@ func DeleteModelMetadataByModel(c *gin.Context) {
 	if delErr != nil {
 		var laneErr *model.LaneReferenceError
 		if errors.As(delErr, &laneErr) {
-			c.JSON(http.StatusOK, gin.H{"success": false, "code": "conflict", "message": "model is still referenced by lanes", "data": gin.H{"blocked": laneErr.Blocked}})
+			apierr.ConflictDetails(c, apierr.CodeConflict,
+				"model is still referenced by lanes",
+				"retry with ?force=1 to also remove this model from channels",
+				gin.H{"blocked": laneErr.Blocked})
 			return
 		}
 		writeAPIError(c, delErr)

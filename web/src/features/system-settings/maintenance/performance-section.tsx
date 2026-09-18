@@ -215,12 +215,9 @@ export function PerformanceSection(props: Props) {
 
   const fetchStats = useCallback(async () => {
     try {
+      // 成功即裸统计对象；失败由 axios 拒绝。
       const res = await api.get('/api/performance/stats')
-      if (res.data.success) {
-        setStats(res.data.data)
-      } else {
-        handleServerError(res.data)
-      }
+      setStats(res.data)
     } catch (error) {
       handleServerError(error)
     }
@@ -254,15 +251,12 @@ export function PerformanceSection(props: Props) {
     fetchStats()
   }
 
+  // 以下三个动作端点成功无实体（204）；失败由 axios 拒绝。
   const clearDiskCache = async () => {
     try {
-      const res = await api.delete('/api/performance/disk_cache')
-      if (res.data.success) {
-        toast.success(t('Disk cache cleared'))
-        fetchStats()
-      } else {
-        handleServerError(res.data)
-      }
+      await api.delete('/api/performance/disk_cache')
+      toast.success(t('Disk cache cleared'))
+      fetchStats()
     } catch (error) {
       handleServerError(error, t('Cleanup failed'))
     }
@@ -270,13 +264,9 @@ export function PerformanceSection(props: Props) {
 
   const resetStats = async () => {
     try {
-      const res = await api.post('/api/performance/reset_stats')
-      if (res.data.success) {
-        toast.success(t('Statistics reset'))
-        fetchStats()
-      } else {
-        handleServerError(res.data)
-      }
+      await api.post('/api/performance/reset_stats')
+      toast.success(t('Statistics reset'))
+      fetchStats()
     } catch (error) {
       handleServerError(error, t('Reset failed'))
     }
@@ -284,13 +274,9 @@ export function PerformanceSection(props: Props) {
 
   const forceGC = async () => {
     try {
-      const res = await api.post('/api/performance/gc')
-      if (res.data.success) {
-        toast.success(t('GC executed'))
-        fetchStats()
-      } else {
-        handleServerError(res.data)
-      }
+      await api.post('/api/performance/gc')
+      toast.success(t('GC executed'))
+      fetchStats()
     } catch (error) {
       handleServerError(error, t('GC execution failed'))
     }

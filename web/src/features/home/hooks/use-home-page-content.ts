@@ -46,14 +46,14 @@ export function useHomePageContent(): HomePageContentResult {
       }
 
       try {
-        const response = await getHomePageContent()
-        const { success, data } = response
+        // 成功即裸字符串；失败由 axios 拒绝。
+        const content = await getHomePageContent()
 
         if (!mounted) return
 
-        if (success && data) {
-          setContent(data)
-          localStorage.setItem(STORAGE_KEY, data)
+        if (content) {
+          setContent(content)
+          localStorage.setItem(STORAGE_KEY, content)
         } else {
           // Clear content if API returns empty
           setContent('')

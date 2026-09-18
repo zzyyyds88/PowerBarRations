@@ -56,12 +56,8 @@ export function UserInfoDialog({
     async (id: number) => {
       setIsLoading(true)
       try {
-        const result = await getUserInfo(id)
-        if (result.success) {
-          setUserInfo(result.data || null)
-        } else {
-          handleServerError(result, t('Failed to fetch user information'))
-        }
+        // 成功即裸用户对象；失败由 axios 拒绝。
+        setUserInfo(await getUserInfo(id))
       } catch (error) {
         handleServerError(error, t('Failed to fetch user information'))
       } finally {

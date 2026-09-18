@@ -49,7 +49,6 @@ import {
 } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
-import { createServerError } from '@/lib/server-error-message'
 import { truncateText } from '@/lib/utils'
 
 import { getCodexUsage } from '../api'
@@ -253,9 +252,6 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     setIsUpdating(true)
     try {
       const res = await getCodexUsage(channel.id)
-      if (!res.success) {
-        throw createServerError(res, t('Failed to fetch usage'))
-      }
       setCodexUsageResponse(res)
       setCodexUsageOpen(true)
     } catch (error) {
@@ -338,9 +334,6 @@ export function BalanceCell({ channel }: { channel: Channel }) {
           setIsUpdating(true)
           try {
             const res = await getCodexUsage(channel.id)
-            if (!res.success) {
-              throw createServerError(res, t('Failed to fetch usage'))
-            }
             setCodexUsageResponse(res)
           } catch (error) {
             handleServerError(error, t('Failed to fetch usage'))

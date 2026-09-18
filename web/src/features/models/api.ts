@@ -67,11 +67,8 @@ export async function getModel(id: number): Promise<GetModelResponse> {
 /**
  * Create new model
  */
-export async function createModel(
-  data: Partial<Model>
-): Promise<{ success: boolean; message?: string; data?: Model }> {
+export async function createModel(data: Partial<Model>): Promise<Model> {
   const res = await api.post('/api/console/models/', data, {
-    skipBusinessError: true,
     skipErrorHandler: true,
   })
   return res.data
@@ -82,9 +79,8 @@ export async function createModel(
  */
 export async function updateModel(
   data: Partial<Model> & { id: number }
-): Promise<{ success: boolean; message?: string; data?: Model }> {
+): Promise<Model> {
   const res = await api.put('/api/console/models/', data, {
-    skipBusinessError: true,
     skipErrorHandler: true,
   })
   return res.data
@@ -96,7 +92,7 @@ export async function updateModel(
 export async function updateModelStatus(
   id: number,
   status: number
-): Promise<{ success: boolean; message?: string }> {
+): Promise<Model> {
   const res = await api.put('/api/console/models/?status_only=true', {
     id,
     status,
@@ -111,7 +107,7 @@ export async function deleteModel(
   id: number,
   removeFromChannels = false,
   removePricing = false
-): Promise<ModelDeleteResponse> {
+): Promise<ModelDeleteResult> {
   const res = await api.delete(`/api/console/models/${id}`, {
     params: {
       remove_from_channels: removeFromChannels,
@@ -164,11 +160,11 @@ export async function previewUpstreamDiff(params?: {
 // 前端不再调用 /api/prefill_group/**（ui-spec §6.3）；后端端点保留（api-spec §9）。
 
 /**
- * Get missing models (used but not configured)
+ * Get missing models (used but not configured)（成功即裸字符串数组）。
  */
 export async function getMissingModels(): Promise<MissingModelsResponse> {
   const res = await api.get('/api/console/models/missing')
-  return res.data
+  return Array.isArray(res.data) ? res.data : []
 }
 
 export interface ModelDeleteResult {
@@ -176,23 +172,11 @@ export interface ModelDeleteResult {
   updated_channels: number
 }
 
-/** 删除模型被车道引用时（code=conflict）返回：渠道名 -> 引用车道名。 */
-export interface ModelDeleteConflict {
-  blocked?: Record<string, string[]>
-}
-
-export interface ModelDeleteResponse {
-  success: boolean
-  code?: string
-  message?: string
-  data?: ModelDeleteResult & ModelDeleteConflict
-}
-
 export async function deleteModels(
   modelIds: number[],
   removeFromChannels = false,
   removePricing = false
-): Promise<ModelDeleteResponse> {
+): Promise<ModelDeleteResult> {
   const res = await api.post('/api/console/models/delete', {
     model_ids: modelIds,
     remove_from_channels: removeFromChannels,

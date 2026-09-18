@@ -65,8 +65,8 @@ export function CacheStatsDialog(props: Props) {
     void getAffinityUsageCache(props.target)
       .then((res) => {
         if (seq !== seqRef.current) return
-        if (res.success) setStats((res.data as Record<string, unknown>) || {})
-        else handleServerError(res, t('Request failed'))
+        // 成功即裸明细对象；失败由 axios 拒绝。
+        setStats((res as Record<string, unknown>) || {})
       })
       .catch((error) => {
         if (seq !== seqRef.current) return

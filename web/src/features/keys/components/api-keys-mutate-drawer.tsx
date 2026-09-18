@@ -64,7 +64,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { useStatus } from '@/hooks/use-status'
 import { getUserModels } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import { createApiKey, updateApiKey, getApiKey } from '../api'
@@ -114,7 +113,8 @@ export function ApiKeysMutateDrawer({
   // Fetch models
   const { data: modelsData } = useQuery({
     queryKey: ['user-models'],
-    queryFn: async () => requireServerSuccess(await getUserModels()),
+    // getUserModels 成功即裸路由键数组；失败由 axios 拒绝。
+    queryFn: async () => getUserModels(),
     enabled: open,
     staleTime: 0,
   })
@@ -125,13 +125,13 @@ export function ApiKeysMutateDrawer({
     isFetching: apiKeyFetching,
   } = useQuery({
     queryKey: ['api-key', currentRowId],
-    queryFn: async () =>
-      requireServerSuccess(await getApiKey(currentRowId ?? 0)),
+    // getApiKey 是 PBR 本地适配层（本地合成 {success,data}）。
+    queryFn: async () => getApiKey(currentRowId ?? 0),
     enabled: open && isUpdate && currentRowId !== undefined,
     staleTime: 0,
   })
 
-  const models = modelsData?.data || []
+  const models = modelsData ?? []
   const schema = useMemo(() => getApiKeyFormSchema(t), [t])
 
   const form = useForm<ApiKeyFormValues>({

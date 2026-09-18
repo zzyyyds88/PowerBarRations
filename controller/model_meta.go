@@ -172,10 +172,8 @@ func DeleteModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if removePricing && c.GetInt("role") != common.RoleRootUser {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
-		return
-	}
+	// PBR 没有用户体系：管理密钥即全量权限（token-spec §2），因此不设按角色的门
+	// （PBRAuth 不写 role，留着这道门会让 remove_pricing 永远 403）。
 	result, err := model.DeleteModelMetadata([]int{id}, removeFromChannels, removePricing)
 	if err != nil {
 		var laneErr *model.LaneReferenceError
@@ -200,10 +198,7 @@ func BatchDeleteModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if request.RemovePricing && c.GetInt("role") != common.RoleRootUser {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
-		return
-	}
+	// 同上：管理密钥即全量权限，不设角色门。
 	result, err := model.DeleteModelMetadata(request.ModelIDs, request.RemoveFromChannels, request.RemovePricing)
 	if err != nil {
 		var laneErr *model.LaneReferenceError

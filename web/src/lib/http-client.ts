@@ -34,7 +34,6 @@ import { useAuthStore } from '@/stores/auth-store'
 
 declare module 'axios' {
   export interface AxiosRequestConfig {
-    skipBusinessError?: boolean
     skipErrorHandler?: boolean
     disableDuplicate?: boolean
     skipAuthRefresh?: boolean
@@ -85,8 +84,17 @@ function redirectToSignIn(): void {
 
 api.interceptors.response.use(
   (response) => {
-    if (response.config.acceptAuthRotation && response.data?.success === true) {
-      applyAuthRotation(response.data.data)
+    // 认证轮换响应已是裸资源（api-spec §2.3）；旧基座信封的成功体在 data 下。
+    if (response.config.acceptAuthRotation && response.data) {
+      const payload = response.data as {
+        success?: boolean
+        data?: unknown
+      }
+      if (payload.success === true) {
+        applyAuthRotation(payload.data)
+      } else if (payload.success === undefined) {
+        applyAuthRotation(payload)
+      }
     }
 
     return response

@@ -195,12 +195,8 @@ export function ChannelAffinitySection(props: Props) {
   const refreshCache = useCallback(async () => {
     setCacheLoading(true)
     try {
-      const res = await getCacheStats()
-      if (res.success) {
-        setCacheStats(res.data || null)
-      } else {
-        handleServerError(res)
-      }
+      // 成功即裸缓存统计；失败由 axios 拒绝。
+      setCacheStats(await getCacheStats())
     } catch (error) {
       handleServerError(error, t('Failed to refresh cache stats'))
     } finally {
@@ -359,13 +355,9 @@ export function ChannelAffinitySection(props: Props) {
 
   const handleClearAll = async () => {
     try {
-      const res = await clearAllCache()
-      if (res.success) {
-        toast.success(t('Cleared'))
-        refreshCache()
-      } else {
-        handleServerError(res)
-      }
+      await clearAllCache()
+      toast.success(t('Cleared'))
+      refreshCache()
       setClearAllDialogOpen(false)
     } catch (error) {
       handleServerError(error)
@@ -375,13 +367,9 @@ export function ChannelAffinitySection(props: Props) {
   const handleClearRule = async () => {
     if (!clearRuleName) return
     try {
-      const res = await clearRuleCache(clearRuleName)
-      if (res.success) {
-        toast.success(t('Cleared'))
-        refreshCache()
-      } else {
-        handleServerError(res)
-      }
+      await clearRuleCache(clearRuleName)
+      toast.success(t('Cleared'))
+      refreshCache()
       setClearRuleName(null)
     } catch (error) {
       handleServerError(error)

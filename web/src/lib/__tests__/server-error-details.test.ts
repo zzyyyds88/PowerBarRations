@@ -45,7 +45,62 @@ it('extracts the stable code, human message and hint from the error envelope', (
     message: "member channel 'alpha' not found",
     code: 'channel_not_found',
     hint: 'PUT /api/v1/channels/alpha',
+    details: undefined,
   })
+})
+
+it('reads code, hint and blocked details from a rejected 404 error envelope', () => {
+  const error = new AxiosError(
+    'HTTP 404',
+    'ERR_BAD_REQUEST',
+    undefined,
+    undefined,
+    {
+      data: {
+        error: {
+          code: 'channel_not_found',
+          message: "channel 'ghost' not found",
+          hint: 'GET /api/v1/channels',
+        },
+      },
+      status: 404,
+      statusText: 'Not Found',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    }
+  )
+
+  const details = getServerErrorDetails(error)
+
+  expect(details.code).toBe('channel_not_found')
+  expect(details.hint).toBe('GET /api/v1/channels')
+  expect(details.message).toBe("channel 'ghost' not found")
+})
+
+it('surfaces the conflict blocked map from error.details', () => {
+  const details = getServerErrorDetails({
+    error: {
+      code: 'conflict',
+      message: 'some channels are referenced by lanes',
+      details: { blocked: { alpha: ['lane-1'], beta: ['lane-2'] } },
+    },
+  })
+
+  expect(details.code).toBe('conflict')
+  expect(details.details).toEqual({
+    blocked: { alpha: ['lane-1'], beta: ['lane-2'] },
+  })
+})
+
+it('still reads a legacy flat code/hint payload', () => {
+  const details = getServerErrorDetails({
+    code: 'models_referenced_by_lanes',
+    message: 'still referenced',
+    hint: 'retry with cleanup_models=true',
+  })
+
+  expect(details.code).toBe('models_referenced_by_lanes')
+  expect(details.hint).toBe('retry with cleanup_models=true')
 })
 
 it('never exposes an axios transport code as the server error code', () => {
@@ -92,7 +147,6 @@ it('shows the server hint with its code as the toast description', () => {
   const notify = vi.spyOn(toast, 'error').mockReturnValue('error')
 
   handleServerError({
-    success: false,
     error: {
       code: 'lane_has_no_members',
       message: 'lane has no members',

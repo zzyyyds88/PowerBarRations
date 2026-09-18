@@ -21,7 +21,6 @@ import i18next from 'i18next'
 import { toast } from 'sonner'
 
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { updateSystemOption } from '../api'
 import type { UpdateOptionRequest } from '../types'
@@ -44,27 +43,24 @@ export function useUpdateOption() {
   const queryClient = useQueryClient()
 
   return useMutation({
+    // 成功无实体（204）；失败由 axios 拒绝。
     mutationFn: async (request: UpdateOptionRequest) =>
-      requireServerSuccess(await updateSystemOption(request)),
-    onSuccess: (data, variables) => {
-      if (data.success) {
-        // Always refresh system-options
-        queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      updateSystemOption(request),
+    onSuccess: (_data, variables) => {
+      // Always refresh system-options
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
 
-        // If updating frontend-display-related config, also refresh status
-        if (STATUS_RELATED_KEYS.has(variables.key)) {
-          queryClient.invalidateQueries({ queryKey: ['status'] })
-          try {
-            window.localStorage.removeItem('status')
-          } catch {
-            /* empty */
-          }
+      // If updating frontend-display-related config, also refresh status
+      if (STATUS_RELATED_KEYS.has(variables.key)) {
+        queryClient.invalidateQueries({ queryKey: ['status'] })
+        try {
+          window.localStorage.removeItem('status')
+        } catch {
+          /* empty */
         }
-
-        toast.success(i18next.t('Setting updated successfully'))
-      } else {
-        handleServerError(data, i18next.t('Failed to update setting'))
       }
+
+      toast.success(i18next.t('Setting updated successfully'))
     },
     onError: (error: Error) => {
       handleServerError(error, i18next.t('Failed to update setting'))

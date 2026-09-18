@@ -21,21 +21,16 @@ export type SystemOption = {
   value: string
 }
 
-export type SystemOptionsResponse = {
-  success: boolean
-  message: string
-  data: SystemOption[]
-}
+/** `GET /api/option/`（基座面）成功即裸选项数组；`/api/system/options/all` 是 `{items}`。 */
+export type SystemOptionsResponse = SystemOption[] | { items: SystemOption[] }
 
 export type UpdateOptionRequest = {
   key: string
   value: string | boolean | number
 }
 
-export type UpdateOptionResponse = {
-  success: boolean
-  message: string
-}
+/** `PUT /api/option/` 成功无实体（204）。 */
+export type UpdateOptionResponse = void
 
 export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
 
@@ -81,17 +76,11 @@ export type LogCleanupTask = SystemTask<
   LogCleanupTaskResult
 >
 
-export type SystemTaskResponse<TTask = SystemTask | null> = {
-  success: boolean
-  message: string
-  data?: TTask
-}
+/** `GET /api/system-task/{id}` 成功即裸任务对象（204 表示不存在）。 */
+export type SystemTaskResponse<TTask = SystemTask | null> = TTask
 
-export type SystemTaskListResponse = {
-  success: boolean
-  message: string
-  data?: SystemTask[]
-}
+/** `GET /api/system-task/list` 成功即裸任务数组。 */
+export type SystemTaskListResponse = SystemTask[]
 
 export type SiteSettings = {
   SystemName: string

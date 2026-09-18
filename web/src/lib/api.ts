@@ -17,8 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/http-client'
-import { authRequestOptions, authResult } from '@/lib/secure-verification'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 export {
   applyAuthBundle,
@@ -41,69 +39,24 @@ export type { ApiRequestConfig } from '@/lib/http-client'
 // User APIs
 // ============================================================================
 
-export async function getUserModels(): Promise<{
-  success: boolean
-  message?: string
-  data?: string[]
-}> {
+/** 路由键列表（api-spec §5.7：\`GET /api/models\` 返回 \`{items,next_cursor}\`）。 */
+export async function getUserModels(): Promise<string[]> {
   // PBR 无"用户模型"概念：可用模型即全部路由键（api-spec §5.7）。
   const res = await api.get('/api/models')
   const items = (res.data as { items?: Array<{ model?: string }> }).items ?? []
-  const names = items
+  return items
     .map((item) => item.model)
     .filter(
       (name): name is string => typeof name === 'string' && name.length > 0
     )
-  return { success: true, data: names }
 }
 
 // ============================================================================
 // System APIs
 // ============================================================================
 
-export async function getStatus() {
+/** \`GET /api/status\` 成功即裸状态对象（api-spec §2.3）。 */
+export async function getStatus(): Promise<Record<string, unknown>> {
   const res = await api.get('/api/status')
-  return requireServerSuccess(res.data)?.data as Record<string, unknown>
-}
-
-// ============================================================================
-// 2FA Management APIs
-// ============================================================================
-
-export function disable2FA(
-  proofToken: string,
-  signal?: AbortSignal
-): Promise<{ notification_warning?: boolean }> {
-  return authResult(
-    api.post(
-      '/api/user/2fa/disable',
-      {},
-      {
-        ...authRequestOptions,
-        headers: { 'X-Security-Proof': proofToken },
-        acceptAuthRotation: true,
-        singleUseAuthorization: true,
-        signal,
-      }
-    )
-  )
-}
-
-export function regenerate2FABackupCodes(
-  proofToken: string,
-  signal?: AbortSignal
-): Promise<{ backup_codes: string[]; notification_warning?: boolean }> {
-  return authResult(
-    api.post(
-      '/api/user/2fa/backup_codes',
-      {},
-      {
-        ...authRequestOptions,
-        headers: { 'X-Security-Proof': proofToken },
-        acceptAuthRotation: true,
-        singleUseAuthorization: true,
-        signal,
-      }
-    )
-  )
+  return (res.data ?? {}) as Record<string, unknown>
 }

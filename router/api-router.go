@@ -2,6 +2,7 @@ package router
 
 import (
 	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/internal/apiresp"
 	"github.com/zzyyyds88/PowerBarRations/middleware"
 
 	"github.com/gin-contrib/gzip"
@@ -27,6 +28,9 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
 	apiRouter.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	apiRouter.Use(middleware.GlobalAPIRateLimit())
+	// 全管理面统一响应信封（design-v1 §5.1）：基座遗留的 {success,message,data}
+	// 由 apiresp 按逐路由策略机械改写为裸资源 + §3 错误包络 + 真实状态码。
+	apiRouter.Use(apiresp.Middleware())
 	{
 		apiRouter.GET("/status", controller.GetStatus)
 		// 控制台内部接口统一收进 /api/console/*，把 /api/* 让给 PBR 管理面（api-spec §2）。

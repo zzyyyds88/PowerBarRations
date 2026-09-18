@@ -29,7 +29,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getTagModels, editTagChannels, getAllModels } from '../../api'
 import { channelsQueryKeys } from '../../lib'
@@ -69,18 +68,14 @@ export function TagBatchEditDialog({
 
     setIsLoading(true)
     try {
-      // Fetch current tag models
-      const tagModelsResponse = await getTagModels(currentTag)
-      requireServerSuccess(tagModelsResponse)
-      if (tagModelsResponse.success && tagModelsResponse.data) {
-        setModels(tagModelsResponse.data)
+      // Fetch current tag models（成功体是逗号分隔的裸字符串）。
+      const tagModels = await getTagModels(currentTag)
+      if (tagModels) {
+        setModels(tagModels)
       }
 
-      // Fetch all available models (for future use if needed)
-      const allModelsResponse = requireServerSuccess(await getAllModels())
-      if (allModelsResponse.success && allModelsResponse.data) {
-        // Available models could be used for autocomplete in the future
-      }
+      // 预取全部可用模型，供后续自动补全使用。
+      await getAllModels()
 
       // Initialize new tag with current tag name
       setNewTag(currentTag)
@@ -128,16 +123,10 @@ export function TagBatchEditDialog({
         return
       }
 
-      const response = await editTagChannels(
-        params as unknown as TagOperationParams
-      )
-      if (response.success) {
-        toast.success(t('Tag updated successfully'))
-        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-        handleClose()
-      } else {
-        handleServerError(response, t('Failed to update tag'))
-      }
+      await editTagChannels(params as unknown as TagOperationParams)
+      toast.success(t('Tag updated successfully'))
+      queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      handleClose()
     } catch (error: unknown) {
       handleServerError(error, t('Failed to update tag'))
     } finally {

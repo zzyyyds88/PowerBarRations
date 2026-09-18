@@ -27,6 +27,7 @@ import {
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AxiosError } from 'axios'
 import { useState } from 'react'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
@@ -68,13 +69,13 @@ function mockChannelGet(override?: GetOverride) {
     const replacement = override?.(url)
     if (replacement) return replacement
     if (url === '/api/channel/42') {
-      return { data: { success: true, data: editingChannel } }
+      return { data: editingChannel }
     }
     if (url === '/api/channel/default_base_urls') {
-      return { data: { success: true, data: {} } }
+      return { data: {} }
     }
     if (url === '/api/prefill_group') {
-      return { data: { success: true, data: [] } }
+      return { data: [] }
     }
     throw new Error(`Unexpected GET ${url}`)
   })
@@ -120,9 +121,7 @@ afterEach(() => {
 
 test('auto discovery fetches once after the 800ms debounce', async () => {
   vi.useFakeTimers()
-  const post = vi
-    .spyOn(api, 'post')
-    .mockResolvedValue({ data: { success: true, data: ['gpt-4'] } })
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ data: ['gpt-4'] })
   renderHook(() =>
     useChannelModelDiscovery({
       enabled: true,
@@ -147,9 +146,7 @@ test('auto discovery fetches once after the 800ms debounce', async () => {
 
 test('a connection edit inside the debounce window collapses into one request', async () => {
   vi.useFakeTimers()
-  const post = vi
-    .spyOn(api, 'post')
-    .mockResolvedValue({ data: { success: true, data: ['gpt-4'] } })
+  const post = vi.spyOn(api, 'post').mockResolvedValue({ data: ['gpt-4'] })
   const secondRequest: ChannelModelDiscoveryRequest = {
     kind: 'preview',
     data: { type: 1, base_url: 'https://example.com', key: 'second-key' },
@@ -201,7 +198,7 @@ test('auto discovery stays idle while the connection is not ready', async () => 
 test('a successful manual probe opens the centered dialog and merges through Apply without replacing manual entries', async () => {
   mockChannelGet((url) => {
     if (url === '/api/channel/fetch_models/42') {
-      return { data: { success: true, data: ['manual-model', 'upstream-new'] } }
+      return { data: ['manual-model', 'upstream-new'] }
     }
     return undefined
   })
@@ -247,13 +244,23 @@ test('a successful manual probe opens the centered dialog and merges through App
 
 test('a failed manual probe offers an inline retry and the next success opens the dialog', async () => {
   let attempts = 0
+  const rejection = new AxiosError('Upstream rejected the key')
+  rejection.response = {
+    data: {
+      error: { code: 'upstream_error', message: 'Upstream rejected the key' },
+    },
+    status: 502,
+    statusText: 'Bad Gateway',
+    headers: {},
+    config: { headers: {} },
+  } as typeof rejection.response
   mockChannelGet((url) => {
     if (url !== '/api/channel/fetch_models/42') return undefined
     attempts += 1
     if (attempts === 1) {
-      return { data: { success: false, message: 'Upstream rejected the key' } }
+      throw rejection
     }
-    return { data: { success: true, data: ['upstream-new'] } }
+    return { data: ['upstream-new'] }
   })
   const user = userEvent.setup()
   render(<DiscoveryHarness currentRow={editingChannel} />)

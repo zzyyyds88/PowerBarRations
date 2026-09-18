@@ -53,7 +53,8 @@ function stubStatusEndpoint(systemName: string): void {
   apiClient.get = async (url) => {
     if (url !== '/api/status') throw new Error(`Unexpected GET ${url}`)
     statusRequests.push(url)
-    return { data: { success: true, data: { system_name: systemName } } }
+    // 新契约：成功即裸状态对象。
+    return { data: { system_name: systemName } }
   }
 }
 
@@ -132,7 +133,7 @@ describe('shared status query deduplication', () => {
       })
       await waitFor(() => expect(statusRequests).toEqual(['/api/status']))
       expect(guardsResolved).toBe(false)
-      resolveStatus({ data: { success: true, data: status } })
+      resolveStatus({ data: status })
       expect(await guards).toEqual([
         { enabled: true, requireAuth: true },
         { enabled: true, requireAuth: false },
@@ -210,10 +211,7 @@ describe('module guard status freshness', () => {
       { updatedAt: Date.now() - 600_000 }
     )
     apiClient.get = async () => ({
-      data: {
-        success: true,
-        data: { HeaderNavModules: { [scenario.module]: scenario.after } },
-      },
+      data: { HeaderNavModules: { [scenario.module]: scenario.after } },
     })
     expect(
       await getModuleAccessForGuard(

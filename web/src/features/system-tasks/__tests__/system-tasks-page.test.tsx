@@ -65,7 +65,7 @@ afterEach(() => {
 // ui-spec §6.10：系统任务页标题为「系统任务」，不出现 "Root" 徽标与角色门。
 test('renders the system tasks page title without a Root badge', async () => {
   const mock = await listSystemTasksMock()
-  mock.mockResolvedValue({ success: true, message: '', data: [] })
+  mock.mockResolvedValue([])
 
   renderPage()
 
@@ -79,14 +79,10 @@ test('renders the system tasks page title without a Root badge', async () => {
 // ui-spec §6.10：任务面板分活跃/历史两节；活跃任务进度可见。
 test('splits active and historical tasks into separate sections', async () => {
   const mock = await listSystemTasksMock()
-  mock.mockResolvedValue({
-    success: true,
-    message: '',
-    data: [
-      makeTask({ task_id: 'active-1', status: 'running' }),
-      makeTask({ task_id: 'done-1', status: 'succeeded', state: {} }),
-    ],
-  })
+  mock.mockResolvedValue([
+    makeTask({ task_id: 'active-1', status: 'running' }),
+    makeTask({ task_id: 'done-1', status: 'succeeded', state: {} }),
+  ])
 
   renderPage()
 

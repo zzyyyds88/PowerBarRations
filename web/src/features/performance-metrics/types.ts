@@ -33,14 +33,11 @@ export type PerformanceGroup = {
   series: PerformanceSeriesPoint[]
 }
 
+/** `GET /api/perf-metrics` 成功即裸指标对象。 */
 export type PerformanceMetricsData = {
-  success: boolean
-  message?: string
-  data: {
-    model_name: string
-    series_schema?: string
-    groups: PerformanceGroup[]
-  }
+  model_name: string
+  series_schema?: string
+  groups: PerformanceGroup[]
 }
 
 export type SuccessRatePoint = { ts: number; success_rate: number }
@@ -54,10 +51,7 @@ export type PerfModelSummary = {
   request_count?: number
 }
 
+/** `GET /api/perf-metrics/summary` 成功即裸 `{models}`。 */
 export type PerfSummaryAllData = {
-  success: boolean
-  message?: string
-  data: {
-    models: PerfModelSummary[]
-  }
+  models: PerfModelSummary[]
 }

@@ -32,7 +32,6 @@ import {
 } from '@/features/channels/constants'
 import { channelsQueryKeys, getChannelTypeLabel } from '@/features/channels/lib'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { channelRouteKeys, matchesName } from '../lib/channel-price'
 import { resolveModelIconKey } from '../lib/model-icon'
@@ -58,18 +57,16 @@ export function ModelLinkedChannels(props: {
       page_size: PAGE_SIZE,
     }),
     queryFn: async () =>
-      requireServerSuccess(
-        await searchChannels({
-          model: props.modelName,
-          p: 1,
-          page_size: PAGE_SIZE,
-        })
-      ),
+      searchChannels({
+        model: props.modelName,
+        p: 1,
+        page_size: PAGE_SIZE,
+      }),
     enabled: Boolean(props.modelName),
     staleTime: 60 * 1000,
   })
   const channels = useMemo(() => {
-    const items = channelsQuery.data?.data?.items ?? []
+    const items = channelsQuery.data?.items ?? []
     return items.filter((channel) =>
       channelRouteKeys(channel).some((name) =>
         matchesName(name, props.modelName, nameRule)

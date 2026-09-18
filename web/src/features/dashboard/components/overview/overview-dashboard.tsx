@@ -45,7 +45,6 @@ import { getUserModels } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { MOTION_TRANSITION } from '@/lib/motion'
 import { ROLE } from '@/lib/roles'
-import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -283,7 +282,7 @@ export function OverviewDashboard() {
   const apiKeysQuery = useQuery({
     queryKey: ['dashboard', 'overview', 'api-keys'],
     queryFn: async () => {
-      const result = requireServerSuccess(await getApiKeys({ p: 1, size: 10 }))
+      const result = await getApiKeys({ p: 1, size: 10 })
       return result.success ? (result.data?.items ?? []) : []
     },
     staleTime: 60 * 1000,
@@ -292,8 +291,8 @@ export function OverviewDashboard() {
   const modelsQuery = useQuery({
     queryKey: ['dashboard', 'overview', 'user-models'],
     queryFn: async () => {
-      const result = requireServerSuccess(await getUserModels())
-      return result.success ? (result.data ?? []) : []
+      // getUserModels 成功即裸路由键数组；失败由 axios 拒绝。
+      return getUserModels()
     },
     staleTime: 5 * 60 * 1000,
   })

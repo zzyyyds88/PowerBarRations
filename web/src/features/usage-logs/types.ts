@@ -264,15 +264,12 @@ export interface GetLogsParams {
   upstream_request_id?: string
 }
 
+/** 基座面 `GET /api/log/` 列表成功即裸 `{items,total,page,page_size}`。 */
 export interface GetLogsResponse {
-  success: boolean
-  message?: string
-  data?: {
-    items: UsageLog[]
-    total: number
-    page: number
-    page_size: number
-  }
+  items: UsageLog[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export interface GetLogStatsParams {
@@ -288,10 +285,11 @@ export interface GetLogStatsParams {
   upstream_request_id?: string
 }
 
+/** 统计视图的本地零值（基座 `/api/log/stat` 已随计费面删除）。 */
 export interface GetLogStatsResponse {
-  success: boolean
-  message?: string
-  data?: LogStatistics
+  quota: number
+  rpm: number
+  tpm: number
 }
 
 // ============================================================================

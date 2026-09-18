@@ -27,7 +27,6 @@ import { ComboboxInput } from '@/components/ui/combobox-input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { getUserModels } from '@/lib/api'
-import { requireServerSuccess } from '@/lib/server-error-message'
 
 const APP_CONFIGS = {
   claude: {
@@ -103,15 +102,16 @@ export function CCSwitchDialog(props: Props) {
 
   const { data: modelsData } = useQuery({
     queryKey: ['user-models-ccswitch'],
-    queryFn: async () => requireServerSuccess(await getUserModels()),
+    // getUserModels 成功即裸路由键数组；失败由 axios 拒绝。
+    queryFn: async () => getUserModels(),
     enabled: props.open,
     staleTime: 5 * 60 * 1000,
   })
 
   const modelOptions = useMemo(() => {
-    const items = modelsData?.data ?? []
+    const items = modelsData ?? []
     return items.map((m) => ({ value: m, label: m }))
-  }, [modelsData?.data])
+  }, [modelsData])
 
   useEffect(() => {
     if (props.open) {

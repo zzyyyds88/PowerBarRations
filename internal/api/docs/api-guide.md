@@ -30,6 +30,10 @@
 
 ## 3. 端点总表
 
+> **响应形状（全管理面统一）**：成功 = **裸资源**（单对象即对象本身；列表 `{"items":[...],"next_cursor":...}`；
+> 动作类返回语义化最小对象，如 `{"changed":3}`、`{"deleted":true}`）。失败 = `{"error":{"code","message","hint","details"?}}`
+> **加真实 HTTP 状态码**。**没有 `{success,message,data}` 包装，也没有"200 承载失败"**——按状态码 + `error.code` 分支。
+
 - 渠道：`GET /api/channels`、`GET|PUT|DELETE /api/channels/{name}`、
   `POST /api/channels/{name}/test`、`POST /api/channels/{name}/sync-models`
 - 车道（唯一路由入口，ADR 0005）：`GET /api/lanes`、`GET|PUT|DELETE /api/lanes/{name}`、
@@ -132,7 +136,8 @@ Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).
 
 ## 6. 错误模型与硬规则
 
-- 错误体：`{"error":{"code":"...","message":"...","hint":"..."}}`；**按 `code` 分支**，不要解析 message。
+- 成功体是**裸资源**（无信封）；动作类端点是 `{"changed":n}` / `{"deleted":true}` 这类语义化最小对象。
+- 错误体：`{"error":{"code":"...","message":"...","hint":"...","details":{...}}}`，**带真实 HTTP 状态码**；**按状态码 + `code` 分支**，不要解析 message。`details` 当前用于车道引用守卫的 `blocked`（渠道名 → 车道名列表）。
 - 模型面 `503` = `No available channel for model <X>`（没有可用渠道）；
   本机繁忙是 `529`，两者不要混。
 - `GET /api/routes/{model}` 对不存在的模型返回 `200` + `members: []`。

@@ -33,10 +33,7 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { api } from '@/lib/http-client'
 import { createAppQueryClient } from '@/lib/query-client'
 import { AuthOperationError } from '@/lib/secure-verification'
-import {
-  createServerError,
-  getServerErrorMessage,
-} from '@/lib/server-error-message'
+import { getServerErrorMessage } from '@/lib/server-error-message'
 import { useAuthStore, type AuthBundle } from '@/stores/auth-store'
 
 const originalAdapter = api.defaults.adapter
@@ -58,24 +55,38 @@ it('uses an ordinary Error message and reports identical independent failures se
   ])
 })
 
-it('keeps unsuccessful business responses resolved and silent until a caller handles them', async () => {
+it('surfaces a failed business response as a rejected request with one notification', async () => {
   const notify = vi.spyOn(toast, 'error').mockReturnValue('error')
-  const payload = { success: false, message: 'Invalid expression' }
-  api.defaults.adapter = async (config) => ({
-    data: payload,
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config,
-  })
-  const response = await api.patch('/api/option/model_pricing', {})
-  expect(response.data).toEqual(payload)
-  expect(notify).not.toHaveBeenCalled()
-  handleServerError(response.data)
-  handleServerError(createServerError(response.data))
+  // 新契约：失败一律是非 2xx + §3 错误包络，axios 直接拒绝。
+  api.defaults.adapter = async (config) => {
+    throw new AxiosError('HTTP 400', 'ERR_BAD_REQUEST', config, undefined, {
+      data: {
+        error: {
+          code: 'validation_failed',
+          message: 'Invalid expression',
+        },
+      },
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {},
+      config,
+    })
+  }
+  const client = createAppQueryClient()
+  await expect(api.patch('/api/option/model_pricing', {})).rejects.toThrow(
+    'Invalid expression'
+  )
+  await client
+    .fetchQuery({
+      queryKey: ['failed business response'],
+      queryFn: () => api.patch('/api/option/model_pricing', {}),
+      retry: false,
+    })
+    .catch(handleServerError)
   expect(notify.mock.calls.map(([message]) => message)).toEqual([
     'Invalid expression',
   ])
+  client.clear()
 })
 
 it('only reports a query failure after retries are exhausted and stays silent when a retry succeeds', async () => {
@@ -351,17 +362,25 @@ it('never refreshes or replays a failed single-use authorization request', async
   ])
 })
 
-it('rejects an unsuccessful setting update so callers cannot proceed as if it saved, with one useful notification', async () => {
+it('rejects a failed setting update so callers cannot proceed as if it saved, with one useful notification', async () => {
   const client = createAppQueryClient()
   const notify = vi.spyOn(toast, 'error').mockReturnValue('setting-error')
   const success = vi.spyOn(toast, 'success').mockReturnValue('saved')
-  api.defaults.adapter = async (config) => ({
-    data: { success: false, message: 'Setting value is invalid' },
-    status: 200,
-    statusText: 'OK',
-    headers: {},
-    config,
-  })
+  // 新契约：PUT /api/option/ 失败回非 2xx + §3 错误包络（成功则 204）。
+  api.defaults.adapter = async (config) => {
+    throw new AxiosError('HTTP 400', 'ERR_BAD_REQUEST', config, undefined, {
+      data: {
+        error: {
+          code: 'validation_failed',
+          message: 'Setting value is invalid',
+        },
+      },
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {},
+      config,
+    })
+  }
   const { result, unmount } = renderHook(() => useUpdateOption(), {
     wrapper: (props: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, props.children),

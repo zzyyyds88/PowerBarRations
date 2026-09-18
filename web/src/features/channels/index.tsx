@@ -29,7 +29,6 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ROLE } from '@/lib/roles'
-import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getChannelOps } from './api'
@@ -45,11 +44,11 @@ export function Channels() {
   )
   const channelOpsQuery = useQuery({
     queryKey: ['channel-ops'],
-    queryFn: async () => requireServerSuccess(await getChannelOps()),
+    queryFn: async () => getChannelOps(),
     retry: false,
     staleTime: 5 * 60 * 1000,
   })
-  const retryTimes = channelOpsQuery.data?.data?.retry_times
+  const retryTimes = channelOpsQuery.data?.retry_times
   const retryLabel =
     typeof retryTimes === 'number' ? `${t('Max Retries')}: ${retryTimes}` : null
   let retryBadge = null

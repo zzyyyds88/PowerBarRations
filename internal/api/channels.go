@@ -203,9 +203,10 @@ func PutChannel(c *gin.Context) {
 			return
 		}
 		if len(refs) > 0 && !isForce(c) {
-			apierr.Write(c, http.StatusConflict, apierr.CodeConflict,
+			apierr.WriteDetails(c, http.StatusConflict, apierr.CodeConflict,
 				"refusing to remove models still referenced by lanes: "+strings.Join(refs, ", "),
-				"retry with ?force=1 to also remove this channel's members from those lanes")
+				"retry with ?force=1 to also remove this channel's members from those lanes",
+				gin.H{"lanes": refs})
 			return
 		}
 		referencedLanes = refs
