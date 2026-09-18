@@ -467,6 +467,16 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	return channel, nil
 }
 
+// GetChannelByName 按渠道名取渠道（不含 key 之外的选择由 selectAll 控制）。
+// 契约端点统一以渠道名寻址，这是"名字 → 渠道"的唯一入口。
+func GetChannelByName(name string) (*Channel, error) {
+	channel := &Channel{}
+	if err := DB.Where("name = ?", name).First(channel).Error; err != nil {
+		return nil, err
+	}
+	return channel, nil
+}
+
 // ChannelOrNil 取渠道：不存在时返回 (nil, nil)，真实 DB 错误原样上抛。
 //
 // 这是"渠道是否仍然存在"的**唯一判定口径**：列表/导出把 nil 记为悬空成员，导入剪枝把

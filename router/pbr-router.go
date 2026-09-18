@@ -112,5 +112,58 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.GET("/model-metadata", api.ListModelMetadata)
 		authed.PUT("/model-metadata/*model", api.PutModelMetadata)
 		authed.DELETE("/model-metadata/*model", api.DeleteModelMetadataByModel)
+
+		// 渠道批量运维（api-spec §5.3.1）。路径用渠道名，与 §5.3 一致。
+		authed.POST("/channels/batch/status", api.BatchChannelStatus)
+		authed.POST("/channels/batch/tag", api.BatchChannelTag)
+		authed.POST("/channels/batch/copy", api.CopyChannelByName)
+		authed.POST("/channels/batch/fetch-models", api.FetchUpstreamModelsBody)
+		authed.POST("/channels/batch/repair", api.RepairChannelAbilities)
+		authed.PUT("/channels/by-tag", api.EditChannelsByTag)
+		authed.POST("/channels/by-tag/status", api.BatchChannelTagStatus)
+		authed.GET("/channels/by-tag/models", api.ListChannelsByTagModels)
+		authed.DELETE("/channels/disabled", api.DeleteDisabledChannels)
+		authed.POST("/channels/upstream-updates/detect-all", api.DetectAllUpstream)
+		authed.POST("/channels/upstream-updates/apply-all", api.ApplyAllUpstream)
+		authed.GET("/channels/:name/key", api.GetChannelKeyByName)
+		authed.POST("/channels/:name/multi-keys", api.ManageMultiKeysByName)
+		authed.POST("/channels/:name/upstream-updates/detect", api.DetectUpstreamByName)
+		authed.POST("/channels/:name/upstream-updates/apply", api.ApplyUpstreamByName)
+		authed.POST("/channels/:name/codex/refresh", api.CodexRefreshByName)
+		authed.GET("/channels/:name/codex/usage", api.CodexUsageByName)
+		authed.GET("/channels/:name/codex/reset-credits", api.CodexResetCreditsByName)
+		authed.POST("/channels/:name/codex/reset", api.CodexResetUsageByName)
+		authed.POST("/channels/:name/ollama/pull", api.OllamaPullByName)
+		authed.POST("/channels/:name/ollama/pull/stream", api.OllamaPullStreamByName)
+		authed.DELETE("/channels/:name/ollama/models", api.OllamaDeleteByName)
+		authed.GET("/channels/:name/ollama/version", api.OllamaVersionByName)
+
+		// 系统选项、任务与性能（api-spec §5.3.2）。
+		authed.GET("/system/options/all", api.GetAllSystemOptions)
+		authed.PUT("/system/options/all", api.UpdateSystemOptions)
+		authed.GET("/system/affinity-cache", api.AffinityCacheStats)
+		authed.DELETE("/system/affinity-cache", api.ClearAffinityCache)
+		authed.GET("/system-tasks", api.ListSystemTasksHandler)
+		authed.GET("/system-tasks/current", api.CurrentSystemTask)
+		authed.GET("/system-tasks/:id", api.GetSystemTaskByID)
+		authed.POST("/system-tasks/log-cleanup", api.CreateLogCleanupTask)
+		authed.GET("/system/performance", api.PerformanceStats)
+		authed.POST("/system/performance/reset", api.ResetPerformanceStats)
+		authed.POST("/system/performance/gc", api.ForceGarbageCollection)
+		authed.DELETE("/system/performance/disk-cache", api.ClearDiskCacheHandler)
+		authed.GET("/system/log-files", api.ListLogFilesHandler)
+		authed.DELETE("/system/log-files", api.CleanupLogFilesHandler)
+
+		// 预填组（api-spec §5.3.3）。
+		authed.GET("/prefill-groups", api.ListPrefillGroups)
+		authed.POST("/prefill-groups", api.CreatePrefillGroup)
+		authed.PUT("/prefill-groups/:id", api.UpdatePrefillGroupByID)
+		authed.DELETE("/prefill-groups/:id", api.DeletePrefillGroupByID)
+
+		// 模型目录运维（api-spec §5.3.4）。
+		authed.GET("/model-catalog/sync-upstream/preview", api.SyncUpstreamPreviewH)
+		authed.POST("/model-catalog/sync-upstream", api.SyncUpstreamApplyH)
+		authed.GET("/model-catalog/missing", api.MissingModelsHandler)
+		authed.POST("/model-catalog/batch-delete", api.BatchDeleteModelMetaH)
 	}
 }

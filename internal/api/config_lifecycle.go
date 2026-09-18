@@ -923,6 +923,7 @@ func openAPIPaths() gin.H {
 		return []gin.H{{"name": name, "in": "path", "required": true, "schema": gin.H{"type": "string"}}}
 	}
 	dryRunParam := gin.H{"name": "dry_run", "in": "query", "schema": gin.H{"type": "boolean"}}
+	forceParam := gin.H{"name": "force", "in": "query", "schema": gin.H{"type": "boolean"}}
 	queryParam := func(name, description string) gin.H {
 		return gin.H{"name": name, "in": "query", "description": description, "schema": gin.H{"type": "string"}}
 	}
@@ -1051,6 +1052,139 @@ func openAPIPaths() gin.H {
 		"/model-metadata/{model}": gin.H{
 			"put":    secured("put", "写入模型目录元数据（全量 upsert）", append(pathParam("model"), dryRunParam))["put"],
 			"delete": secured("delete", "删除模型目录记录（可 remove_from_channels / force）", pathParam("model"))["delete"],
+		},
+
+		// 渠道批量运维（api-spec §5.3.1）
+		"/channels/batch/status": gin.H{
+			"post": secured("post", "批量启用/停用渠道", nil)["post"],
+		},
+		"/channels/batch/tag": gin.H{
+			"post": secured("post", "批量设置渠道标签", nil)["post"],
+		},
+		"/channels/batch/copy": gin.H{
+			"post": secured("post", "复制渠道", nil)["post"],
+		},
+		"/channels/batch/fetch-models": gin.H{
+			"post": secured("post", "拉取上游模型清单（不落库）", nil)["post"],
+		},
+		"/channels/batch/repair": gin.H{
+			"post": secured("post", "重建渠道路由索引（abilities）", nil)["post"],
+		},
+		"/channels/by-tag": gin.H{
+			"put": secured("put", "按标签批量改渠道配置", nil)["put"],
+		},
+		"/channels/by-tag/status": gin.H{
+			"post": secured("post", "按标签批量启用/停用渠道", nil)["post"],
+		},
+		"/channels/by-tag/models": gin.H{
+			"get": secured("get", "按标签取模型清单", []gin.H{queryParam("tag", "标签")})["get"],
+		},
+		"/channels/disabled": gin.H{
+			"delete": secured("delete", "删除全部已停用渠道（被车道引用时整批拒绝）", []gin.H{dryRunParam})["delete"],
+		},
+		"/channels/upstream-updates/detect-all": gin.H{
+			"post": secured("post", "探测全部渠道的上游模型变更", nil)["post"],
+		},
+		"/channels/upstream-updates/apply-all": gin.H{
+			"post": secured("post", "应用全部渠道的上游模型变更", nil)["post"],
+		},
+		"/channels/{name}/key": gin.H{
+			"get": secured("get", "读取渠道上游密钥（运维排障）", pathParam("name"))["get"],
+		},
+		"/channels/{name}/multi-keys": gin.H{
+			"post": secured("post", "多密钥管理", pathParam("name"))["post"],
+		},
+		"/channels/{name}/upstream-updates/detect": gin.H{
+			"post": secured("post", "探测该渠道的上游模型变更", pathParam("name"))["post"],
+		},
+		"/channels/{name}/upstream-updates/apply": gin.H{
+			"post": secured("post", "应用该渠道的上游模型变更（车道引用守卫 + force）", append(pathParam("name"), forceParam))["post"],
+		},
+		"/channels/{name}/codex/refresh": gin.H{
+			"post": secured("post", "刷新 Codex 渠道凭据", pathParam("name"))["post"],
+		},
+		"/channels/{name}/codex/usage": gin.H{
+			"get": secured("get", "Codex 用量", pathParam("name"))["get"],
+		},
+		"/channels/{name}/codex/reset-credits": gin.H{
+			"get": secured("get", "Codex 限额重置额度", pathParam("name"))["get"],
+		},
+		"/channels/{name}/codex/reset": gin.H{
+			"post": secured("post", "重置 Codex 用量", pathParam("name"))["post"],
+		},
+		"/channels/{name}/ollama/pull": gin.H{
+			"post": secured("post", "Ollama 拉取模型（非流式）", pathParam("name"))["post"],
+		},
+		"/channels/{name}/ollama/pull/stream": gin.H{
+			"post": secured("post", "Ollama 拉取模型（SSE 进度）", pathParam("name"))["post"],
+		},
+		"/channels/{name}/ollama/models": gin.H{
+			"delete": secured("delete", "Ollama 删除模型", pathParam("name"))["delete"],
+		},
+		"/channels/{name}/ollama/version": gin.H{
+			"get": secured("get", "Ollama 版本", pathParam("name"))["get"],
+		},
+
+		// 系统选项、任务与性能（api-spec §5.3.2）
+		"/system/options/all": gin.H{
+			"get": secured("get", "完整系统选项（站点/内容/运维）", nil)["get"],
+			"put": secured("put", "更新完整系统选项", nil)["put"],
+		},
+		"/system/affinity-cache": gin.H{
+			"get":    secured("get", "渠道亲和缓存统计", nil)["get"],
+			"delete": secured("delete", "清除渠道亲和缓存", nil)["delete"],
+		},
+		"/system-tasks": gin.H{
+			"get": secured("get", "系统任务列表", []gin.H{queryParam("cursor", "上一页返回的 next_cursor"), queryParam("limit", "默认 50，上限 200")})["get"],
+		},
+		"/system-tasks/current": gin.H{
+			"get": secured("get", "当前运行中的任务", nil)["get"],
+		},
+		"/system-tasks/{id}": gin.H{
+			"get": secured("get", "单任务详情", pathParam("id"))["get"],
+		},
+		"/system-tasks/log-cleanup": gin.H{
+			"post": secured("post", "创建清理日志文件任务", nil)["post"],
+		},
+		"/system/performance": gin.H{
+			"get": secured("get", "性能统计", nil)["get"],
+		},
+		"/system/performance/reset": gin.H{
+			"post": secured("post", "重置性能统计", nil)["post"],
+		},
+		"/system/performance/gc": gin.H{
+			"post": secured("post", "强制 GC", nil)["post"],
+		},
+		"/system/performance/disk-cache": gin.H{
+			"delete": secured("delete", "清除磁盘缓存", nil)["delete"],
+		},
+		"/system/log-files": gin.H{
+			"get":    secured("get", "日志文件列表", nil)["get"],
+			"delete": secured("delete", "清理日志文件", nil)["delete"],
+		},
+
+		// 预填组（api-spec §5.3.3）
+		"/prefill-groups": gin.H{
+			"get":  secured("get", "预填组列表", nil)["get"],
+			"post": secured("post", "创建预填组", nil)["post"],
+		},
+		"/prefill-groups/{id}": gin.H{
+			"put":    secured("put", "更新预填组", pathParam("id"))["put"],
+			"delete": secured("delete", "删除预填组", pathParam("id"))["delete"],
+		},
+
+		// 模型目录运维（api-spec §5.3.4）
+		"/model-catalog/sync-upstream/preview": gin.H{
+			"get": secured("get", "预览上游同步的模型变更（不落库）", nil)["get"],
+		},
+		"/model-catalog/sync-upstream": gin.H{
+			"post": secured("post", "应用上游同步", nil)["post"],
+		},
+		"/model-catalog/missing": gin.H{
+			"get": secured("get", "渠道声明但无目录记录的模型", nil)["get"],
+		},
+		"/model-catalog/batch-delete": gin.H{
+			"post": secured("post", "批量删除目录记录", nil)["post"],
 		},
 	}
 }
