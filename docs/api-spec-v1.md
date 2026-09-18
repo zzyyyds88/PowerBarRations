@@ -289,6 +289,10 @@
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计渠道存在且启用的成员，供界面标注"含不可用"）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（全部成员当前不可选时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
 | GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（**声明或 `model_mapping` 映射**了该模型、但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/upstream_model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它 |
+| GET | `/api/lane-summaries` | **全部车道的成员顺序摘要**（不分页）：`{items: [{name, enabled, mode, active_member, orphan_member_count, members: [{channel, upstream_model, priority}]}]}`。供路由页一次取全量顺序，避免 `GET /api/lanes` 的 cursor 上限（200）在大部署下让摘要列退化 |
+| GET | `/api/model-metadata` | **模型目录元数据**（不分页）：`{items: [{model, description, icon, tags, endpoints, status, name_rule, has_metadata, configured_channel_count}]}`。这是"模型管理页"的稳定只读面；`has_metadata=false` 表示仅由渠道声明、尚无目录记录 |
+| PUT | `/api/model-metadata/{model}` | **写入模型目录元数据**（全量幂等 upsert）：body `{description, icon, tags, endpoints, status, name_rule}`；响应为写后回读。仅允许"精确名"规则（`name_rule=0`），与 `DELETE` 的约束一致 |
+| DELETE | `/api/model-metadata/{model}` | **删除模型目录记录**：`?remove_from_channels=true` 同时把该模型从渠道声明里移除；被车道引用时 409（返回 `blocked` 渠道→车道清单），`?force=1` 覆盖并清理成员 |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
 
@@ -672,7 +676,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 
 | 能力 | 控制台内部前缀 |
 |---|---|
-| 模型目录/元数据（描述、标签、厂商、同步上游） | `/api/console/models/**` |
+| 模型目录元数据的**只读/写入稳定面**已提升为 `/api/model-metadata`（§5.7）；上游批量同步、缺失模型检测等批量运维动作仍在 `/api/console/models/**` |
 | 变更审计（控制台视图） | `/api/console/audit` |
 | 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
 | 渠道上游协议选择（`other_settings.protocol` = `openai-chat` \| `openai-responses` \| `anthropic` \| `gemini`，见 ui-spec §6.4） | `/api/channel/**`（随控制台实现变动，不属稳定契约） |
@@ -682,6 +686,17 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 系统任务 / 性能 | `/api/system-task/**`、`/api/performance/**`、`/api/perf-metrics/**` |
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
-导出导入、TLS、审计）都在稳定契约 `/api` 内；模型元数据等"控制台运维面"
-以同一管理密钥在 `/api/console/**` 及上述基座路径可用。要把某一项提升为稳定契约，先在 §5 补端点再实现。
+导出导入、TLS、审计）都在稳定契约 `/api` 内。
+
+**价格/单价无需新端点**：单层化后唯一价格来源是**渠道级上游单价**，已由
+`GET/PUT /api/channels/{name}` 的 `prices` 字段（`[{model, input, output, cache_read, cache_write}]`，
+人民币/百万 token）读写并回读，属稳定契约。
+
+**模型元数据**已提升：`GET /api/model-metadata`、`PUT /api/model-metadata/{model}`、
+`DELETE /api/model-metadata/{model}`（§5.7）。**车道顺序摘要**新增 `GET /api/lane-summaries`（§5.7），
+使路由页无需受 `GET /api/lanes` 的 cursor 上限影响。
+
+其余"控制台运维面"（批量同步上游、缺失模型检测、渠道基座视图、完整系统选项、预填组、
+管理员日志、系统任务/性能）仍以同一管理密钥在 `/api/console/**` 及上述基座路径可用，**可用但非稳定契约**。
+要把某一项提升为稳定契约，先在 §5 补端点再实现。
 
