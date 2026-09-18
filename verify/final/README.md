@@ -2,7 +2,8 @@
 
 > 本文是 goal-prompt §六「W8 成品验收」的证据索引：逐项写清**检查项 → 命令 → 结论 → 证据路径**。
 > **不把未做的项包装成已完成**：凡未实测的条目一律标 ❌ 或 ⚠️ 并写明原因。
-> 最近一次全量复跑：**2026-09-17（"接管收尾"批次合并后）**；W6 迁移在旧两层库只读副本上实测通过。
+> 最近一次全量复跑：**2026-09-17（"接管收尾"批次合并后）**。旧两层库迁移项（原 W6）已随机制整体移除，
+> 其 2026-09-15 实测记录仅存于 Git 历史。
 > 本轮把 W1–W5 与 final 脚本从旧语义（隐式链 / 渠道 priority / weighted-round_robin / `/assets/` 资产路径）
 > 修到与现行设计一致后全部复跑通过，并首次让 `pnpm lint` 真正为 0 error（此前索引里的"0 error"与实际不符）。
 >
@@ -25,7 +26,6 @@
 bash verify/final/e2e.sh                 # 端点全量实跑 + 端到端金标准 + 安全 + 重启持久化
 bash verify/final/a3_console.sh          # 控制台逐页走查（无头 Chromium + CDP + 截图）
 bash verify/final/a4_import_idempotent.sh# 导入/导出幂等与对账
-ROUTING_DB=... VENDOR_DB=... bash verify/final/a4_migrate.sh  # 真实迁移：旧两层库副本跑两次 + 加载校验
 bash verify/final/fault_injection.sh     # 故障注入矩阵
 bash verify/final/longrun.sh             # 有界长稳与并发（默认 3000；TOTAL=50000 跑满口径）
 bash verify/final/rollback.sh            # 切流与回滚演练
@@ -39,7 +39,7 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 | **A1** 功能完整性：端点无 5xx、无未实现桩 | openapi 登记的全部 path×method 实跑 | `verify/final/e2e.sh` | ✅ PASS=33（2026-09-17 复跑） | `verify/final/run-*.log`（日志不入库） |
 | **A2** 两种模式 + 冷却 + 亲和 + 熔断半开 | failover/manual 各跑通；已删模式返回 422；熔断打开→半开→复通留时间戳 | `verify/w2/smoke.sh` | ✅ PASS=37（2026-09-17 复跑） | `verify/w2/run-*.log`、`verify/w2/README.md` |
 | **A3** 控制台逐页走查（ui-spec §8） | 无头 Chromium + CDP 注入管理密钥，逐页导航/断言渲染与 console 无报错/三态组件/品牌残留；随后跑 `console_flow.py` 完整使用流程（自包含假上游 + 后端强断言） | `verify/final/a3_console.sh` | ✅ **PASS=10 FAIL=0**（2026-09-17 复跑；页面清单已改为 /routes 与 /system-tasks，完整流程 12/12 断言） | `verify/final/a3-*.log` 中的 console_flow JSON（日志不入库） |
-| **A4** 迁移脚本幂等 | ①`pbr migrate` 在旧两层库（octopus 路由层 + new-api 厂商层）副本上跑两次：计划逐字节一致、目标库计数一致、产物可被 PBR 加载；②`/api/v1/import` 的导入幂等与对账规则 | `ROUTING_DB=… VENDOR_DB=… verify/final/a4_migrate.sh`；`verify/final/a4_import_idempotent.sh` | ✅ PASS=11（真实迁移，2026-09-15 实测）+ **PASS=16**（导入幂等，2026-09-17 复跑；探针字段已从删除的 priority 改为 models） | `verify/final/a4-migrate-*.log`；`verify/final/a4-*.log` |
+| **A4** 导入幂等 | `/api/v1/import` 的导入幂等与对账规则 | `verify/final/a4_import_idempotent.sh` | **PASS=16**（2026-09-17 复跑；探针字段已从删除的 priority 改为 models）。原"真实迁移"子项（`pbr migrate` 跑两次，PASS=11，2026-09-15 实测）已随迁移机制整体移除，证据仅存 Git 历史 | `verify/final/a4-*.log` |
 | **B①** 工具调用 | 带 tools 的请求 → 回 tool_calls | `verify/final/e2e.sh` | ✅ | run 日志 |
 | **B②** 多模态小图 | 图片 data URL 透传，上游确实收到 | 同上 | ✅ | run 日志 |
 | **B③** 思考参数半开由上游 400 原样透传 | 上游 400 不换人、不冷却 | 同上 | ✅ | run 日志 |
@@ -53,8 +53,8 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 | **E** 持久化与重启 | 重启后配置/令牌不丢；运行态清空 | `verify/final/e2e.sh`、`verify/deploy/smoke.sh` | ✅ | run 日志；`verify/deploy/README.md` |
 | **F** 安全 | 未初始化 409、错误密钥 401、被拒车道 403、明文不入库不入日志、OpenAPI 不泄漏 | `verify/w3/smoke.sh`、`verify/final/e2e.sh` | ✅ PASS=45（2026-09-17 复跑） | `verify/w3/run-*.log`、run 日志 |
 | **G** 部署验收 | 独立 compose 项目从零起容器 → 设口令 → 建渠道/密钥 → 转发 → 重启数据仍在 | `verify/deploy/smoke.sh` | ✅（2026-09-17 复跑 exit 0） | `verify/deploy/run-*.log`、`verify/deploy/README.md` |
-| **H** 回滚演练 | 按 `MIGRATION.md` 在测试实例上演练切流与回滚（不动生产） | `verify/final/rollback.sh` | ✅ PASS=16（2026-09-17 复跑） | `verify/final/rollback-*.log` |
-| **I** 文档一致性 | README / MIGRATION / ADR / OpenAPI / verify 与实现一致 | e2e 端点实跑、`verify/w4/console_contract_check.py`、本索引 | ✅（2026-09-17 修订） | 控制台端点与 openapi 对齐（检查器已修三处解析缺陷）；w1–w4 脚本、波次 README 顶部修订横幅与现行设计一致 |
+| **H** 回滚演练 | 按当时的迁移文档（已随机制删除）在测试实例上演练切流与回滚（不动生产） | `verify/final/rollback.sh` | ✅ PASS=16（2026-09-17 复跑） | `verify/final/rollback-*.log` |
+| **I** 文档一致性 | README / ADR / OpenAPI / verify 与实现一致 | e2e 端点实跑、`verify/w4/console_contract_check.py`、本索引 | ✅（2026-09-17 修订） | 控制台端点与 openapi 对齐（检查器已修三处解析缺陷）；w1–w4 脚本、波次 README 顶部修订横幅与现行设计一致 |
 | **J** 代码质量 | `go build/vet/test`、`web pnpm typecheck/build/test/lint/format:check/copyright:check` | 见下 | ✅（2026-09-17 实测） | `go test ./...` **39 个含测试的包全 ok / 0 FAIL**；`pnpm typecheck` 通过；`pnpm test` **75 文件 / 751 用例**全过；`pnpm lint` **0 error / 43 warning**（三条 React Compiler 规则按 `web/AGENTS.md` §3.2 明确降级）；`pnpm format:check` 与 `pnpm copyright:check` 均 0 失败 |
 
 ```bash
@@ -80,7 +80,7 @@ cd web && pnpm copyright:check   # 通过（added=0 / updated=0）
 | W4 控制台（构建 + 内嵌 + 契约一致性） | `verify/w4/smoke.sh` | **PASS=19 FAIL=0** |
 | W5 日志与记账 | `verify/w5/smoke.sh` | **PASS=29 FAIL=0** |
 | 部署 | `verify/deploy/smoke.sh` | **PASS**（2026-09-17 复跑） |
-| W8 自验收（自动化部分） | `verify/final/{e2e,a3,a4_import,fault,rollback}` | 全 PASS（PASS=33/10/16/23/16，见逐项索引；longrun/a4_migrate 见下方残余说明） |
+| W8 自验收（自动化部分） | `verify/final/{e2e,a3,a4_import,fault,rollback}` | 全 PASS（PASS=33/10/16/23/16，见逐项索引；longrun 见下方残余说明） |
 
 ## 本轮验收发现并修掉的真问题
 
@@ -117,7 +117,6 @@ cd web && pnpm copyright:check   # 通过（added=0 / updated=0）
 
 | 缺口 | 影响 | 谁来关 |
 |---|---|---|
-| W6 正式切流（把现网下游 `base_url` 指向 PBR） | 迁移算法与 CLI 已完成并在旧库副本验证；真实切流属运维动作 | 业主按 `MIGRATION.md` §2 在测试实例演练后执行；PBR 与旧网关协议面一致，可随时回滚 |
 | D 的"≥2 小时"维度 | 已按口径跑满 **50000 请求**；未跑连续 2 小时 | 如需 2 小时维度，在压测环境跑 `longrun.sh` 的时长版本 |
 | 控制台视觉/交互人工复核 | A3 已用无头 Chromium 做页面级断言与截图，但非人眼审美复核 | 需要人复核时用 `verify/final/console_walkthrough.py` 的截图 |
 

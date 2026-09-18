@@ -12,7 +12,7 @@
 - 控制台：渠道管理、模型管理（按名推断并自动采用图标）、路由与故障切换、系统任务、令牌、用量与成本看板、系统设置。
 - 上游模型探测：渠道编辑器内手动探测，探测结果用居中选择弹窗按需合并。
 - 成本视图：按渠道 x 模型的请求数、token、成功率与上游折算花费（元）。
-- CLI：`pbr migrate`（从旧两层网关迁移）、`pbr auth reset`。
+- CLI：`pbr auth reset`。
 
 ### Changed
 - 控制台首页重做为 PBR 真实能力：模型即路由键、同名车道、优先级故障转移、冷却 / 亲和 / 熔断；新增「一次请求如何被路由」区块；统计口径修正为 **4** 个上游协议。
@@ -22,12 +22,13 @@
 - **运维端点路由与响应策略同表声明**（design-v1 §16.3）：新增 `internal/api/ops_routes.go` 与 `internal/apiresp`，守卫测试强制每条已注册管理路由都有信封覆盖。
 
 ### Security
-- 客户端密钥只写不读，服务端只存 `sha256` 与展示前缀；管理密钥由登录口令派生、不落库。
+- 客户端密钥由服务端随机生成并明文入库，管理 API 可随时回读复制；鉴权仍走 `sha256` 哈希索引。管理密钥由登录口令派生、服务端只存其哈希、不落明文。
 - 请求日志只存元数据，不存请求/响应正文与密钥明文。
 - 管理面（`/api`、`/api/v1`）统一请求体上限（默认 2MB，`ANONYMOUS_REQUEST_BODY_LIMIT_KB`）；模型面仍为 128MB。
 - CORS 不再对任意来源同时放行凭据；模型面不再接受 `?key=` 查询串凭据，访问日志去除查询串；上游错误响应体脱敏后再入日志；登录失败退避改为按来源返回 429 + `Retry-After`。
 
 ### Removed
 - 删除死代码 `createRootAccountIfNeed`（`root`/`123456` 默认账号）与内部施工文档。
+- 移除旧 `new-api`/`octopus` 两层网关的迁移机制：`internal/legacy` 包、`pbr migrate` 子命令与 `MIGRATION.md`。新实例只使用新建的 PBR 数据库（design-v1 §11）。
 
 [Unreleased]: https://github.com/zzyyyds88/PowerBarRations/commits/main
