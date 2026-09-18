@@ -50,3 +50,47 @@ func TestSanitizeURLForLogKeepsURLWithoutSensitiveQuery(t *testing.T) {
 
 	assert.Equal(t, rawURL, got)
 }
+
+func TestNormalizeProtocolBaseURLStripsVersionAndEndpointTails(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"https://host", "https://host"},
+		{"https://host/", "https://host"},
+		{"https://host/v1", "https://host"},
+		{"https://host/v1/", "https://host"},
+		{"https://host/v1/chat/completions", "https://host"},
+		{"https://host/v1/responses", "https://host"},
+		{"https://host/v1/responses/compact", "https://host"},
+		{"https://host/v1/messages", "https://host"},
+		{"https://host/v1/completions", "https://host"},
+		{"https://host/v1/embeddings", "https://host"},
+		{"https://host/v1beta", "https://host"},
+		{"https://host/v1beta/models/gemini:generateContent", "https://host/v1beta/models/gemini:generateContent"},
+		{"https://proxy.example/api/v1", "https://proxy.example/api"},
+		{"https://proxy.example/api/v1/chat/completions", "https://proxy.example/api"},
+		{"https://v1", "https://v1"},
+		{"", ""},
+		{"not a url", "not a url"},
+		{"https://host/v1?key=1", "https://host?key=1"},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, NormalizeProtocolBaseURL(tc.in), "input %q", tc.in)
+	}
+}
+
+func TestGetFullRequestURLEquivalentForAllBaseURLSpellings(t *testing.T) {
+	// api-spec §4.1：host ≡ host/v1 ≡ host/v1/chat/completions 三种写法
+	// 拼接结果必须一致，不出现 /v1/v1。
+	want := "https://vendor.example/v1/chat/completions"
+	for _, base := range []string{
+		"https://vendor.example",
+		"https://vendor.example/",
+		"https://vendor.example/v1",
+		"https://vendor.example/v1/chat/completions",
+	} {
+		assert.Equal(t, want, GetFullRequestURL(base, "/v1/chat/completions", 1), "base %q", base)
+	}
+	// 非协议型渠道不归一化（旧数据行为不变）。
+	assert.Equal(t,
+		"https://vendor.example/v1/v1/chat/completions",
+		GetFullRequestURL("https://vendor.example/v1", "/v1/chat/completions", 8+1))
+}

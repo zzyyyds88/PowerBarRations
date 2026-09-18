@@ -136,9 +136,10 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 	version := model_setting.GetGeminiVersionSetting(info.UpstreamModelName)
+	baseURL := relaycommon.NormalizeBaseURLForChannel(info.ChannelBaseUrl, info.ChannelType)
 
 	if strings.HasPrefix(info.UpstreamModelName, "imagen") {
-		return fmt.Sprintf("%s/%s/models/%s:predict", info.ChannelBaseUrl, version, info.UpstreamModelName), nil
+		return fmt.Sprintf("%s/%s/models/%s:predict", baseURL, version, info.UpstreamModelName), nil
 	}
 
 	if strings.HasPrefix(info.UpstreamModelName, "text-embedding") ||
@@ -148,7 +149,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		if info.IsGeminiBatchEmbedding {
 			action = "batchEmbedContents"
 		}
-		return fmt.Sprintf("%s/%s/models/%s:%s", info.ChannelBaseUrl, version, info.UpstreamModelName, action), nil
+		return fmt.Sprintf("%s/%s/models/%s:%s", baseURL, version, info.UpstreamModelName, action), nil
 	}
 
 	action := "generateContent"
@@ -158,7 +159,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			info.DisablePing = true
 		}
 	}
-	return fmt.Sprintf("%s/%s/models/%s:%s", info.ChannelBaseUrl, version, info.UpstreamModelName, action), nil
+	return fmt.Sprintf("%s/%s/models/%s:%s", baseURL, version, info.UpstreamModelName, action), nil
 }
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
