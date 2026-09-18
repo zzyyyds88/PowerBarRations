@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { getPBRSetupStatus, submitPBRSetup } from '@/lib/pbr-auth'
+import { sha256Bytes } from '@/lib/sha256'
 
 import type { SetupFormValues, SetupResponse } from './types'
 
@@ -33,25 +34,32 @@ export async function getSetupStatus(): Promise<SetupResponse> {
 }
 
 /**
- * 用 Web Crypto 计算 Base64(SHA256(口令))，与后端 token-spec §2.1 的派生规则一致：
- * 标准 Base64 带填充（32 字节摘要）。非安全上下文（HTTP 非 localhost）下
- * `crypto.subtle` 不可用，此时返回 null，界面提示用户按公式自行重算。
+ * 计算 Base64(SHA256(口令))，与后端 token-spec §2.1 的派生规则一致：
+ * 标准 Base64 带填充（32 字节摘要）。优先 crypto.subtle；非安全上下文
+ * （HTTP 非 localhost）下 subtle 被禁用，用纯 JS SHA-256 兜底，两条路径
+ * 结果必须一致。连兜底都失败才返回 null（理论上不会发生）。
  */
 export async function deriveAdminKey(password: string): Promise<string | null> {
+  const bytes = new TextEncoder().encode(password)
+  let digest: Uint8Array | null = null
   const subtle = globalThis.crypto?.subtle
-  if (!subtle) return null
-  try {
-    const digest = await subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(password)
-    )
-    const bytes = new Uint8Array(digest)
-    let binary = ''
-    for (const byte of bytes) binary += String.fromCharCode(byte)
-    return btoa(binary)
-  } catch {
-    return null
+  if (subtle) {
+    try {
+      digest = new Uint8Array(await subtle.digest('SHA-256', bytes))
+    } catch {
+      digest = null
+    }
   }
+  if (!digest) {
+    try {
+      digest = sha256Bytes(bytes)
+    } catch {
+      return null
+    }
+  }
+  let binary = ''
+  for (const byte of digest) binary += String.fromCharCode(byte)
+  return btoa(binary)
 }
 
 /** 设置首个登录口令（POST /api/v1/setup），成功即签发会话。 */

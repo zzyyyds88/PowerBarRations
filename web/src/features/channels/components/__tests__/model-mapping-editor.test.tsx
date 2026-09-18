@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
+import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { expect, test, vi } from 'vitest'
 
@@ -83,4 +84,21 @@ test('language changes preserve draft mappings and explain the same direction in
   expect(onChange).toHaveBeenLastCalledWith(
     '{\n  "client-alias": "provider-model"\n}'
   )
+})
+
+test('a single click on Add Mapping keeps the empty row when the parent echoes the value back', async () => {
+  // 渠道编辑表单是受控父级：onChange 的新值会立刻回流到 value prop。
+  // 空行的序列化值是 "{}"，回流解析不得把刚加的草稿行清掉，
+  // 否则用户必须点两次「添加映射」才能看到行。
+  function ControlledEditor() {
+    const [value, setValue] = useState('')
+    return <ModelMappingEditor value={value} onChange={setValue} />
+  }
+  render(<ControlledEditor />)
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Add Mapping' }))
+  await user.type(screen.getByPlaceholderText('gpt-3.5-turbo'), 'client-x')
+  await user.type(screen.getByPlaceholderText('gpt-3.5-turbo-0125'), 'up-x')
+  expect(screen.getByDisplayValue('client-x')).toBeVisible()
+  expect(screen.getByDisplayValue('up-x')).toBeVisible()
 })

@@ -113,6 +113,15 @@ For commercial licensing, please contact support@quantumnous.com
     cursor: pointer;
   }
 
+  /* 密码框只显示我们自己的可见性切换；屏蔽 Edge/IE 原生的显示/清除按钮，
+   * 否则会与自定义眼睛叠成两只。 */
+  input[type='password']::-ms-reveal,
+  input[type='password']::-ms-clear,
+  input[type='text'][autocomplete='new-password']::-ms-reveal,
+  input[type='text'][autocomplete='new-password']::-ms-clear {
+    display: none;
+  }
+
   /* Prevent focus zoom on mobile devices */
   @media screen and (max-width: 767px) {
     input,
