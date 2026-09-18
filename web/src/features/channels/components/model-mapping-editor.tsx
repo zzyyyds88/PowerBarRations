@@ -146,8 +146,9 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
     if (
       lastEmittedRef.current !== null &&
       props.value === lastEmittedRef.current
-    )
+    ) {
       return
+    }
     setJsonValue(props.value)
     parseJsonToRows(props.value)
   })
