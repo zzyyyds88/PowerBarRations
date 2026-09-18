@@ -353,10 +353,8 @@ export function ChannelsPrimaryButtons() {
         handleConfirm={async () => {
           setIsRepairingConsistency(true)
           try {
-            await handleFixAbilities(queryClient, (_result) => {
-              // eslint-disable-next-line no-console
-              console.log('Repair channel consistency result:', _result)
-            })
+            // 成功/失败反馈由 handleFixAbilities 内部统一 toast，无需再打日志。
+            await handleFixAbilities(queryClient)
             setShowConsistencyDialog(false)
           } finally {
             setIsRepairingConsistency(false)
