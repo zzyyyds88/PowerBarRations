@@ -327,6 +327,43 @@ func RotateKey(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// unknownRouteKeys 返回既没有同名车道、也没有任何启用渠道声明的路由键（去重、保序）。
+// 校验失败不阻断 DB 故障：查询出错时按"未知"处理并上抛由调用方决定；这里只在
+// 明确查得候选集合后判定，避免把临时故障误判成非法输入。
+func unknownRouteKeys(keys []string) []string {
+	unique := make([]string, 0, len(keys))
+	seen := map[string]bool{}
+	for _, k := range keys {
+		k = strings.TrimSpace(k)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		unique = append(unique, k)
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+	known := map[string]bool{}
+	if lanes, err := model.ListLanes(); err == nil {
+		for _, lane := range lanes {
+			known[lane.Name] = true
+		}
+	}
+	if summaries, err := model.ListModelSummaries(); err == nil {
+		for _, s := range summaries {
+			known[s.Model] = true
+		}
+	}
+	unknown := make([]string, 0)
+	for _, k := range unique {
+		if !known[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	return unknown
+}
+
 func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *apiError {
 	if payload.Enabled != nil {
 		key.Enabled = *payload.Enabled
@@ -338,6 +375,15 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 		}
 		if mode != model.LanePolicyModeAll && mode != model.LanePolicyModeAllow {
 			return &apiError{code: apierr.CodeValidationFailed, message: "lane_policy.mode must be all or allow"}
+		}
+		// 权限判定的对象是"路由键"（token-spec §3.2）：allow_lanes 里写不存在的键会被
+		// 静默接受，用户以为"允许了模型 X"，实际是死键（请求得到 503 而非 403，分不清
+		// 权限还是没配车道）。这里显式拒绝并列出未知键。
+		if unknown := unknownRouteKeys(payload.LanePolicy.AllowLanes); len(unknown) > 0 {
+			return &apiError{
+				code:    apierr.CodeValidationFailed,
+				message: "unknown route key(s) in lane_policy.allow_lanes: " + strings.Join(unknown, ", ") + " (no lane and no channel declares them)",
+			}
 		}
 		encoded, err := json.Marshal(model.LanePolicy{
 			Mode:       mode,

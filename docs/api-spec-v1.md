@@ -256,6 +256,9 @@
   `GET /api/stats?group_by=key` 中同名 `key_name` 的 `estimated_cost` 跨时间总计。
   数据源是**小时聚合表**（与看板/日志同源），因此 `POST /logs/prune` 清理明细后该值不变。
   从无请求或聚合表为空时为 `0`。该字段是**统计展示**，不参与任何鉴权、限额或拒绝逻辑。
+- **`lane_policy.allow_lanes` 必须是存在的路由键**：写入既无同名车道、也无任何启用渠道声明的键
+  会被拒绝（422 `validation_failed`，message 列出未知键）。否则令牌表面"允许了模型 X"，实际是死键——
+  请求得到 503 而非 403，用户分不清是权限还是没配车道（token-spec §3.2）。
 - PBR **没有额度语义**：不存在 `remain_quota` / `used_quota` / `unlimited_quota` /
   钱包 / 订阅字段（design-v1 §1.3、token-spec-v1.md §5）。创建/更新请求体也**不接受**额度字段。
 

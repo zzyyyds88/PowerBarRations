@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
@@ -116,4 +117,17 @@ func TestGetKeyReportsHourlyCost(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
 	assert.InDelta(t, 3.5, body.Cost, 1e-9)
+}
+
+// allow_lanes 里既无同名车道、也无渠道声明的键必须被拒绝（否则是静默死键）。
+func TestUnknownRouteKeysRejectsDeadKeys(t *testing.T) {
+	db := setupAPITestDB(t)
+	ch := &model.Channel{Name: "declared-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "declared-model"}
+	require.NoError(t, db.Create(ch).Error)
+	require.NoError(t, model.UpsertLane(&model.Lane{Name: "laned-model", Enabled: true, Mode: model.LaneModeFailover,
+		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 1}}}))
+
+	assert.Empty(t, unknownRouteKeys([]string{"laned-model", "declared-model"}), "有车道或有渠道声明的键应通过")
+	assert.Equal(t, []string{"ghost-model"}, unknownRouteKeys([]string{"laned-model", "ghost-model", "ghost-model"}), "不存在的键应去重列出")
+	assert.Empty(t, unknownRouteKeys(nil))
 }
