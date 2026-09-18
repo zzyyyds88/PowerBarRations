@@ -168,6 +168,13 @@ var Default = Policy{
 		{BaseCode: "not_found", OutStatus: http.StatusNotFound, OutCode: CodeNotFound},
 		// 基座把失败也写成 200：无显式 code 时按"业务拒绝"处理（绝大多数是参数/状态校验）。
 		{Status: http.StatusOK, OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed},
+		// 基座自己已经给了 4xx/5xx：保留该状态码，不要降级成 500。
+		{Status: http.StatusBadRequest, OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed},
+		{Status: http.StatusUnauthorized, OutStatus: http.StatusUnauthorized, OutCode: "unauthorized"},
+		{Status: http.StatusForbidden, OutStatus: http.StatusForbidden, OutCode: "forbidden_scope"},
+		{Status: http.StatusNotFound, OutStatus: http.StatusNotFound, OutCode: CodeNotFound},
+		{Status: http.StatusConflict, OutStatus: http.StatusConflict, OutCode: CodeConflict},
+		{Status: http.StatusUnprocessableEntity, OutStatus: http.StatusUnprocessableEntity, OutCode: CodeValidationFailed},
 	},
 	Details: blockedDetails,
 }
@@ -337,7 +344,7 @@ func (w *bufferedWriter) finish(c *gin.Context) {
 
 	rule, matched := matchFailure(w.policy.Failures, base)
 	if !matched {
-		rule = FailureRule{OutStatus: http.StatusInternalServerError, OutCode: CodeInternalError}
+		rule = fallbackFailure(base)
 	}
 	message := base.Message
 	if message == "" {
@@ -348,6 +355,19 @@ func (w *bufferedWriter) finish(c *gin.Context) {
 		details = w.policy.Details(base)
 	}
 	WriteError(w.ResponseWriter, rule.OutStatus, rule.OutCode, message, rule.Hint, details)
+}
+
+// fallbackFailure 是没有任何规则命中时的兜底：基座把失败写成 200 的按"业务拒绝"
+// （绝大多数是参数/状态校验）→ 400；基座已给 4xx 的保留其状态码；其余按内部错误。
+func fallbackFailure(base Base) FailureRule {
+	switch {
+	case base.Status == http.StatusOK:
+		return FailureRule{OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed}
+	case base.Status >= 400 && base.Status < 500:
+		return FailureRule{OutStatus: base.Status, OutCode: CodeInvalidRequest}
+	default:
+		return FailureRule{OutStatus: http.StatusInternalServerError, OutCode: CodeInternalError}
+	}
 }
 
 func matchFailure(rules []FailureRule, base Base) (FailureRule, bool) {
