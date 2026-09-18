@@ -3,6 +3,7 @@
 > 规范性配套文件，从属于 [`design-v1.md`](design-v1.md) §1、§3、§4 与
 > [`api-spec-v1.md`](api-spec-v1.md)。
 > 本文定义 Hermes 的固定接入方式；PBR 仍是通用的本机多模型聚合网关，其他工具和模型使用同一模型面。
+> 文中 `<hermes-lane>` 是车道名占位符，由部署方自行命名（遵循 design-v1 文档纪律：不写具体车道/模型名）。
 
 ## 1. Hermes 在 PBR 中的位置
 
@@ -10,8 +11,8 @@ PBR 的首要验收消费者是本机 Hermes。PBR 替代 Hermes 原先依赖的
 两层网关，向 Hermes 提供一个稳定的 OpenAI Chat Completions 入口，向 Hermes 或其运维代理
 提供管理 API。
 
-Hermes 使用 `<hermes-lane>` 作为一条显式车道；其他模型（例如 `model-x`）各自使用
-自己的模型名和车道，不得被 Hermes 的适配约束限制：
+Hermes 使用 `<hermes-lane>` 作为一条显式车道；其他模型各自使用自己的路由键和车道，
+不得被 Hermes 的适配约束限制：
 
 ```text
 Hermes -> PBR /v1/chat/completions, model=<hermes-lane>

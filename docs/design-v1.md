@@ -40,8 +40,9 @@
 - **G5 保留厂商适配层**：new-api `relay/channel/` 下 40 家适配器原样复用。
 - **G6 有人看的控制台**：提供个人控制台，覆盖车道/渠道/密钥/日志/统计/设置/试打。规格见 ui-spec-v1.md。
 - **G7 只看不扣**：日志只存元数据，成本只做折算记账，不做任何计费/扣费/余额拒服务。
-- **G8 Hermes 首要验收**：`<hermes-lane>` 是专供 Hermes 的显式故障转移车道；Hermes 的
-  Chat Completions、工具调用、流式响应和 API 运维工作流是首要验收对象，详见 `hermes-spec-v1.md`。
+- **G8 Hermes 首要验收**：Hermes 使用一条**由部署方命名**的显式故障转移车道（规范中以
+  `<hermes-lane>` 占位，见 `hermes-spec-v1.md`）；Hermes 的 Chat Completions、工具调用、
+  流式响应和 API 运维工作流是首要验收对象。
 
 ### 1.3 删除范围（**只裁计费与多用户等下列项**，其余不裁）
 
@@ -141,7 +142,8 @@ type Channel struct {                 // 上游渠道
                        // 网关读取时会剥掉结尾版本段，故填 /v1 与不填等价（api-spec §4.1）
     Models    []string // 本渠道提供哪些路由键（候选）；声明只是候选，必须固化成车道才可调用（ADR 0005）
     ModelMapping map[string]string // 路由键 → 上游真名；上游命名不一致时在渠道上配置一次（ADR 0005）
-    Key       string   // 只写不读：响应脱敏；不打印进日志
+    Key       string   // 渠道对象响应不回显（只给 key_set/key_prefix）；运维可经
+                       // GET /api/channels/{name}/key 明文回读（api-spec §5.3.1）；不打印进日志
     ParamOverride string          // JSON，统一各厂商思考参数差异的落点
     Enabled   bool
     Proxy     string
@@ -174,11 +176,12 @@ type LaneMember struct {
 
 type ClientKey struct {               // 客户端准入
     ID        int
-    Name      string   // 唯一，账务归属标识
-    KeyHash   string   // sha256，不存明文
+    Name      string   // 唯一；分账与日志归属标识
+    KeyHash   string   // hex(sha256(明文))，鉴权索引
+    KeyPlain  string   // 明文入库（管理 API 可回读，token-spec §3.3）
     KeyPrefix string   // 便于展示，如 pbr-xxxx
     Enabled   bool
-    DenyLanes []string // 显式拒绝的车道；空 = 允许全部（默认放行）
+    LanePolicy LanePolicy // Mode=all(默认)|allow + AllowLanes - DenyLanes（token-spec §3.2）
     CreatedAt time.Time
     LastUsedAt *time.Time
 }
@@ -285,7 +288,7 @@ type LaneRelayConfig struct {
 
 默认值取 upstream `DefaultGroupRelayConfig`；**六键数值默认值与超时算术以 [`routing-spec-v1.md`](routing-spec-v1.md) §1.2、§8 为单处规范**。六键取代厂商层全局 `RetryTimes`：车道级可覆盖、成员级可再覆盖。
 
-**默认六键可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整**（option 键 `PBRLaneDefaults`）：它只决定"新建车道/一键固化时写入的初值"与"车道未显式配置时的回落值"；已存在的车道若自带六键则不受影响（车道六键仍是权威，成员级覆盖仍在最上层）。
+**默认六键可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整**（option 键 `PBRLaneDefaults`）：它只决定"新建车道时写入的初值"与"车道未显式配置时的回落值"；已存在的车道若自带六键则不受影响（车道六键仍是权威，成员级覆盖仍在最上层）。
 
 > **`member_affinity_seconds` 默认改为 0（相对上游的 300）**：上游的亲和是为"多用户共享车道时压低抖动"而设；本项目是单用户自用网关，亲和会让"高优先级成员恢复后仍被低优先级成员粘住"，直接掩盖 priority 的语义。默认 0 = 不做粘滞，每次请求都从优先级最高的可用成员开始；需要压抖动时按车道显式配置（六键本来就支持车道级覆盖）。
 

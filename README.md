@@ -193,7 +193,7 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 `member_non_stream_response_timeout_seconds`（非流式整响应超时）、`member_stream_first_event_timeout_seconds`（流式首个事件超时）、
 `member_cooldown_seconds`（成员耗尽尝试后被跳过的秒数）、`member_affinity_seconds`（切换成功后保持当前成员的秒数）。
 **数值默认值与超时算术的单处规范见 [`docs/routing-spec-v1.md`](docs/routing-spec-v1.md) §1.2、§8**；
-默认六键可经 `PUT /api/v1/system/options` 的 `lane_defaults` 调整（只影响新建/一键固化的车道与未显式配置的车道；
+默认六键可经 `PUT /api/v1/system/options` 的 `lane_defaults` 调整（只影响新建的车道与未显式配置的车道；
 已配置的车道以其自身六键为准）。
 
 嫌慢时正确旋钮是 response timeout，而不是砍 attempts。

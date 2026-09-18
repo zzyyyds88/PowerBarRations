@@ -224,7 +224,7 @@
 | GET | `/llms.txt` | 与 `/doc` 同源的纯文本手册（**免鉴权**） |
 | GET | `/doc/ui` | 交互式 OpenAPI 文档（复用 Scalar，指向 `/api/openapi.json`。**免鉴权**） |
 | GET | `/api/system/options` | 全局选项 |
-| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建/一键固化车道与未显式配置的车道） |
+| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
 
 ### 5.2 车道
 
@@ -603,14 +603,14 @@ curl -s -X PUT $PBR/api/system/options \
   不会把关键词表清空。
 - 车道六键（`member_max_attempts` 等）默认是**车道级**配置，在
   `PUT /api/lanes/{name}` 的 `config` 里设置。`lane_defaults` 是它们的**全局默认值**
-  （选项键 `PBRLaneDefaults`，数值默认值单处规范见 routing-spec §1.2）：作用于新建与一键固化的车道，
+  （选项键 `PBRLaneDefaults`，数值默认值单处规范见 routing-spec §1.2）：作用于新建车道，
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
 - `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
 - `probe_concurrency`（默认 4）限制 `POST /lanes/{name}/probe` 对上游的并发压力。
 - **没有全局单价选项**：成本折算只用渠道级 `prices`（§4.1），渠道未配价即不折算（0）。
 
-### 6.10 导出 / 导入（取代拷库备份）
+### 6.10 导出 / 导入（同版本配置快照）
 
 ```bash
 curl -s $PBR/api/export -H "Authorization: Bearer $ADMIN_KEY" -o pbr-config.json

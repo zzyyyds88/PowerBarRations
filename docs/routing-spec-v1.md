@@ -66,7 +66,7 @@ type LaneMember struct {
 ```
 
 - **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
-- **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建/一键固化车道与未显式配置六键的车道。
+- **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。
 - **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则成员级显式改名会被渠道映射悄悄反向覆盖（优先级倒挂）。非 PBR 链路（显式渠道 pin）不受此约束。
 - 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。
 - 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。**
