@@ -473,7 +473,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 - **以代码为源**：在路由注册处维护端点表，`GET /api/openapi.json` 返回运行时结果。当前实现是 `internal/api/config_lifecycle.go` 的手写 `openAPIPaths()` 表（尚未改为结构体标签自动生成），靠下述守卫测试把"漏登记"变成构建期失败，效果等价于验收断言。
 - 验收断言：`openapi.json` 可被标准工具解析，且**所有已注册路由都出现在文档中**。落地为 `router/openapi_coverage_test.go` 的 `TestOpenAPICoversEveryRegisteredRoute`：对比 `engine.Routes()` 与端点表，双向校验（既不漏档、也不登记不存在的路由）。
 - 若将来改为标签生成，保留该守卫测试即可；漂移口径不变。
-- **响应契约以表为源**（与端点表同一取向）：管理端点的**路由、处理器与响应策略同处声明**——稳定面在 `internal/api/ops_routes.go` 的 `opsRoutes` 表；基座遗留面在 `internal/apiresp` 的 `METHOD + c.FullPath()` 策略注册表（与 `middleware/audit.go` 既有 `auditRouteActions` 同法）。新增端点必须在对应表登记响应策略，否则守卫测试 `TestEveryOpsRouteDeclaresResponsePolicy` / `TestEveryBaseRouteHasPolicy` 在构建期失败；响应归一化（基座 `{success,message,data}` → 契约形态）由中间件按该表机械执行，handler 不重复实现信封。
+- **响应契约以表为源**（与端点表同一取向）：管理端点的**路由、处理器与响应策略同处声明**——稳定面在 `internal/api/ops_routes.go` 的 `opsRoutes` 表（注册即登记，不可能漏）；基座遗留面按 `METHOD + c.FullPath()` 在 `internal/apiresp` 登记**需要定制成功体的路由**（与 `middleware/audit.go` 既有 `auditRouteActions` 同法），其余路由由 `apiresp.Default` 兜底。守卫测试 `router/envelope_coverage_test.go` 校验：稳定面策略不得登记不存在的路由、不得漏声明成功/失败/直通三者之一；基座面登记不得漂移。响应归一化（基座 `{success,message,data}` → 契约形态）由 `apiresp.Middleware` 按该表机械执行，**handler 不重复实现信封**；SSE 在写头/Flush 时立即直通，不缓冲。
 - **给人/AI 的入口**：`GET /doc`（默认 `text/markdown`，浏览器 `Accept: text/html` 返回说明页）、`GET /llms.txt`（`text/plain`）、`GET /doc/ui`（复用 GitHub 项目 Scalar 渲染 `/api/openapi.json`）。三者与 `/api/openapi.json` 均免鉴权，便于 AI 先读手册再自行派生管理密钥。
 - **前缀**：管理面规范前缀为 `/api`，`/api/v1` 为兼容别名（注册相同处理器）。与 AI 契约冲突的控制台内部资源（模型目录、审计）收在 `/api/console/*`；其余控制台内部接口仍在 `/api/*` 下同权限可用，但不属于稳定契约。
 
