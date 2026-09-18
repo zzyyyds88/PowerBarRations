@@ -75,6 +75,15 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
   const [jsonValue, setJsonValue] = useState(props.value)
   const [jsonError, setJsonError] = useState<string | null>(null)
   const nextRowIdRef = useRef(0)
+  // 本编辑器自己向外发出的最新值（null = 从未发出）：外部 props.value 若与
+  // 它相同，说明回流来自本组件（如「添加映射」写入的空行被序列化成 "{}"），
+  // 不能再反向解析回 rows——否则空行会被立刻清掉，表现为点一次没反应、
+  // 点两次才出来。
+  const lastEmittedRef = useRef<string | null>(null)
+  const emit = (json: string) => {
+    lastEmittedRef.current = json
+    props.onChange(json)
+  }
   const duplicateSources = useMemo(() => getDuplicateSources(rows), [rows])
 
   const createRowId = () => {
@@ -134,6 +143,11 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
   }
 
   const syncExternalValue = useEffectEvent(() => {
+    if (
+      lastEmittedRef.current !== null &&
+      props.value === lastEmittedRef.current
+    )
+      return
     setJsonValue(props.value)
     parseJsonToRows(props.value)
   })
@@ -162,14 +176,14 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
     if (duplicates.length > 0) {
       setJsonError(t('Duplicate source model mappings are not allowed'))
       setJsonValue(DUPLICATE_MAPPING_SENTINEL)
-      props.onChange(DUPLICATE_MAPPING_SENTINEL)
+      emit(DUPLICATE_MAPPING_SENTINEL)
       return
     }
 
     const json = convertRowsToJson(updatedRows)
     setJsonError(null)
     setJsonValue(json)
-    props.onChange(json)
+    emit(json)
   }
 
   const handleAddRow = () => {
@@ -198,7 +212,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
 
   const handleJsonChange = (newJson: string) => {
     setJsonValue(newJson)
-    props.onChange(newJson)
+    emit(newJson)
     parseJsonToRows(newJson)
   }
 
@@ -209,7 +223,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
       2
     )
     setJsonValue(template)
-    props.onChange(template)
+    emit(template)
     parseJsonToRows(template)
   }
 
@@ -220,7 +234,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
       if (duplicates.length === 0) {
         const json = convertRowsToJson(rows)
         setJsonValue(json)
-        props.onChange(json)
+        emit(json)
       }
       setMode('json')
       return
