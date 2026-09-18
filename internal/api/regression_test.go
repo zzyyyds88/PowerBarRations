@@ -24,7 +24,9 @@ func setupAPITestDB(t *testing.T) *gorm.DB {
 	path := filepath.Join(t.TempDir(), "api-test.db")
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Lane{}, &model.LaneMember{}, &model.ClientKey{}))
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Lane{}, &model.LaneMember{}, &model.ClientKey{}, &model.Model{}, &model.Option{}))
+	// 列名常量按数据库类型初始化：未初始化时依赖 commonKeyCol 的 SQL 会语法错误。
+	model.InitColumnNames()
 	previous := model.DB
 	model.DB = db
 	t.Cleanup(func() { model.DB = previous })

@@ -40,6 +40,12 @@ func jsonScanBytes(value any) []byte {
 	}
 }
 
+// InitColumnNames 按当前数据库类型初始化列名常量（initCol 的导出包装）。
+//
+// 供测试与不经过 InitDB 的调用方使用：未初始化时 commonKeyCol 为空，
+// 依赖它的 SQL（如模型元数据的锁锚点）会拼出 "= ?" 这样的语法错误。
+func InitColumnNames() { initCol() }
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {

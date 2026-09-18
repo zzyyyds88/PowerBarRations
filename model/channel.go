@@ -1243,6 +1243,21 @@ func GetChannelsByIds(ids []int) ([]*Channel, error) {
 	return channels, err
 }
 
+// GetChannelsDeclaringModel 返回"声明了该模型"的渠道（经 abilities 表，含停用渠道）。
+//
+// 用于模型元数据删除前的车道引用检查：必须覆盖所有声明该模型的渠道，不能只看启用渠道，
+// 否则停用渠道上的成员会被漏判。
+func GetChannelsDeclaringModel(modelName string) ([]*Channel, error) {
+	var channelIDs []int
+	if err := DB.Model(&Ability{}).Where("model = ?", modelName).Distinct().Pluck("channel_id", &channelIDs).Error; err != nil {
+		return nil, err
+	}
+	if len(channelIDs) == 0 {
+		return nil, nil
+	}
+	return GetChannelsByIds(channelIDs)
+}
+
 func BatchSetChannelTag(ids []int, tag *string) error {
 	// 开启事务
 	tx := DB.Begin()

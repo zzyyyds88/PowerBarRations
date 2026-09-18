@@ -1042,5 +1042,15 @@ func openAPIPaths() gin.H {
 		"/routes/{model}": gin.H{
 			"get": secured("get", "解析某模型的成员链", pathParam("model"))["get"],
 		},
+		"/lane-summaries": gin.H{
+			"get": secured("get", "全部车道的成员顺序摘要（不分页）", nil)["get"],
+		},
+		"/model-metadata": gin.H{
+			"get": secured("get", "模型目录元数据（不分页；含仅由渠道声明的模型）", nil)["get"],
+		},
+		"/model-metadata/{model}": gin.H{
+			"put":    secured("put", "写入模型目录元数据（全量 upsert）", append(pathParam("model"), dryRunParam))["put"],
+			"delete": secured("delete", "删除模型目录记录（可 remove_from_channels / force）", pathParam("model"))["delete"],
+		},
 	}
 }

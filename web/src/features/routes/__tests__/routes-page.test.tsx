@@ -77,7 +77,7 @@ function mockRouteKeys() {
         },
       } as never
     }
-    if (url === '/api/v1/lanes') {
+    if (url === '/api/v1/lane-summaries') {
       return {
         data: {
           items: [
@@ -196,7 +196,7 @@ describe('路由与故障切换页', () => {
       if (url === '/api/v1/models') {
         return { data: { items: [] } } as never
       }
-      if (url === '/api/v1/lanes') {
+      if (url === '/api/v1/lane-summaries') {
         return { data: { items: [] } } as never
       }
       throw new Error(`Unexpected GET ${url}`)
@@ -227,7 +227,7 @@ describe('路由与故障切换页', () => {
           },
         } as never
       }
-      if (url === '/api/v1/lanes') {
+      if (url === '/api/v1/lane-summaries') {
         throw new Error('lane order unavailable')
       }
       if (url === '/api/v1/routes/model-1') {
@@ -260,7 +260,7 @@ describe('路由与故障切换页', () => {
       if (url === '/api/v1/models') {
         throw new Error('route keys unavailable')
       }
-      if (url === '/api/v1/lanes') {
+      if (url === '/api/v1/lane-summaries') {
         return { data: { items: [] } } as never
       }
       throw new Error(`Unexpected GET ${url}`)
@@ -301,7 +301,7 @@ describe('路由与故障切换页', () => {
           },
         } as never
       }
-      if (url === '/api/v1/lanes') {
+      if (url === '/api/v1/lane-summaries') {
         return { data: { items: [] } } as never
       }
       throw new Error(`Unexpected GET ${url}`)
@@ -330,7 +330,7 @@ describe('路由与故障切换页', () => {
           },
         } as never
       }
-      if (url === '/api/v1/lanes') {
+      if (url === '/api/v1/lane-summaries') {
         return {
           data: {
             items: [

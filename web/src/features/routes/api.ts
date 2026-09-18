@@ -114,10 +114,10 @@ export async function cleanupPBROrphanMembers(): Promise<{
 }
 
 /**
- * 车道列表摘要，供「路由与故障切换」页的「成员数与顺序摘要」列使用。
+ * 车道顺序摘要，供「路由与故障切换」页的「成员数与顺序摘要」列使用。
  *
- * GET /api/v1/lanes 是 cursor 分页（api-spec §5.2）：这里取最大页 200 条，
- * 超出部分该列退化为只显示成员数（GET /api/v1/models 的 member_count 不受影响）。
+ * 走稳定端点 GET /api/v1/lane-summaries（**不分页**）：此前用 GET /api/v1/lanes 的
+ * cursor 上限 200，车道数超过后该列会退化为只显示数量（api-spec §5.7）。
  */
 export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
   const res = await api.get<{
@@ -126,8 +126,7 @@ export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
       orphan_member_count?: number
       members?: { channel: string; upstream_model: string }[]
     }[]
-    next_cursor: unknown
-  }>('/api/v1/lanes', { params: { limit: 200 } })
+  }>('/api/v1/lane-summaries')
   return (res.data.items ?? []).map((lane) => ({
     name: lane.name,
     orphan_member_count: lane.orphan_member_count ?? 0,

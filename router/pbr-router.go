@@ -106,5 +106,11 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		// 模型路由（隐式车道）。用 catch-all 以支持带路径分隔符的模型名（如 vendor/model）。
 		authed.GET("/models", api.ListModels)
 		authed.GET("/routes/*model", api.GetRoute)
+
+		// 车道顺序摘要（不分页）与模型目录元数据（api-spec §5.7）。
+		authed.GET("/lane-summaries", api.ListLaneSummaries)
+		authed.GET("/model-metadata", api.ListModelMetadata)
+		authed.PUT("/model-metadata/*model", api.PutModelMetadata)
+		authed.DELETE("/model-metadata/*model", api.DeleteModelMetadataByModel)
 	}
 }
