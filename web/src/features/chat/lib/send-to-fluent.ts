@@ -33,7 +33,10 @@ export function sendToFluent(apiKey: string, serverAddress?: string): boolean {
   const payload = {
     id: 'pbr',
     baseUrl: serverAddress || window.location.origin,
-    apiKey: `sk-${apiKey}`,
+    apiKey:
+      apiKey.startsWith('sk-') || apiKey.startsWith('pbr-')
+        ? apiKey
+        : `sk-${apiKey}`,
   }
 
   container.dispatchEvent(

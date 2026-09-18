@@ -138,7 +138,7 @@ export function CCSwitchDialog(props: Props) {
       toast.warning(t('Please select a primary model'))
       return
     }
-    const key = props.tokenKey.startsWith('sk-')
+    const key = props.tokenKey.startsWith('sk-') || props.tokenKey.startsWith('pbr-')
       ? props.tokenKey
       : `sk-${props.tokenKey}`
     const url = buildCCSwitchURL(app, name, models, key)

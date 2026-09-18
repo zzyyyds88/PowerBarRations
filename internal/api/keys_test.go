@@ -119,6 +119,64 @@ func TestGetKeyReportsHourlyCost(t *testing.T) {
 	assert.InDelta(t, 3.5, body.Cost, 1e-9)
 }
 
+func TestGetKeyReturnsPersistedPlaintextAndPreservesItOnMetadataUpdate(t *testing.T) {
+	db := setupAPITestDB(t)
+	plain := "pbr-persisted-test-key"
+	key := &model.ClientKey{
+		Name:      "key-plaintext",
+		KeyHash:   model.HashClientKey(plain),
+		KeyPrefix: model.PrefixOfClientKey(plain),
+		KeyPlain:  plain,
+		Enabled:   true,
+	}
+	require.NoError(t, model.UpsertClientKey(key))
+
+	// Metadata updates must not clear the persisted credential.
+	require.NoError(t, model.UpsertClientKey(&model.ClientKey{
+		Name:    key.Name,
+		Enabled: false,
+		Notes:   "updated metadata",
+	}))
+	saved, err := model.GetClientKeyByName(key.Name)
+	require.NoError(t, err)
+	assert.Equal(t, plain, saved.KeyPlain)
+	assert.Equal(t, model.HashClientKey(plain), saved.KeyHash)
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/keys/key-plaintext", nil)
+	c.Params = gin.Params{{Key: "name", Value: key.Name}}
+	GetKey(c)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var body struct {
+		Key       string  `json:"key"`
+		KeyPrefix string  `json:"key_prefix"`
+		Cost      float64 `json:"cost"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
+	assert.Equal(t, plain, body.Key)
+	assert.Equal(t, model.PrefixOfClientKey(plain), body.KeyPrefix)
+
+	// A migrated legacy row has no plaintext and must be distinguishable.
+	require.NoError(t, db.Create(&model.ClientKey{
+		Name: "key-legacy", KeyHash: model.HashClientKey("legacy"), KeyPrefix: "sk-legacy", Enabled: true,
+	}).Error)
+	recorder = httptest.NewRecorder()
+	c, _ = gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/keys/key-legacy", nil)
+	c.Params = gin.Params{{Key: "name", Value: "key-legacy"}}
+	GetKey(c)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var legacy struct {
+		Key       *string `json:"key"`
+		KeyPrefix string  `json:"key_prefix"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &legacy))
+	assert.Nil(t, legacy.Key)
+	assert.Equal(t, "sk-legacy", legacy.KeyPrefix)
+}
+
 // allow_lanes 里既无同名车道、也无渠道声明的键必须被拒绝（否则是静默死键）。
 func TestUnknownRouteKeysRejectsDeadKeys(t *testing.T) {
 	db := setupAPITestDB(t)

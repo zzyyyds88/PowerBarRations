@@ -41,7 +41,7 @@ export async function fetchActiveChatKey() {
     throw new Error(t('Failed to load API keys'))
   }
 
-  return `sk-${keyResult.data.key}`
+  return keyResult.data.key
 }
 
 /**

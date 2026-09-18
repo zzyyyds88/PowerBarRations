@@ -99,7 +99,7 @@ function getPreferredKey(keys: ApiKey[]): ApiKey | null {
 }
 
 function formatDisplayKey(key?: string): string {
-  if (!key) return 'sk-...'
+  if (!key) return 'pbr-...'
   if (key.length <= 14) return key
   return `${key.slice(0, 7)}...${key.slice(-4)}`
 }
@@ -145,7 +145,7 @@ function RequestPreview(props: {
 
       const realCurl = buildCurlCommand({
         endpoint: props.example.endpoint,
-        apiKey: `sk-${key}`,
+        apiKey: key,
         model: props.example.model,
       })
       const copied = await copyToClipboard(realCurl)
@@ -356,8 +356,8 @@ export function OverviewDashboard() {
       keyName,
       keyId: preferredKey?.id,
       displayKey: preferredKey
-        ? formatDisplayKey(`sk-${preferredKey.key}`)
-        : 'sk-...',
+        ? formatDisplayKey(preferredKey.key)
+        : 'pbr-...',
       ready,
     }
   }, [apiInfoItems, modelsQuery.data, preferredKey, t])

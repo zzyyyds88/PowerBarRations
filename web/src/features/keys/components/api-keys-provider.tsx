@@ -27,7 +27,7 @@ import useDialogState from '@/hooks/use-dialog'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { handleServerError } from '@/lib/handle-server-error'
 
-import { fetchTokenKey, fetchTokenKeysBatch } from '../api'
+import { fetchTokenKey, fetchTokenKeysBatch, rotateApiKey } from '../api'
 import { ERROR_MESSAGES } from '../constants'
 import type { ApiKey, ApiKeysDialogType } from '../types'
 
@@ -99,7 +99,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     setRotatedKey(null)
   }, [])
 
-  // 待执行动作（读取明文必然轮换）：确认后才执行，取消即丢弃。
+  // 待执行动作：仅迁移前没有明文的密钥需要确认轮换，取消即丢弃。
   const [pendingRotateAction, setPendingRotateAction] = useState<
     ((realKey: string) => void | Promise<void>) | null
   >(null)
@@ -136,7 +136,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     setRefreshTrigger((prev) => prev + 1)
   }, [])
 
-  const rotateKey = useCallback(
+  const resolveKey = useCallback(
     async (id: number, force = false): Promise<string | null> => {
       if (!force && resolvedKeys[id]) return resolvedKeys[id]
       if (id in pendingRequests.current) return pendingRequests.current[id]
@@ -176,13 +176,20 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     const action = pendingRotateAction
     const target = rotateTarget
     if (target === null) return
-    const realKey = await rotateKey(target, true)
+    const result = await rotateApiKey(target)
+    if (!result.success || !result.data?.key) {
+      handleServerError(result, t(ERROR_MESSAGES.UNEXPECTED))
+      return
+    }
+    const realKey = result.data.key
+    setResolvedKeys((prev) => ({ ...prev, [target]: realKey }))
+    setRotatedKey({ id: target, key: realKey })
     if (!realKey) return
     if (action) {
       setPendingRotateAction(null)
       await action(realKey)
     }
-  }, [pendingRotateAction, rotateTarget, rotateKey, setPendingRotateAction])
+  }, [pendingRotateAction, rotateTarget, t])
 
   const resolveRealKeysBatch = useCallback(
     async (ids: number[]): Promise<Record<number, string>> => {
@@ -241,7 +248,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
         triggerRefresh,
         resolvedKey,
         setResolvedKey,
-        rotateKey,
+        rotateKey: resolveKey,
         rotateTarget,
         rotatedKey,
         openRotateConfirm,

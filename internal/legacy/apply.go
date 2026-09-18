@@ -141,6 +141,7 @@ func Apply(db *gorm.DB, plan *Plan) error {
 			Name:        key.Name,
 			KeyHash:     model.HashClientKey(key.Plain),
 			KeyPrefix:   model.PrefixOfClientKey(key.Plain),
+			KeyPlain:    key.Plain,
 			Enabled:     key.Enabled,
 			LanePolicy:  string(policy),
 			IPAllowlist: "[]",

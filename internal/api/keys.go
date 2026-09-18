@@ -17,7 +17,7 @@ import (
 
 // 客户端密钥（api-spec §4.3 / §5.4，token-spec §3）。
 //
-// 明文只在创建与轮换响应里出现一次；此后任何读取只有 key_prefix。
+// 新建与轮换的密钥明文入库存储，列表/详情可直接回读；迁移前存量密钥的 key 为 null。
 
 type lanePolicyPayload struct {
 	Mode       string   `json:"mode"`
@@ -63,6 +63,11 @@ func clientKeyResponse(key *model.ClientKey, cost float64) gin.H {
 	if key.LastUsedAt > 0 {
 		lastUsedAt = time.Unix(key.LastUsedAt, 0).UTC().Format(time.RFC3339)
 	}
+	// 迁移前存量密钥无明文可回显（token-spec §3.3）：返回 null，前端提示轮换。
+	var plain any
+	if key.KeyPlain != "" {
+		plain = key.KeyPlain
+	}
 	return gin.H{
 		"id":              key.Id,
 		"name":            key.Name,
@@ -73,6 +78,7 @@ func clientKeyResponse(key *model.ClientKey, cost float64) gin.H {
 		"max_concurrency": key.MaxConcurrency,
 		"expires_at":      expiresAt,
 		"notes":           key.Notes,
+		"key":             plain,
 		"key_prefix":      key.KeyPrefix,
 		"created_at":      rfc3339(key.CreatedAt),
 		"updated_at":      rfc3339(key.UpdatedAt),
@@ -161,7 +167,7 @@ func GetKey(c *gin.Context) {
 	c.JSON(http.StatusOK, clientKeyResponse(key, clientKeyCost(key.Name)))
 }
 
-// CreateKey POST /api/v1/keys：响应含一次性明文。
+// CreateKey POST /api/v1/keys：生成并持久化明文，响应含 key。
 func CreateKey(c *gin.Context) {
 	var payload clientKeyPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
@@ -189,6 +195,7 @@ func CreateKey(c *gin.Context) {
 		Name:      name,
 		KeyHash:   model.HashClientKey(plain),
 		KeyPrefix: prefix,
+		KeyPlain:  plain,
 		Enabled:   true,
 	}
 	if buildErr := applyClientKeyPayload(key, &payload); buildErr != nil {
@@ -214,7 +221,7 @@ func CreateKey(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// PutKey PUT /api/v1/keys/{name}：更新权限/限流/备注，不含明文、不改哈希。
+// PutKey PUT /api/v1/keys/{name}：更新权限/限流/备注，不改密钥与哈希。
 func PutKey(c *gin.Context) {
 	name := strings.TrimSpace(c.Param("name"))
 	existing, err := model.GetClientKeyByName(name)
@@ -293,7 +300,7 @@ func DeleteKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": true, "name": name})
 }
 
-// RotateKey POST /api/v1/keys/{name}/rotate：立即作废旧密钥，返回新明文一次。
+// RotateKey POST /api/v1/keys/{name}/rotate：立即作废旧密钥，持久化并返回新明文。
 func RotateKey(c *gin.Context) {
 	name := c.Param("name")
 	existing, err := model.GetClientKeyByName(name)
@@ -312,6 +319,7 @@ func RotateKey(c *gin.Context) {
 	}
 	existing.KeyHash = model.HashClientKey(plain)
 	existing.KeyPrefix = prefix
+	existing.KeyPlain = plain
 	if err := model.UpsertClientKey(existing); err != nil {
 		writeAPIError(c, err)
 		return

@@ -159,6 +159,7 @@
   "max_concurrency": 0,
   "expires_at": null,
   "notes": "",
+  "key": "pbr-a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6",
   "key_prefix": "pbr-a1b2c3d4",
   "created_at": "2026-09-14T12:00:00Z",
   "updated_at": "2026-09-14T12:00:00Z",
@@ -167,7 +168,7 @@
 ```
 
 - `lane_policy.mode ∈ all | allow`；生效车道 = `(all ? 全部 : allow_lanes) - deny_lanes`。默认 `all` 且不拒绝任何车道（见 [token-spec-v1.md](token-spec-v1.md) §3.2）。
-- 创建/轮换响应额外含一次性 `"key": "<明文>"`。
+- 每项含 `"key"`：**入库的明文密钥，随时可读可复制**（业主决定，对齐 New API；token-spec §3.3）。迁移前创建的存量密钥无明文可回显，`"key"` 为 `null`，轮换一次即得。`key_prefix` 为前 12 字符展示前缀，恒有值。
 
 ### 4.4 RequestLog（见 §4.5 端点的响应）
 
@@ -322,12 +323,12 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/keys` | 列表（每项含只读 `cost`） |
-| POST | `/api/keys` | 创建（响应含一次性明文） |
-| GET | `/api/keys/{name}` | 详情（含只读 `cost`） |
-| PUT | `/api/keys/{name}` | 更新（不含明文） |
+| GET | `/api/keys` | 列表（每项含只读 `cost` 与明文 `key`） |
+| POST | `/api/keys` | 创建（生成明文入库，响应含 `key`） |
+| GET | `/api/keys/{name}` | 详情（含只读 `cost` 与明文 `key`） |
+| PUT | `/api/keys/{name}` | 更新（权限/限流/备注；不改密钥与哈希） |
 | DELETE | `/api/keys/{name}` | 删除 |
-| POST | `/api/keys/{name}/rotate` | 轮换（响应含新明文一次） |
+| POST | `/api/keys/{name}/rotate` | 轮换（换新明文入库并返回，旧密钥立即失效） |
 
 客户端密钥对象（`GET /api/keys` 元素与详情）字段：`id` / `name` / `enabled` /
 `lane_policy{mode,allow_lanes,deny_lanes}` / `ip_allowlist` / `rate_limit_rpm` /
@@ -548,7 +549,7 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/circuits/reset \
 { "lane": "lane-alpha", "reset": 2 }
 ```
 
-### 6.7 创建客户端密钥（明文只出现一次）
+### 6.7 创建客户端密钥（明文持久化）
 
 ```bash
 curl -s -X POST $PBR/api/keys \
@@ -557,7 +558,7 @@ curl -s -X POST $PBR/api/keys \
         "lane_policy": { "mode": "all", "allow_lanes": [], "deny_lanes": [] } }'
 ```
 ```json
-{ "name": "client-a", "key": "pbr-<一次性明文>", "key_prefix": "pbr-a1b2c3d4",
+{ "name": "client-a", "key": "pbr-<明文>", "key_prefix": "pbr-a1b2c3d4",
   "enabled": true, "lane_policy": { "mode": "all", "allow_lanes": [], "deny_lanes": [] },
   "created_at": "2026-09-14T12:00:00Z", "last_used_at": null }
 ```
@@ -740,7 +741,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 - **只走 API**：不读/写 SQLite 文件、不解析前端、不直接编辑配置。
 - **写操作必须能判定成功**：以 HTTP 状态 + `error.code` 判定；响应体即最终态，可直接用作断言。
 - **先 dry-run 再写**：批量或破坏性变更（`import`、`DELETE`、成员重排）先 `?dry_run=true`。
-- **凭据**：只在请求头传 `Bearer`；不把密钥写进日志/输出/提交；`POST /keys` 返回的明文只在内存中用于即时配置下游，**不落盘到仓库**。
+- **凭据**：只在请求头传 `Bearer`；不把密钥写进日志/输出/提交；客户端密钥明文仅存于网关数据库，不落盘到仓库、导出文件或日志。
 - **错误分支**：按 §3 的 `code` 处理。`409 conflict` 先 GET 再决定；`422 lane_has_no_members` 说明车道未配成员；`503 no_available_member` 是模型面语义，不是管理面错误。
 
 ---
@@ -786,4 +787,3 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 
 上表剩余项属控制台展示层与基座兼容别名，随控制台实现变动；要把某一项提升为稳定契约，
 先在 §5 补端点再实现。
-
