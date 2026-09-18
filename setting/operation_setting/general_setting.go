@@ -24,7 +24,9 @@ type GeneralSetting struct {
 
 // 默认配置
 var generalSetting = GeneralSetting{
-	DocsLink:                   "https://docs.newapi.pro",
+	// 指向 PBR 自带免鉴权管理 API 手册（internal/api/docs，GET /doc 渲染
+	// Markdown、/doc/ui 为 OpenAPI 交互页），不再外链上游 New API 文档。
+	DocsLink:                   "/doc",
 	PingIntervalEnabled:        false,
 	PingIntervalSeconds:        60,
 	QuotaDisplayType:           QuotaDisplayTypeUSD,
