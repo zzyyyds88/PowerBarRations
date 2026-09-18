@@ -58,7 +58,8 @@ func opsPolicyWith(success apiresp.SuccessFunc) apiresp.Policy {
 	return p
 }
 
-// opsPolicyUpstream 是上游类端点（Codex/Ollama）的失败映射：剩余失败按上游错误 502。
+// opsPolicyUpstream 是上游类端点（Codex/Ollama/上游探测）的失败映射：
+// 剩余失败按上游错误 502。
 func opsPolicyUpstream() apiresp.Policy {
 	return apiresp.Policy{
 		Failures: []apiresp.FailureRule{
@@ -66,6 +67,13 @@ func opsPolicyUpstream() apiresp.Policy {
 			{Status: http.StatusOK, OutStatus: http.StatusBadGateway, OutCode: apiresp.CodeUpstreamError},
 		},
 	}
+}
+
+// opsPolicyUpstreamWith 在 opsPolicyUpstream 上叠加自定义成功体。
+func opsPolicyUpstreamWith(success apiresp.SuccessFunc) apiresp.Policy {
+	p := opsPolicyUpstream()
+	p.Success = success
+	return p
 }
 
 // opsRoutes 是运维端点的唯一声明表。
@@ -85,8 +93,9 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicyWith(copyChannelSuccess),
 		},
 		{
+			// 会真实访问上游：剩余失败按上游错误 502。
 			Method: http.MethodPost, Path: "/channels/batch/fetch-models", Handler: FetchModelsByName,
-			Policy: opsPolicyWith(modelsSuccess),
+			Policy: opsPolicyUpstreamWith(modelsSuccess),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/batch/repair", Handler: RepairChannelAbilities,
@@ -125,8 +134,9 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicyWith(multiKeySuccess),
 		},
 		{
+			// 会真实访问上游：剩余失败按上游错误 502。
 			Method: http.MethodPost, Path: "/channels/:name/upstream-updates/detect", Handler: DetectUpstreamByName,
-			Policy: opsPolicy(),
+			Policy: opsPolicyUpstream(),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/upstream-updates/apply", Handler: ApplyUpstreamByName,
