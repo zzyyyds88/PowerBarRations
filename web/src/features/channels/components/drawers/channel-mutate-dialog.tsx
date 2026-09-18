@@ -21,6 +21,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
   ClipboardPaste,
+  ListPlus,
   Loader2,
   Server,
   Trash2,
@@ -107,6 +108,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  fetchUpstreamModelsBatch,
   getChannel,
   getChannelDefaultBaseURLs,
   refreshCodexCredential,
@@ -170,6 +172,7 @@ import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
 import { ConfigureModelsDialog } from '../dialogs/configure-models-dialog'
+import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
   MissingModelsConfirmationDialog,
   type MissingModelsAction,
@@ -391,6 +394,7 @@ export function ChannelMutateDialog({
   const channelFormRef = useRef<HTMLFormElement>(null)
   const [modelDiscoveryDialogOpen, setModelDiscoveryDialogOpen] =
     useState(false)
+  const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
   const [pendingDiscoveryOpen, setPendingDiscoveryOpen] = useState(false)
   const [newModelDraft, setNewModelDraft] = useState('')
   const [paramOverrideEditorOpen, setParamOverrideEditorOpen] = useState(false)
@@ -1129,6 +1133,46 @@ export function ChannelMutateDialog({
   )
 
   const handleModelDiscoveryApply = useCallback(
+    (selected: string[]) => {
+      updateModels(selected)
+    },
+    [updateModels]
+  )
+
+  // 「获取模型列表」入口（New API 形态）：优先用当前表单里的草稿连接信息探测，
+  // 草稿不完整时回退到已保存渠道（按名寻址）。两者都走稳定面
+  // POST /api/channels/batch/fetch-models，成功即裸 {models:[...]}。
+  const fetchModelsDialogFetcher = useMemo(() => {
+    if (!canDiscoverModels) return undefined
+    const channelName = channelData?.name
+    return async (): Promise<string[]> => {
+      const type = form.getValues('type')
+      if (!MODEL_FETCHABLE_TYPES.has(type)) {
+        throw new Error(t('This channel type does not support fetching models'))
+      }
+      const draftReady =
+        !isEditing ||
+        type === CHANNEL_TYPE_ADVANCED_CUSTOM ||
+        Boolean(form.getValues('key')?.trim()) ||
+        Boolean(form.getValues('base_url')?.trim())
+      if (draftReady) {
+        return fetchUpstreamModelsBatch({
+          type,
+          base_url: form.getValues('base_url') || '',
+          key: form.getValues('key')?.trim() || undefined,
+          advanced_custom: form.getValues('advanced_custom') || undefined,
+          header_override: form.getValues('header_override') || undefined,
+          proxy: form.getValues('proxy') || undefined,
+        })
+      }
+      if (!channelName) {
+        throw new Error(t('No channel selected'))
+      }
+      return fetchUpstreamModelsBatch({ channel: channelName })
+    }
+  }, [canDiscoverModels, channelData?.name, form, isEditing, t])
+
+  const handleFetchModelsToForm = useCallback(
     (selected: string[]) => {
       updateModels(selected)
     },
@@ -2710,11 +2754,24 @@ export function ChannelMutateDialog({
                   aria-label={t('Models')}
                   className='space-y-3'
                 >
-                  <div className='min-w-0 space-y-1'>
-                    <FormLabel required>{t('Models')}</FormLabel>
-                    <FormDescription>
-                      {t(FIELD_DESCRIPTIONS.MODELS)}
-                    </FormDescription>
+                  <div className='flex flex-wrap items-start justify-between gap-2'>
+                    <div className='min-w-0 space-y-1'>
+                      <FormLabel required>{t('Models')}</FormLabel>
+                      <FormDescription>
+                        {t(FIELD_DESCRIPTIONS.MODELS)}
+                      </FormDescription>
+                    </div>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      className='shrink-0'
+                      disabled={!fetchModelsDialogFetcher}
+                      onClick={() => setFetchModelsDialogOpen(true)}
+                    >
+                      <ListPlus className='mr-2 h-4 w-4' aria-hidden='true' />
+                      {t('Fetch model list')}
+                    </Button>
                   </div>
                   <div className='space-y-2'>
                     <span className='text-sm font-medium'>
@@ -4042,6 +4099,21 @@ export function ChannelMutateDialog({
           redirectSourceModels={redirectModelKeyList}
           onOpenChange={setModelDiscoveryDialogOpen}
           onApply={handleModelDiscoveryApply}
+        />
+      )}
+
+      {open && (
+        <FetchModelsDialog
+          open={fetchModelsDialogOpen}
+          onOpenChange={setFetchModelsDialogOpen}
+          customFetcher={fetchModelsDialogFetcher}
+          onModelsSelected={handleFetchModelsToForm}
+          channelName={channelData?.name ?? formValues.name}
+          existingModels={
+            isEditing ? initialModelsRef.current : currentModelsArray
+          }
+          redirectModels={redirectModelList}
+          redirectSourceModels={redirectModelKeyList}
         />
       )}
 

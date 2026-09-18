@@ -140,6 +140,16 @@ test('category headers keep a transparent background while expanding and collaps
   )
 })
 
+test('categories come from the local model-provider rules with no group or billing controls', () => {
+  render(<InlineSelection />)
+  // PBR categorizes by model provider (lib/model-categories), not by upstream
+  // vendor/group metadata: gpt-* is OpenAI and an unknown name falls back to Other.
+  expect(screen.getByRole('button', { name: /^OpenAI \(2\)/ })).toBeVisible()
+  expect(screen.getByRole('button', { name: /^Other \(1\)/ })).toBeVisible()
+  expect(screen.queryByText(/group/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/billing|quota|credit/i)).not.toBeInTheDocument()
+})
+
 test('the matching-model action only appears for a nonblank search and disappears when cleared', async () => {
   const user = userEvent.setup()
   render(<InlineSelection />)
