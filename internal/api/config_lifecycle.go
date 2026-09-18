@@ -121,7 +121,7 @@ func BuildConfigBundle() (*ConfigBundle, error) {
 		}
 		for _, member := range lane.Members {
 			channelName := ""
-			if channel, err := model.GetChannelById(member.ChannelId, false); err == nil && channel != nil {
+			if channel, err := model.ChannelOrNil(member.ChannelId); err == nil && channel != nil {
 				channelName = channel.Name
 			}
 			entry.Members = append(entry.Members, LaneMemberConfig{
@@ -379,18 +379,39 @@ func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
 	return payload
 }
 
+// bundleDeclaredChannels 返回本 bundle 里声明的渠道名集合。
+//
+// 导入是两阶段（先构造校验全部对象，再落库），构造车道时本 bundle 的新渠道**还没落库**。
+// 若只查数据库，导出「新渠道 + 引用它的车道」导入空实例时成员会被误判悬空。因此
+// 剪枝必须把"本 bundle 自己声明的渠道"也算作存在（api-spec §5.6 承诺导出文件可跨实例还原）。
+func bundleDeclaredChannels(bundle *ConfigBundle) map[string]bool {
+	declared := make(map[string]bool, len(bundle.Channels))
+	for _, channel := range bundle.Channels {
+		if name := strings.TrimSpace(channel.Name); name != "" {
+			declared[name] = true
+		}
+	}
+	return declared
+}
+
 // pruneMissingMemberChannels 剔除导入 bundle 里"成员指向不存在渠道"的成员，并记录警告。
 //
-// 导入是原子操作：此前一个悬空成员会让整包 422。现在改为跳过该成员（而不是整包失败），
-// 并在 warnings / diff.skipped 里列出，让用户知情；成员被清空的启用车道改为停用
+// 判定"存在"= 本 bundle 声明了该渠道 **或** 库里已有该渠道；两者都没有才算悬空。
+// 此前一个悬空成员会让整包 422；现在改为跳过该成员（而不是整包失败），并在
+// warnings / diff.skipped 里列出，让用户知情；成员被清空的启用车道改为停用
 // （而不是整包拒绝），避免写入"启用但无成员"的非法车道。
 func pruneMissingMemberChannels(bundle *ConfigBundle, result *ImportResult) {
+	declared := bundleDeclaredChannels(bundle)
 	for i := range bundle.Lanes {
 		lane := &bundle.Lanes[i]
 		kept := make([]LaneMemberConfig, 0, len(lane.Members))
 		for _, m := range lane.Members {
 			name := strings.TrimSpace(m.Channel)
 			if name == "" {
+				continue
+			}
+			if declared[name] {
+				kept = append(kept, m)
 				continue
 			}
 			if _, err := findChannelByName(name); err != nil {
@@ -427,8 +448,22 @@ func validateBundle(c *gin.Context, bundle *ConfigBundle) error {
 			return &apiError{status: http.StatusBadRequest, code: buildErr.code, message: buildErr.message}
 		}
 	}
+	// dry-run 必须与真实导入同口径：bundle 内声明的渠道同样算存在。
+	resolver := func(name string) (*model.Channel, bool) {
+		for i := range bundle.Channels {
+			if strings.TrimSpace(bundle.Channels[i].Name) == name {
+				found, findErr := findChannelByName(name)
+				if findErr != nil {
+					// 尚未落库的新渠道：给一个带名字的占位对象即可（只用于取 Id/名字做校验）。
+					return &model.Channel{Name: name}, true
+				}
+				return found, true
+			}
+		}
+		return nil, false
+	}
 	for _, lane := range bundle.Lanes {
-		if _, buildErr := buildLane(lane.Name, lanePayloadFromConfig(lane)); buildErr != nil {
+		if _, buildErr := buildLane(lane.Name, lanePayloadFromConfig(lane), resolver); buildErr != nil {
 			return &apiError{status: buildErr.status, code: buildErr.code, message: buildErr.message, hint: buildErr.hint}
 		}
 	}
@@ -535,9 +570,19 @@ func applyImport(c *gin.Context, bundle *ConfigBundle, result *ImportResult) err
 		channelPlans = append(channelPlans, channelPlan{name: channel.Name, built: built, config: channel, isCreate: isCreate})
 	}
 
+	// 导入是两阶段：构造车道时本 bundle 的新渠道还没落库，必须能从 channelPlans 里
+	// 解析出它们（否则跨实例还原会把成员判成"渠道不存在"而 422）。
+	resolver := func(name string) (*model.Channel, bool) {
+		for _, plan := range channelPlans {
+			if plan.name == name {
+				return plan.built, true
+			}
+		}
+		return nil, false
+	}
 	lanePlans := make([]lanePlan, 0, len(bundle.Lanes))
 	for _, lane := range bundle.Lanes {
-		built, buildErr := buildLane(lane.Name, lanePayloadFromConfig(lane))
+		built, buildErr := buildLane(lane.Name, lanePayloadFromConfig(lane), resolver)
 		if buildErr != nil {
 			return &apiError{status: buildErr.status, code: buildErr.code, message: buildErr.message, hint: buildErr.hint}
 		}
@@ -573,6 +618,30 @@ func applyImport(c *gin.Context, bundle *ConfigBundle, result *ImportResult) err
 		}
 	}
 	model.InitChannelCache()
+
+	// 车道成员的 ChannelId 在构造阶段可能为 0：本 bundle 的新渠道当时还没落库。
+	// 现在渠道已全部落库，按"车道配置里的渠道名"回填真实 ID，否则成员会指向 0。
+	for i := range lanePlans {
+		config := lanePlans[i].config
+		for j := range lanePlans[i].built.Members {
+			if lanePlans[i].built.Members[j].ChannelId != 0 {
+				continue
+			}
+			if j >= len(config.Members) {
+				break
+			}
+			name := strings.TrimSpace(config.Members[j].Channel)
+			if name == "" {
+				continue
+			}
+			ch, findErr := findChannelByName(name)
+			if findErr != nil {
+				return &apiError{status: http.StatusUnprocessableEntity, code: apierr.CodeMemberChannelMissing,
+					message: "member channel '" + name + "' not found"}
+			}
+			lanePlans[i].built.Members[j].ChannelId = ch.Id
+		}
+	}
 
 	for _, plan := range lanePlans {
 		if err := model.UpsertLane(plan.built); err != nil {
@@ -755,7 +824,7 @@ func laneDigestOfLane(lane *model.Lane) string {
 	}
 	for _, member := range lane.Members {
 		channelName := ""
-		if channel, err := model.GetChannelById(member.ChannelId, false); err == nil && channel != nil {
+		if channel, err := model.ChannelOrNil(member.ChannelId); err == nil && channel != nil {
 			channelName = channel.Name
 		}
 		config.Members = append(config.Members, LaneMemberConfig{

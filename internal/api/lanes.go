@@ -41,7 +41,7 @@ func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 	orphans := 0
 	for _, m := range lane.Members {
 		channelName := ""
-		if ch, err := model.GetChannelById(m.ChannelId, false); err == nil && ch != nil {
+		if ch, err := model.ChannelOrNil(m.ChannelId); err == nil && ch != nil {
 			channelName = ch.Name
 		} else {
 			// 渠道已不存在：悬空成员，请求打到它只会失败（清理入口见
@@ -90,7 +90,7 @@ func CleanupLaneMembers(c *gin.Context) {
 		affected := make([]string, 0)
 		for _, lane := range lanes {
 			for _, m := range lane.Members {
-				if _, chErr := model.GetChannelById(m.ChannelId, false); chErr != nil {
+				if !model.ChannelExistsByID(m.ChannelId) {
 					affected = append(affected, lane.Name)
 					break
 				}
@@ -235,7 +235,17 @@ type laneBuildError struct {
 	hint    string
 }
 
-func buildLane(name string, payload *lanePayload) (*model.Lane, *laneBuildError) {
+// channelResolver 在构造车道成员时把渠道名解析成已构造的渠道。
+//
+// 导入是两阶段：构造车道时本 bundle 的新渠道还没落库，因此不能只查数据库。
+// 传 nil 表示"只查数据库"（普通 PUT /lanes 路径）。
+type channelResolver func(name string) (*model.Channel, bool)
+
+func buildLane(name string, payload *lanePayload, resolvers ...channelResolver) (*model.Lane, *laneBuildError) {
+	var resolve channelResolver
+	if len(resolvers) > 0 {
+		resolve = resolvers[0]
+	}
 	laneID := 0
 	if existing, err := model.GetLaneByName(name); err == nil && existing != nil {
 		laneID = existing.Id
@@ -275,7 +285,7 @@ func buildLane(name string, payload *lanePayload) (*model.Lane, *laneBuildError)
 	seenAliases := map[string]bool{}
 	for i := range payload.Members {
 		m := payload.Members[i]
-		member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m)
+		member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m, resolve)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -288,16 +298,25 @@ func buildLane(name string, payload *lanePayload) (*model.Lane, *laneBuildError)
 	return lane, nil
 }
 
-func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliases map[string]bool, m *laneMemberPayload) (*model.LaneMember, *laneBuildError) {
+func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliases map[string]bool, m *laneMemberPayload, resolve channelResolver) (*model.LaneMember, *laneBuildError) {
 	channelName := strings.TrimSpace(m.Channel)
 	if channelName == "" {
 		return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
 			message: "member.channel is required"}
 	}
-	channel, err := findChannelByName(channelName)
-	if err != nil {
-		return nil, &laneBuildError{status: http.StatusUnprocessableEntity, code: apierr.CodeMemberChannelMissing,
-			message: "member channel '" + channelName + "' not found", hint: "PUT /api/v1/channels/" + channelName}
+	var channel *model.Channel
+	if resolve != nil {
+		if resolved, ok := resolve(channelName); ok {
+			channel = resolved
+		}
+	}
+	if channel == nil {
+		found, err := findChannelByName(channelName)
+		if err != nil {
+			return nil, &laneBuildError{status: http.StatusUnprocessableEntity, code: apierr.CodeMemberChannelMissing,
+				message: "member channel '" + channelName + "' not found", hint: "PUT /api/v1/channels/" + channelName}
+		}
+		channel = found
 	}
 	// 成员 upstream_model 是可选覆盖：留空 → 运行期用渠道 model_mapping，再退回路由键（ADR 0005）。
 	upstream := strings.TrimSpace(m.UpstreamModel)
@@ -375,7 +394,7 @@ func PutLaneMembers(c *gin.Context) {
 	seenAliases := map[string]bool{}
 	members := make([]model.LaneMember, 0, len(payload.Members))
 	for i := range payload.Members {
-		member, buildErr := buildLaneMember(name, existing.Id, laneNames, seenAliases, &payload.Members[i])
+		member, buildErr := buildLaneMember(name, existing.Id, laneNames, seenAliases, &payload.Members[i], nil)
 		if buildErr != nil {
 			apierr.Write(c, buildErr.status, buildErr.code, buildErr.message, buildErr.hint)
 			return

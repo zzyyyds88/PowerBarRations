@@ -597,11 +597,19 @@ func LaneNames() ([]string, error) {
 
 // ---------- 解析 ----------
 
+// channelServesModel 判断渠道是否"提供"某路由键：声明在 models 清单里，**或**在
+// model_mapping 里把它作为源键映射到上游真名。
+//
+// 只看 models 会让"只配了 model_mapping 的渠道"在模型页（含映射键）出现、却在路由页
+// 候选里消失，两处口径不一致（ui-spec §6.3 要求统一）。
 func channelServesModel(channel *Channel, modelName string) bool {
 	for _, m := range channel.GetModels() {
 		if strings.TrimSpace(m) == modelName {
 			return true
 		}
+	}
+	if mapped := strings.TrimSpace(channel.ModelMappingMap()[modelName]); mapped != "" {
+		return true
 	}
 	return false
 }
@@ -674,14 +682,11 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 		route.PinnedMemberId = pinned.Id
 	}
 	for _, m := range lane.Members {
-		ch, chErr := GetChannelById(m.ChannelId, false)
+		// 渠道查询的真实 DB 错误必须上抛：把数据库故障静默降级成"渠道不存在"的
+		// 空名成员，会让路由在故障期间看似可用、实际无从排障。
+		ch, chErr := ChannelOrNil(m.ChannelId)
 		if chErr != nil {
-			if !errors.Is(chErr, gorm.ErrRecordNotFound) {
-				// 渠道查询的真实 DB 错误必须上抛：把数据库故障静默降级成"渠道不存在"的
-				// 空名成员，会让路由在故障期间看似可用、实际无从排障。
-				return nil, chErr
-			}
-			ch = nil
+			return nil, chErr
 		}
 		name := ""
 		if ch != nil {
@@ -802,12 +807,9 @@ func ResolveRouteForDisplay(modelName string) (*ResolvedRoute, error) {
 func displayMembersForLane(lane *Lane) ([]RouteMember, error) {
 	members := make([]RouteMember, 0, len(lane.Members))
 	for _, m := range lane.Members {
-		ch, chErr := GetChannelById(m.ChannelId, false)
+		ch, chErr := ChannelOrNil(m.ChannelId)
 		if chErr != nil {
-			if !errors.Is(chErr, gorm.ErrRecordNotFound) {
-				return nil, chErr
-			}
-			ch = nil
+			return nil, chErr
 		}
 		name := ""
 		if ch != nil {

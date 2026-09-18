@@ -467,6 +467,29 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	return channel, nil
 }
 
+// ChannelOrNil 取渠道：不存在时返回 (nil, nil)，真实 DB 错误原样上抛。
+//
+// 这是"渠道是否仍然存在"的**唯一判定口径**：列表/导出把 nil 记为悬空成员，导入剪枝把
+// nil 记为待跳过，可用成员计数把非 nil 且启用者计入。此前四处各写一遍 err == nil && ch != nil，
+// 口径容易漏改（也容易把真实 DB 故障误判成"渠道不存在"）。
+func ChannelOrNil(id int) (*Channel, error) {
+	channel, err := GetChannelById(id, false)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return channel, nil
+}
+
+// ChannelExistsByID 判定渠道是否存在；真实 DB 错误按"存在"处理（宁可保留成员，
+// 也不把临时故障当成"渠道已删"而误清理）。
+func ChannelExistsByID(id int) bool {
+	channel, err := ChannelOrNil(id)
+	return err != nil || channel != nil
+}
+
 func BatchInsertChannels(channels []Channel) error {
 	if len(channels) == 0 {
 		return nil

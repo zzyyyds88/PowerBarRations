@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -187,19 +188,37 @@ func TouchClientKey(id int) {
 }
 
 // ParseLanePolicy 解析车道权限 JSON；空/非法时回落到"允许全部"。
+//
+// 这是**读取**口径：历史数据里可能有脏值，读取必须宽容（否则存量密钥直接不可用）。
+// **写入**校验请用 ParseLanePolicyStrict——非法 mode 静默变"允许全部"等于静默放宽权限。
 func ParseLanePolicy(raw string) LanePolicy {
+	policy, err := ParseLanePolicyStrict(raw)
+	if err != nil {
+		return LanePolicy{Mode: LanePolicyModeAll}
+	}
+	return policy
+}
+
+// ParseLanePolicyStrict 严格解析：mode 必须是 "" / all / allow，否则返回错误。
+// 空字符串视为未配置（等价 all）；allow 模式下 allow_lanes 允许为空（= 什么都不允许）。
+func ParseLanePolicyStrict(raw string) (LanePolicy, error) {
 	policy := LanePolicy{Mode: LanePolicyModeAll}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return policy
+		return policy, nil
 	}
 	if err := common.UnmarshalJsonStr(raw, &policy); err != nil {
-		return LanePolicy{Mode: LanePolicyModeAll}
+		return LanePolicy{Mode: LanePolicyModeAll}, fmt.Errorf("invalid lane_policy json: %w", err)
 	}
-	if policy.Mode != LanePolicyModeAllow {
+	switch strings.TrimSpace(policy.Mode) {
+	case "", LanePolicyModeAll:
 		policy.Mode = LanePolicyModeAll
+	case LanePolicyModeAllow:
+		policy.Mode = LanePolicyModeAllow
+	default:
+		return LanePolicy{Mode: LanePolicyModeAll}, fmt.Errorf("lane_policy.mode must be all or allow, got %q", policy.Mode)
 	}
-	return policy
+	return policy, nil
 }
 
 // AllowsLane 判定该密钥是否可访问某个路由键（token-spec §3.2）。

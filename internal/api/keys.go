@@ -374,6 +374,8 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 			mode = model.LanePolicyModeAll
 		}
 		if mode != model.LanePolicyModeAll && mode != model.LanePolicyModeAllow {
+			// 显式拒绝非法 mode：此前只有读取路径的宽容回落（静默变"允许全部"），
+			// 写入路径必须报错，避免用户以为设置了限制、实际被放宽。
 			return &apiError{code: apierr.CodeValidationFailed, message: "lane_policy.mode must be all or allow"}
 		}
 		// 权限判定的对象是"路由键"（token-spec §3.2）：allow_lanes 里写不存在的键会被
@@ -383,6 +385,14 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 			return &apiError{
 				code:    apierr.CodeValidationFailed,
 				message: "unknown route key(s) in lane_policy.allow_lanes: " + strings.Join(unknown, ", ") + " (no lane and no channel declares them)",
+			}
+		}
+		// deny_lanes 与 allow_lanes 对称校验：否则用户以为"拒绝了模型 X"，实际是拼错的
+		// 死键，等于没有拒绝——同样属于静默放宽权限。
+		if unknown := unknownRouteKeys(payload.LanePolicy.DenyLanes); len(unknown) > 0 {
+			return &apiError{
+				code:    apierr.CodeValidationFailed,
+				message: "unknown route key(s) in lane_policy.deny_lanes: " + strings.Join(unknown, ", ") + " (no lane and no channel declares them)",
 			}
 		}
 		encoded, err := json.Marshal(model.LanePolicy{
