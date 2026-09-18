@@ -30,7 +30,7 @@
 > 网关按车道顺序做故障转移。没有车道的模型一律 `503`，与"上游全挂"同形；车道支持自定义顺序、
 > 成员改名、池化不同上游的不同模型名与两种模式（`failover` 默认 / `manual`）。
 >
-> 对下游协议零破坏：存量车道名与 `/v1/*` 协议、错误语义一律不变，下游只改 `base_url`。
+> 对下游协议保持稳定：车道名与 `/v1/*` 协议、错误语义按当前 PBR 契约提供。
 
 > **来源与二次开发**：本项目是对 [new-api](https://github.com/QuantumNous/new-api)（转发管道与厂商适配层、控制台前端）与
 > [octopus](https://github.com/bestruirui/octopus)（路由顺序、冷却、亲和、熔断语义参考）的**二次开发**，
@@ -318,13 +318,9 @@ server {
 
 ```bash
 ./pbr                        # 启动网关
-./pbr migrate --routing <octopus.db> --vendor <new-api.db> --target <pbr.db> \
-              --report /tmp/report.json --keys octopus|newapi|both [--dry-run]
 ./pbr auth reset --db <pbr.db> --yes   # 清库内管理凭据→回到未初始化（破坏性，需 --yes）
 ```
 
-- `migrate` 的 `--keys` 只接受 `octopus|newapi|both`，非法值 `exit 2`；同名不同明文的客户端密钥会被
-  自动改名并在报告 `duplicate_key_names` 留痕（详见 [`MIGRATION.md`](MIGRATION.md)）。
 - `auth reset` 的 `--db` 缺省取 `$SQLITE_PATH`；也可用 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 临时覆盖口令派生。
 
 ---
@@ -391,7 +387,7 @@ pnpm build
 ```
 main.go            程序入口（含 //go:embed web/dist）
 common/ constant/  版本、常量、环境读取
-internal/          路由核心、鉴权、管理面 API、legacy 迁移
+internal/          路由核心、鉴权、管理面 API
 controller/ model/ service/ setting/   管理面与持久化
 relay/ relaykit/   上游转发管道与厂商适配层（移植自 new-api，AGPL）
 middleware/        鉴权、跨域、性能等中间件

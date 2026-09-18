@@ -18,7 +18,7 @@
 | 国际化 | 上游 i18n（zh / zh-Hant / en） |
 | 图表 | VChart |
 | 图标 | HugeIcons + lobehub icons |
-| 包管理 | 上游 `bun.lock`（环境不便时允许 pnpm） |
+| 包管理 | 仓库 `pnpm-lock.yaml` 与 pnpm |
 
 **目录结构**（照上游）：`web/src/{assets,components,config,context,features,hooks,i18n,lib,routes,stores,styles}`，业务模块在 `features/<module>/`。
 
@@ -279,7 +279,7 @@
 
 ## 7. 构建与集成
 
-- 构建 `pnpm build`（或 `bun run build`，Rsbuild）→ 产物交 Go `embed`，单二进制同时服务 `/v1/*`、`/api/*` 与控制台静态资源；SPA 路由回退 `index.html`。
+- 构建 `pnpm build`（Rsbuild）→ 产物交 Go `embed`，单二进制同时服务 `/v1/*`、`/api/*` 与控制台静态资源；SPA 路由回退 `index.html`。
 - 开发：上游 `dev` 经代理转发 `/api`、`/v1` 到本地 `pbr`。
 - i18n：新增文案必须同时补**全部 7 个 locale**（`zh` / `en` / `zh-TW` / `ja` / `fr` / `ru` / `vi`）；禁止硬编码中文到组件。改完运行 `pnpm i18n:sync` 归一化并确认无缺失/未翻译。**漏键会让 i18next 回退英文**，中文界面出现英文残留即视为缺陷。
 - 品牌：构建时注入应用名与版本，供标题/关于页/`/version` 使用，避免散落硬编码。

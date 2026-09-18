@@ -168,7 +168,7 @@
 ```
 
 - `lane_policy.mode ∈ all | allow`；生效车道 = `(all ? 全部 : allow_lanes) - deny_lanes`。默认 `all` 且不拒绝任何车道（见 [token-spec-v1.md](token-spec-v1.md) §3.2）。
-- 每项含 `"key"`：**入库的明文密钥，随时可读可复制**（业主决定，对齐 New API；token-spec §3.3）。迁移前创建的存量密钥无明文可回显，`"key"` 为 `null`，轮换一次即得。`key_prefix` 为前 12 字符展示前缀，恒有值。
+- 每项含 `"key"`：当前 PBR 实例创建或轮换时生成的明文密钥；`key_prefix` 为前 12 字符展示前缀，恒有值。配置快照不包含明文密钥，恢复后需重新创建或轮换。
 
 ### 4.4 RequestLog（见 §4.5 端点的响应）
 
@@ -363,7 +363,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`model_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`）与 `system_options`。 |
-| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。**导出文件可跨实例还原配置**（bundle 内声明的渠道在构造车道时即视为存在，成员按名字回填真实渠道 id）；只有"bundle 与库里都没有"的成员才被跳过，并在 `warnings` / `diff.skipped` 列出，成员清空的启用车道转为停用。**密钥明文不在文件里**（需另行注入） |
+| POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。**导出文件只用于同版本 PBR 实例间还原配置**（bundle 内声明的渠道在构造车道时即视为存在，成员按名字回填真实渠道 id）；只有"bundle 与库里都没有"的成员才被跳过，并在 `warnings` / `diff.skipped` 列出，成员清空的启用车道转为停用。**它不是旧系统迁移或数据恢复工具；密钥明文不在文件里** |
 
 ### 5.7 模型路由（车道）
 
@@ -723,12 +723,12 @@ curl -sfX POST $PBR/api/lanes/<lane>/probe -H "Authorization: Bearer $ADMIN_KEY"
 curl -sfX POST $PBR/api/lanes/<lane>/circuits/reset -H "Authorization: Bearer $ADMIN_KEY"
 ```
 
-### 7.4 配置备份与回滚（不碰文件与数据库）
+### 7.4 配置快照与恢复（不碰文件与数据库）
 
 ```bash
 curl -sf $PBR/api/export -H "Authorization: Bearer $ADMIN_KEY" -o backup-$(date +%s).json
 
-# 回滚前先 dry-run 看 diff
+# 恢复前先 dry-run 看 diff
 curl -sfX POST "$PBR/api/import?dry_run=true" -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' --data-binary @backup.json
 # 确认后去掉 dry_run 执行
