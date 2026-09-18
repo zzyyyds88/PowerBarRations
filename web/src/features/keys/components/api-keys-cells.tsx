@@ -19,9 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { Check, Copy, Loader2, RotateCw } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeCell } from '@/components/data-table'
 import { MaskedValueTrigger } from '@/components/masked-value-display'
 import { StatusBadge } from '@/components/status-badge'
@@ -44,24 +42,9 @@ import { useApiKeys } from './api-keys-provider'
 
 export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   const { t } = useTranslation()
-  const {
-    rotateKey,
-    rotateTarget,
-    rotatedKey,
-    openRotateConfirm,
-    closeRotateConfirm,
-    loadingKeys,
-    copiedKeyId,
-    markKeyCopied,
-  } = useApiKeys()
+  const { openRotateConfirm, loadingKeys, copiedKeyId, markKeyCopied } =
+    useApiKeys()
   const [popoverOpen, setPopoverOpen] = useState(false)
-  // 轮换确认/一次性明文放在 Provider，避免表格重挂载时丢失刚显示的明文。
-  const rotateConfirmOpen = rotateTarget === apiKey.id
-  const revealedKey =
-    rotateTarget === apiKey.id && rotatedKey?.id === apiKey.id
-      ? rotatedKey.key
-      : null
-
   const isLoading = !!loadingKeys[apiKey.id]
   const isCopied = copiedKeyId === apiKey.id
   // PBR 展示真实 key_prefix（如 pbr-abcd1234），不再错误拼接 sk- 前缀。
@@ -74,18 +57,6 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
     if (ok) markKeyCopied(apiKey.id)
   }, [keyPrefix, markKeyCopied, apiKey.id])
 
-  // 「轮换」是显式破坏性操作，需用户确认后才调用 rotate 接口。
-  const handleRotate = useCallback(async () => {
-    // force=true：每次显式轮换都真正换新，不命中已缓存明文。
-    await rotateKey(apiKey.id, true)
-  }, [rotateKey, apiKey.id])
-
-  const handleCopyRevealed = useCallback(async () => {
-    if (!revealedKey) return
-    const ok = await copyToClipboard(revealedKey)
-    if (ok) toast.success(t('Copied'))
-  }, [revealedKey, t])
-
   let copyIcon = <Copy className='size-3.5' />
   let copyTooltip = t('Copy key prefix')
   if (isLoading) {
@@ -97,109 +68,64 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   }
 
   return (
-    <>
-      <div className='flex max-w-full min-w-0 items-center'>
-        <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
-          <PopoverTrigger render={<MaskedValueTrigger />}>
-            <span className='truncate'>{keyPrefix}</span>
-          </PopoverTrigger>
-          <PopoverContent
-            className='w-auto max-w-[min(90vw,28rem)]'
-            align='start'
-          >
-            <div className='space-y-3'>
-              <div className='space-y-1'>
-                <p className='text-muted-foreground text-xs'>
-                  {t('Key prefix')}
-                </p>
-                <input
-                  readOnly
-                  value={keyPrefix}
-                  autoFocus
-                  onFocus={(e) => e.target.select()}
-                  className='bg-muted/50 w-full min-w-[280px] rounded-md border px-3 py-2 font-mono text-xs outline-none'
-                />
-              </div>
-
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                onClick={() => openRotateConfirm(apiKey.id)}
-                disabled={isLoading}
-              >
-                <RotateCw className='size-3.5' />
-                {t('Rotate key')}
-              </Button>
-
-              <p className='text-muted-foreground text-xs'>
-                {t(
-                  'The full key is shown only once when it is created or rotated.'
-                )}
-              </p>
-            </div>
-          </PopoverContent>
-        </Popover>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='ghost'
-                size='icon'
-                className='size-7 shrink-0'
-                onClick={handleCopyPrefix}
-                disabled={isLoading}
-                aria-label={copyTooltip}
+    <div className='flex max-w-full min-w-0 items-center'>
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger render={<MaskedValueTrigger />}>
+          <span className='truncate'>{keyPrefix}</span>
+        </PopoverTrigger>
+        <PopoverContent
+          className='w-auto max-w-[min(90vw,28rem)]'
+          align='start'
+        >
+          <div className='space-y-3'>
+            <div className='space-y-1'>
+              <p className='text-muted-foreground text-xs'>{t('Key prefix')}</p>
+              <input
+                readOnly
+                value={keyPrefix}
+                autoFocus
+                onFocus={(e) => e.target.select()}
+                className='bg-muted/50 w-full min-w-[280px] rounded-md border px-3 py-2 font-mono text-xs outline-none'
               />
-            }
-          >
-            {copyIcon}
-          </TooltipTrigger>
-          <TooltipContent>{copyTooltip}</TooltipContent>
-        </Tooltip>
-      </div>
+            </div>
 
-      <ConfirmDialog
-        destructive={revealedKey === null}
-        open={rotateConfirmOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeRotateConfirm()
-            return
-          }
-          openRotateConfirm(apiKey.id)
-        }}
-        title={revealedKey ? t('New key (shown once)') : t('Rotate this key?')}
-        desc={t(
-          'The current key stops working immediately. The new key is shown only once; copy it now.'
-        )}
-        confirmText={revealedKey ? t('Done') : t('Rotate')}
-        isLoading={isLoading && revealedKey === null}
-        handleConfirm={revealedKey ? closeRotateConfirm : handleRotate}
-      >
-        {revealedKey ? (
-          <div className='space-y-2'>
-            <input
-              readOnly
-              value={revealedKey}
-              autoFocus
-              onFocus={(e) => e.target.select()}
-              className='bg-muted/50 w-full rounded-md border px-3 py-2 font-mono text-xs outline-none'
-              aria-label={t('New key (shown once)')}
-            />
             <Button
               type='button'
               variant='outline'
               size='sm'
-              onClick={handleCopyRevealed}
+              onClick={() => openRotateConfirm(apiKey.id)}
+              disabled={isLoading}
             >
-              <Copy className='size-3.5' />
-              {t('Copy')}
+              <RotateCw className='size-3.5' />
+              {t('Rotate key')}
             </Button>
+
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'The full key is shown only once when it is created or rotated.'
+              )}
+            </p>
           </div>
-        ) : null}
-      </ConfirmDialog>
-    </>
+        </PopoverContent>
+      </Popover>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant='ghost'
+              size='icon'
+              className='size-7 shrink-0'
+              onClick={handleCopyPrefix}
+              disabled={isLoading}
+              aria-label={copyTooltip}
+            />
+          }
+        >
+          {copyIcon}
+        </TooltipTrigger>
+        <TooltipContent>{copyTooltip}</TooltipContent>
+      </Tooltip>
+    </div>
   )
 }
 

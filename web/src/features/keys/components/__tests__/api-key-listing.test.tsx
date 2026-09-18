@@ -271,7 +271,7 @@ it('toggles enabled through PUT /api/keys/{name}', async () => {
   expect(post).not.toHaveBeenCalled()
 })
 
-it('rotates the key on explicit copy and copies the new plaintext', async () => {
+it('Copy Key 先确认轮换，确认后才换新并复制明文', async () => {
   const user = userEvent.setup()
   const { post } = await renderKeysPage()
   post.mockResolvedValue({ data: { key: 'pbr-fake-key-for-test-only' } })
@@ -279,12 +279,31 @@ it('rotates the key on explicit copy and copies the new plaintext', async () => 
   await user.click(screen.getByRole('button', { name: 'Open menu' }))
   expect(post).not.toHaveBeenCalled()
   await user.click(screen.getByRole('menuitem', { name: 'Copy Key' }))
+
+  // 读取明文只能通过轮换接口，因此必须先确认；确认前不得调用 rotate。
+  const dialog = await screen.findByRole('alertdialog')
+  expect(within(dialog).getByText('Rotate this key?')).toBeVisible()
+  expect(post).not.toHaveBeenCalled()
+  await user.click(within(dialog).getByRole('button', { name: 'Rotate' }))
+
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith('/api/keys/production/rotate', {})
   )
   await waitFor(() =>
     expect(copy).toHaveBeenCalledWith('pbr-fake-key-for-test-only')
   )
+})
+
+it('Copy Key 取消确认时不轮换也不复制', async () => {
+  const user = userEvent.setup()
+  const { post } = await renderKeysPage()
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+  await user.click(screen.getByRole('button', { name: 'Open menu' }))
+  await user.click(screen.getByRole('menuitem', { name: 'Copy Key' }))
+  const dialog = await screen.findByRole('alertdialog')
+  await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+  expect(post).not.toHaveBeenCalled()
+  expect(copy).not.toHaveBeenCalled()
 })
 
 it('shows model and IP restrictions in the mobile card details', async () => {

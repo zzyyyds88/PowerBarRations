@@ -16,10 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Copy } from 'lucide-react'
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Button } from '@/components/ui/button'
 import useDialogState from '@/hooks/use-dialog'
+import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { fetchTokenKey, fetchTokenKeysBatch } from '../api'
@@ -46,6 +51,18 @@ type ApiKeysContextType = {
   rotatedKey: { id: number; key: string } | null
   openRotateConfirm: (id: number) => void
   closeRotateConfirm: () => void
+  /**
+   * 请求「需要明文密钥」的动作（Copy Key / CC Switch / Chat 等）：
+   * 先弹轮换确认，确认并拿到新明文后执行 action；取消则不执行。
+   */
+  requestRotateAction: (
+    id: number,
+    action: (realKey: string) => void | Promise<void>
+  ) => void
+  /** 确认框内的确认：真正轮换并执行待办动作。 */
+  confirmRotateAction: () => Promise<void>
+  /** 确认框内的取消/完成：清空待办动作。 */
+  cancelRotateAction: () => void
   resolveRealKeysBatch: (ids: number[]) => Promise<Record<number, string>>
   resolvedKeys: Record<number, string>
   loadingKeys: Record<number, boolean>
@@ -82,9 +99,27 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     setRotatedKey(null)
   }, [])
 
+  // 待执行动作（读取明文必然轮换）：确认后才执行，取消即丢弃。
+  const [pendingRotateAction, setPendingRotateAction] = useState<
+    ((realKey: string) => void | Promise<void>) | null
+  >(null)
+
   const closeRotateConfirm = useCallback(() => {
     setRotateTarget(null)
     setRotatedKey(null)
+    setPendingRotateAction(null)
+  }, [])
+
+  const requestRotateAction = useCallback(
+    (id: number, action: (realKey: string) => void | Promise<void>) => {
+      setPendingRotateAction(() => action)
+      setRotateTarget(id)
+      setRotatedKey(null)
+    },
+    []
+  )
+  const cancelRotateAction = useCallback(() => {
+    setPendingRotateAction(null)
   }, [])
 
   useEffect(() => {
@@ -136,6 +171,18 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
     },
     [resolvedKeys, t]
   )
+
+  const confirmRotateAction = useCallback(async () => {
+    const action = pendingRotateAction
+    const target = rotateTarget
+    if (target === null) return
+    const realKey = await rotateKey(target, true)
+    if (!realKey) return
+    if (action) {
+      setPendingRotateAction(null)
+      await action(realKey)
+    }
+  }, [pendingRotateAction, rotateTarget, rotateKey, setPendingRotateAction])
 
   const resolveRealKeysBatch = useCallback(
     async (ids: number[]): Promise<Record<number, string>> => {
@@ -199,6 +246,9 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
         rotatedKey,
         openRotateConfirm,
         closeRotateConfirm,
+        requestRotateAction,
+        confirmRotateAction,
+        cancelRotateAction,
         resolveRealKeysBatch,
         resolvedKeys,
         loadingKeys,
@@ -207,7 +257,67 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      <RotateKeyConfirmDialog />
     </ApiKeysContext>
+  )
+}
+
+/** 轮换确认与一次性明文：全局唯一一份，行内「查看」与行菜单动作共用。 */
+function RotateKeyConfirmDialog() {
+  const { t } = useTranslation()
+  const {
+    rotateTarget,
+    rotatedKey,
+    loadingKeys,
+    confirmRotateAction,
+    cancelRotateAction,
+  } = useApiKeys()
+  const revealedKey =
+    rotateTarget !== null && rotatedKey?.id === rotateTarget
+      ? rotatedKey.key
+      : null
+  const isLoading = rotateTarget !== null && Boolean(loadingKeys[rotateTarget])
+
+  return (
+    <ConfirmDialog
+      destructive={revealedKey === null}
+      open={rotateTarget !== null}
+      onOpenChange={(open) => {
+        if (!open) cancelRotateAction()
+      }}
+      title={revealedKey ? t('New key (shown once)') : t('Rotate this key?')}
+      desc={t(
+        'The current key stops working immediately. The new key is shown only once; copy it now.'
+      )}
+      confirmText={revealedKey ? t('Done') : t('Rotate')}
+      isLoading={isLoading && revealedKey === null}
+      handleConfirm={revealedKey ? cancelRotateAction : confirmRotateAction}
+    >
+      {revealedKey ? (
+        <div className='space-y-2'>
+          <input
+            readOnly
+            value={revealedKey}
+            autoFocus
+            onFocus={(e) => e.target.select()}
+            className='bg-muted/50 w-full rounded-md border px-3 py-2 font-mono text-xs outline-none'
+            aria-label={t('New key (shown once)')}
+          />
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={async () => {
+              const ok = await copyToClipboard(revealedKey)
+              if (ok) toast.success(t('Copied'))
+            }}
+          >
+            <Copy className='size-3.5' />
+            {t('Copy')}
+          </Button>
+        </div>
+      ) : null}
+    </ConfirmDialog>
   )
 }
 

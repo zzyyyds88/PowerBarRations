@@ -86,22 +86,28 @@ export function DataTableRowActions<TData>({
     setCurrentRow,
     triggerRefresh,
     setResolvedKey,
-    rotateKey,
     loadingKeys,
+    requestRotateAction,
   } = useApiKeys()
   const isEnabled = apiKey.status === API_KEY_STATUS.ENABLED
   const { chatPresets, serverAddress } = useChatPresets()
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
   const isRealKeyLoading = Boolean(loadingKeys[apiKey.id])
+  // 行菜单里的 Copy Key / Copy Connection Info / CC Switch / Chat 都需要明文密钥，
+  // 而读取明文只能通过轮换接口（旧密钥立即失效）。因此交给 Provider 先弹轮换确认框，
+  // 确认并拿到新明文后再执行原动作（确认框只在 Provider 渲染一份，避免重复弹层）。
+  const requestKeyAction = useCallback(
+    (action: (realKey: string) => void | Promise<void>) => {
+      requestRotateAction(apiKey.id, action)
+    },
+    [requestRotateAction, apiKey.id]
+  )
 
   const hasChatPresets = chatPresets.length > 0
   const toggleLabel = isEnabled ? t('Disable') : t('Enable')
 
-  const handleOpenChatPreset = useCallback(
-    async (preset: ChatPreset) => {
-      const realKey = await rotateKey(apiKey.id)
-      if (!realKey) return
-
+  const openChatPresetWithKey = useCallback(
+    async (preset: ChatPreset, realKey: string) => {
       if (preset.type === 'fluent') {
         const success = sendToFluent(realKey, serverAddress)
         if (success) {
@@ -135,7 +141,17 @@ export function DataTableRowActions<TData>({
         window.location.href = resolvedUrl
       }
     },
-    [rotateKey, apiKey.id, serverAddress, t]
+    [serverAddress, t]
+  )
+
+  // Chat 预设也需要明文密钥：同样先确认轮换，确认后再继续打开。
+  const handleOpenChatPreset = useCallback(
+    (preset: ChatPreset) => {
+      requestKeyAction(async (realKey) => {
+        await openChatPresetWithKey(preset, realKey)
+      })
+    },
+    [requestKeyAction, openChatPresetWithKey]
   )
 
   const handleToggleStatus = async (
@@ -222,12 +238,12 @@ export function DataTableRowActions<TData>({
       >
         <DropdownMenuItem
           disabled={isRealKeyLoading}
-          onClick={async () => {
-            const realKey = await rotateKey(apiKey.id)
-            if (!realKey) return
-            const ok = await copyToClipboard(realKey)
-            if (ok) toast.success(t('Copied'))
-          }}
+          onClick={() =>
+            requestKeyAction(async (realKey) => {
+              const ok = await copyToClipboard(realKey)
+              if (ok) toast.success(t('Copied'))
+            })
+          }
         >
           {t('Copy Key')}
           <DropdownMenuShortcut>
@@ -236,16 +252,16 @@ export function DataTableRowActions<TData>({
         </DropdownMenuItem>
         <DropdownMenuItem
           disabled={isRealKeyLoading}
-          onClick={async () => {
-            const realKey = await rotateKey(apiKey.id)
-            if (!realKey) return
-            const connStr = encodeChannelConnectionInfo(
-              realKey,
-              getServerAddress()
-            )
-            const ok = await copyToClipboard(connStr)
-            if (ok) toast.success(t('Copied'))
-          }}
+          onClick={() =>
+            requestKeyAction(async (realKey) => {
+              const connStr = encodeChannelConnectionInfo(
+                realKey,
+                getServerAddress()
+              )
+              const ok = await copyToClipboard(connStr)
+              if (ok) toast.success(t('Copied'))
+            })
+          }
         >
           {t('Copy Connection Info')}
           <DropdownMenuShortcut>
@@ -254,13 +270,13 @@ export function DataTableRowActions<TData>({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
-          onClick={async () => {
-            const realKey = await rotateKey(apiKey.id)
-            if (!realKey) return
-            setResolvedKey(realKey)
-            setCurrentRow(apiKey)
-            setOpen('cc-switch')
-          }}
+          onClick={() =>
+            requestKeyAction(async (realKey) => {
+              setResolvedKey(realKey)
+              setCurrentRow(apiKey)
+              setOpen('cc-switch')
+            })
+          }
         >
           {t('CC Switch')}
           <DropdownMenuShortcut>
