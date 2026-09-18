@@ -1283,8 +1283,11 @@ func BatchSetChannelTag(ids []int, tag *string) error {
 	}
 
 	// update ability status
-	channels, err := GetChannelsByIds(ids)
-	if err != nil {
+	//
+	// 必须在**同一事务连接**上查询：SQLite 单连接下，事务持写锁时再用全局 DB 查询会
+	// 自锁（事务等连接、连接等事务），请求永久挂起。此前这里用 GetChannelsByIds(ids)。
+	var channels []*Channel
+	if err := tx.Where("id in (?)", ids).Find(&channels).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
