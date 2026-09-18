@@ -30,13 +30,16 @@ export const DEFAULT_PAGE_SIZE = 20
 // Name Rule Options
 // ============================================================================
 
+/** 四档匹配规则的稳定展示顺序：精确 / 前缀 / 包含 / 后缀。 */
+export const NAME_RULE_VALUES: NameRule[] = [0, 1, 2, 3]
+
 export function getNameRuleOptions(t: TFunction) {
-  return [
-    { label: t('Exact Match'), value: 0 as NameRule },
-    { label: t('Prefix Match'), value: 1 as NameRule },
-    { label: t('Contains Match'), value: 2 as NameRule },
-    { label: t('Suffix Match'), value: 3 as NameRule },
-  ] as const
+  const config = getNameRuleConfig(t)
+  // Base UI Select 的 value 只能是字符串，因此档位键以 '0'..'3' 暴露，提交时 Number() 回读。
+  return NAME_RULE_VALUES.map((rule) => ({
+    value: String(rule),
+    label: config[rule].label,
+  }))
 }
 
 export function getNameRuleConfig(

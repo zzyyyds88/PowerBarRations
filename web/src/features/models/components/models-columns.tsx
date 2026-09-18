@@ -32,11 +32,16 @@ import { parseModelTags, resolveModelIconKey } from '../lib'
 import type { Model } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DescriptionCell } from './description-cell'
+import { MatchTypeCell } from './match-type-cell'
+import { MatchedCountCell } from './matched-count-cell'
 import { useModels } from './models-provider'
 
-// 模型页 = 模型目录（ui-spec §6.3）：列集合收敛为四列——
-// 模型（含推断图标）/ 描述 / 标签 / 操作；不再有渠道分组、同步策略、
-// 展示策略、匹配类型、端点或时间戳等基座遗留列。
+// 模型页 = 模型目录（ui-spec §6.3）：列集合为
+// 模型（含推断图标）/ 匹配类型 / 命中模型数 / 描述 / 标签 / 操作。
+// 「匹配类型 + 命中模型数」即 New API 的"自动匹配"：一条前缀/包含/后缀规则
+// 就能覆盖渠道声明的一批模型名，无需逐个建目录记录。
+// 仍不出现「渠道与分组」「同步策略」「展示策略」「自定义端点」「ID」「创建/更新时间」
+// 「供应商」「可用分组」「计费类型」等列。
 
 export function useModelsColumns(): ColumnDef<Model>[] {
   const { t } = useTranslation()
@@ -129,6 +134,28 @@ export function useModelsColumns(): ColumnDef<Model>[] {
           </div>
         )
       },
+    },
+    {
+      accessorKey: 'name_rule',
+      header: t('Match Type'),
+      size: 110,
+      enableSorting: false,
+      meta: { mobileHidden: true },
+      cell: ({ row }) => <MatchTypeCell nameRule={row.original.name_rule} />,
+    },
+    {
+      id: 'matched_count',
+      header: t('Matched models'),
+      size: 130,
+      enableSorting: false,
+      meta: { mobileHidden: true },
+      cell: ({ row }) => (
+        <MatchedCountCell
+          nameRule={row.original.name_rule}
+          matchedCount={row.original.matched_count}
+          matchedModels={row.original.matched_models}
+        />
+      ),
     },
     {
       accessorKey: 'description',
