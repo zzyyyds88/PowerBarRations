@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -119,6 +120,30 @@ func TestSSEPassesThrough(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Contains(t, rec.Body.String(), "data: [DONE]")
 	assert.NotContains(t, rec.Body.String(), `"error"`)
+}
+
+// SSE 走 Flush（gin 的 c.Writer.Flush 与 http.Flusher 断言都到 WriteHeader/Write）时
+// 必须立即直通——SSE handler 通常不返回，缓冲会让客户端永远收不到字节。
+func TestSSEPromotesOnWriteHeader(t *testing.T) {
+	engine := newEngine(t, Policy{}, func(c *gin.Context) {
+		c.Header("Content-Type", "text/event-stream")
+		c.Writer.WriteHeader(http.StatusOK)
+		_, _ = c.Writer.Write([]byte("event: x\ndata: {}\n\n"))
+		c.Writer.Flush()
+		// 故意不返回：模拟无限推流；缓冲实现下客户端会一个字节都收不到。
+	})
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/probe", nil))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler 未在 2s 内写出流式数据（响应被缓冲了）")
+	}
+	assert.Contains(t, recorder.Body.String(), "event: x")
 }
 
 // 未登记路由回落 Default：仍然裸化，不漏信封。

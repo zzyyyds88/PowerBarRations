@@ -223,31 +223,43 @@ type bufferedWriter struct {
 }
 
 func (w *bufferedWriter) WriteHeader(code int) {
-	if w.pass {
-		w.ResponseWriter.WriteHeader(code)
-		return
-	}
 	if w.status == 0 {
 		w.status = code
+	}
+	// 流式响应必须在写头时就直通：SSE handler 通常不返回（无限推流），
+	// 若继续缓冲，finish 永远不会被调用，客户端将收不到任何字节。
+	if w.maybePromoteStream() {
+		return
+	}
+	if w.pass {
+		w.ResponseWriter.WriteHeader(code)
 	}
 }
 
 // WriteHeaderNow 在缓冲期间是空操作：真正的状态码在 finish 时写出。
 func (w *bufferedWriter) WriteHeaderNow() {
+	if w.maybePromoteStream() {
+		return
+	}
 	if w.pass {
 		w.ResponseWriter.WriteHeaderNow()
 	}
 }
 
-// Flush 在缓冲期间是空操作，避免 handler 提前把未改写的头部刷出去。
+// Flush 出现即意味着调用方要流式输出（gin 的 c.Writer.Flush 与 SSE handler 的
+// http.Flusher 断言都走这里）：立即直通，之后不再缓冲。
 func (w *bufferedWriter) Flush() {
-	if w.pass {
-		w.ResponseWriter.Flush()
+	if !w.pass {
+		w.promote()
 	}
+	w.ResponseWriter.Flush()
 }
 
 func (w *bufferedWriter) Write(b []byte) (int, error) {
 	w.written = true
+	if !w.pass && w.maybePromoteStream() {
+		return w.ResponseWriter.Write(b)
+	}
 	if w.pass {
 		return w.ResponseWriter.Write(b)
 	}
@@ -255,6 +267,32 @@ func (w *bufferedWriter) Write(b []byte) (int, error) {
 		return w.passthrough(b)
 	}
 	return w.body.Write(b)
+}
+
+// maybePromoteStream 若当前响应已是流式（text/event-stream），切换到直通并返回 true。
+func (w *bufferedWriter) maybePromoteStream() bool {
+	if w.pass {
+		return true
+	}
+	if !strings.Contains(w.Header().Get("Content-Type"), "text/event-stream") {
+		return false
+	}
+	w.promote()
+	return true
+}
+
+// promote 把已缓冲内容与状态码写出，并切到直通模式。
+func (w *bufferedWriter) promote() {
+	w.pass = true
+	status := w.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.ResponseWriter.WriteHeader(status)
+	if w.body.Len() > 0 {
+		_, _ = w.ResponseWriter.Write(w.body.Bytes())
+		w.body.Reset()
+	}
 }
 
 func (w *bufferedWriter) WriteString(s string) (int, error) { return w.Write([]byte(s)) }
