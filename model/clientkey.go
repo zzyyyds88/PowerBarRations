@@ -19,7 +19,7 @@ import (
 // 设计取舍：**默认放行全部车道，只能显式拒绝**。这直接消灭了现网两代网关的踩坑源
 // ——"忘了加白名单 → 故障那一刻 400"。分账由 KeyID 身份承载，不靠白名单。
 //
-// 明文只在创建/轮换响应里出现一次；库里只存 sha256。
+// 明文按 token-spec §3.3 入库存储，KeyHash 仍作为鉴权索引。
 
 const (
 	LanePolicyModeAll   = "all"
@@ -36,6 +36,7 @@ type ClientKey struct {
 	Name           string `json:"name" gorm:"unique;not null;index"`
 	KeyHash        string `json:"key_hash" gorm:"type:varchar(64);index"`
 	KeyPrefix      string `json:"key_prefix" gorm:"type:varchar(16)"`
+	KeyPlain       string `json:"-" gorm:"column:key_plain;type:varchar(128)"`
 	Enabled        bool   `json:"enabled"`
 	LanePolicy     string `json:"lane_policy" gorm:"type:text"`
 	IPAllowlist    string `json:"ip_allowlist" gorm:"type:text"`
@@ -114,7 +115,7 @@ func DeleteClientKeyByName(name string) error {
 	return DB.Where("name = ?", name).Delete(&ClientKey{}).Error
 }
 
-// UpsertClientKey 全量写：明文只写不读，KeyHash 由调用方在提供新明文时设置。
+// UpsertClientKey 全量写：KeyHash 非空表示调用方提供了新密钥，同时更新明文。
 func UpsertClientKey(key *ClientKey) error {
 	if strings.TrimSpace(key.Name) == "" {
 		return errors.New("client key name is required")
@@ -145,13 +146,15 @@ func UpsertClientKey(key *ClientKey) error {
 			"notes":           key.Notes,
 			"updated_at":      now,
 		}
-		// 轮换/首次设置明文时才改哈希与前缀，普通更新不动它们。
+		// 轮换/首次设置明文时才改哈希、前缀与明文，普通更新不动它们。
 		if key.KeyHash != "" {
 			updates["key_hash"] = key.KeyHash
 			updates["key_prefix"] = key.KeyPrefix
+			updates["key_plain"] = key.KeyPlain
 		} else {
 			key.KeyHash = existing.KeyHash
 			key.KeyPrefix = existing.KeyPrefix
+			key.KeyPlain = existing.KeyPlain
 		}
 		return tx.Model(&ClientKey{}).Where("id = ?", key.Id).Updates(updates).Error
 	})

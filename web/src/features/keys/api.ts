@@ -34,7 +34,8 @@ import type {
 //   - 允许的模型（model_limits）↔ lane_policy.allow_lanes（路由键即模型名）
 //   - 允许的 IP ↔ ip_allowlist；过期时间 ↔ expires_at；启用状态 ↔ enabled
 //   - cost 是只读统计（元），直接照抄后端响应，不参与任何写请求
-// 明文只在创建/轮换时出现一次，"查看明文"通过轮换实现。
+// 密钥明文入库（token-spec §3.3，New API 同款"随时可看"）：列表即回传 key 明文；
+// 迁移前的历史密钥没有明文（key 为 null），回显走 key_prefix 并提示轮换一次。
 
 type PbrLanePolicy = {
   mode?: string
@@ -97,7 +98,9 @@ function toApiKey(item: PbrClientKey): ApiKey {
   return {
     id: item.id,
     name: item.name,
-    key: item.key_prefix ?? '',
+    // `key` is null only for keys created before plaintext storage was enabled.
+    key: item.key ?? item.key_prefix ?? '',
+    key_plain: item.key ?? '',
     status: item.enabled ? 1 : 2,
     cost: item.cost ?? 0,
     expired_time: item.expires_at ? unixSeconds(item.expires_at) : -1,
@@ -262,7 +265,7 @@ export async function updateApiKeyStatus(
   return { success: true, data: toApiKey(res.data as PbrClientKey) }
 }
 
-// Rotate an existing key and return the new plaintext once.
+// Rotate an existing key, persist the replacement, and return its plaintext.
 export async function rotateApiKey(
   id: number
 ): Promise<ApiResponse<{ key: string }>> {
@@ -272,21 +275,37 @@ export async function rotateApiKey(
   return { success: true, data: { key: String(res.data.key ?? '') } }
 }
 
-// PBR 只在创建/轮换时返回明文；"查看明文"通过轮换获取新密钥。
+// 读取已入库的明文（token-spec §3.3，明文随时可看）：走详情接口拿 `key`。
+// 历史密钥（明文存储上线前创建）无明文，返回失败并提示轮换一次。
 export async function fetchTokenKey(
   id: number
 ): Promise<{ success: boolean; message?: string; data?: { key: string } }> {
-  const result = await rotateApiKey(id)
-  if (!result.success || !result.data?.key) {
-    return { success: false, message: result.message }
+  const name = await nameForId(id)
+  if (!name) return { success: false, message: 'API key not found' }
+  const res = await api.get(`/api/keys/${encodeURIComponent(name)}`)
+  const plain = (res.data as PbrClientKey)?.key
+  if (!plain) {
+    return {
+      success: false,
+      message:
+        'This key predates plaintext storage; rotate it once to reveal and copy.',
+    }
   }
-  return { success: true, data: { key: result.data.key } }
+  return { success: true, data: { key: plain } }
 }
 
-export async function fetchTokenKeysBatch(_ids: number[]): Promise<{
+// 批量读取明文：逐个走 fetchTokenKey，失败的历史密钥跳过（不阻断其余）。
+export async function fetchTokenKeysBatch(ids: number[]): Promise<{
   success: boolean
   message?: string
   data?: { keys: Record<number, string> }
 }> {
-  return { success: false, message: 'PBR 不提供批量明文读取。' }
+  const keys: Record<number, string> = {}
+  await Promise.all(
+    ids.map(async (id) => {
+      const res = await fetchTokenKey(id)
+      if (res.success && res.data?.key) keys[id] = res.data.key
+    })
+  )
+  return { success: true, data: { keys } }
 }

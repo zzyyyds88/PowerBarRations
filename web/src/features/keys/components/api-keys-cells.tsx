@@ -47,19 +47,21 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const isLoading = !!loadingKeys[apiKey.id]
   const isCopied = copiedKeyId === apiKey.id
-  // PBR 展示真实 key_prefix（如 pbr-abcd1234），不再错误拼接 sk- 前缀。
-  const keyPrefix = apiKey.key
+  // 后端回传明文时列表所见即所得；迁移前的历史密钥只有 key_prefix。
+  const fullKey = apiKey.key_plain || apiKey.key
+  const hasPlaintext = Boolean(apiKey.key_plain)
 
-  // 「查看/复制前缀」是只读操作，不触发轮换。
-  const handleCopyPrefix = useCallback(async () => {
-    if (!keyPrefix) return
-    const ok = await copyToClipboard(keyPrefix)
+  const handleCopyKey = useCallback(async () => {
+    if (!fullKey) return
+    const ok = await copyToClipboard(fullKey)
     if (ok) markKeyCopied(apiKey.id)
-  }, [keyPrefix, markKeyCopied, apiKey.id])
+  }, [fullKey, markKeyCopied, apiKey.id])
 
   let copyIcon = <Copy className='size-3.5' />
-  let copyTooltip = t('Copy key prefix')
-  if (isLoading) {
+  let copyTooltip = t('Copy API key')
+  if (!hasPlaintext) {
+    copyTooltip = t('Rotate to reveal key')
+  } else if (isLoading) {
     copyIcon = <Loader2 className='size-3.5 animate-spin' />
     copyTooltip = t('Loading...')
   } else if (isCopied) {
@@ -71,7 +73,7 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
     <div className='flex max-w-full min-w-0 items-center'>
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
         <PopoverTrigger render={<MaskedValueTrigger />}>
-          <span className='truncate'>{keyPrefix}</span>
+          <span className='truncate'>{fullKey}</span>
         </PopoverTrigger>
         <PopoverContent
           className='w-auto max-w-[min(90vw,28rem)]'
@@ -79,10 +81,12 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
         >
           <div className='space-y-3'>
             <div className='space-y-1'>
-              <p className='text-muted-foreground text-xs'>{t('Key prefix')}</p>
+              <p className='text-muted-foreground text-xs'>
+                {hasPlaintext ? t('Full API Key') : t('Key prefix')}
+              </p>
               <input
                 readOnly
-                value={keyPrefix}
+                value={fullKey}
                 autoFocus
                 onFocus={(e) => e.target.select()}
                 className='bg-muted/50 w-full min-w-[280px] rounded-md border px-3 py-2 font-mono text-xs outline-none'
@@ -100,11 +104,13 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
               {t('Rotate key')}
             </Button>
 
-            <p className='text-muted-foreground text-xs'>
-              {t(
-                'The full key is shown only once when it is created or rotated.'
-              )}
-            </p>
+            {!hasPlaintext && (
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'This key predates plaintext storage; rotate it once to reveal and copy.'
+                )}
+              </p>
+            )}
           </div>
         </PopoverContent>
       </Popover>
@@ -115,8 +121,8 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
               variant='ghost'
               size='icon'
               className='size-7 shrink-0'
-              onClick={handleCopyPrefix}
-              disabled={isLoading}
+              onClick={handleCopyKey}
+              disabled={!hasPlaintext || isLoading}
               aria-label={copyTooltip}
             />
           }

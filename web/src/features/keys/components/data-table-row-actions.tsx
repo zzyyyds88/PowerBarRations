@@ -93,14 +93,17 @@ export function DataTableRowActions<TData>({
   const { chatPresets, serverAddress } = useChatPresets()
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
   const isRealKeyLoading = Boolean(loadingKeys[apiKey.id])
-  // 行菜单里的 Copy Key / Copy Connection Info / CC Switch / Chat 都需要明文密钥，
-  // 而读取明文只能通过轮换接口（旧密钥立即失效）。因此交给 Provider 先弹轮换确认框，
-  // 确认并拿到新明文后再执行原动作（确认框只在 Provider 渲染一份，避免重复弹层）。
+  // 新密钥的明文已经在列表响应中，直接执行动作；只有迁移前的历史密钥
+  // 需要先确认轮换一次。确认框由 Provider 统一渲染，避免重复弹层。
   const requestKeyAction = useCallback(
     (action: (realKey: string) => void | Promise<void>) => {
+      if (apiKey.key_plain) {
+        void action(apiKey.key_plain)
+        return
+      }
       requestRotateAction(apiKey.id, action)
     },
-    [requestRotateAction, apiKey.id]
+    [apiKey.id, apiKey.key_plain, requestRotateAction]
   )
 
   const hasChatPresets = chatPresets.length > 0
@@ -144,7 +147,7 @@ export function DataTableRowActions<TData>({
     [serverAddress, t]
   )
 
-  // Chat 预设也需要明文密钥：同样先确认轮换，确认后再继续打开。
+  // 历史密钥会在 requestKeyAction 内确认轮换；已有明文则直接打开。
   const handleOpenChatPreset = useCallback(
     (preset: ChatPreset) => {
       requestKeyAction(async (realKey) => {

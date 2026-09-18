@@ -181,6 +181,7 @@ type PbrKeyOverrides = {
   id?: number
   name?: string
   enabled?: boolean
+  key?: string | null
   key_prefix?: string
   lane_policy?: {
     mode?: string
@@ -198,6 +199,7 @@ async function renderKeysPage(overrides: PbrKeyOverrides = {}) {
     id: 7,
     name: 'production',
     enabled: true,
+    key: 'pbr-existing-secret',
     key_prefix: 'pbr-abcd1234',
     lane_policy: { mode: 'all', allow_lanes: [], deny_lanes: [] },
     ip_allowlist: [],
@@ -271,32 +273,19 @@ it('toggles enabled through PUT /api/keys/{name}', async () => {
   expect(post).not.toHaveBeenCalled()
 })
 
-it('Copy Key 先确认轮换，确认后才换新并复制明文', async () => {
+it('Copy Key uses the stored plaintext without rotating', async () => {
   const user = userEvent.setup()
   const { post } = await renderKeysPage()
-  post.mockResolvedValue({ data: { key: 'pbr-fake-key-for-test-only' } })
   const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
   await user.click(screen.getByRole('button', { name: 'Open menu' }))
   expect(post).not.toHaveBeenCalled()
   await user.click(screen.getByRole('menuitem', { name: 'Copy Key' }))
-
-  // 读取明文只能通过轮换接口，因此必须先确认；确认前不得调用 rotate。
-  const dialog = await screen.findByRole('alertdialog')
-  expect(within(dialog).getByText('Rotate this key?')).toBeVisible()
-  expect(post).not.toHaveBeenCalled()
-  await user.click(within(dialog).getByRole('button', { name: 'Rotate' }))
-
-  await waitFor(() =>
-    expect(post).toHaveBeenCalledWith('/api/keys/production/rotate', {})
-  )
-  await waitFor(() =>
-    expect(copy).toHaveBeenCalledWith('pbr-fake-key-for-test-only')
-  )
+  await waitFor(() => expect(copy).toHaveBeenCalledWith('pbr-existing-secret'))
 })
 
-it('Copy Key 取消确认时不轮换也不复制', async () => {
+it('Copy Key for a legacy key requires rotation confirmation', async () => {
   const user = userEvent.setup()
-  const { post } = await renderKeysPage()
+  const { post } = await renderKeysPage({ key: null })
   const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
   await user.click(screen.getByRole('button', { name: 'Open menu' }))
   await user.click(screen.getByRole('menuitem', { name: 'Copy Key' }))
@@ -333,28 +322,27 @@ it('shows model and IP restrictions in the mobile card details', async () => {
   expect(within(details).getByText('2001:db8::1')).toBeVisible()
 })
 
-it('shows the real key prefix and never rotates on view or prefix copy', async () => {
+it('shows and copies the stored plaintext without rotating', async () => {
   const user = userEvent.setup()
   const { post } = await renderKeysPage()
   const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
 
-  // 掩码是真实 key_prefix，不再是 sk- 拼接。
-  const trigger = screen.getByRole('button', { name: 'pbr-abcd1234' })
+  const trigger = screen.getByRole('button', { name: 'pbr-existing-secret' })
   expect(trigger).toBeInTheDocument()
   expect(screen.queryByText(/sk-pbr-/)).not.toBeInTheDocument()
 
   await user.click(trigger)
-  expect(await screen.findByText('Key prefix')).toBeVisible()
+  expect(await screen.findByText('Full API Key')).toBeVisible()
   expect(post).not.toHaveBeenCalled()
 
-  await user.click(screen.getByRole('button', { name: 'Copy key prefix' }))
-  await waitFor(() => expect(copy).toHaveBeenCalledWith('pbr-abcd1234'))
+  await user.click(screen.getByRole('button', { name: 'Copy API key' }))
+  await waitFor(() => expect(copy).toHaveBeenCalledWith('pbr-existing-secret'))
   expect(post).not.toHaveBeenCalled()
 })
 
-it('rotates only after an explicit confirmation and reveals the new key once', async () => {
+it('rotates only after an explicit confirmation and reveals the new key', async () => {
   const user = userEvent.setup()
-  const { post } = await renderKeysPage()
+  const { post } = await renderKeysPage({ key: null })
   post.mockResolvedValue({ data: { key: 'pbr-rotated-secret' } })
 
   await user.click(screen.getByRole('button', { name: 'pbr-abcd1234' }))

@@ -26,6 +26,9 @@ export const apiKeySchema = z.object({
   id: z.number(),
   name: z.string(),
   key: z.string(),
+  // 入库明文（token-spec §3.3）：随时可读可复制。历史密钥（明文存储上线前
+  // 创建）无明文可回显，此字段为空串，展示回退到 key（前缀）。
+  key_plain: z.string().nullish().default(''),
   status: z.number(), // 1: enabled, 2: disabled, 3: expired, 4: exhausted
   // 只读统计：该令牌的上游折算花费（元），来自 GET /api/keys（api-spec §5.4）。
   // cost 不参与任何鉴权或限额。

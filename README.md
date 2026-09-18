@@ -54,7 +54,7 @@
 - **优先级故障转移**：成员按顺序取首个可用；失败在尝试预算内重试，之后冷却并逃逸到下一成员。
 - **冷却 / 亲和 / 熔断**：六个车道级控制键；熔断三态（`closed/open/half_open`）与半开自愈；亲和默认 0，恢复即切回。
 - **四协议双向**：入站与上游都支持 OpenAI Chat、OpenAI Responses、Anthropic、Gemini，按协议自动补全端点路径。
-- **安全默认**：管理密钥由登录口令派生（不落库）；客户端密钥只存 `sha256` 且只回显一次；请求日志只存元数据。
+- **安全默认**：管理密钥由登录口令派生（不落库）；客户端密钥明文持久化并另存 `sha256` 索引；请求日志只存元数据。
 - **单节点极简**：单个二进制 + 单个 SQLite，无外部数据库 / 缓存 / 队列。
 - **上游成本可见**：按渠道 × 模型聚合请求数、token、成功率与上游折算花费（元）；只折算、非计费。
 - **可编排全部 HTTP**：管理面完整 API + OpenAPI，适合 AI/脚本无人值守运维；运行态（冷却/熔断）重启清空。
@@ -114,7 +114,7 @@ curl -s -X PUT $BASE/api/v1/channels/vendor-a \
 # PUT $BASE/api/v1/lanes/model-1  body {"enabled":true,"mode":"failover",
 #   "members":[{"channel":"channel-a"},{"channel":"channel-b"}]}
 
-# 4) 建客户端密钥（明文只回显一次）
+# 4) 建客户端密钥（明文可从管理 API 回读）
 curl -s -X POST $BASE/api/v1/keys -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' -d '{"name":"client-a"}'
 ```
@@ -229,7 +229,7 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 |---|---|---|---|
 | 面向 | 浏览器控制台 | `/api/v1/*` | `/v1/*` 模型流量 |
 | 生成 | 登录时服务端签发 **HttpOnly Cookie** | 由登录口令派生：`Base64(SHA256(口令))` | 服务端随机 `pbr-<32 位 base62>` |
-| 存储 | 只存 `sha256(管理密钥)`（Cookie 内只有 HMAC 签名） | 不存储；用时现算 | 只存 `sha256(明文)` + 展示前缀 |
+| 存储 | 只存 `sha256(管理密钥)`（Cookie 内只有 HMAC 签名） | 不存储；用时现算 | 明文 + `sha256(明文)` 索引 + 展示前缀 |
 | 默认权限 | 全量 | 全量 | **允许全部车道**，只能显式拒绝 |
 
 - 管理密钥与客户端密钥**不能**用于模型面/管理面的对方入口。
