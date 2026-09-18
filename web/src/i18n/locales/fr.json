@@ -3036,6 +3036,7 @@
     "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "Sur la page Routage et bascule, ajoutez les membres à la main pour chaque modèle et classez-les par priorité ; l enregistrement fige la voie.",
     "Lane disabled": "Voie désactivée",
     "Lane disabled · not callable": "Voie désactivée · non appelable",
-    "This lane is disabled — the model is not callable. Save to enable it again.": "Cette voie est désactivée : le modèle n est pas appelable. Enregistrez pour la réactiver."
+    "This lane is disabled — the model is not callable. Save to enable it again.": "Cette voie est désactivée : le modèle n est pas appelable. Enregistrez pour la réactiver.",
+    "({{count}} unavailable)": "({{count}} indisponible(s))"
   }
 }

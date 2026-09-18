@@ -180,10 +180,18 @@ export function Routes() {
                 )
               }
               const members = laneOrders.get(row.model) ?? []
+              // 成员总数可能含渠道已删/停用的悬空成员，可用数才是真正可路由的（P3-1）。
+              const unavailable =
+                row.member_count - (row.available_member_count ?? 0)
               return (
                 <div className='min-w-0'>
                   <div className='text-sm'>
                     {t('{{count}} members', { count: row.member_count })}
+                    {unavailable > 0 && (
+                      <span className='text-destructive ml-1 text-xs'>
+                        {t('({{count}} unavailable)', { count: unavailable })}
+                      </span>
+                    )}
                   </div>
                   {members.length > 0 && (
                     <div

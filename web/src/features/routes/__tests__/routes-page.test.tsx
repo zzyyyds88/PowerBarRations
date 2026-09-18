@@ -65,6 +65,7 @@ function mockRouteKeys() {
               source: 'explicit',
               routable: true,
               member_count: 2,
+              available_member_count: 1,
             },
             {
               model: 'model-2',
@@ -268,5 +269,14 @@ describe('路由与故障切换页', () => {
 
     expect(await screen.findByText('route keys unavailable')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
+  })
+
+  // 成员总数含悬空/停用成员时，要标出「可用」与「不可用」（P3-1）。
+  test('成员列标注不可用成员数', async () => {
+    mockRouteKeys()
+    renderPage()
+
+    expect(await screen.findByText('2 members')).toBeVisible()
+    expect(screen.getByText('(1 unavailable)')).toBeVisible()
   })
 })

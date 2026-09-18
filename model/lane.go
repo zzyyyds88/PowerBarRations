@@ -251,10 +251,15 @@ func (r *ResolvedRoute) EffectiveConfig(member *RouteMember) LaneRelayConfig {
 
 // ModelSummary 用于 GET /models 的概览。
 type ModelSummary struct {
-	Model       string `json:"model"`
-	Source      string `json:"source"`
-	Routable    bool   `json:"routable"`
-	MemberCount int    `json:"member_count"`
+	Model    string `json:"model"`
+	Source   string `json:"source"`
+	Routable bool   `json:"routable"`
+	// MemberCount 是车道成员总数（含渠道已删/停用的悬空成员）；unconfigured 时
+	// 表示声明该模型的候选渠道数。
+	MemberCount int `json:"member_count"`
+	// AvailableMemberCount 是当前真正可路由的成员数（渠道存在且启用）；
+	// 与 MemberCount 的差值即"不可用成员"，供界面标注"含不可用"（P3-1）。
+	AvailableMemberCount int `json:"available_member_count"`
 }
 
 // ---------- 车道 CRUD ----------
@@ -823,6 +828,16 @@ func SeedLanes(dryRun bool) (created []string, skipped []string, err error) {
 func ListModelSummaries() ([]ModelSummary, error) {
 	seen := map[string]*ModelSummary{}
 
+	// 只有"渠道存在且启用"的成员才真正可路由：用它算 available_member_count。
+	enabledChannelIDs := map[int]bool{}
+	allChannels, err := listEnabledChannels()
+	if err != nil {
+		return nil, err
+	}
+	for _, ch := range allChannels {
+		enabledChannelIDs[ch.Id] = true
+	}
+
 	lanes, err := ListLanes()
 	if err != nil {
 		return nil, err
@@ -832,10 +847,11 @@ func ListModelSummaries() ([]ModelSummary, error) {
 			// 停用车道不可调用，但仍要在管理面可见（source=disabled）。
 			if _, ok := seen[lane.Name]; !ok {
 				seen[lane.Name] = &ModelSummary{
-					Model:       lane.Name,
-					Source:      RouteSourceDisabled,
-					Routable:    false,
-					MemberCount: len(lane.Members),
+					Model:                lane.Name,
+					Source:               RouteSourceDisabled,
+					Routable:             false,
+					MemberCount:          len(lane.Members),
+					AvailableMemberCount: countAvailableMembers(lane.Members, enabledChannelIDs),
 				}
 			}
 			continue
@@ -846,13 +862,10 @@ func ListModelSummaries() ([]ModelSummary, error) {
 			seen[lane.Name] = s
 		}
 		s.MemberCount = len(lane.Members)
+		s.AvailableMemberCount = countAvailableMembers(lane.Members, enabledChannelIDs)
 	}
 
-	channels, err := listEnabledChannels()
-	if err != nil {
-		return nil, err
-	}
-	for _, ch := range channels {
+	for _, ch := range allChannels {
 		for _, m := range ch.GetModels() {
 			m = strings.TrimSpace(m)
 			if m == "" {
@@ -862,10 +875,11 @@ func ListModelSummaries() ([]ModelSummary, error) {
 				// 已配车道（含停用）的模型以车道为准，候选渠道不计入计数。
 				if s.Source == RouteSourceUnconfigured {
 					s.MemberCount++
+					s.AvailableMemberCount++
 				}
 				continue
 			}
-			seen[m] = &ModelSummary{Model: m, Source: RouteSourceUnconfigured, Routable: false, MemberCount: 1}
+			seen[m] = &ModelSummary{Model: m, Source: RouteSourceUnconfigured, Routable: false, MemberCount: 1, AvailableMemberCount: 1}
 		}
 	}
 
@@ -875,6 +889,17 @@ func ListModelSummaries() ([]ModelSummary, error) {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Model < out[j].Model })
 	return out, nil
+}
+
+// countAvailableMembers 统计成员里"渠道存在且启用"的数量（P3-1）。
+func countAvailableMembers(members []LaneMember, enabledChannelIDs map[int]bool) int {
+	n := 0
+	for _, m := range members {
+		if enabledChannelIDs[m.ChannelId] {
+			n++
+		}
+	}
+	return n
 }
 
 func listEnabledChannels() ([]*Channel, error) {

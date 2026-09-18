@@ -3036,6 +3036,7 @@
     "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "在「路由与故障切换」页为每个模型手动添加成员并排好优先级顺序，保存即固化车道。",
     "Lane disabled": "车道已停用",
     "Lane disabled · not callable": "车道已停用 · 不可调用",
-    "This lane is disabled — the model is not callable. Save to enable it again.": "该车道已停用，模型当前不可调用；保存后会重新启用。"
+    "This lane is disabled — the model is not callable. Save to enable it again.": "该车道已停用，模型当前不可调用；保存后会重新启用。",
+    "({{count}} unavailable)": "（{{count}} 个不可用）"
   }
 }

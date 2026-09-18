@@ -393,3 +393,29 @@ func TestResolveRouteForDisplayReturnsMembersForDisabledLane(t *testing.T) {
 	assert.Equal(t, "channel-disabled-2", route.Members[0].Channel)
 	assert.True(t, route.Members[0].ChannelEnabled)
 }
+
+// available_member_count 只计"渠道存在且启用"的成员（P3-1）。
+func TestListModelSummariesCountsAvailableMembers(t *testing.T) {
+	setupLaneTest(t)
+	chOK := newTestChannel(t, "avail-ok", "avail-model")
+	chOff := newTestChannel(t, "avail-off", "avail-model")
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", chOff.Id).Update("status", common.ChannelStatusManuallyDisabled).Error)
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "avail-model",
+		Enabled: true,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: chOK.Id, Priority: 2}, {ChannelId: chOff.Id, Priority: 1}, {ChannelId: 999999, Priority: 0}},
+	}))
+
+	summaries, err := ListModelSummaries()
+	require.NoError(t, err)
+	for _, s := range summaries {
+		if s.Model != "avail-model" {
+			continue
+		}
+		assert.Equal(t, 3, s.MemberCount, "总数含停用与悬空成员")
+		assert.Equal(t, 1, s.AvailableMemberCount, "可用数只计启用且存在的渠道")
+		return
+	}
+	t.Fatal("avail-model not found")
+}

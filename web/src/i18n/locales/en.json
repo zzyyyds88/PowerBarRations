@@ -3036,6 +3036,7 @@
     "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.",
     "Lane disabled": "Lane disabled",
     "Lane disabled · not callable": "Lane disabled · not callable",
-    "This lane is disabled — the model is not callable. Save to enable it again.": "This lane is disabled — the model is not callable. Save to enable it again."
+    "This lane is disabled — the model is not callable. Save to enable it again.": "This lane is disabled — the model is not callable. Save to enable it again.",
+    "({{count}} unavailable)": "({{count}} unavailable)"
   }
 }

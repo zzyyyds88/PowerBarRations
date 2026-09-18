@@ -33,10 +33,16 @@ export const pbrModelsQueryKey = ['pbr-routable-models'] as const
 /** GET /api/v1/models 的元素。 */
 export interface PBRModelSummary {
   model: string
-  /** explicit=已配车道可调用；unconfigured=渠道声明但没配车道，不可调用。 */
-  source: 'explicit' | 'unconfigured' | string
+  /**
+   * explicit=已配车道可调用；unconfigured=渠道声明但没配车道；
+   * disabled=有同名车道但被停用（两者都不可调用）。
+   */
+  source: 'explicit' | 'unconfigured' | 'disabled' | string
   routable: boolean
+  /** 车道成员总数（含渠道已删/停用的悬空成员）；unconfigured 时为候选渠道数。 */
   member_count: number
+  /** 当前真正可路由的成员数（渠道存在且启用）。 */
+  available_member_count: number
 }
 
 /** GET /api/v1/routes/{model} 返回的成员。 */

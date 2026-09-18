@@ -3036,6 +3036,7 @@
     "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "На странице «Маршрутизация и отказоустойчивость» добавьте участников вручную для каждой модели и расставьте их по приоритету; сохранение закрепляет полосу.",
     "Lane disabled": "Полоса отключена",
     "Lane disabled · not callable": "Полоса отключена · недоступно",
-    "This lane is disabled — the model is not callable. Save to enable it again.": "Эта полоса отключена, модель недоступна. Сохраните, чтобы снова включить её."
+    "This lane is disabled — the model is not callable. Save to enable it again.": "Эта полоса отключена, модель недоступна. Сохраните, чтобы снова включить её.",
+    "({{count}} unavailable)": "({{count}} недоступно)"
   }
 }
