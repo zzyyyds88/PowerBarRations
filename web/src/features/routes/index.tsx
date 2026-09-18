@@ -136,20 +136,33 @@ export function Routes() {
             header: t('Status'),
             className: 'h-9 w-32',
             cellClassName: tableStyles.topCell,
-            cell: (row) =>
-              row.source === 'explicit' ? (
-                <StatusBadge
-                  label={t('Callable')}
-                  variant='success'
-                  size='sm'
-                />
-              ) : (
+            cell: (row) => {
+              if (row.source === 'explicit') {
+                return (
+                  <StatusBadge
+                    label={t('Callable')}
+                    variant='success'
+                    size='sm'
+                  />
+                )
+              }
+              if (row.source === 'disabled') {
+                return (
+                  <StatusBadge
+                    label={t('Lane disabled')}
+                    variant='warning'
+                    size='sm'
+                  />
+                )
+              }
+              return (
                 <StatusBadge
                   label={t('Not callable')}
                   variant='danger'
                   size='sm'
                 />
-              ),
+              )
+            },
           },
           {
             id: 'members',

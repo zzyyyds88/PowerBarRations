@@ -349,3 +349,47 @@ func TestListModelSummaries(t *testing.T) {
 	assert.Equal(t, RouteSourceExplicit, byName["lane-pool"].Source)
 	assert.True(t, byName["lane-pool"].Routable)
 }
+
+// 停用车道也要在 /models 里可见（source=disabled、不可调用），
+// 否则"只有一条停用车道的模型"会从控制台彻底消失（P2-8）。
+func TestListModelSummariesIncludesDisabledLane(t *testing.T) {
+	setupLaneTest(t)
+	ch := newTestChannel(t, "channel-disabled", "only-disabled")
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "only-disabled",
+		Enabled: false,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: ch.Id, Priority: 1}},
+	}))
+
+	summaries, err := ListModelSummaries()
+	require.NoError(t, err)
+	byName := map[string]ModelSummary{}
+	for _, s := range summaries {
+		byName[s.Model] = s
+	}
+	s, ok := byName["only-disabled"]
+	require.True(t, ok, "停用车道必须仍出现在 /models")
+	assert.Equal(t, RouteSourceDisabled, s.Source)
+	assert.False(t, s.Routable)
+	assert.Equal(t, 1, s.MemberCount)
+}
+
+// 停用车道的详情要返回真实成员链（供编辑），而不是空链/建议链。
+func TestResolveRouteForDisplayReturnsMembersForDisabledLane(t *testing.T) {
+	setupLaneTest(t)
+	ch := newTestChannel(t, "channel-disabled-2", "disabled-route")
+	require.NoError(t, UpsertLane(&Lane{
+		Name:    "disabled-route",
+		Enabled: false,
+		Mode:    LaneModeFailover,
+		Members: []LaneMember{{ChannelId: ch.Id, Priority: 3}},
+	}))
+
+	route, err := ResolveRouteForDisplay("disabled-route")
+	require.NoError(t, err)
+	assert.Equal(t, RouteSourceDisabled, route.Source)
+	require.Len(t, route.Members, 1)
+	assert.Equal(t, "channel-disabled-2", route.Members[0].Channel)
+	assert.True(t, route.Members[0].ChannelEnabled)
+}

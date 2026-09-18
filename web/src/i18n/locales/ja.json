@@ -3033,6 +3033,9 @@
     "How to recompute": "再計算方法",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Base64(SHA256(ログインパスワード)) で、標準のパディング付き Base64 です。必要なときに再計算できます。",
     "Continue to console": "コンソールへ進む",
-    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "「ルーティングとフェイルオーバー」ページで各モデルのメンバーを手動で追加し、優先度順に並べて保存するとレーンが確定します。"
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "「ルーティングとフェイルオーバー」ページで各モデルのメンバーを手動で追加し、優先度順に並べて保存するとレーンが確定します。",
+    "Lane disabled": "レーン停止中",
+    "Lane disabled · not callable": "レーン停止中・呼び出し不可",
+    "This lane is disabled — the model is not callable. Save to enable it again.": "このレーンは停止中のため、モデルは呼び出せません。保存すると再度有効になります。"
   }
 }

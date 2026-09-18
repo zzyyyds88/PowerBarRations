@@ -141,6 +141,7 @@ export async function savePBRFailover(
   // 已有车道：保留其自身六键，只提交顺序（避免用默认值覆盖自定义配置）。
   const existing = await getPBRLaneConfig(model)
   await api.put(`/api/v1/lanes/${encodeURIComponent(model)}`, {
+    // 保存即让这条车道生效：被停用的车道在用户点保存后重新启用。
     enabled: true,
     mode: 'failover',
     config: existing ?? config,

@@ -236,7 +236,9 @@ function RouteEditor({
     queryFn: () => getPBRRoute(model),
   })
 
-  const routable = routeQuery.data?.routable !== false
+  // 停用车道：车道存在且成员可编辑，但当前不可调用（source=disabled）。
+  const laneDisabled = routeQuery.data?.source === 'disabled'
+  const routable = routeQuery.data?.routable !== false && !laneDisabled
   // 已配车道 → 用真实成员；未配车道 → 从空链开始（建议链只作候选）。
   const sourceMembers: EditableMember[] = routable
     ? (routeQuery.data?.members ?? []).map((m) => ({
@@ -306,6 +308,13 @@ function RouteEditor({
   }
 
   const emptyDraft = members.length === 0
+  // 单层判定，避免嵌套三元（AGENTS §3.2）。
+  let laneStatusLabel = t('No lane · not callable')
+  if (laneDisabled) {
+    laneStatusLabel = t('Lane disabled · not callable')
+  } else if (routable) {
+    laneStatusLabel = t('Lane configured')
+  }
 
   const save = useMutation({
     mutationFn: () =>
@@ -353,7 +362,14 @@ function RouteEditor({
   } else {
     body = (
       <div className='space-y-3'>
-        {!routable && (
+        {laneDisabled && (
+          <p className='rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400'>
+            {t(
+              'This lane is disabled — the model is not callable. Save to enable it again.'
+            )}
+          </p>
+        )}
+        {!routable && !laneDisabled && (
           <p className='rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-400'>
             {t(
               'No lane configured yet — add members and save to make this model callable.'
@@ -465,7 +481,7 @@ function RouteEditor({
   const saveButton = (
     <Button
       size='sm'
-      disabled={!dirty || emptyDraft || save.isPending}
+      disabled={(!dirty && !laneDisabled) || emptyDraft || save.isPending}
       title={
         emptyDraft
           ? t('Keep at least one member, or remove the lane.')
@@ -489,14 +505,18 @@ function RouteEditor({
           <CardTitle className='text-sm'>
             {t('Failover order for')} <code className='font-mono'>{model}</code>
             <span className='text-muted-foreground ml-2 text-xs font-normal'>
-              {routable ? t('Lane configured') : t('No lane · not callable')}
+              {laneStatusLabel}
             </span>
           </CardTitle>
           <div className='flex items-center gap-2'>
             <Button
               size='sm'
               variant='outline'
-              disabled={!routable || routeQuery.isLoading || clear.isPending}
+              disabled={
+                (!routable && !laneDisabled) ||
+                routeQuery.isLoading ||
+                clear.isPending
+              }
               onClick={() => setRemoveConfirmOpen(true)}
             >
               <Trash2 className='size-4' />

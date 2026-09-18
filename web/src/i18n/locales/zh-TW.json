@@ -3033,6 +3033,9 @@
     "How to recompute": "如何重算",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "它是 Base64(SHA256(登入口令))，標準 Base64 帶填充。需要時可隨時重算。",
     "Continue to console": "進入控制台",
-    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "在「路由與故障切換」頁為每個模型手動新增成員並排好優先級順序，儲存即固化車道。"
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "在「路由與故障切換」頁為每個模型手動新增成員並排好優先級順序，儲存即固化車道。",
+    "Lane disabled": "車道已停用",
+    "Lane disabled · not callable": "車道已停用 · 不可呼叫",
+    "This lane is disabled — the model is not callable. Save to enable it again.": "該車道已停用，模型目前不可呼叫；儲存後會重新啟用。"
   }
 }

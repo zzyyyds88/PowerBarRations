@@ -3033,6 +3033,9 @@
     "How to recompute": "How to recompute",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.",
     "Continue to console": "Continue to console",
-    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane."
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.",
+    "Lane disabled": "Lane disabled",
+    "Lane disabled · not callable": "Lane disabled · not callable",
+    "This lane is disabled — the model is not callable. Save to enable it again.": "This lane is disabled — the model is not callable. Save to enable it again."
   }
 }

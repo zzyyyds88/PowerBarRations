@@ -215,6 +215,10 @@ type RouteMember struct {
 	Overrides        string `json:"-"`
 }
 
+// RouteSourceDisabled 车道存在但被停用：模型不可调用，但仍应在管理面可见，
+// 否则"只有一条停用车道的模型"会从控制台彻底消失（既不在 /models 也不在路由页）。
+const RouteSourceDisabled = "disabled"
+
 // ResolvedRoute 一个路由键解析出的完整成员链。
 type ResolvedRoute struct {
 	Model  string          `json:"model"`
@@ -579,8 +583,11 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 			return nil, err
 		}
 	}
-	// 没建车道 / 车道被停用 → 不可调用（ADR 0005）。渠道声明不参与直连。
-	if lane == nil || !lane.Enabled {
+	// 没建车道 → 不可调用（ADR 0005）。渠道声明不参与直连。
+	if lane == nil {
+		return route, nil
+	}
+	if !lane.Enabled {
 		return route, nil
 	}
 
@@ -694,12 +701,61 @@ func ResolveRouteForDisplay(modelName string) (*ResolvedRoute, error) {
 	if resolved.Source == RouteSourceExplicit {
 		return resolved, nil
 	}
+	// 停用车道：运行期不可调用（ResolveRoute 返回空链/unconfigured），但管理面要能
+	// 看到并编辑它的真实成员链，否则"只有一条停用车道的模型"会从控制台消失（P2-8）。
+	if lane, laneErr := GetLaneByName(resolved.RouteKey); laneErr == nil && lane != nil && !lane.Enabled {
+		resolved.Source = RouteSourceDisabled
+		resolved.Mode = lane.Mode
+		resolved.Config = ParseLaneRelayConfig(lane.Config)
+		resolved.ActiveMember = lane.ActiveMember
+		resolved.LaneVersion = lane.UpdatedAt
+		members, memberErr := displayMembersForLane(lane)
+		if memberErr != nil {
+			return nil, memberErr
+		}
+		resolved.Members = members
+		return resolved, nil
+	}
 	members, err := suggestedMembers(resolved.RouteKey)
 	if err != nil {
 		return nil, err
 	}
 	resolved.Members = members
 	return resolved, nil
+}
+
+// displayMembersForLane 把车道成员解析成展示用成员链（含渠道是否启用），
+// 按 priority 降序。仅供管理面 ResolveRouteForDisplay 使用，不参与运行期选路。
+func displayMembersForLane(lane *Lane) ([]RouteMember, error) {
+	members := make([]RouteMember, 0, len(lane.Members))
+	for _, m := range lane.Members {
+		ch, chErr := GetChannelById(m.ChannelId, false)
+		if chErr != nil {
+			if !errors.Is(chErr, gorm.ErrRecordNotFound) {
+				return nil, chErr
+			}
+			ch = nil
+		}
+		name := ""
+		if ch != nil {
+			name = ch.Name
+		}
+		members = append(members, RouteMember{
+			ChannelId:        m.ChannelId,
+			Channel:          name,
+			ChannelEnabled:   ch != nil && ch.Status == common.ChannelStatusEnabled,
+			UpstreamModel:    effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
+			UpstreamOverride: m.UpstreamModel,
+			PublicAlias:      m.PublicAlias,
+			Priority:         m.Priority,
+			MemberId:         m.Id,
+			Overrides:        m.Overrides,
+		})
+	}
+	sort.SliceStable(members, func(i, j int) bool {
+		return members[i].Priority > members[j].Priority
+	})
+	return members, nil
 }
 
 // SeedLanes 为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
@@ -773,6 +829,15 @@ func ListModelSummaries() ([]ModelSummary, error) {
 	}
 	for _, lane := range lanes {
 		if !lane.Enabled {
+			// 停用车道不可调用，但仍要在管理面可见（source=disabled）。
+			if _, ok := seen[lane.Name]; !ok {
+				seen[lane.Name] = &ModelSummary{
+					Model:       lane.Name,
+					Source:      RouteSourceDisabled,
+					Routable:    false,
+					MemberCount: len(lane.Members),
+				}
+			}
 			continue
 		}
 		s, ok := seen[lane.Name]
@@ -794,8 +859,8 @@ func ListModelSummaries() ([]ModelSummary, error) {
 				continue
 			}
 			if s, ok := seen[m]; ok {
-				// 已配车道的模型以车道为准，候选渠道不计入计数
-				if s.Source != RouteSourceExplicit {
+				// 已配车道（含停用）的模型以车道为准，候选渠道不计入计数。
+				if s.Source == RouteSourceUnconfigured {
 					s.MemberCount++
 				}
 				continue

@@ -3033,6 +3033,9 @@
     "How to recompute": "Как пересчитать",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Это Base64(SHA256(пароль входа)), стандартный Base64 с заполнением. Пересчитайте при необходимости.",
     "Continue to console": "Перейти в консоль",
-    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "На странице «Маршрутизация и отказоустойчивость» добавьте участников вручную для каждой модели и расставьте их по приоритету; сохранение закрепляет полосу."
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "На странице «Маршрутизация и отказоустойчивость» добавьте участников вручную для каждой модели и расставьте их по приоритету; сохранение закрепляет полосу.",
+    "Lane disabled": "Полоса отключена",
+    "Lane disabled · not callable": "Полоса отключена · недоступно",
+    "This lane is disabled — the model is not callable. Save to enable it again.": "Эта полоса отключена, модель недоступна. Сохраните, чтобы снова включить её."
   }
 }

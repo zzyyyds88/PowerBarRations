@@ -3033,6 +3033,9 @@
     "How to recompute": "Comment recalculer",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Il s’agit de Base64(SHA256(mot de passe de connexion)), Base64 standard avec remplissage. Recalculez-le quand vous en avez besoin.",
     "Continue to console": "Continuer vers la console",
-    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "Sur la page Routage et bascule, ajoutez les membres à la main pour chaque modèle et classez-les par priorité ; l enregistrement fige la voie."
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "Sur la page Routage et bascule, ajoutez les membres à la main pour chaque modèle et classez-les par priorité ; l enregistrement fige la voie.",
+    "Lane disabled": "Voie désactivée",
+    "Lane disabled · not callable": "Voie désactivée · non appelable",
+    "This lane is disabled — the model is not callable. Save to enable it again.": "Cette voie est désactivée : le modèle n est pas appelable. Enregistrez pour la réactiver."
   }
 }

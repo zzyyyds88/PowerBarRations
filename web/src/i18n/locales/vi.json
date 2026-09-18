@@ -3033,6 +3033,9 @@
     "How to recompute": "Cách tính lại",
     "It is Base64(SHA256(login password)), standard Base64 with padding. Recompute it whenever you need it.": "Đây là Base64(SHA256(mật khẩu đăng nhập)), Base64 chuẩn có padding. Hãy tính lại khi cần.",
     "Continue to console": "Tiếp tục vào bảng điều khiển",
-    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "Trong trang Định tuyến & chuyển đổi dự phòng, hãy thêm thành viên thủ công cho từng model và sắp theo thứ tự ưu tiên; lưu là cố định làn."
+    "On the Routing & Failover page, add members by hand for each model and put them in priority order; saving solidifies the lane.": "Trong trang Định tuyến & chuyển đổi dự phòng, hãy thêm thành viên thủ công cho từng model và sắp theo thứ tự ưu tiên; lưu là cố định làn.",
+    "Lane disabled": "Làn đã tắt",
+    "Lane disabled · not callable": "Làn đã tắt · không thể gọi",
+    "This lane is disabled — the model is not callable. Save to enable it again.": "Làn này đã tắt nên model không thể gọi. Lưu để bật lại."
   }
 }
