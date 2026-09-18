@@ -279,4 +279,36 @@ describe('路由与故障切换页', () => {
     expect(await screen.findByText('2 members')).toBeVisible()
     expect(screen.getByText('(1 unavailable)')).toBeVisible()
   })
+
+  // 车道存在但成员全不可用时要显示「全部成员不可用」，而不是绿色 Callable。
+  test('成员全不可用时状态显示全部不可用', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 1,
+                available_member_count: 1,
+                healthy_member_count: 0,
+                health_member_count: 1,
+                degraded: true,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lanes') {
+        return { data: { items: [] } } as never
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    renderPage()
+
+    expect(await screen.findByText('All members unavailable')).toBeVisible()
+    expect(screen.queryByText('Callable')).not.toBeInTheDocument()
+  })
 })

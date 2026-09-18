@@ -138,6 +138,30 @@ export function Routes() {
             cellClassName: tableStyles.topCell,
             cell: (row) => {
               if (row.source === 'explicit') {
+                // 车道存在 ≠ 现在可用：成员全冷却/熔断时给出"全部不可用"（routing-spec §7）。
+                if (row.degraded) {
+                  return (
+                    <StatusBadge
+                      label={t('All members unavailable')}
+                      variant='danger'
+                      size='sm'
+                    />
+                  )
+                }
+                const partiallyDegraded =
+                  typeof row.healthy_member_count === 'number' &&
+                  typeof row.health_member_count === 'number' &&
+                  row.health_member_count > 0 &&
+                  row.healthy_member_count < row.health_member_count
+                if (partiallyDegraded) {
+                  return (
+                    <StatusBadge
+                      label={t('Degraded')}
+                      variant='warning'
+                      size='sm'
+                    />
+                  )
+                }
                 return (
                   <StatusBadge
                     label={t('Callable')}

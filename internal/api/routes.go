@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +25,43 @@ func ListModels(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": summaries, "next_cursor": nil})
+	// 附运行态：explicit 车道给出"当前真正可选（未冷却且熔断非 open）"的成员数，
+	// 让路由页的"可调用"反映健康而不是只看"车道存在"（routing-spec §7）。
+	items := make([]gin.H, 0, len(summaries))
+	for _, s := range summaries {
+		item := gin.H{
+			"model":                  s.Model,
+			"source":                 s.Source,
+			"routable":               s.Routable,
+			"member_count":           s.MemberCount,
+			"available_member_count": s.AvailableMemberCount,
+		}
+		if s.Source == model.RouteSourceExplicit {
+			healthy, total := laneHealthCounts(s.Model)
+			item["healthy_member_count"] = healthy
+			item["health_member_count"] = total
+			item["degraded"] = total > 0 && healthy == 0
+		}
+		items = append(items, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "next_cursor": nil})
+}
+
+// laneHealthCounts 返回某车道"当前可选成员数 / 快照成员总数"。
+// 解析失败（车道刚被删等竞态）按 (0,0) 处理，不因此让整个列表失败。
+func laneHealthCounts(lane string) (healthy int, total int) {
+	resolved, err := model.ResolveRoute(lane)
+	if err != nil || resolved == nil || len(resolved.Members) == 0 {
+		return 0, 0
+	}
+	snapshot := route.Default.For(lane).Health(resolved, route.CurrentCircuitSettings())
+	total = len(snapshot.Members)
+	for _, m := range snapshot.Members {
+		if m.Available {
+			healthy++
+		}
+	}
+	return healthy, total
 }
 
 // GetRoute GET /api/v1/routes/{model}

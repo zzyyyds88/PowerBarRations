@@ -3037,6 +3037,8 @@
     "Lane disabled": "Полоса отключена",
     "Lane disabled · not callable": "Полоса отключена · недоступно",
     "This lane is disabled — the model is not callable. Save to enable it again.": "Эта полоса отключена, модель недоступна. Сохраните, чтобы снова включить её.",
-    "({{count}} unavailable)": "({{count}} недоступно)"
+    "({{count}} unavailable)": "({{count}} недоступно)",
+    "Degraded": "Часть участников недоступна",
+    "All members unavailable": "Все участники недоступны"
   }
 }

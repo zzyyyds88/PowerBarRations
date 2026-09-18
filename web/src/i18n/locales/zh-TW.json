@@ -3037,6 +3037,8 @@
     "Lane disabled": "車道已停用",
     "Lane disabled · not callable": "車道已停用 · 不可呼叫",
     "This lane is disabled — the model is not callable. Save to enable it again.": "該車道已停用，模型目前不可呼叫；儲存後會重新啟用。",
-    "({{count}} unavailable)": "（{{count}} 個不可用）"
+    "({{count}} unavailable)": "（{{count}} 個不可用）",
+    "Degraded": "部分成員不可用",
+    "All members unavailable": "全部成員不可用"
   }
 }

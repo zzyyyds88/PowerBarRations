@@ -284,7 +284,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计渠道存在且启用的成员，供界面标注"含不可用"）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
+| GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计渠道存在且启用的成员，供界面标注"含不可用"）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（全部成员当前不可选时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
 | GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（声明了该模型但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序（故障切换）**：车道名 = 模型名，成员按数组顺序即优先级；模型管理页的"优先上游1 → 上游2"即写这里 |
 | POST | `/api/lanes/seed` | **一键固化所有未配车道的模型**（按渠道 id 升序生成 failover 成员链，成员 `upstream_model` 留空即用渠道映射）。**控制台不再暴露该入口**——路由页只手动手动增删成员与删除车道；端点保留供 AI/脚本使用（`?dry_run=true` 预览） |

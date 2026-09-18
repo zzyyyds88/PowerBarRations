@@ -43,6 +43,12 @@ export interface PBRModelSummary {
   member_count: number
   /** 当前真正可路由的成员数（渠道存在且启用）。 */
   available_member_count: number
+  /** explicit 车道：当前未冷却且熔断非 open 的成员数（运行态健康）。 */
+  healthy_member_count?: number
+  /** explicit 车道：参与健康统计的成员总数。 */
+  health_member_count?: number
+  /** explicit 车道：所有成员当前都不可选（全冷却/熔断）时为 true。 */
+  degraded?: boolean
 }
 
 /** GET /api/v1/routes/{model} 返回的成员。 */

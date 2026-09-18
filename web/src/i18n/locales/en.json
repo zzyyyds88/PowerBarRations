@@ -3037,6 +3037,8 @@
     "Lane disabled": "Lane disabled",
     "Lane disabled · not callable": "Lane disabled · not callable",
     "This lane is disabled — the model is not callable. Save to enable it again.": "This lane is disabled — the model is not callable. Save to enable it again.",
-    "({{count}} unavailable)": "({{count}} unavailable)"
+    "({{count}} unavailable)": "({{count}} unavailable)",
+    "Degraded": "Degraded",
+    "All members unavailable": "All members unavailable"
   }
 }

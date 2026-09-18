@@ -3037,6 +3037,8 @@
     "Lane disabled": "Làn đã tắt",
     "Lane disabled · not callable": "Làn đã tắt · không thể gọi",
     "This lane is disabled — the model is not callable. Save to enable it again.": "Làn này đã tắt nên model không thể gọi. Lưu để bật lại.",
-    "({{count}} unavailable)": "({{count}} không khả dụng)"
+    "({{count}} unavailable)": "({{count}} không khả dụng)",
+    "Degraded": "Một phần thành viên không khả dụng",
+    "All members unavailable": "Tất cả thành viên không khả dụng"
   }
 }

@@ -3037,6 +3037,8 @@
     "Lane disabled": "Voie désactivée",
     "Lane disabled · not callable": "Voie désactivée · non appelable",
     "This lane is disabled — the model is not callable. Save to enable it again.": "Cette voie est désactivée : le modèle n est pas appelable. Enregistrez pour la réactiver.",
-    "({{count}} unavailable)": "({{count}} indisponible(s))"
+    "({{count}} unavailable)": "({{count}} indisponible(s))",
+    "Degraded": "Partiellement dégradé",
+    "All members unavailable": "Tous les membres indisponibles"
   }
 }

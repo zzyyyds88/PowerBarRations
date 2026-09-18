@@ -3037,6 +3037,8 @@
     "Lane disabled": "レーン停止中",
     "Lane disabled · not callable": "レーン停止中・呼び出し不可",
     "This lane is disabled — the model is not callable. Save to enable it again.": "このレーンは停止中のため、モデルは呼び出せません。保存すると再度有効になります。",
-    "({{count}} unavailable)": "（{{count}} 件利用不可）"
+    "({{count}} unavailable)": "（{{count}} 件利用不可）",
+    "Degraded": "一部のメンバー利用不可",
+    "All members unavailable": "全メンバー利用不可"
   }
 }
