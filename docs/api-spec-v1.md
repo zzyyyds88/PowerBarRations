@@ -236,6 +236,75 @@
 | POST | `/api/channels/{name}/test` | 单渠道探活 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；若被移除的路由键正是某条车道的名字、且该车道有本渠道成员，则返回 409 并给出车道清单。`?force=1` 覆盖时**同样执行成员清理**（从命中车道移除本渠道成员，空车道删除），响应附带 `cleaned_lanes` / `deleted_lanes` |
 
+### 5.3.1 渠道批量运维
+
+这些是"完全运维"所必需、此前只在控制台基座路径可用的动作，现提升为稳定契约。
+**响应信封**：本节与 §5.3.2–§5.3.4 的运维端点沿用基座信封 `{success, message, data}`
+（与 §3 的核心端点信封不同，调用方按本节说明取字段）；错误仍为 §3 的错误包络。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/channels/batch/status` | 批量启用/停用：body `{ids:[int], status:1\|2}`；`data` 为变更数 |
+| POST | `/api/channels/batch/tag` | 批量设置标签：body `{ids:[int], tag:string\|null}` |
+| POST | `/api/channels/batch/copy` | 复制渠道：body `{id, name?}` 等覆盖字段 |
+| POST | `/api/channels/batch/fetch-models` | 拉取上游模型清单（不落库）：body `{base_url, key, type}` 或 `{id}` |
+| POST | `/api/channels/batch/repair` | 重建渠道路由索引（abilities）；`data` 为 `{success, fails}` |
+| PUT | `/api/channels/by-tag` | 按标签批量改配置（改 `models` 时同样受车道引用守卫） |
+| POST | `/api/channels/by-tag/status` | 按标签批量启停：body `{tag, status}` |
+| GET | `/api/channels/by-tag/models` | 按标签取模型清单：`?tag=` |
+| DELETE | `/api/channels/disabled` | 删除**全部已停用**渠道（被车道引用时整批拒绝） |
+| POST | `/api/channels/upstream-updates/detect-all` | 探测全部渠道的上游模型变更 |
+| POST | `/api/channels/upstream-updates/apply-all` | 应用全部渠道的上游模型变更 |
+| GET | `/api/channels/{name}/key` | 读取渠道上游密钥明文（运维排障） |
+| POST | `/api/channels/{name}/multi-keys` | 多密钥管理：body `{action, keys?}` |
+| POST | `/api/channels/{name}/upstream-updates/detect` | 探测该渠道的上游模型变更 |
+| POST | `/api/channels/{name}/upstream-updates/apply` | 应用该渠道的上游模型变更（车道引用守卫 + `force`） |
+| POST | `/api/channels/{name}/codex/refresh` | 刷新 Codex 凭据 |
+| GET | `/api/channels/{name}/codex/usage` | Codex 用量 |
+| GET | `/api/channels/{name}/codex/reset-credits` | Codex 限额重置额度 |
+| POST | `/api/channels/{name}/codex/reset` | 重置 Codex 用量 |
+| POST | `/api/channels/{name}/ollama/pull` | Ollama 拉取模型（非流式） |
+| POST | `/api/channels/{name}/ollama/pull/stream` | Ollama 拉取模型（SSE 进度） |
+| DELETE | `/api/channels/{name}/ollama/models` | Ollama 删除模型 |
+| GET | `/api/channels/{name}/ollama/version` | Ollama 版本 |
+
+### 5.3.2 系统选项、任务与性能
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维） |
+| PUT | `/api/system/options/all` | 更新完整系统选项：body 为 `{key: value}` 子集 |
+| GET | `/api/system/affinity-cache` | 渠道亲和缓存统计 |
+| DELETE | `/api/system/affinity-cache` | 清除渠道亲和缓存 |
+| GET | `/api/system-tasks` | 系统任务列表（cursor 分页） |
+| GET | `/api/system-tasks/current` | 当前运行中的任务 |
+| GET | `/api/system-tasks/{id}` | 单任务详情 |
+| POST | `/api/system-tasks/log-cleanup` | 创建"清理日志文件"任务 |
+| GET | `/api/system/performance` | 性能统计 |
+| POST | `/api/system/performance/reset` | 重置性能统计 |
+| POST | `/api/system/performance/gc` | 强制 GC |
+| DELETE | `/api/system/performance/disk-cache` | 清除磁盘缓存 |
+| GET | `/api/system/log-files` | 日志文件列表 |
+| DELETE | `/api/system/log-files` | 清理日志文件 |
+
+### 5.3.3 预填组
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/prefill-groups` | 列表 |
+| POST | `/api/prefill-groups` | 创建 |
+| PUT | `/api/prefill-groups/{id}` | 更新 |
+| DELETE | `/api/prefill-groups/{id}` | 删除 |
+
+### 5.3.4 模型目录运维
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/model-catalog/sync-upstream/preview` | 预览上游同步的模型变更（不落库） |
+| POST | `/api/model-catalog/sync-upstream` | 应用上游同步 |
+| GET | `/api/model-catalog/missing` | "渠道声明但无目录记录"的模型 |
+| POST | `/api/model-catalog/batch-delete` | 批量删除目录记录：body `{model_ids, remove_from_channels?, remove_pricing?}` |
+
 ### 5.4 客户端密钥
 
 | 方法 | 路径 | 说明 |
@@ -674,16 +743,16 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 §5 是本契约的全部稳定端点。控制台前端另有一批 new-api 基座接口：它们同样用 PBR 管理密钥
 （`Authorization: Bearer <管理密钥>`）鉴权，**可以调用、但随控制台实现变动，不属于稳定契约**。
 
-| 能力 | 控制台内部前缀 |
+| 能力 | 仍属控制台内部（非稳定契约） |
 |---|---|
-| 模型目录元数据的**只读/写入稳定面**已提升为 `/api/model-metadata`（§5.7）；上游批量同步、缺失模型检测等批量运维动作仍在 `/api/console/models/**` |
+| 仪表盘/状态聚合视图 | `/api/status`、`/api/console/models`（展示聚合） |
 | 变更审计（控制台视图） | `/api/console/audit` |
-| 渠道基座视图（测试、多密钥、标签等） | `/api/channel/**` |
-| 渠道上游协议选择（`other_settings.protocol` = `openai-chat` \| `openai-responses` \| `anthropic` \| `gemini`，见 ui-spec §6.4） | `/api/channel/**`（随控制台实现变动，不属稳定契约） |
-| 完整系统选项（站点/内容/运维等，非路由六键） | `/api/option/**` |
-| 预填组 | `/api/prefill_group/**`（厂商 `/api/vendors/**` 与 io.net 部署 `/api/deployments/**` **已物理删除**：本项目按渠道直连上游，不需要厂商元数据与容器部署） |
-| 管理员日志 | `/api/log/**` |
-| 系统任务 / 性能 | `/api/system-task/**`、`/api/performance/**`、`/api/perf-metrics/**` |
+| 基座兼容别名（与 §5.3.1 稳定端点等价，参数/响应随控制台变动） | `/api/channel/**` |
+| 内部性能明细 | `/api/perf-metrics/**` |
+
+> **已提升为稳定契约**（原属本表，现见 §5）：渠道批量启停/标签/复制/上游同步、Codex 与 Ollama
+> 渠道专用动作（§5.3.1）；完整系统选项、系统任务、性能与日志文件、亲和缓存（§5.3.2）；
+> 预填组（§5.3.3）；模型目录同步与缺失检测（§5.3.4）。
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、
 导出导入、TLS、审计）都在稳定契约 `/api` 内。
@@ -696,7 +765,10 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 `DELETE /api/model-metadata/{model}`（§5.7）。**车道顺序摘要**新增 `GET /api/lane-summaries`（§5.7），
 使路由页无需受 `GET /api/lanes` 的 cursor 上限影响。
 
-其余"控制台运维面"（批量同步上游、缺失模型检测、渠道基座视图、完整系统选项、预填组、
-管理员日志、系统任务/性能）仍以同一管理密钥在 `/api/console/**` 及上述基座路径可用，**可用但非稳定契约**。
-要把某一项提升为稳定契约，先在 §5 补端点再实现。
+**运维闭环已完整**：§5 的稳定端点覆盖渠道（含批量与上游同步）、车道、客户端密钥、
+请求日志与统计、系统选项（含完整选项）、系统任务、性能与日志文件、预填组、模型目录、
+导出导入与 webhook，AI/脚本无需触碰控制台内部路径即可完成全部日常运维。
+
+上表剩余项属控制台展示层与基座兼容别名，随控制台实现变动；要把某一项提升为稳定契约，
+先在 §5 补端点再实现。
 
