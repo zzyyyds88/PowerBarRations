@@ -876,6 +876,9 @@ func openAPIPaths() gin.H {
 		"/lanes/seed": gin.H{
 			"post": secured("post", "为未配车道的模型按渠道 id 升序一键生成 failover 车道（幂等）", []gin.H{dryRunParam})["post"],
 		},
+		"/lanes/cleanup-members": gin.H{
+			"post": secured("post", "清理渠道已不存在的悬空车道成员（成员清空的车道整条删除）", []gin.H{dryRunParam})["post"],
+		},
 		"/lanes/{name}": gin.H{
 			"get":    secured("get", "车道详情", pathParam("name"))["get"],
 			"put":    secured("put", "车道全量 upsert", append(pathParam("name"), dryRunParam))["put"],

@@ -3039,6 +3039,12 @@
     "This lane is disabled — the model is not callable. Save to enable it again.": "Cette voie est désactivée : le modèle n est pas appelable. Enregistrez pour la réactiver.",
     "({{count}} unavailable)": "({{count}} indisponible(s))",
     "Degraded": "Partiellement dégradé",
-    "All members unavailable": "Tous les membres indisponibles"
+    "All members unavailable": "Tous les membres indisponibles",
+    "Clean up orphan members": "Nettoyer les membres orphelins",
+    "Clean up orphan members?": "Nettoyer les membres orphelins ?",
+    "Clean up": "Nettoyer",
+    "{{count}} lane(s) have members whose channel no longer exists.": "{{count}} voie(s) ont des membres dont le canal n existe plus.",
+    "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "Les membres dont le canal n existe plus sont retirés de leurs voies ; les voies sans membre sont supprimées. Ces modèles ne sont plus appelables.",
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "{{cleaned}} voie(s) nettoyée(s) ; {{deleted}} voie(s) vide(s) supprimée(s)."
   }
 }

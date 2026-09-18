@@ -186,6 +186,8 @@ type Lane struct {
 	CreatedAt    int64        `json:"created_at" gorm:"bigint"`
 	UpdatedAt    int64        `json:"updated_at" gorm:"bigint"`
 	Members      []LaneMember `json:"members,omitempty" gorm:"foreignKey:LaneId;constraint:OnDelete:CASCADE"`
+	// OrphanMemberCount 是成员里渠道已不存在（悬空）的数量；仅列表展示用，不落库。
+	OrphanMemberCount int `json:"-" gorm:"-"`
 }
 
 // LaneMember 车道成员：渠道 + 上游真名。
@@ -450,6 +452,72 @@ func CleanupLanesForRemovedModels(channelId int, removed []string) (cleaned, del
 			cleaned = append(cleaned, name)
 		}
 	}
+	return cleaned, deleted, nil
+}
+
+// CleanupOrphanLaneMembers 清理"渠道已不存在"的悬空车道成员（历史数据修复入口）。
+// 悬空成员指向已删除的渠道，请求打到它只会失败；成员清空的车道整条删除。
+// 返回被清理成员所在的车道名与被删除的车道名（均去重、升序）。
+func CleanupOrphanLaneMembers() (cleaned []string, deleted []string, err error) {
+	var memberChannelIDs []int
+	if err := DB.Model(&LaneMember{}).Distinct().Pluck("channel_id", &memberChannelIDs).Error; err != nil {
+		return nil, nil, err
+	}
+	var existingIDs []int
+	if len(memberChannelIDs) > 0 {
+		if err := DB.Model(&Channel{}).Where("id IN ?", memberChannelIDs).Pluck("id", &existingIDs).Error; err != nil {
+			return nil, nil, err
+		}
+	}
+	existing := map[int]bool{}
+	for _, id := range existingIDs {
+		existing[id] = true
+	}
+	orphanIDs := make([]int, 0)
+	for _, id := range memberChannelIDs {
+		if !existing[id] {
+			orphanIDs = append(orphanIDs, id)
+		}
+	}
+	if len(orphanIDs) == 0 {
+		return nil, nil, nil
+	}
+	var members []LaneMember
+	if err := DB.Where("channel_id IN ?", orphanIDs).Find(&members).Error; err != nil {
+		return nil, nil, err
+	}
+	laneIDs := make([]int, 0, len(members))
+	for _, m := range members {
+		laneIDs = append(laneIDs, m.LaneId)
+	}
+	if err := DB.Where("channel_id IN ?", orphanIDs).Delete(&LaneMember{}).Error; err != nil {
+		return nil, nil, err
+	}
+	seenLane := map[int]bool{}
+	for _, id := range laneIDs {
+		if seenLane[id] {
+			continue
+		}
+		seenLane[id] = true
+		var lane Lane
+		if getErr := DB.First(&lane, id).Error; getErr != nil {
+			continue
+		}
+		var remaining int64
+		if countErr := DB.Model(&LaneMember{}).Where("lane_id = ?", id).Count(&remaining).Error; countErr != nil {
+			return cleaned, deleted, countErr
+		}
+		if remaining == 0 {
+			if delErr := DeleteLaneByName(lane.Name); delErr != nil {
+				return cleaned, deleted, delErr
+			}
+			deleted = append(deleted, lane.Name)
+		} else {
+			cleaned = append(cleaned, lane.Name)
+		}
+	}
+	sort.Strings(cleaned)
+	sort.Strings(deleted)
 	return cleaned, deleted, nil
 }
 

@@ -38,10 +38,15 @@ type lanePayload struct {
 
 func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 	members := make([]gin.H, 0, len(lane.Members))
+	orphans := 0
 	for _, m := range lane.Members {
 		channelName := ""
 		if ch, err := model.GetChannelById(m.ChannelId, false); err == nil && ch != nil {
 			channelName = ch.Name
+		} else {
+			// 渠道已不存在：悬空成员，请求打到它只会失败（清理入口见
+			// POST /api/v1/lanes/members/cleanup）。
+			orphans++
 		}
 		item := gin.H{
 			"channel":        channelName,
@@ -49,21 +54,63 @@ func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 			"public_alias":   m.PublicAlias,
 			"priority":       m.Priority,
 		}
+		if channelName == "" {
+			item["orphan"] = true
+		}
 		if overrides := jsonObject(m.Overrides); overrides != nil {
 			item["overrides"] = overrides
 		}
 		members = append(members, item)
 	}
 	return gin.H{
-		"name":          lane.Name,
-		"enabled":       lane.Enabled,
-		"mode":          lane.Mode,
-		"active_member": lane.ActiveMember,
-		"config":        model.ParseLaneRelayConfig(lane.Config),
-		"members":       members,
-		"created_at":    rfc3339(lane.CreatedAt),
-		"updated_at":    rfc3339(lane.UpdatedAt),
+		"name":                lane.Name,
+		"enabled":             lane.Enabled,
+		"mode":                lane.Mode,
+		"active_member":       lane.ActiveMember,
+		"config":              model.ParseLaneRelayConfig(lane.Config),
+		"members":             members,
+		"orphan_member_count": orphans,
+		"created_at":          rfc3339(lane.CreatedAt),
+		"updated_at":          rfc3339(lane.UpdatedAt),
 	}
+}
+
+// CleanupLaneMembers POST /api/v1/lanes/members/cleanup
+//
+// 清理"渠道已不存在"的悬空车道成员（历史数据修复入口）：导入配置时缺渠道会 422、
+// 删渠道现在也有守卫，但库里已经存在的悬空成员此前没有任何界面/接口可清理。
+// 成员清空的车道整条删除。`?dry_run=true` 只返回将被清理的车道名。
+func CleanupLaneMembers(c *gin.Context) {
+	if dryRun(c) {
+		lanes, err := model.ListLanes()
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		affected := make([]string, 0)
+		for _, lane := range lanes {
+			for _, m := range lane.Members {
+				if _, chErr := model.GetChannelById(m.ChannelId, false); chErr != nil {
+					affected = append(affected, lane.Name)
+					break
+				}
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"dry_run": true, "lanes": affected})
+		return
+	}
+	cleaned, deleted, err := model.CleanupOrphanLaneMembers()
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	for _, name := range deleted {
+		route.Default.Remove(name)
+	}
+	if len(cleaned) > 0 || len(deleted) > 0 {
+		writeAudit(c, "cleanup-members", "lane", "", gin.H{"cleaned": cleaned, "deleted": deleted})
+	}
+	c.JSON(http.StatusOK, gin.H{"cleaned_lanes": cleaned, "deleted_lanes": deleted})
 }
 
 // ListLanes GET /api/v1/lanes

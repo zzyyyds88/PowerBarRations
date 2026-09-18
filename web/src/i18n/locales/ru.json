@@ -3039,6 +3039,12 @@
     "This lane is disabled — the model is not callable. Save to enable it again.": "Эта полоса отключена, модель недоступна. Сохраните, чтобы снова включить её.",
     "({{count}} unavailable)": "({{count}} недоступно)",
     "Degraded": "Часть участников недоступна",
-    "All members unavailable": "Все участники недоступны"
+    "All members unavailable": "Все участники недоступны",
+    "Clean up orphan members": "Очистить потерянные участники",
+    "Clean up orphan members?": "Очистить потерянные участники?",
+    "Clean up": "Очистить",
+    "{{count}} lane(s) have members whose channel no longer exists.": "В {{count}} полосах есть участники, чей канал больше не существует.",
+    "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "Участники, чей канал больше не существует, удаляются из полос; полосы без участников удаляются. Эти модели станут недоступны.",
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Очищено полос: {{cleaned}}; удалено пустых полос: {{deleted}}."
   }
 }

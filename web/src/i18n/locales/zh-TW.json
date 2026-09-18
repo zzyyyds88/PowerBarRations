@@ -3039,6 +3039,12 @@
     "This lane is disabled — the model is not callable. Save to enable it again.": "該車道已停用，模型目前不可呼叫；儲存後會重新啟用。",
     "({{count}} unavailable)": "（{{count}} 個不可用）",
     "Degraded": "部分成員不可用",
-    "All members unavailable": "全部成員不可用"
+    "All members unavailable": "全部成員不可用",
+    "Clean up orphan members": "清理懸空成員",
+    "Clean up orphan members?": "清理懸空成員？",
+    "Clean up": "清理",
+    "{{count}} lane(s) have members whose channel no longer exists.": "有 {{count}} 條車道的成員指向已不存在的渠道。",
+    "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "渠道已不存在的成員會從車道移除；成員清空的車道會被刪除，這些模型將不再可呼叫。",
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "已清理 {{cleaned}} 條車道；刪除 {{deleted}} 條空車道。"
   }
 }

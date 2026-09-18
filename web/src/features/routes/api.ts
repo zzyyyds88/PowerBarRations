@@ -94,6 +94,23 @@ export async function listPBRModels(): Promise<PBRModelSummary[]> {
 export interface PBRLaneSummary {
   name: string
   members: { channel: string; upstream_model: string }[]
+  /** 渠道已不存在的悬空成员数（历史数据；可用「清理悬空成员」修复）。 */
+  orphan_member_count: number
+}
+
+/** 清理渠道已不存在的悬空车道成员；成员清空的车道整条删除。 */
+export async function cleanupPBROrphanMembers(): Promise<{
+  cleaned_lanes: string[]
+  deleted_lanes: string[]
+}> {
+  const res = await api.post<{
+    cleaned_lanes?: string[]
+    deleted_lanes?: string[]
+  }>('/api/v1/lanes/cleanup-members')
+  return {
+    cleaned_lanes: res.data.cleaned_lanes ?? [],
+    deleted_lanes: res.data.deleted_lanes ?? [],
+  }
 }
 
 /**
@@ -106,12 +123,14 @@ export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
   const res = await api.get<{
     items?: {
       name: string
+      orphan_member_count?: number
       members?: { channel: string; upstream_model: string }[]
     }[]
     next_cursor: unknown
   }>('/api/v1/lanes', { params: { limit: 200 } })
   return (res.data.items ?? []).map((lane) => ({
     name: lane.name,
+    orphan_member_count: lane.orphan_member_count ?? 0,
     members: (lane.members ?? []).map((m) => ({
       channel: m.channel,
       upstream_model: m.upstream_model,

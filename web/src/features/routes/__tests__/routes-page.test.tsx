@@ -311,4 +311,48 @@ describe('路由与故障切换页', () => {
     expect(await screen.findByText('All members unavailable')).toBeVisible()
     expect(screen.queryByText('Callable')).not.toBeInTheDocument()
   })
+
+  // 存在悬空成员（渠道已删）时给出清理入口与受影响车道清单。
+  test('悬空成员给出清理入口', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 1,
+                available_member_count: 0,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lanes') {
+        return {
+          data: {
+            items: [
+              {
+                name: 'model-1',
+                orphan_member_count: 1,
+                members: [{ channel: '', upstream_model: 'model-1' }],
+              },
+            ],
+          },
+        } as never
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(await screen.findByText('Clean up orphan members')).toBeVisible()
+    await user.click(
+      screen.getByRole('button', { name: 'Clean up orphan members' })
+    )
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText(/model-1/)).toBeVisible()
+  })
 })

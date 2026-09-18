@@ -3039,6 +3039,12 @@
     "This lane is disabled — the model is not callable. Save to enable it again.": "This lane is disabled — the model is not callable. Save to enable it again.",
     "({{count}} unavailable)": "({{count}} unavailable)",
     "Degraded": "Degraded",
-    "All members unavailable": "All members unavailable"
+    "All members unavailable": "All members unavailable",
+    "Clean up orphan members": "Clean up orphan members",
+    "Clean up orphan members?": "Clean up orphan members?",
+    "Clean up": "Clean up",
+    "{{count}} lane(s) have members whose channel no longer exists.": "{{count}} lane(s) have members whose channel no longer exists.",
+    "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.",
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s)."
   }
 }

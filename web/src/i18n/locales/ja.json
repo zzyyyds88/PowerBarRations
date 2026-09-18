@@ -3039,6 +3039,12 @@
     "This lane is disabled — the model is not callable. Save to enable it again.": "このレーンは停止中のため、モデルは呼び出せません。保存すると再度有効になります。",
     "({{count}} unavailable)": "（{{count}} 件利用不可）",
     "Degraded": "一部のメンバー利用不可",
-    "All members unavailable": "全メンバー利用不可"
+    "All members unavailable": "全メンバー利用不可",
+    "Clean up orphan members": "孤立メンバーを整理",
+    "Clean up orphan members?": "孤立メンバーを整理しますか？",
+    "Clean up": "整理",
+    "{{count}} lane(s) have members whose channel no longer exists.": "{{count}} 件のレーンに、存在しないチャネルを指すメンバーがあります。",
+    "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "存在しないチャネルを指すメンバーはレーンから削除され、メンバーが無くなったレーンは削除されます。これらのモデルは呼び出せなくなります。",
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "{{cleaned}} 件のレーンを整理し、{{deleted}} 件の空レーンを削除しました。"
   }
 }

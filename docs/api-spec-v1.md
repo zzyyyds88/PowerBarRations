@@ -219,6 +219,7 @@
 | GET | `/api/lanes/{name}` | 详情（含成员） |
 | PUT | `/api/lanes/{name}` | 全量 upsert（含成员，按数组顺序即优先级） |
 | POST | `/api/lanes/seed` | **一键固化**：为所有"渠道已声明但无车道"的模型生成 failover 车道，初始顺序按渠道 id 升序（幂等；`?dry_run=true` 只返回将创建的车道名） |
+| POST | `/api/lanes/cleanup-members` | **清理悬空成员**：移除"渠道已不存在"的车道成员（历史数据修复入口），成员清空的车道整条删除；`?dry_run=true` 只返回受影响车道名 |
 | DELETE | `/api/lanes/{name}` | 删除 |
 | PUT | `/api/lanes/{name}/members` | 仅替换成员列表（有序全量） |
 | POST | `/api/lanes/{name}/probe` | 逐成员探活 |
