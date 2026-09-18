@@ -85,8 +85,6 @@ function buildSearchSourceKey(values: {
   channel?: unknown
   model?: unknown
   token?: unknown
-  group?: unknown
-  username?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
   type?: unknown
@@ -97,8 +95,6 @@ function buildSearchSourceKey(values: {
     values.channel,
     values.model,
     values.token,
-    values.group,
-    values.username,
     values.requestId,
     values.upstreamRequestId,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
@@ -130,8 +126,6 @@ export function CommonLogsFilterBar<TData>(
       channel: searchParams.channel,
       model: searchParams.model,
       token: searchParams.token,
-      group: searchParams.group,
-      username: searchParams.username,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
       type: searchParams.type,
@@ -144,8 +138,6 @@ export function CommonLogsFilterBar<TData>(
       channel: searchParams.channel || undefined,
       model: searchParams.model || undefined,
       token: searchParams.token || undefined,
-      group: searchParams.group || undefined,
-      username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
     }
@@ -160,8 +152,6 @@ export function CommonLogsFilterBar<TData>(
     searchParams.channel,
     searchParams.model,
     searchParams.token,
-    searchParams.group,
-    searchParams.username,
     searchParams.requestId,
     searchParams.upstreamRequestId,
     searchParams.type,
@@ -240,7 +230,6 @@ export function CommonLogsFilterBar<TData>(
 
   const hasExpandedFilters =
     !!filters.token ||
-    !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
     !!filters.upstreamRequestId
@@ -251,7 +240,6 @@ export function CommonLogsFilterBar<TData>(
 
   const expandedFilterCount = [
     filters.token,
-    isAdmin ? filters.username : undefined,
     isAdmin ? filters.channel : undefined,
     filters.requestId,
     filters.upstreamRequestId,
@@ -393,6 +381,7 @@ export function CommonLogsFilterBar<TData>(
       </Select>
     </LogsFilterField>
   )
+  // PBR 单用户：没有用户/分组过滤；只保留令牌/渠道/请求 ID 等排障维度。
   const advancedFilters = (
     <>
       <LogsFilterField>
@@ -404,17 +393,6 @@ export function CommonLogsFilterBar<TData>(
           onKeyDown={handleKeyDown}
         />
       </LogsFilterField>
-      {isAdmin && (
-        <LogsFilterField>
-          <LogsFilterInput
-            placeholder={t('Username')}
-            className={sensitiveInputClass}
-            value={filters.username || ''}
-            onChange={(e) => handleChange('username', e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-        </LogsFilterField>
-      )}
       {isAdmin && (
         <LogsFilterField>
           <LogsFilterInput

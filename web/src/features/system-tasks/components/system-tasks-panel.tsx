@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { ListChecks, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Dialog } from '@/components/dialog'
 import { ErrorState } from '@/components/error-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -85,8 +87,6 @@ const TYPE_LABEL: Record<string, string> = {
   async_task_poll: 'Async task polling',
 }
 
-const TYPE_DISPLAY_ID: Record<string, string> = {}
-
 function isActiveStatus(status: SystemTaskStatus) {
   return status === 'pending' || status === 'running'
 }
@@ -97,107 +97,223 @@ function getProgress(task: SystemTask): number | null {
   return Math.min(100, Math.max(0, progress))
 }
 
+/** Pretty-print a structured task field for the details dialog. */
+function formatTaskValue(value: unknown): string | null {
+  if (value === undefined || value === null) return null
+  if (typeof value === 'string') return value.trim() === '' ? null : value
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function TaskJsonBlock(props: { label: string; value: unknown }) {
+  const text = formatTaskValue(props.value)
+  if (text === null) return null
+  return (
+    <section className='min-w-0 space-y-1.5'>
+      <h4 className='text-xs font-semibold'>{props.label}</h4>
+      <pre className='bg-muted/40 max-h-64 min-w-0 overflow-auto rounded-md border p-2.5 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap'>
+        {text}
+      </pre>
+    </section>
+  )
+}
+
+function TaskDetailsDialog(props: {
+  task: SystemTask
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const task = props.task
+  const progress = getProgress(task)
+  const rows: Array<{ label: string; value: string; mono?: boolean }> = [
+    { label: t('Task ID'), value: task.task_id, mono: true },
+    { label: t('Type'), value: t(TYPE_LABEL[task.type] ?? task.type) },
+    { label: t('Status'), value: t(task.status) },
+    { label: t('Progress'), value: progress === null ? '-' : `${progress}%` },
+    {
+      label: t('Created'),
+      value: formatTimestampToDate(task.created_at),
+      mono: true,
+    },
+    {
+      label: t('Updated'),
+      value: formatTimestampToDate(task.updated_at),
+      mono: true,
+    },
+  ]
+  if (task.locked_by) {
+    rows.push({ label: t('Executor'), value: task.locked_by, mono: true })
+  }
+
+  return (
+    <Dialog
+      size='lg'
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      title={t('Task Details')}
+      description={t('View the complete details for this task')}
+    >
+      <div className='min-w-0 space-y-3'>
+        <dl className='grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2'>
+          {rows.map((row) => (
+            <div key={row.label} className='flex min-w-0 flex-col'>
+              <dt className='text-muted-foreground text-xs'>{row.label}</dt>
+              <dd
+                className={cn(
+                  'min-w-0 text-xs break-all',
+                  row.mono && 'font-mono'
+                )}
+              >
+                {row.value || '-'}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {task.error && (
+          <section className='min-w-0 space-y-1.5'>
+            <h4 className='text-destructive text-xs font-semibold'>
+              {t('Error')}
+            </h4>
+            <pre className='bg-destructive/5 border-destructive/30 text-destructive max-h-48 min-w-0 overflow-auto rounded-md border p-2.5 font-mono text-[11px] leading-relaxed break-all whitespace-pre-wrap'>
+              {task.error}
+            </pre>
+          </section>
+        )}
+        <TaskJsonBlock label={t('Payload')} value={task.payload} />
+        <TaskJsonBlock label={t('State')} value={task.state} />
+        <TaskJsonBlock label={t('Result')} value={task.result} />
+      </div>
+    </Dialog>
+  )
+}
+
 type SystemTasksTableProps = {
   tasks: SystemTask[]
 }
 
 function SystemTasksTable(props: SystemTasksTableProps) {
   const { t, i18n } = useTranslation()
+  const [selectedTask, setSelectedTask] = useState<SystemTask | null>(null)
 
   return (
-    <div className='overflow-x-auto rounded-md border'>
-      <Table className='min-w-[900px]'>
-        <TableHeader>
-          <TableRow className='bg-muted/40 hover:bg-muted/40'>
-            <TableHead className='h-9 w-[260px] px-4 text-xs'>
-              {t('Type')}
-            </TableHead>
-            <TableHead className='h-9 w-[130px] text-xs'>
-              {t('Status')}
-            </TableHead>
-            <TableHead className='h-9 w-[180px] text-xs'>
-              {t('Progress')}
-            </TableHead>
-            <TableHead className='h-9 min-w-[260px] text-xs'>
-              {t('Executor')}
-            </TableHead>
-            <TableHead className='h-9 w-[190px] text-xs'>
-              {t('Updated')}
-            </TableHead>
-            <TableHead className='h-9 w-[220px] pr-4 text-xs'>
-              {t('Detail')}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {props.tasks.map((task) => {
-            const progress = getProgress(task)
-            return (
-              <TableRow key={task.task_id} className='hover:bg-muted/30'>
-                <TableCell className='px-4 py-3 align-middle'>
-                  <div className='space-y-0.5'>
-                    <div className='font-medium'>
-                      {t(TYPE_LABEL[task.type] ?? task.type)}
+    <>
+      <div className='overflow-x-auto rounded-md border'>
+        <Table className='min-w-[900px]'>
+          <TableHeader>
+            <TableRow className='bg-muted/40 hover:bg-muted/40'>
+              <TableHead className='h-9 w-[240px] px-4 text-xs'>
+                {t('Type')}
+              </TableHead>
+              <TableHead className='h-9 w-[130px] text-xs'>
+                {t('Status')}
+              </TableHead>
+              <TableHead className='h-9 w-[170px] text-xs'>
+                {t('Progress')}
+              </TableHead>
+              <TableHead className='h-9 w-[190px] text-xs'>
+                {t('Created')}
+              </TableHead>
+              <TableHead className='h-9 w-[190px] text-xs'>
+                {t('Updated')}
+              </TableHead>
+              <TableHead className='h-9 w-[140px] pr-4 text-xs'>
+                {t('Details')}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {props.tasks.map((task) => {
+              const progress = getProgress(task)
+              return (
+                <TableRow key={task.task_id} className='hover:bg-muted/30'>
+                  <TableCell className='px-4 py-3 align-middle'>
+                    <div className='space-y-0.5'>
+                      <div className='font-medium'>
+                        {t(TYPE_LABEL[task.type] ?? task.type)}
+                      </div>
+                      <div className='text-muted-foreground font-mono text-[11px]'>
+                        {task.type}
+                      </div>
                     </div>
-                    <div className='text-muted-foreground font-mono text-[11px]'>
-                      {TYPE_DISPLAY_ID[task.type] ?? task.type}
+                  </TableCell>
+                  <TableCell className='py-3 align-middle'>
+                    <Badge
+                      variant={STATUS_VARIANT[task.status]}
+                      className={cn('gap-1.5', STATUS_CLASS_NAME[task.status])}
+                    >
+                      <span
+                        className={cn(
+                          'size-1.5 rounded-full',
+                          STATUS_DOT_CLASS_NAME[task.status]
+                        )}
+                        aria-hidden='true'
+                      />
+                      {t(task.status)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className='py-3 align-middle'>
+                    <div className='flex items-center gap-2'>
+                      <Progress
+                        value={progress ?? 0}
+                        className={cn(
+                          'w-24',
+                          PROGRESS_BAR_CLASS_NAME[task.status]
+                        )}
+                      />
+                      <span className='text-muted-foreground w-10 text-right text-xs tabular-nums'>
+                        {progress === null ? '-' : `${progress}%`}
+                      </span>
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell className='py-3 align-middle'>
-                  <Badge
-                    variant={STATUS_VARIANT[task.status]}
-                    className={cn('gap-1.5', STATUS_CLASS_NAME[task.status])}
+                  </TableCell>
+                  <TableCell
+                    className='text-muted-foreground py-3 align-middle text-xs whitespace-nowrap'
+                    title={formatTimestampToDate(task.created_at)}
                   >
-                    <span
-                      className={cn(
-                        'size-1.5 rounded-full',
-                        STATUS_DOT_CLASS_NAME[task.status]
-                      )}
-                      aria-hidden='true'
-                    />
-                    {t(task.status)}
-                  </Badge>
-                </TableCell>
-                <TableCell className='py-3 align-middle'>
-                  <div className='flex items-center gap-2'>
-                    <Progress
-                      value={progress ?? 0}
-                      className={cn(
-                        'w-24',
-                        PROGRESS_BAR_CLASS_NAME[task.status]
-                      )}
-                    />
-                    <span className='text-muted-foreground w-10 text-right text-xs tabular-nums'>
-                      {progress === null ? '-' : `${progress}%`}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className='text-muted-foreground max-w-[280px] truncate py-3 align-middle font-mono text-xs'>
-                  {task.locked_by || '-'}
-                </TableCell>
-                <TableCell
-                  className='text-muted-foreground py-3 align-middle text-xs whitespace-nowrap'
-                  title={formatTimestampToDate(task.updated_at)}
-                >
-                  {formatTimestampRelative(
-                    task.updated_at,
-                    'seconds',
-                    toIntlLocale(i18n.language)
-                  )}
-                </TableCell>
-                <TableCell
-                  className='text-destructive max-w-[220px] truncate py-3 pr-4 align-middle text-xs'
-                  title={task.error || undefined}
-                >
-                  {task.error || '-'}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
-    </div>
+                    {formatTimestampToDate(task.created_at)}
+                  </TableCell>
+                  <TableCell
+                    className='text-muted-foreground py-3 align-middle text-xs whitespace-nowrap'
+                    title={formatTimestampToDate(task.updated_at)}
+                  >
+                    {formatTimestampRelative(
+                      task.updated_at,
+                      'seconds',
+                      toIntlLocale(i18n.language)
+                    )}
+                  </TableCell>
+                  <TableCell className='py-3 pr-4 align-middle'>
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
+                      onClick={() => setSelectedTask(task)}
+                    >
+                      {t('View details')}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+      {selectedTask && (
+        <TaskDetailsDialog
+          task={selectedTask}
+          open
+          onOpenChange={(open) => {
+            if (!open) setSelectedTask(null)
+          }}
+        />
+      )}
+    </>
   )
 }
 

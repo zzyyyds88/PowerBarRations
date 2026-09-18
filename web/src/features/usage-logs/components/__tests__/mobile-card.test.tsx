@@ -156,7 +156,7 @@ it('respects hidden columns and omits admin fields in the self view', () => {
   })
   expect(
     screen.queryByRole('button', {
-      name: /Channel:|User:|Token:|Group:|Model:/,
+      name: /Channel:|Token:|Group:|Model:/,
     })
   ).not.toBeInTheDocument()
   expect(screen.queryByText('enterprise-production')).not.toBeInTheDocument()
@@ -206,11 +206,13 @@ it.each([false, true])(
   }
 )
 
-it('retains the user avatar and model badge in the mobile summary', () => {
+it('retains the model badge and omits the removed user field in the mobile summary', () => {
   renderLogs()
-  expect(screen.getByText('P')).toBeVisible()
   const modelButton = screen.getByRole('button', { name: `Model: ${longName}` })
   expect(modelButton.querySelector('[data-slot="status-badge"]')).not.toBeNull()
+  expect(
+    screen.queryByRole('button', { name: /User:/ })
+  ).not.toBeInTheDocument()
 })
 
 it('shows mapped model names in full when inspecting a mobile model badge', async () => {
