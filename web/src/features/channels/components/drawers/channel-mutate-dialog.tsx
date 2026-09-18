@@ -238,7 +238,6 @@ const SENSITIVE_FORM_FIELDS = [
   'type',
   'base_url',
   'key',
-  'openai_organization',
   'other',
   'key_mode',
   'param_override',
@@ -845,24 +844,6 @@ export function ChannelMutateDialog({
       })
     }
   }, [form, isEditing, multiKeyMode, supportsMultiKeyAddMode])
-
-  // Validate base_url - warn if it ends with /v1
-  useEffect(() => {
-    if (!currentBaseUrl || !currentBaseUrl.endsWith('/v1')) return
-
-    // Show warning toast
-    const timer = setTimeout(() => {
-      toast.warning(
-        t(
-          'Warning: Base URL should not end with /v1. The gateway will normalize it automatically. This may cause request failures.'
-        ),
-        { duration: 5000 }
-      )
-    }, 500)
-
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentBaseUrl])
 
   // Handle key deduplication
   const handleDeduplicateKeys = () => {
@@ -2161,29 +2142,6 @@ export function ChannelMutateDialog({
               </FormItem>
             )}
           />
-        )}
-
-        {currentType === 1 && (
-          <fieldset disabled={sensitiveLocked} className='disabled:opacity-60'>
-            <FormField
-              control={form.control}
-              name='openai_organization'
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t('OpenAI Organization')}</FormLabel>
-                  <FormControl>
-                    <Input placeholder={t('org-...')} {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    {sensitiveLocked
-                      ? t('No permission to perform this action')
-                      : t(FIELD_DESCRIPTIONS.OPENAI_ORG)}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </fieldset>
         )}
       </ChannelBasicSection>
     </div>

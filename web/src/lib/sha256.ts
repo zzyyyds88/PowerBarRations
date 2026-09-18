@@ -105,7 +105,7 @@ export function sha256Bytes(message: Uint8Array): Uint8Array {
 }
 
 export function sha256Hex(message: Uint8Array): string {
-  return Array.from(sha256Bytes(message))
+  return [...sha256Bytes(message)]
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('')
 }

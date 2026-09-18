@@ -518,7 +518,6 @@ export const FIELD_DESCRIPTIONS = {
   HEADER_OVERRIDE: 'Override request headers (JSON format)',
   MULTI_KEY_MODE: 'How to select keys: random or sequential polling',
   BATCH_ADD: 'Create multiple channels from multiple keys',
-  OPENAI_ORG: 'OpenAI Organization ID (optional)',
 } as const
 
 // ============================================================================
