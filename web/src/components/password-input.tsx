@@ -31,6 +31,16 @@ type PasswordInputProps = Omit<
   ref?: React.Ref<HTMLInputElement>
 }
 
+// 触屏浏览器（安卓 Chrome 等）会在 type=password 输入框内画原生眼睛，
+// 与本组件的切换按钮叠成两只且无法用 CSS 屏蔽。触屏端改用
+// type=text + -webkit-text-security: disc 掩码，原生眼睛随之消失；
+// 桌面端保持 type=password 以保留密码管理器自动填充。
+const isTouchSecureText =
+  typeof navigator !== 'undefined' &&
+  typeof CSS !== 'undefined' &&
+  (navigator.maxTouchPoints ?? 0) > 0 &&
+  Boolean(CSS.supports?.('-webkit-text-security', 'disc'))
+
 export function PasswordInput({
   className,
   disabled,
@@ -42,7 +52,14 @@ export function PasswordInput({
   return (
     <div className={cn('relative rounded-md', className)}>
       <Input
-        type={showPassword ? 'text' : 'password'}
+        type={isTouchSecureText || showPassword ? 'text' : 'password'}
+        style={
+          isTouchSecureText && !showPassword
+            ? ({ WebkitTextSecurity: 'disc' } as React.CSSProperties)
+            : undefined
+        }
+        autoCapitalize={isTouchSecureText ? 'none' : props.autoCapitalize}
+        spellCheck={isTouchSecureText ? false : props.spellCheck}
         ref={ref}
         disabled={disabled}
         {...props}

@@ -16,34 +16,39 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { webcrypto } from 'node:crypto'
+import { createHash } from 'node:crypto'
 
-import { beforeAll, expect, it } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 
 import { deriveAdminKey } from '../api'
 
-const EXPECTED = 'XohImNooBHFR0OVvjcYpJ3NgPQ1qq73WKhHvch0VQtg='
+// 初始化页在无 Web Crypto 的非安全上下文（HTTP 局域网访问）也必须能
+// 算出管理密钥，且与 subtle 路径结果一致（token-spec §2.1）。
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'crypto', {
-    configurable: true,
-    value: webcrypto,
-  })
+function oracle(password: string): string {
+  return createHash('sha256')
+    .update(Buffer.from(password, 'utf8'))
+    .digest('base64')
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
-it('derives Base64(SHA256(password)) with standard padding', async () => {
-  expect(await deriveAdminKey('password')).toBe(EXPECTED)
+test('derives Base64(SHA256(password)) without Web Crypto (insecure context)', async () => {
+  vi.stubGlobal('crypto', {})
+  await expect(deriveAdminKey('Smoke-Password-2026!')).resolves.toBe(
+    oracle('Smoke-Password-2026!')
+  )
 })
 
-it('returns null when Web Crypto is unavailable', async () => {
-  const original = globalThis.crypto
-  Object.defineProperty(globalThis, 'crypto', {
-    configurable: true,
-    value: {},
-  })
-  expect(await deriveAdminKey('password')).toBeNull()
-  Object.defineProperty(globalThis, 'crypto', {
-    configurable: true,
-    value: original,
-  })
+test('prefers crypto.subtle and agrees with the fallback', async () => {
+  const digest = vi.fn(
+    async (_alg: string, data: Uint8Array) =>
+      new Uint8Array(createHash('sha256').update(Buffer.from(data)).digest())
+        .buffer
+  )
+  vi.stubGlobal('crypto', { subtle: { digest } })
+  await expect(deriveAdminKey('abc')).resolves.toBe(oracle('abc'))
+  expect(digest).toHaveBeenCalled()
 })
