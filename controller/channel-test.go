@@ -59,14 +59,17 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 		}
 	}
 
-	var rootUser model.User
-	if err := model.DB.Select("id").Where("role = ?", common.RoleRootUser).First(&rootUser).Error; err != nil {
+	// PBR 无多用户体系，管理会话不绑定用户、users 表常为空。测试渠道与自动
+	// 巡检需要一个记账身份跑通 relay 管道，复用客户端鉴权同一套系统用户
+	// （EnsurePBRSystemUser：不存在则创建），而非上游"查 root 用户"的老逻辑。
+	userID, err := model.EnsurePBRSystemUser()
+	if err != nil {
 		return 0, fmt.Errorf("failed to resolve channel test user: %w", err)
 	}
-	if rootUser.Id == 0 {
+	if userID <= 0 {
 		return 0, errors.New("failed to resolve channel test user")
 	}
-	return rootUser.Id, nil
+	return userID, nil
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
