@@ -70,8 +70,8 @@ export function useTopNavLinks(): TopNavLink[] {
 
   // PBR 已删除公开定价页（/pricing）与排行页（/rankings）：不再产出这两个入口。
 
-  // Docs：只在站点配置了 docs_link 时出现。PBR 没有 /docs 路由，未配置时
-  // 直接隐藏，避免产生死链。
+  // Docs：只在站点配置了 docs_link 时出现。默认指向 PBR 自带的管理 API
+  // 手册（GET /doc，服务端渲染 Markdown，新开标签页）。
   if (modules?.docs !== false && docsLink) {
     links.push({ title: t('Docs'), href: docsLink, external: true })
   }
