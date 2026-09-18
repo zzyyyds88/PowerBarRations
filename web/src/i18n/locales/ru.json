@@ -44,6 +44,7 @@
     "pbr-...": "pbr-...",
     "Prompt tokens": "Prompt tokens",
     "Renaming metadata does not rename channel models or channel upstream prices. Existing channel prices stay with the original model name.": "Переименование метаданных не переименовывает модели каналов или цены каналов. Существующие цены каналов остаются привязанными к исходному имени модели.",
+    "Request & Response": "Запрос и ответ",
     "Request detail": "Request detail",
     "Request logs": "Request logs",
     "Request model": "Request model",
