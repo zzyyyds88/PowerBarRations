@@ -29,6 +29,7 @@ export type ChannelConfigurationSection =
   | 'connection'
   | 'routing'
   | 'prices'
+  | 'request'
   | 'other'
 
 export type ChannelConfigurationStatus =
@@ -45,11 +46,11 @@ const CONFIGURATION_BLOCKS = {
   },
   channelPrices: { section: 'prices', fields: ['pbr_prices'] },
   overrideRules: {
-    section: 'other',
+    section: 'request',
     fields: ['status_code_mapping', 'param_override', 'header_override'],
   },
   requestProcessing: {
-    section: 'other',
+    section: 'request',
     fields: [
       'force_format',
       'thinking_to_content',
@@ -59,7 +60,7 @@ const CONFIGURATION_BLOCKS = {
     ],
   },
   fieldPassthrough: {
-    section: 'other',
+    section: 'request',
     fields: [
       'allow_service_tier',
       'disable_store',
@@ -177,6 +178,7 @@ export function getChannelConfigurationState(
     connection: 'idle',
     routing: 'idle',
     prices: 'idle',
+    request: 'idle',
     other: 'idle',
   }
   for (const id of Object.keys(

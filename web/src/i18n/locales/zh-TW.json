@@ -44,6 +44,7 @@
     "pbr-...": "pbr-...",
     "Prompt tokens": "輸入 token",
     "Renaming metadata does not rename channel models or channel upstream prices. Existing channel prices stay with the original model name.": "重新命名資料不會重新命名渠道模型或渠道上游單價；既有渠道價仍綁定原模型名稱。",
+    "Request & Response": "請求與回應",
     "Request detail": "請求詳情",
     "Request logs": "請求日誌",
     "Request model": "請求模型",

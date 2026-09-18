@@ -433,8 +433,8 @@ test('configuration navigation retains its height when the form content overflow
   // ui-spec §6.9：外框尺寸只由 lg 档决定，正文自身滚动；断言用拼接后的
   // className 子串，避免 Tailwind 任意值 class 的合并写法差异。
   const dialog = screen.getByRole('dialog', { name: 'Create Channel' })
-  expect(dialog.className).toContain('w-[min(94vw,960px)]')
-  expect(dialog.className).toContain('h-[min(82vh,640px)]')
+  expect(dialog.className).toContain('w-[min(96vw,1200px)]')
+  expect(dialog.className).toContain('h-[min(86vh,720px)]')
 })
 
 test('an invalid setting in another category is revealed and focused on submission', async () => {
@@ -636,7 +636,7 @@ test('editing opens the shared configuration and omits an unchanged key on updat
   expect(screen.getByRole('combobox', { name: 'Protocol' })).toHaveValue(
     PROTOCOL_OPTION_LABELS['OpenAI compatible']
   )
-  expect(screen.getAllByRole('tab')).toHaveLength(4)
+  expect(screen.getAllByRole('tab')).toHaveLength(5)
   expect(
     screen.getByRole('tab', { name: /Connection & Models/ })
   ).toHaveAccessibleName(/Ready/)
@@ -752,7 +752,7 @@ test('restoring routing defaults clears the configured indicator for both the bl
   expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
 })
 
-test('request processing configuration marks Other Settings but not the prices tab', async () => {
+test('request processing configuration marks Request & Response but not the prices tab', async () => {
   editingChannel = {
     ...editingChannel,
     setting: '{"thinking_to_content":true}',
@@ -763,12 +763,12 @@ test('request processing configuration marks Other Settings but not the prices t
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   expect(
-    screen.getByRole('tab', { name: /Other Settings/ })
+    screen.getByRole('tab', { name: /Request & Response/ })
   ).toHaveAccessibleName(/Configured/)
   expect(
     screen.getByRole('tab', { name: /Upstream unit prices/ })
   ).not.toHaveAccessibleName(/Configured/)
-  await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
+  await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
   expect(
     within(screen.getByRole('group', { name: 'Override Rules' })).queryByRole(
       'img',
@@ -1178,7 +1178,7 @@ test('an operator without sensitive write permission can discover saved models a
       screen.queryByRole('dialog', { name: 'Select upstream models' })
     ).not.toBeInTheDocument()
   )
-  await user.click(screen.getByRole('tab', { name: /Other Settings/ }))
+  await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
   const thinking = screen.getByRole('switch', { name: 'Thinking to Content' })
   expect(thinking).toHaveAttribute('aria-disabled', 'true')
   await user.click(thinking)

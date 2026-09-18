@@ -2065,7 +2065,7 @@ export function ChannelMutateDialog({
   const basicSection = (
     <div className='scroll-mt-4'>
       <ChannelBasicSection>
-        <div className='grid gap-4'>
+        <div className='grid gap-4 sm:grid-cols-2'>
           <FormField
             control={form.control}
             name='name'
@@ -2388,7 +2388,7 @@ export function ChannelMutateDialog({
         iconTone='chart-4'
       />
       <fieldset disabled={sensitiveLocked} className='disabled:opacity-60'>
-        <div className='divide-border space-y-0 divide-y border-y'>
+        <div className='border-border grid grid-cols-1 gap-y-2 border-y sm:grid-cols-2'>
           <FormField
             control={form.control}
             name='allow_service_tier'
@@ -3858,7 +3858,7 @@ export function ChannelMutateDialog({
             {pbrPricesFields}
           </div>
         }
-        other={
+        request={
           <>
             <div
               role='group'
@@ -3886,6 +3886,10 @@ export function ChannelMutateDialog({
             </div>
             {overrideFields}
             {fieldPassthroughFields}
+          </>
+        }
+        other={
+          <>
             <div
               role='group'
               aria-label={t('Channel Extra Settings')}
@@ -3930,7 +3934,7 @@ export function ChannelMutateDialog({
         <DialogContent
           className={cn(
             'flex w-full flex-col gap-4 overflow-hidden p-4 sm:max-w-none sm:p-6',
-            DIALOG_SIZE_CLASS.lg
+            DIALOG_SIZE_CLASS.xl
           )}
         >
           <DialogHeader className='pr-12'>
