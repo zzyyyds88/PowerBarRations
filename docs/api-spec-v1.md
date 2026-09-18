@@ -277,7 +277,7 @@
 | GET | `/api/system/affinity-cache` | 渠道亲和缓存统计 |
 | DELETE | `/api/system/affinity-cache` | 清除渠道亲和缓存 |
 | GET | `/api/system-tasks` | 系统任务列表（cursor 分页） |
-| GET | `/api/system-tasks/current` | 当前运行中的任务 |
+| GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll`）；无运行中任务时 `data` 为 `null` |
 | GET | `/api/system-tasks/{id}` | 单任务详情 |
 | POST | `/api/system-tasks/log-cleanup` | 创建"清理日志文件"任务 |
 | GET | `/api/system/performance` | 性能统计 |
