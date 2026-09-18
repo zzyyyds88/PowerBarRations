@@ -163,7 +163,8 @@ func splitTagList(raw string) []string {
 //
 // 全量幂等 upsert：body 为完整对象，响应为写后回读。仅允许精确名规则（与 DELETE 约束一致）。
 func PutModelMetadata(c *gin.Context) {
-	name := strings.TrimSpace(c.Param("model"))
+	// catch-all 路由 (/model-metadata/*model) 会带上前导 "/"，与 routes.go 同一处理。
+	name := strings.TrimPrefix(strings.TrimSpace(c.Param("model")), "/")
 	if name == "" {
 		apierr.Validation(c, "model name is required")
 		return
@@ -227,7 +228,8 @@ func PutModelMetadata(c *gin.Context) {
 //
 // 删除目录记录；?remove_from_channels=true 同时从渠道声明移除；被车道引用时 409（force 覆盖并清理）。
 func DeleteModelMetadataByModel(c *gin.Context) {
-	name := strings.TrimSpace(c.Param("model"))
+	// catch-all 路由 (/model-metadata/*model) 会带上前导 "/"，与 routes.go 同一处理。
+	name := strings.TrimPrefix(strings.TrimSpace(c.Param("model")), "/")
 	record, err := findModelMetadataByName(name)
 	if err != nil {
 		writeAPIError(c, err)
