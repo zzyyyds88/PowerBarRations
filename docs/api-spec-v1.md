@@ -23,7 +23,8 @@
 
 1. **全量幂等写**：`PUT /api/{resource}/{name}`，body 为完整对象，upsert 语义；同名重复提交结果一致。
 2. **写后回读**：响应体是**落库后重新读取**的最终状态。实现必须在 handler 内 re-read 再返回。
-3. **dry-run**：配置类 `PUT/POST/DELETE` 支持 `?dry_run=true`，返回将发生的 diff 而不落库：
+3. **成功响应无信封**：成功一律返回**裸资源**——单对象就是该对象本身（如 `GET /api/channels/{name}` 直接返回渠道对象），列表是 `{"items":[...],"next_cursor":...}`，动作类端点返回**语义化最小对象**（如 `{"changed":3}`、`{"deleted":true,"name":"..."}`、`{"reset":true}`）。**没有 `{success,message,data}` 包装，也没有"HTTP 200 + 业务失败"**；失败一律见 §3。字段名由各端点表逐条固定，不额外套壳。
+4. **dry-run**：配置类 `PUT/POST/DELETE` 支持 `?dry_run=true`，返回将发生的 diff 而不落库：
 
    ```json
    { "dry_run": true, "valid": true,
@@ -31,11 +32,11 @@
    ```
 
    **例外（不支持 dry-run，也不会写库）**：`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`（探活本身就是只读的真实请求）、`POST /api/auth/*`（认证没有"预览"语义）。
-4. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。**非法/损坏的 cursor 返回 400 `validation_failed`**（不得静默回退到第一页，否则调用方会陷入翻页死循环）。
-5. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
-6. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。
-7. **幂等键（可选）**：请求头 `Idempotency-Key` 可用于重试去重。
-8. **管理面不做全局限流**：PBR 是自用单用户网关，管理面 `/api/*` 与静态控制台**默认关闭**基座遗留的全局限流
+5. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。**非法/损坏的 cursor 返回 400 `validation_failed`**（不得静默回退到第一页，否则调用方会陷入翻页死循环）。
+6. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
+7. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。
+8. **幂等键（可选）**：请求头 `Idempotency-Key` 可用于重试去重。
+9. **管理面不做全局限流**：PBR 是自用单用户网关，管理面 `/api/*` 与静态控制台**默认关闭**基座遗留的全局限流
    （`GLOBAL_API_RATE_LIMIT_ENABLE`/`GLOBAL_WEB_RATE_LIMIT_ENABLE` 默认 `false`）。控制台一次页面加载会并发多个
    管理请求，基座默认的 360/120 次窗口（继承自 new-api 的多租户公网假设）会把正常浏览打成 429。
    限流只作用于**客户端密钥与模型面**（`rate_limit_rpm`/`max_concurrency`，见 token-spec §3.4）与登录失败退避。
@@ -49,14 +50,22 @@
 { "error": { "code": "lane_not_found", "message": "lane 'lane-alpha' not found", "hint": "GET /api/lanes" } }
 ```
 
+`details` 为**可选**结构化明细（对象），只在能给出机器可判定信息时出现；当前稳定用途是"车道引用守卫"的 `blocked` 映射（渠道名 → 引用它的车道名列表），如 `POST /api/model-catalog/batch-delete` 与 `DELETE /api/channels/disabled` 的 409。
+
+**失败一律带真实 HTTP 状态码**（不再有"200 + `success:false`"）：调用方按 `status` + `error.code` 分支，二者都不得被忽略。
+
 | HTTP | code | 触发场景 |
 |---|---|---|
-| 400 | `invalid_request` | JSON 解析失败 / 字段类型错 |
+| 400 | `invalid_request` | JSON 解析失败 / 字段类型错 / 互斥字段同时给出 |
 | 400 | `validation_failed` | 字段校验失败（`details` 给出字段级原因） |
 | 401 | `unauthorized` | 密钥缺失或错误 |
 | 403 | `forbidden_scope` | 客户端密钥访问了被 deny 的车道（仅模型面） |
 | 404 | `lane_not_found` / `channel_not_found` / `key_not_found` / `log_not_found` | 对象不存在 |
+| 404 | `model_not_found` | 模型目录记录不存在（`GET/PUT/DELETE /api/model-metadata/{model}`）；按名批量操作时 `details.unknown` 列出未知名 |
+| 404 | `task_not_found` | `GET /api/system-tasks/{id}` 的任务不存在 |
+| 404 | `prefill_group_not_found` | `DELETE /api/prefill-groups/{id}` 的组不存在 |
 | 404 | `webhook_target_not_found` | `POST /api/webhooks/test` 的 name 不在配置里（§5.8） |
+| 500 | `internal_error` | 未归类的内部失败（DB 故障等） |
 | 409 | `conflict` | 唯一名冲突 / 乐观锁冲突 / 车道名与成员别名冲突 / **环境变量管理密钥生效时变更口令**（`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 优先，口令变更不生效） |
 | 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/setup`） |
 | 422 | `lane_has_no_members` | 启用车道但无成员 |
@@ -239,71 +248,70 @@
 ### 5.3.1 渠道批量运维
 
 这些是"完全运维"所必需、此前只在控制台基座路径可用的动作，现提升为稳定契约。
-**响应信封**：本节与 §5.3.2–§5.3.4 的运维端点沿用基座信封 `{success, message, data}`
-（与 §3 的核心端点信封不同，调用方按本节说明取字段）；错误仍为 §3 的错误包络。
+**响应信封**：本节与 §5.3.2–§5.3.4 与 §5.1–§5.8 的**其余端点完全一致**——成功返回下方逐条列出的裸对象（动作类为语义化最小对象），失败为 §3 的错误包络 + 真实 HTTP 状态码。**没有 `{success,message,data}` 包装。**
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/channels/batch/status` | 批量启用/停用：body `{ids:[int], status:1\|2}`；`data` 为变更数 |
-| POST | `/api/channels/batch/tag` | 批量设置标签：body `{ids:[int], tag:string\|null}` |
-| POST | `/api/channels/batch/copy` | 复制渠道：body `{id, name?}` 等覆盖字段 |
-| POST | `/api/channels/batch/fetch-models` | 拉取上游模型清单（不落库）：body `{base_url, key, type}` 或 `{id}` |
-| POST | `/api/channels/batch/repair` | 重建渠道路由索引（abilities）；`data` 为 `{success, fails}` |
-| PUT | `/api/channels/by-tag` | 按标签批量改配置（改 `models` 时同样受车道引用守卫） |
-| POST | `/api/channels/by-tag/status` | 按标签批量启停：body `{tag, status}` |
-| GET | `/api/channels/by-tag/models` | 按标签取模型清单：`?tag=` |
-| DELETE | `/api/channels/disabled` | 删除**全部已停用**渠道（被车道引用时整批拒绝） |
-| POST | `/api/channels/upstream-updates/detect-all` | 探测全部渠道的上游模型变更 |
-| POST | `/api/channels/upstream-updates/apply-all` | 应用全部渠道的上游模型变更 |
-| GET | `/api/channels/{name}/key` | 读取渠道上游密钥明文（运维排障） |
-| POST | `/api/channels/{name}/multi-keys` | 多密钥管理：body `{action, keys?}` |
-| POST | `/api/channels/{name}/upstream-updates/detect` | 探测该渠道的上游模型变更 |
-| POST | `/api/channels/{name}/upstream-updates/apply` | 应用该渠道的上游模型变更（车道引用守卫 + `force`） |
-| POST | `/api/channels/{name}/codex/refresh` | 刷新 Codex 凭据 |
-| GET | `/api/channels/{name}/codex/usage` | Codex 用量 |
-| GET | `/api/channels/{name}/codex/reset-credits` | Codex 限额重置额度 |
-| POST | `/api/channels/{name}/codex/reset` | 重置 Codex 用量 |
-| POST | `/api/channels/{name}/ollama/pull` | Ollama 拉取模型（非流式） |
-| POST | `/api/channels/{name}/ollama/pull/stream` | Ollama 拉取模型（SSE 进度） |
-| DELETE | `/api/channels/{name}/ollama/models` | Ollama 删除模型 |
-| GET | `/api/channels/{name}/ollama/version` | Ollama 版本 |
+| POST | `/api/channels/batch/status` | 批量启用/停用：body `{channels:[name], status:1\|2}` 或 `{ids:[int], status}`（**二者只能给一个**）；成功 `{"changed":n}`；空目标或 status 非法 → 400；名字不存在 → 404 `channel_not_found`（`details.unknown`） |
+| POST | `/api/channels/batch/tag` | 批量设置标签：body `{channels:[name], tag:string\|null}` 或 `{ids, tag}`；成功 `{"changed":n}`；错误同上 |
+| POST | `/api/channels/batch/copy` | 复制渠道：body `{channel:name, suffix?, reset_balance?}`；成功 = **写后回读的渠道对象**（与 §4.1 同形）；名字不存在 → 404 |
+| POST | `/api/channels/batch/fetch-models` | 拉取上游模型清单（不落库）：body `{channel:name}`、`{channel_id:int}` 或 `{base_url, key, type}`；成功 `{"models":[...]}`；上游失败 → 502 `upstream_error` |
+| POST | `/api/channels/batch/repair` | 重建渠道路由索引（abilities）；成功 `{"repaired":n,"failed":n}`；已有修复任务在跑 → 409 `conflict` |
+| PUT | `/api/channels/by-tag` | 按标签批量改配置（改 `models` 时同样受车道引用守卫）；成功 `{"tag":"t","updated":true}`；被引用 → 409 + `details.blocked` |
+| POST | `/api/channels/by-tag/status` | 按标签批量启停：body `{tag, status}`；成功 `{"tag":"t","enabled":bool}`；tag 空或 status 非法 → 400 |
+| GET | `/api/channels/by-tag/models` | 按标签取模型清单：`?tag=`；成功 `{"tag":"t","models":[...]}`；tag 空 → 400 |
+| DELETE | `/api/channels/disabled` | 删除**全部已停用**渠道；成功 `{"deleted":n}`；被车道引用时整批拒绝 409 + `details.blocked` |
+| POST | `/api/channels/upstream-updates/detect-all` | 探测全部渠道的上游模型变更；成功 `{"task_id":"..","status":".."}`；已有同类任务 → 409 |
+| POST | `/api/channels/upstream-updates/apply-all` | 应用全部渠道的上游模型变更；成功 `{processed_channels, added_models, removed_models, failed_channel_ids, results}` |
+| GET | `/api/channels/{name}/key` | 读取渠道上游密钥明文（运维排障）；成功 `{"key":"..."}` |
+| POST | `/api/channels/{name}/multi-keys` | 多密钥管理：body `{action, key_index?, page?, page_size?, status?}`；`get_key_status` 成功为分页对象（`keys/total/page/page_size/total_pages/enabled_count/manual_disabled_count/auto_disabled_count`），其余动作成功 `{"applied":true,"message":".."}`；非多密钥渠道 → 409 |
+| POST | `/api/channels/{name}/upstream-updates/detect` | 探测该渠道的上游模型变更；成功 `{channel_id, channel_name, add_models, remove_models, last_check_time, auto_added_models}` |
+| POST | `/api/channels/{name}/upstream-updates/apply` | 应用该渠道的上游模型变更（车道引用守卫 + `force`）；成功 `{id, added_models, removed_models, ignored_models, remaining_models, remaining_remove_models, models, settings}`；被引用 → 409 + `details.blocked` |
+| POST | `/api/channels/{name}/codex/refresh` | 刷新 Codex 凭据；成功 `{expires_at, last_refresh, account_id, email, channel_id, channel_type, channel_name}`；刷新失败 → 502 |
+| GET | `/api/channels/{name}/codex/usage` | Codex 用量；成功 `{"upstream_status":n,"body":<上游 JSON>}`；上游非 2xx → 502 `upstream_error` |
+| GET | `/api/channels/{name}/codex/reset-credits` | Codex 限额重置额度；成功/失败同上 |
+| POST | `/api/channels/{name}/codex/reset` | 重置 Codex 用量；成功/失败同上 |
+| POST | `/api/channels/{name}/ollama/pull` | Ollama 拉取模型（非流式）；body `{model_name}`；成功 `{"channel":"..","model":"..","pulled":true}`；非 Ollama 渠道 → 400；上游失败 → 502 |
+| POST | `/api/channels/{name}/ollama/pull/stream` | Ollama 拉取模型（**SSE 进度**，`text/event-stream`，逐条 `data: {..}`，以 `data: [DONE]` 结束）。**此端点不套任何信封**；进入流之前的参数/渠道错误仍为 §3 错误包络 |
+| DELETE | `/api/channels/{name}/ollama/models` | Ollama 删除模型；body `{model_name}`；成功 `{"channel":"..","model":"..","deleted":true}`；非 Ollama → 400；上游失败 → 502 |
+| GET | `/api/channels/{name}/ollama/version` | Ollama 版本；成功 `{"channel":"..","version":".."}`；非 Ollama → 400；取版本失败 → 502 |
 
 ### 5.3.2 系统选项、任务与性能
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维） |
-| PUT | `/api/system/options/all` | 更新完整系统选项：body 为 `{key: value}` 子集 |
-| GET | `/api/system/affinity-cache` | 渠道亲和缓存统计 |
-| DELETE | `/api/system/affinity-cache` | 清除渠道亲和缓存 |
-| GET | `/api/system-tasks` | 系统任务列表（cursor 分页） |
-| GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll`）；无运行中任务时 `data` 为 `null` |
-| GET | `/api/system-tasks/{id}` | 单任务详情 |
-| POST | `/api/system-tasks/log-cleanup` | 创建"清理日志文件"任务 |
-| GET | `/api/system/performance` | 性能统计 |
-| POST | `/api/system/performance/reset` | 重置性能统计 |
-| POST | `/api/system/performance/gc` | 强制 GC |
-| DELETE | `/api/system/performance/disk-cache` | 清除磁盘缓存 |
-| GET | `/api/system/log-files` | 日志文件列表 |
-| DELETE | `/api/system/log-files` | 清理日志文件 |
+| GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维）；成功 `{"items":[{"key":"..","value":".."}]}` |
+| PUT | `/api/system/options/all` | 更新**单个**系统选项：body `{key: string, value: any}`（与基座同形，非子集对象）；成功 `{"key":"..","updated":true}`；值校验失败 → 422 `validation_failed` |
+| GET | `/api/system/affinity-cache` | 渠道亲和缓存统计；成功为统计对象 |
+| DELETE | `/api/system/affinity-cache` | 清除渠道亲和缓存：`?all=true` 或 `?rule_name=`（二选一）；成功 `{"deleted":n}`；两者都缺 → 400 `validation_failed` |
+| GET | `/api/system-tasks` | 系统任务列表；成功 `{"items":[...],"next_cursor":null}` |
+| GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll`）；成功 `{"task":<对象或 null>}`；缺 `type` → 400 |
+| GET | `/api/system-tasks/{id}` | 单任务详情（成功为任务对象）；不存在 → 404 `task_not_found` |
+| POST | `/api/system-tasks/log-cleanup` | 创建"清理日志文件"任务：`?target_timestamp=`（必填）；成功为任务对象；缺参数 → 400 |
+| GET | `/api/system/performance` | 性能统计；成功为统计对象 |
+| POST | `/api/system/performance/reset` | 重置性能统计；成功 `{"reset":true}` |
+| POST | `/api/system/performance/gc` | 强制 GC；成功 `{"collected":true}` |
+| DELETE | `/api/system/performance/disk-cache` | 清除磁盘缓存；成功 `{"cleared":true}` |
+| GET | `/api/system/log-files` | 日志文件列表；成功 `{log_dir, enabled, file_count, total_size, oldest_time?, newest_time?, files[]}` |
+| DELETE | `/api/system/log-files` | 清理日志文件：`?mode=by_count\|by_days&value=`；成功 `{"deleted_count":n,"freed_bytes":n,"failed_files":[]}`；参数非法 → 400；部分删除失败 → 500 + `details.failed_files` |
 
 ### 5.3.3 预填组
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/prefill-groups` | 列表 |
-| POST | `/api/prefill-groups` | 创建 |
-| PUT | `/api/prefill-groups/{id}` | 更新 |
-| DELETE | `/api/prefill-groups/{id}` | 删除 |
+| GET | `/api/prefill-groups` | 列表（可按 `?type=` 过滤）；成功 `{"items":[...],"next_cursor":null}` |
+| POST | `/api/prefill-groups` | 创建；成功 = **写后回读**的组对象；名称或类型为空 → 400；重名 → 409 `conflict` |
+| PUT | `/api/prefill-groups/{id}` | 更新（全量 upsert）；成功 = 写后回读的组对象；`{id}` 非数字 → 400；重名 → 409 |
+| DELETE | `/api/prefill-groups/{id}` | 删除；成功 `{"deleted":true,"id":n}`；不存在 → 404 `prefill_group_not_found` |
 
 ### 5.3.4 模型目录运维
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/model-catalog/sync-upstream/preview` | 预览上游同步的模型变更（不落库） |
-| POST | `/api/model-catalog/sync-upstream` | 应用上游同步 |
-| GET | `/api/model-catalog/missing` | "渠道声明但无目录记录"的模型 |
-| POST | `/api/model-catalog/batch-delete` | 批量删除目录记录：body `{model_ids, remove_from_channels?, remove_pricing?}` |
+| GET | `/api/model-catalog/sync-upstream/preview` | 预览上游同步的模型变更（不落库）；成功 `{source, candidates}` |
+| POST | `/api/model-catalog/sync-upstream` | 应用上游同步：body `{locale?, source_version, selections}`；成功为应用结果；缺 `selections`/`source_version` → 400；上游版本变化或选中项消失 → 409 `conflict` |
+| GET | `/api/model-catalog/missing` | "渠道声明但无目录记录"的模型；成功 `{"models":[...]}` |
+| POST | `/api/model-catalog/batch-delete` | 批量删除目录记录：body `{models:[name], remove_from_channels?, remove_pricing?}` 或 `{model_ids:[int], ...}`（**二者只能给一个**）；成功 `{"deleted_count":n,"updated_channels":n}`；名字不存在 → 404 `model_not_found`（`details.unknown`）；被车道引用 → 409 + `details.blocked` |
 
 ### 5.4 客户端密钥
 
@@ -742,6 +750,8 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 
 §5 是本契约的全部稳定端点。控制台前端另有一批 new-api 基座接口：它们同样用 PBR 管理密钥
 （`Authorization: Bearer <管理密钥>`）鉴权，**可以调用、但随控制台实现变动，不属于稳定契约**。
+
+> **信封不再区分两类接口**：稳定端点与控制台内部接口共用 §2.3 的裸资源成功形态与 §3 的错误模型（含真实 HTTP 状态码）；差别只在**字段是否稳定**——稳定端点字段由本文固定，内部接口字段随控制台实现变动。控制台内部接口的"200 + `success:false`"写法已全部移除。
 
 | 能力 | 仍属控制台内部（非稳定契约） |
 |---|---|
