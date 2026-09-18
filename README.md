@@ -26,7 +26,7 @@
 </p>
 
 > 请求里的 `model` 就是路由键：渠道只声明它提供哪些模型（以及上游真名映射），**车道是唯一
-> 路由入口**——把成员链固化成车道后（一条命令 `POST /api/v1/lanes/seed`，或逐条 `PUT /api/lanes/{model}`），
+> 路由入口**——把成员链固化成车道后（在「路由与故障切换」页手动新建/编辑，或逐条 `PUT /api/lanes/{model}`），
 > 网关按车道顺序做故障转移。没有车道的模型一律 `503`，与"上游全挂"同形；车道支持自定义顺序、
 > 成员改名、池化不同上游的不同模型名与两种模式（`failover` 默认 / `manual`）。
 >
@@ -50,7 +50,7 @@
 
 ## 特性速览
 
-- **模型即路由键，车道唯一入口**：渠道声明只是候选；没有同名启用车道一律 `503`，宁可失败也不直连某个上游。一键 `POST /api/v1/lanes/seed` 固化。
+- **模型即路由键，车道唯一入口**：渠道声明只是候选；没有同名启用车道一律 `503`，宁可失败也不直连某个上游。在路由页手动新建车道并排定成员。
 - **优先级故障转移**：成员按顺序取首个可用；失败在尝试预算内重试，之后冷却并逃逸到下一成员。
 - **冷却 / 亲和 / 熔断**：六个车道级控制键；熔断三态（`closed/open/half_open`）与半开自愈；亲和默认 0，恢复即切回。
 - **四协议双向**：入站与上游都支持 OpenAI Chat、OpenAI Responses、Anthropic、Gemini，按协议自动补全端点路径。
@@ -110,9 +110,8 @@ curl -s -X PUT $BASE/api/v1/channels/vendor-a \
        "models":["model-1","model-2"],"enabled":true}'
 
 # 3) 固化车道：渠道声明只是候选，必须把成员链固化成车道才可调用
-curl -s -X POST "$BASE/api/v1/lanes/seed?dry_run=true" -H "Authorization: Bearer $ADMIN_KEY"  # 先预览
-curl -s -X POST $BASE/api/v1/lanes/seed -H "Authorization: Bearer $ADMIN_KEY"                # 再落库
-# 也可只固化一个模型：PUT $BASE/api/v1/lanes/model-1  body {"enabled":true,"mode":"failover",
+# 在「路由与故障切换」页点「新建车道」手动建（可自定义路由键），或用 PUT 固化单个模型：
+# PUT $BASE/api/v1/lanes/model-1  body {"enabled":true,"mode":"failover",
 #   "members":[{"channel":"channel-a"},{"channel":"channel-b"}]}
 
 # 4) 建客户端密钥（明文只回显一次）
@@ -154,15 +153,14 @@ docker run -d --name pbr -p 5700:5700 \
 渠道/channel-a —— model-1, model-2
 渠道/channel-b —— model-1, model-2
 
-固化后（POST /api/v1/lanes/seed 或逐条 PUT /api/v1/lanes/{model}，顺序人工排定）：
+固化后（逐条 PUT /api/v1/lanes/{model}，顺序人工排定）：
 请求 model-1  →  channel-a 的 model-1  →（失败）→  channel-b 的 model-1
 ```
 
 - **车道是唯一路由入口**（[ADR 0005](docs/adr/0005-lane-required-and-channel-model-mapping.md)）：
   渠道声明 `models` 只是"候选成员来源"，**不等于可调用**；没有同名启用车道时请求该模型
   一律 `503 No available channel for model <X>`。
-- 一步固化：`POST /api/v1/lanes/seed`（为渠道已声明但无车道的模型生成 failover 车道，初始顺序按渠道 id 升序，幂等；
-  `?dry_run=true` 先看将创建哪些），或按 §2.2 手工建/改。
+- 手动新建：在「路由与故障切换」页点「新建车道」，输入路由键并勾选成员渠道；也可按 §2.2 用 `PUT /api/v1/lanes/{model}` 建/改。
 - **渠道没有优先级/权重**（已物理删除）：路由顺序只由车道的成员顺序决定，在侧边栏独立页「路由与故障切换」（`/routes`）里用上移/下移人工排定。
 - 上游命名与路由键不一致时，在**渠道**上配 `model_mapping`（路由键 → 上游真名），
   配置一次即对该渠道的所有车道成员生效；成员级 `upstream_model` 可再覆盖它。
@@ -254,7 +252,7 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
 |---|---|---|
 | 层数 | 路由层 + 厂商层两层 | 一层：车道即路由键（模型名） |
 | 模型映射 | 厂商层 `model_mapping` 表 | 渠道级 `model_mapping`（路由键 → 上游真名），可由成员级 `upstream_model` 覆盖 |
-| 路由入口 | 分组名（没建分组就用不了） | 车道是唯一入口：没固化车道一律 503，`POST /api/v1/lanes/seed` 一键固化 |
+| 路由入口 | 分组名（没建分组就用不了） | 车道是唯一入口：没固化车道一律 503，在路由页手动新建车道 |
 | 限流误判 | 429 与 401 一视同仁 | 分类处理，429 不误伤 |
 | 全挂行为 | 轮询等待（请求悬挂） | 503 快抛（下游可分类） |
 | 自愈 | 只禁不通，无半开 | 熔断三态 + 半开自动复通 |

@@ -724,7 +724,7 @@ func effectiveUpstreamModel(channel *Channel, routeKey, memberUpstream string) s
 }
 
 // suggestedMembers 返回"渠道声明"的候选成员（按渠道 id 升序；渠道 priority 已删除）。
-// 仅用于模型管理页展示与 POST /api/lanes/seed 一键固化，不参与运行期路由（ADR 0005）。
+// 仅用于管理面展示与「可添加成员」候选，不参与运行期路由（ADR 0005）。
 func suggestedMembers(modelName string) ([]RouteMember, error) {
 	channels, err := listEnabledChannels()
 	if err != nil {
@@ -829,66 +829,6 @@ func displayMembersForLane(lane *Lane) ([]RouteMember, error) {
 		return members[i].Priority > members[j].Priority
 	})
 	return members, nil
-}
-
-// SeedLanes 为所有"渠道已声明但无车道"的模型生成 failover 车道（ADR 0005）。
-// 幂等：已有同名车道的模型跳过。dryRun 只返回将创建的车道名，不落库。
-func SeedLanes(dryRun bool) (created []string, skipped []string, err error) {
-	channels, err := listEnabledChannels()
-	if err != nil {
-		return nil, nil, err
-	}
-	candidates := map[string]bool{}
-	for _, ch := range channels {
-		for _, m := range ch.GetModels() {
-			if m = strings.TrimSpace(m); m != "" {
-				candidates[m] = true
-			}
-		}
-	}
-	names := make([]string, 0, len(candidates))
-	for name := range candidates {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	for _, name := range names {
-		existing, getErr := GetLaneByName(name)
-		if getErr == nil && existing != nil {
-			skipped = append(skipped, name)
-			continue
-		}
-		if getErr != nil && !errors.Is(getErr, gorm.ErrRecordNotFound) {
-			return created, skipped, getErr
-		}
-		members, memberErr := suggestedMembers(name)
-		if memberErr != nil {
-			return created, skipped, memberErr
-		}
-		if len(members) == 0 {
-			skipped = append(skipped, name)
-			continue
-		}
-		if dryRun {
-			created = append(created, name)
-			continue
-		}
-		lane := &Lane{Name: name, Enabled: true, Mode: LaneModeFailover}
-		raw, _ := json.Marshal(DefaultLaneRelayConfig())
-		lane.Config = string(raw)
-		for _, m := range members {
-			// 成员 upstream_model 留空 → 运行期用渠道 model_mapping 解析（ADR 0005）。
-			lane.Members = append(lane.Members, LaneMember{
-				ChannelId: m.ChannelId,
-				Priority:  m.Priority,
-			})
-		}
-		if err := UpsertLane(lane); err != nil {
-			return created, skipped, err
-		}
-		created = append(created, name)
-	}
-	return created, skipped, nil
 }
 
 // ListModelSummaries 汇总全部路由键：已配车道的（routable=true）与渠道声明但

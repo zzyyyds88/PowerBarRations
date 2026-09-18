@@ -78,7 +78,6 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.GET("/lanes", api.ListLanes)
 		authed.GET("/lanes/:name", api.GetLane)
 		authed.PUT("/lanes/:name", api.PutLane)
-		authed.POST("/lanes/seed", api.SeedLanes)
 		authed.POST("/lanes/cleanup-members", api.CleanupLaneMembers)
 		authed.DELETE("/lanes/:name", api.DeleteLane)
 		authed.GET("/lanes/:name/health", api.GetLaneHealth)

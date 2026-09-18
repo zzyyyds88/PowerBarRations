@@ -3045,6 +3045,15 @@
     "Clean up": "Dọn",
     "{{count}} lane(s) have members whose channel no longer exists.": "Có {{count}} làn chứa thành viên trỏ tới kênh không còn tồn tại.",
     "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "Thành viên trỏ tới kênh không còn tồn tại sẽ bị xoá khỏi làn; làn không còn thành viên sẽ bị xoá. Các model đó sẽ không thể gọi được.",
-    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Đã dọn {{cleaned}} làn; đã xoá {{deleted}} làn trống."
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Đã dọn {{cleaned}} làn; đã xoá {{deleted}} làn trống.",
+    "New lane": "Làn mới",
+    "Create a route key by hand, then pick the member channels. Saving solidifies the lane.": "Nhập khoá định tuyến thủ công, rồi chọn các kênh thành viên. Lưu là cố định làn.",
+    "Route key": "Khoá định tuyến",
+    "e.g. my-pooled-model": "ví dụ: my-pooled-model",
+    "Member channels": "Kênh thành viên",
+    "Enter a route key first.": "Hãy nhập khoá định tuyến trước.",
+    "No channel declares this key. Add the model to a channel first.": "Chưa có kênh nào khai báo khoá này. Hãy thêm model vào kênh trước.",
+    "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "Chưa có kênh nào khai báo khoá này; bạn vẫn có thể tạo làn rồi thêm thành viên từ các kênh khai báo nó.",
+    "Lane saved": "Đã lưu làn"
   }
 }

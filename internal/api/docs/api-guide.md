@@ -34,7 +34,7 @@
   `POST /api/channels/{name}/test`、`POST /api/channels/{name}/sync-models`
 - 车道（唯一路由入口，ADR 0005）：`GET /api/lanes`、`GET|PUT|DELETE /api/lanes/{name}`、
   `GET /api/lanes/{name}/health`、`POST /api/lanes/{name}/probe`、
-  `POST /api/lanes/{name}/circuits/reset`、`POST /api/lanes/seed`
+  `POST /api/lanes/{name}/circuits/reset`、`POST /api/lanes/cleanup-members`
 - 模型路由：`GET /api/models`（全部路由键）、`GET /api/routes/{model}`（成员链；
   未配车道时返回候选建议链，只作"可添加成员"，不参与运行期路由）
 - 客户端密钥：`GET|POST /api/keys`、`GET|PUT|DELETE /api/keys/{name}`、

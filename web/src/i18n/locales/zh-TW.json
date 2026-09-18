@@ -3045,6 +3045,15 @@
     "Clean up": "清理",
     "{{count}} lane(s) have members whose channel no longer exists.": "有 {{count}} 條車道的成員指向已不存在的渠道。",
     "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "渠道已不存在的成員會從車道移除；成員清空的車道會被刪除，這些模型將不再可呼叫。",
-    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "已清理 {{cleaned}} 條車道；刪除 {{deleted}} 條空車道。"
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "已清理 {{cleaned}} 條車道；刪除 {{deleted}} 條空車道。",
+    "New lane": "新增車道",
+    "Create a route key by hand, then pick the member channels. Saving solidifies the lane.": "手動輸入一個路由鍵，再勾選成員渠道；儲存即固化為車道。",
+    "Route key": "路由鍵",
+    "e.g. my-pooled-model": "例如 my-pooled-model",
+    "Member channels": "成員渠道",
+    "Enter a route key first.": "請先輸入路由鍵。",
+    "No channel declares this key. Add the model to a channel first.": "沒有任何渠道宣告此路由鍵，請先在渠道宣告這個模型。",
+    "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "目前尚無渠道宣告此路由鍵；你仍可先建立車道，再從宣告它的渠道加入成員。",
+    "Lane saved": "車道已儲存"
   }
 }

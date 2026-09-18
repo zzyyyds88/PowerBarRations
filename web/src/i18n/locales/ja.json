@@ -3045,6 +3045,15 @@
     "Clean up": "整理",
     "{{count}} lane(s) have members whose channel no longer exists.": "{{count}} 件のレーンに、存在しないチャネルを指すメンバーがあります。",
     "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "存在しないチャネルを指すメンバーはレーンから削除され、メンバーが無くなったレーンは削除されます。これらのモデルは呼び出せなくなります。",
-    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "{{cleaned}} 件のレーンを整理し、{{deleted}} 件の空レーンを削除しました。"
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "{{cleaned}} 件のレーンを整理し、{{deleted}} 件の空レーンを削除しました。",
+    "New lane": "レーンを新規作成",
+    "Create a route key by hand, then pick the member channels. Saving solidifies the lane.": "ルートキーを手入力し、メンバーチャネルを選択します。保存するとレーンが確定します。",
+    "Route key": "ルートキー",
+    "e.g. my-pooled-model": "例: my-pooled-model",
+    "Member channels": "メンバーチャネル",
+    "Enter a route key first.": "先にルートキーを入力してください。",
+    "No channel declares this key. Add the model to a channel first.": "このルートキーを宣言するチャネルがありません。先にチャネルへモデルを追加してください。",
+    "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "このルートキーを宣言するチャネルはまだありません。先にレーンを作成し、宣言するチャネルからメンバーを追加できます。",
+    "Lane saved": "レーンを保存しました"
   }
 }

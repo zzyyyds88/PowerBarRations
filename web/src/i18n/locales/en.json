@@ -3045,6 +3045,15 @@
     "Clean up": "Clean up",
     "{{count}} lane(s) have members whose channel no longer exists.": "{{count}} lane(s) have members whose channel no longer exists.",
     "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.",
-    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s)."
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).",
+    "New lane": "New lane",
+    "Create a route key by hand, then pick the member channels. Saving solidifies the lane.": "Create a route key by hand, then pick the member channels. Saving solidifies the lane.",
+    "Route key": "Route key",
+    "e.g. my-pooled-model": "e.g. my-pooled-model",
+    "Member channels": "Member channels",
+    "Enter a route key first.": "Enter a route key first.",
+    "No channel declares this key. Add the model to a channel first.": "No channel declares this key. Add the model to a channel first.",
+    "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "No channel declares this key yet — you can still create the lane and add members from channels that declare it.",
+    "Lane saved": "Lane saved"
   }
 }

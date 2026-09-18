@@ -244,6 +244,9 @@ func PostImport(c *gin.Context) {
 		}
 	}
 
+	// 导入前剔除"成员指向不存在渠道"的悬空成员（跳过并警告，而非整包 422）。
+	pruneMissingMemberChannels(&bundle, &result)
+
 	if result.DryRun {
 		// dry-run：先跑与真实导入同一套构造/校验（不落库），再算 diff。
 		// 否则调用方会拿到 valid:true，却在真实导入时因"车道成员引用不存在的渠道"等 422 失败。
@@ -374,6 +377,40 @@ func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
 		payload.Members = append(payload.Members, entry)
 	}
 	return payload
+}
+
+// pruneMissingMemberChannels 剔除导入 bundle 里"成员指向不存在渠道"的成员，并记录警告。
+//
+// 导入是原子操作：此前一个悬空成员会让整包 422。现在改为跳过该成员（而不是整包失败），
+// 并在 warnings / diff.skipped 里列出，让用户知情；成员被清空的启用车道改为停用
+// （而不是整包拒绝），避免写入"启用但无成员"的非法车道。
+func pruneMissingMemberChannels(bundle *ConfigBundle, result *ImportResult) {
+	for i := range bundle.Lanes {
+		lane := &bundle.Lanes[i]
+		kept := make([]LaneMemberConfig, 0, len(lane.Members))
+		for _, m := range lane.Members {
+			name := strings.TrimSpace(m.Channel)
+			if name == "" {
+				continue
+			}
+			if _, err := findChannelByName(name); err != nil {
+				result.Warnings = append(result.Warnings,
+					"lane "+lane.Name+": skipped member '"+name+"' (channel not found)")
+				result.skip("lanes", lane.Name+"#"+name)
+				continue
+			}
+			kept = append(kept, m)
+		}
+		if len(kept) == len(lane.Members) {
+			continue
+		}
+		lane.Members = kept
+		if len(kept) == 0 {
+			lane.Enabled = false
+			result.Warnings = append(result.Warnings,
+				"lane "+lane.Name+" has no valid members left; imported as disabled")
+		}
+	}
 }
 
 // validateBundle 用与真实导入完全相同的构造/校验路径检查 bundle（不落库）。
@@ -872,9 +909,6 @@ func openAPIPaths() gin.H {
 		},
 		"/lanes": gin.H{
 			"get": secured("get", "车道列表", nil)["get"],
-		},
-		"/lanes/seed": gin.H{
-			"post": secured("post", "为未配车道的模型按渠道 id 升序一键生成 failover 车道（幂等）", []gin.H{dryRunParam})["post"],
 		},
 		"/lanes/cleanup-members": gin.H{
 			"post": secured("post", "清理渠道已不存在的悬空车道成员（成员清空的车道整条删除）", []gin.H{dryRunParam})["post"],

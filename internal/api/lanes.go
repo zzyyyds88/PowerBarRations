@@ -205,32 +205,6 @@ func PutLane(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// SeedLanes POST /api/v1/lanes/seed：为所有"渠道已声明但无车道"的模型生成
-// failover 车道（初始顺序按渠道 id 升序，成员 upstream_model 留空 → 用渠道映射）。
-// 幂等；`?dry_run=true` 只返回将创建的车道名（ADR 0005）。
-func SeedLanes(c *gin.Context) {
-	dry := dryRun(c)
-	created, skipped, err := model.SeedLanes(dry)
-	if err != nil {
-		writeAPIError(c, err)
-		return
-	}
-	if created == nil {
-		created = []string{}
-	}
-	if skipped == nil {
-		skipped = []string{}
-	}
-	if dry {
-		c.JSON(http.StatusOK, gin.H{"dry_run": true, "created": created, "skipped": skipped})
-		return
-	}
-	if len(created) > 0 {
-		writeAudit(c, "seed", "lane", "", gin.H{"created": created})
-	}
-	c.JSON(http.StatusOK, gin.H{"created": created, "skipped": skipped})
-}
-
 // DeleteLane DELETE /api/v1/lanes/{name}
 func DeleteLane(c *gin.Context) {
 	name := c.Param("name")

@@ -3045,6 +3045,15 @@
     "Clean up": "Очистить",
     "{{count}} lane(s) have members whose channel no longer exists.": "В {{count}} полосах есть участники, чей канал больше не существует.",
     "Members whose channel no longer exists are removed from their lanes; lanes left without members are deleted. Those models stop being callable.": "Участники, чей канал больше не существует, удаляются из полос; полосы без участников удаляются. Эти модели станут недоступны.",
-    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Очищено полос: {{cleaned}}; удалено пустых полос: {{deleted}}."
+    "Cleaned {{cleaned}} lane(s); deleted {{deleted}} empty lane(s).": "Очищено полос: {{cleaned}}; удалено пустых полос: {{deleted}}.",
+    "New lane": "Новая полоса",
+    "Create a route key by hand, then pick the member channels. Saving solidifies the lane.": "Введите ключ маршрута вручную, затем выберите каналы-участники. Сохранение закрепляет полосу.",
+    "Route key": "Ключ маршрута",
+    "e.g. my-pooled-model": "напр. my-pooled-model",
+    "Member channels": "Каналы-участники",
+    "Enter a route key first.": "Сначала введите ключ маршрута.",
+    "No channel declares this key. Add the model to a channel first.": "Ни один канал не объявляет этот ключ. Сначала добавьте модель в канал.",
+    "No channel declares this key yet — you can still create the lane and add members from channels that declare it.": "Пока ни один канал не объявляет этот ключ; можно создать полосу и добавить участников из каналов, которые его объявляют.",
+    "Lane saved": "Полоса сохранена"
   }
 }

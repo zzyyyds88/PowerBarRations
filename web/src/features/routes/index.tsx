@@ -24,7 +24,7 @@ PowerBarRations —— 「路由与故障切换」独立页（ui-spec §6.3）
 「编辑成员链」打开该模型的成员链抽屉。模型管理页专注模型目录，行内路由入口已移除。
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GitBranch, Loader2, Waypoints } from 'lucide-react'
+import { GitBranch, Loader2, Plus, Waypoints } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -49,6 +49,7 @@ import {
   type PBRModelSummary,
 } from './api'
 import { ModelRoutingDrawer } from './components/model-routing-drawer'
+import { NewLaneDialog } from './components/new-lane-dialog'
 
 // 车道顺序摘要挂在同一前缀 queryKey 下：抽屉里保存/删除成员链后，
 // 面板 invalidate ['pbr-routable-models'] 会连同本键一起刷新。
@@ -72,6 +73,7 @@ export function Routes() {
 
   const queryClient = useQueryClient()
   const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [newLaneOpen, setNewLaneOpen] = useState(false)
 
   const models = modelsQuery.data ?? []
   // 车道名 = 模型名：用车道列表补出每行的成员顺序（GET /api/v1/models 只有数量）。
@@ -279,6 +281,12 @@ export function Routes() {
         <SectionPageLayout.Title>
           {t('Routing & Failover')}
         </SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          <Button size='sm' onClick={() => setNewLaneOpen(true)}>
+            <Plus className='size-4' />
+            {t('New lane')}
+          </Button>
+        </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col'>
             {lanesQuery.isError && (
@@ -322,6 +330,8 @@ export function Routes() {
         onOpenChange={setDrawerOpen}
         currentRow={currentRow}
       />
+
+      <NewLaneDialog open={newLaneOpen} onOpenChange={setNewLaneOpen} />
 
       <ConfirmDialog
         open={cleanupOpen}
