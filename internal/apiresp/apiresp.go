@@ -166,6 +166,8 @@ var Default = Policy{
 		{BaseCode: "invalid_request", OutStatus: http.StatusBadRequest, OutCode: CodeInvalidRequest},
 		{BaseCode: "validation_failed", OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed},
 		{BaseCode: "not_found", OutStatus: http.StatusNotFound, OutCode: CodeNotFound},
+		// 基座显式给出的"冲突类" code：按 409 归类（不是参数校验错误）。
+		{BaseCode: "models_referenced_by_lanes", OutStatus: http.StatusConflict, OutCode: "models_referenced_by_lanes"},
 		// 基座把失败也写成 200：无显式 code 时按"业务拒绝"处理（绝大多数是参数/状态校验）。
 		{Status: http.StatusOK, OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed},
 		// 基座自己已经给了 4xx/5xx：保留该状态码，不要降级成 500。
@@ -179,16 +181,27 @@ var Default = Policy{
 	Details: blockedDetails,
 }
 
-// blockedDetails 从基座响应提取车道引用明细（渠道名 → 引用它的车道名）。
+// blockedDetails 从基座响应提取车道引用明细。
+//
+// 基座有两种形状，都要保留（否则"哪些车道在引用"这类机器可判定信息会丢）：
+//   - 批量删除：data.blocked = 渠道名 → 引用它的车道名
+//   - 渠道收窄模型：data.lanes = 引用被移除模型的车道名
 func blockedDetails(base Base) any {
 	value, ok := base.DataValue().(map[string]any)
 	if !ok {
 		return nil
 	}
+	details := map[string]any{}
 	if blocked, ok := value["blocked"]; ok {
-		return map[string]any{"blocked": blocked}
+		details["blocked"] = blocked
 	}
-	return nil
+	if lanes, ok := value["lanes"]; ok {
+		details["lanes"] = lanes
+	}
+	if len(details) == 0 {
+		return nil
+	}
+	return details
 }
 
 // Middleware 把基座信封改写成契约形态。
@@ -383,6 +396,11 @@ func (w *bufferedWriter) finish(c *gin.Context) {
 	rule, matched := matchFailure(w.policy.Failures, base)
 	if !matched {
 		rule = fallbackFailure(base)
+	}
+	// 基座给出的显式 code 是机器可判定信息，不得被兜底改写掉
+	// （例如 models_referenced_by_lanes 不能变成 validation_failed）。
+	if base.Code != "" && (rule.OutCode == "" || rule.OutCode == CodeValidationFailed || rule.OutCode == CodeInvalidRequest) {
+		rule.OutCode = base.Code
 	}
 	message := base.Message
 	if message == "" {

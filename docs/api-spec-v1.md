@@ -50,7 +50,12 @@
 { "error": { "code": "lane_not_found", "message": "lane 'lane-alpha' not found", "hint": "GET /api/lanes" } }
 ```
 
-`details` 为**可选**结构化明细（对象），只在能给出机器可判定信息时出现；当前稳定用途是"车道引用守卫"的 `blocked` 映射（渠道名 → 引用它的车道名列表），如 `POST /api/model-catalog/batch-delete` 与 `DELETE /api/channels/disabled` 的 409。
+`details` 为**可选**结构化明细（对象），只在能给出机器可判定信息时出现。当前稳定用途是"车道引用守卫"：
+
+- `details.blocked`：渠道名 → 引用它的车道名列表（`POST /api/model-catalog/batch-delete`、`DELETE /api/channels/disabled` 的 409）。
+- `details.lanes`：引用被移除模型的车道名列表（`PUT /api/channels/{name}` 收窄 `models`、`DELETE /api/channels/{name}` 的 409）。
+
+调用方**应按 `details` 判定**，不要解析 `message`。控制台内部路径（`PUT /api/channel/` 等）同样携带这些明细。
 
 **失败一律带真实 HTTP 状态码**（不再有"200 + `success:false`"）：调用方按 `status` + `error.code` 分支，二者都不得被忽略。
 
@@ -240,8 +245,8 @@
 |---|---|---|
 | GET | `/api/channels` | 列表 |
 | GET | `/api/channels/{name}` | 详情 |
-| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时若被移除的路由键命中同名车道且该车道有本渠道成员**：默认 409 `conflict`（message 给出车道清单）；`?force=1` 继续，并在落库后把这些车道上的本渠道成员移除（成员清空的空车道整条删除）。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
-| DELETE | `/api/channels/{name}` | 删除（被车道引用时 409） |
+| PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时若被移除的路由键命中同名车道且该车道有本渠道成员**：默认 409 `conflict`，**被引用的车道名在 `error.details.lanes`**（机器可判定，不要解析 message）；`?force=1` 继续，并在落库后把这些车道上的本渠道成员移除（成员清空的空车道整条删除）。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
+| DELETE | `/api/channels/{name}` | 删除；被车道引用时 409 `conflict`，引用它的车道名在 `error.details.lanes` |
 | POST | `/api/channels/{name}/test` | 单渠道探活 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；若被移除的路由键正是某条车道的名字、且该车道有本渠道成员，则返回 409 并给出车道清单。`?force=1` 覆盖时**同样执行成员清理**（从命中车道移除本渠道成员，空车道删除），响应附带 `cleaned_lanes` / `deleted_lanes` |
 
