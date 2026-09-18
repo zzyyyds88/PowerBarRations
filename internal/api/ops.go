@@ -625,34 +625,27 @@ func DeletePrefillGroupByID(c *gin.Context) {
 // —— 基座 handler 的直接复用（签名一致、无需注入） ——
 
 var (
-	BatchChannelStatus      = controller.BatchUpdateChannelStatus
-	BatchChannelTag         = controller.BatchSetChannelTag
-	DeleteDisabledChannels  = controller.DeleteDisabledChannel
-	DisableChannelsByTag    = controller.DisableTagChannels
-	EnableChannelsByTag     = controller.EnableTagChannels
-	RepairChannelAbilities  = controller.FixChannelsAbilities
-	FetchUpstreamModelsBody = controller.FetchModels
-	DetectAllUpstream       = controller.DetectAllChannelUpstreamModelUpdates
-	ApplyAllUpstream        = controller.ApplyAllChannelUpstreamModelUpdates
-	GetAllSystemOptions     = controller.GetOptions
-	UpdateSystemOptions     = controller.UpdateOption
-	AffinityCacheStats      = controller.GetChannelAffinityCacheStats
-	ClearAffinityCache      = controller.ClearChannelAffinityCache
-	ListSystemTasksHandler  = controller.ListSystemTasks
-	CurrentSystemTask       = controller.GetCurrentSystemTask
-	CreateLogCleanupTask    = controller.CreateLogCleanupSystemTask
-	PerformanceStats        = controller.GetPerformanceStats
-	ResetPerformanceStats   = controller.ResetPerformanceStats
-	ForceGarbageCollection  = controller.ForceGC
-	ClearDiskCacheHandler   = controller.ClearDiskCache
-	ListLogFilesHandler     = controller.GetLogFiles
-	CleanupLogFilesHandler  = controller.CleanupLogFiles
-	ListPrefillGroups       = controller.GetPrefillGroups
-	CreatePrefillGroup      = controller.CreatePrefillGroup
-	SyncUpstreamPreviewH    = controller.SyncUpstreamPreview
-	SyncUpstreamApplyH      = controller.SyncUpstreamModels
-	MissingModelsHandler    = controller.GetMissingModels
-	BatchDeleteModelMetaH   = controller.BatchDeleteModelMeta
+	DeleteDisabledChannels = controller.DeleteDisabledChannel
+	RepairChannelAbilities = controller.FixChannelsAbilities
+	DetectAllUpstream      = controller.DetectAllChannelUpstreamModelUpdates
+	ApplyAllUpstream       = controller.ApplyAllChannelUpstreamModelUpdates
+	GetAllSystemOptions    = controller.GetOptions
+	AffinityCacheStats     = controller.GetChannelAffinityCacheStats
+	ClearAffinityCache     = controller.ClearChannelAffinityCache
+	ListSystemTasksHandler = controller.ListSystemTasks
+	CurrentSystemTask      = controller.GetCurrentSystemTask
+	CreateLogCleanupTask   = controller.CreateLogCleanupSystemTask
+	PerformanceStats       = controller.GetPerformanceStats
+	ResetPerformanceStats  = controller.ResetPerformanceStats
+	ForceGarbageCollection = controller.ForceGC
+	ClearDiskCacheHandler  = controller.ClearDiskCache
+	ListLogFilesHandler    = controller.GetLogFiles
+	CleanupLogFilesHandler = controller.CleanupLogFiles
+	ListPrefillGroups      = controller.GetPrefillGroups
+	CreatePrefillGroup     = controller.CreatePrefillGroup
+	SyncUpstreamPreviewH   = controller.SyncUpstreamPreview
+	SyncUpstreamApplyH     = controller.SyncUpstreamModels
+	MissingModelsHandler   = controller.GetMissingModels
 )
 
 // —— 小工具 ——
