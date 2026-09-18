@@ -1,15 +1,19 @@
 # PowerBarRations 设计基线 v1
 
 > 立项：2026-09-14。本文是 PowerBarRations 项目唯一有效的产品与技术设计基线（SSOT）。
-> 项目性质：对开源项目 new-api 的**二次开发**——复用其转发管道、厂商适配层与前端控制台，重写路由核心与访问面，**只做"去计费 + 单用户化"裁剪**。
+> 项目性质：通用的本机多模型聚合与运维网关。它替代 Hermes 原先依赖的
+> `new-api + octopus` 两层网关；复用 new-api 的转发管道、厂商适配层与前端基础，
+> 用 PBR 的显式车道把多组散装 token 组织成故障转移模型。Hermes 是首要消费者，
+> 但其他工具和模型使用同一模型面。
 > 配套规范（均为规范性文件，与本文同级）：
 > - 管理 API 完整契约：[`api-spec-v1.md`](api-spec-v1.md)
 > - 路由与故障转移：[`routing-spec-v1.md`](routing-spec-v1.md)
 > - 令牌与认证：[`token-spec-v1.md`](token-spec-v1.md)
 > - UI 控制台：[`ui-spec-v1.md`](ui-spec-v1.md)
+> - Hermes 适配：[`hermes-spec-v1.md`](hermes-spec-v1.md)
 > 冲突时：本文管架构与取舍，各 spec 管本领域细节契约。
 >
-> **文档纪律（重要）**：本文及配套规范只描述系统本身，**不含任何部署私有数据**——不写具体渠道名、模型名、车道名单、厂商地址、凭据、成本单价。这类内容属"运维私有台账"，不入仓库，只在迁移阶段作为输入提供（见 [`MIGRATION.md`](../MIGRATION.md)）。
+> **文档纪律（重要）**：本文及配套规范只描述系统本身，**不含任何部署私有数据**——不写具体渠道名、模型名、车道名单、厂商地址、凭据、成本单价。这类内容属于部署方自己的运维配置，不入仓库。
 
 ---
 
@@ -23,17 +27,21 @@
 
 ### 1.1 定位
 
-**个人纯自用、单用户的 LLM 聚合网关。** 使用者只有一个人（以及代表他工作的 AI）；下游是 AI 客户端（harness）与少量人工排障。因此：去掉一切多用户/计费设施，但**保留全部与"把请求正确转发出去"有关的功能**，包括管理控制台。
+**个人纯自用、单用户的通用 LLM 聚合网关。** 使用者只有一个人（以及代表他工作的 AI）；
+下游包括 Hermes 和其他模型工具。PBR 保留 new-api 中与渠道、协议适配、模型管理、日志、统计、
+控制台和正确转发有关的能力，只去掉本项目明确不需要的多用户与计费部分。
 
 ### 1.2 目标
 
-- **G1 单层**：一个二进制、一个 SQLite、一条管道。车道（Lane）是唯一路由入口，成员 = `(渠道, 上游真名, 优先级)`。不再有第二层网关，不再需要任何模型映射表。
+- **G1 单层**：一个二进制、一个 SQLite、一条管道。车道（Lane）是唯一路由入口，成员 = `(渠道, 上游真名, 优先级)`。不再有第二层网关；渠道级 `model_mapping` 与成员级 `upstream_model` 共同负责上游改名。
 - **G2 AI 友好**：全部管理能力以版本化 HTTP API 暴露，自描述（OpenAPI）、幂等、可回读、错误可机器判定；AI 不改文件、不查库、不抓前端。完整契约见 api-spec-v1.md。
-- **G3 下游零改动**：存量车道名与 `/v1/*` 协议、错误语义一律不变；下游只改 base_url。
+- **G3 稳定模型面**：车道名与 `/v1/*` 协议、错误语义保持稳定；客户端只需按配置使用 PBR 的 base_url。
 - **G4 自愈**：保留现行路由层已验证的成员冷却 + 亲和，并补上厂商层"只禁不通、无半开自愈"的缺陷（new-api 上游 issue #5420）。软故障（限流）不得误判为硬故障。
 - **G5 保留厂商适配层**：new-api `relay/channel/` 下 40 家适配器原样复用。
 - **G6 有人看的控制台**：提供个人控制台，覆盖车道/渠道/密钥/日志/统计/设置/试打。规格见 ui-spec-v1.md。
 - **G7 只看不扣**：日志只存元数据，成本只做折算记账，不做任何计费/扣费/余额拒服务。
+- **G8 Hermes 首要验收**：`<hermes-lane>` 是专供 Hermes 的显式故障转移车道；Hermes 的
+  Chat Completions、工具调用、流式响应和 API 运维工作流是首要验收对象，详见 `hermes-spec-v1.md`。
 
 ### 1.3 删除范围（**只裁计费与多用户等下列项**，其余不裁）
 
@@ -51,14 +59,13 @@
 
 **单价层**：全局默认单价表（原 `PBRModelPrices`，§16.9#7）。
 
-**对应 UI 页面删除**：wallet、pricing、redemption-codes、subscriptions、users、rankings、legal、about、security(2FA/passkey)、profile、部分 home 营销页、task-plugins、model-pricing、system-update、**system-info**。完整清单见 ui-spec-v1.md §5。
+**对应 UI 页面删除**：wallet、pricing、redemption-codes、subscriptions、users、rankings、security(2FA/passkey)、profile、部分 home 营销页、task-plugins、model-pricing、system-update、**system-info**。About/Legal 保留用于许可证说明；完整清单见 ui-spec-v1.md §5。
 
 ### 1.4 保留范围（**默认全部保留**，不因个人自用而裁剪）
 
 渠道、车道（新）、模型目录与厂商适配层、客户端密钥、请求日志、用量与记账统计、Dashboard、Playground、系统设置（relay 相关）、初始化向导、错误页、WebSocket 上游池。已删除的子系统清单见 §1.3。
 
-> 与"正确转发"无关的重型子系统**不物理删除**，也不在控制台隐藏；默认保持可用。
-> **例外**：明确列入 §1.3 删除范围的条目按其口径处理（如系统信息页与多节点实例视图是物理删除）。
+> 除 §1.3 明确删除的范围外，保留 new-api 中有实际运维价值的能力；开发阶段不为旧功能增加兼容入口。
 > **部署形态**：仅 Docker（单容器）。不考虑桌面端，不 vendor electron。
 > **思考参数**：各厂商等价字段**沿用适配器现状**，不重新梳理映射表（详见 §16.1）。
 
@@ -66,7 +73,11 @@
 
 只支持 **SQLite** 单节点部署（多数据库代码保留，但不在部署矩阵内），以避免接口分叉。
 
-**多节点实例视图已删除**：PBR 不做多实例部署，基座继承的「实例上报 + `/api/system-info/**` + `system_instances` 表」随之物理删除（§1.3）；这不影响单节点启动，也不需要 `NODE_NAME` 配置（`NODE_NAME` 仅继续用于日志与任务 runner 标识）。
+**多节点实例视图已删除**：PBR 不做多实例部署，基座继承的实例上报与系统信息页不属于产品范围。
+
+**开发阶段数据边界**：以新建的 PBR SQLite 数据库为准。不提供旧 `new-api`/`octopus` 数据库迁移、
+双写、自动回填、历史数据恢复或旧数据兼容兜底；schema 发生破坏性变化时允许重建开发库。
+同版本配置导入导出若保留，只用于 PBR 配置快照，不承担旧系统迁移。
 
 ---
 
@@ -218,7 +229,7 @@ type Option     struct { Key, Value string }
 7. **全管理面同一信封**：§5 的稳定契约端点与控制台内部接口（§9）共用上述成功形态与错误模型；两者的差别只在"字段是否随控制台实现变动"，不在信封。基座遗留路径（`/api/channel/**`、`/api/console/**`、`/api/option/**`、`/api/performance/**`、`/api/system-task/**`、`/api/prefill_group/**`、`/api/log/**`）同样收敛到该信封。
 8. **分页**：cursor 分页，`limit` 有上限。
 9. **审计**：每次变更写 `audit_logs`（只记元数据）。
-10. **导出/导入**：`GET /export` / `POST /import?dry_run=` 取代"拷库备份/回滚"。
+10. **配置快照**：`GET /export` / `POST /import?dry_run=` 用于同版本 PBR 配置的导出、预览和恢复，不承担旧系统迁移。
 11. **自描述**：`GET /openapi.json`、`GET /capabilities`。
 
 ### 5.2 为什么这样设计（回答"AI 怎么用"）
@@ -234,7 +245,7 @@ AI 侧的全部运维动作——建渠道、建/改车道、调成员顺序、�
 - **蓝本 = new-api 上游前端**（Rsbuild + React + TanStack Router + Base UI + Tailwind）：**直接整体搬迁，做减法（删多用户/计费）+ 接线（认证、成员链）**，而非另起炉灶。
 - **认证极简**：无账号，只有登录口令；首启设置口令，之后登录换取 **HttpOnly 会话 Cookie**（浏览器不存管理密钥）。无注册/找回/OAuth/passkey/2FA。
 - **页面集合**（保留上游页面，删多用户/计费）：数据看板、渠道管理、模型管理、路由与故障切换（**独立页 `/routes`**）、令牌、请求日志、系统任务（**独立页 `/system-tasks`**）、性能指标、系统设置、试打台、关于/法律页等。**「系统信息」页已删除**（多节点实例视图，单节点部署不需要），其任务面板提为「系统任务」独立页。
-- **构建**：Rsbuild（上游默认），产物交 Go `embed`；包管理沿用上游 `bun.lock`（如环境不便可用 pnpm）。
+- **构建**：Rsbuild（上游默认），产物交 Go `embed`；包管理使用仓库现行的 pnpm。
 - **保留/删除**：除多用户/计费外全部上游页面保留；保留与删除的完整清单见 §1.3/§1.4 与 ui-spec §5。
 - **实时机制**：车道运行态经 SSE 推送 + 30s 轮询兜底（PBR 自有 `/api/route-events`）。
 - **产物形态**：单进程同时服务 `/v1/*`、`/api/*` 与静态控制台。
@@ -346,7 +357,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 > 完整设计见 **[`token-spec-v1.md`](token-spec-v1.md)**，本节只留架构性两句：
 
 - 管理凭据 = **一个登录口令**（无账号），派生管理密钥 `Base64(SHA256(口令))`，服务端只存其哈希；客户端密钥服务端随机生成并明文持久化（管理 API 可回读），**默认允许全部车道、只能显式拒绝**（ADR 0004）。
-- 额度/配额/白名单/多用户字段一律删除；存量凭据导入时**密钥值不变**、权限一律 allow-all（详见 token-spec §4）。
+- 额度/配额/白名单/多用户字段一律删除；客户端密钥由当前 PBR 实例创建和管理（详见 token-spec-v1.md）。
 
 ---
 
@@ -359,15 +370,11 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 - `web/**`：**直接搬迁 new-api 上游前端**（见 §6 / ui-spec-v1.md），全量替换品牌；删除计费/多用户页面，其余保留。
 - WS 池代码：保留，不删。任务插件/异步任务子系统、JS 插件基座与 Midjourney 全链路已删除（§1.3，个人自用不接文生视频/文生图服务）。
 
-### 10.2 三段式减脂
+### 10.2 当前裁剪边界
 
-1. **逻辑停用**：不注册用户/计费/充值/订阅/兑换/排行榜路由；`BillingSettler` 换 no-op；额度恒无限，准入不查余额。此阶段不碰适配器。
-2. **测试全绿**：金标准用例（§12）全过。
-3. **物理清除**：删除计费/多用户代码与其 UI 页面；`relaycommon` 中被适配器引用的计费字段保留并注释"惰性遗留"。
-
-#### 10.2.1 W7 执行口径
-
-**W7 已完成**：计费/多用户面物理删除、基座管理面改挂 PBR 原生凭据、成本折算改渠道单价（§16.9#7）。完整执行口径（删除清单、惰性遗留、改造点）已归档至 [`archive/design-v1-history.md`](archive/design-v1-history.md)，实测证据见 `verify/` 与 `verify/final/`。
+计费、多用户及其 UI 已从当前产品范围移除；适配器只保留正确转发所需的字段和代码。
+成本折算仍是只读观测能力，不恢复额度、扣费或余额拒服务。历史裁剪过程和验证记录仅供追溯，
+不构成当前实现要求。
 
 ### 10.3 从 upstream 取什么
 
@@ -383,71 +390,60 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 > 立项期的"待建"骨架树已归档（[`archive/design-v1-history.md`](archive/design-v1-history.md)）；**实际目录以仓库为准**。唯一仍有效的取向：新写的路由核心放 `internal/`，新档案进 `docs/`，上游只读参考放 `reference/`（不入仓库）。
 
-### 10.5 开工前置：以 new-api 为基座迁入（不是净室重写）
+### 10.5 工程基座：复用 new-api 转发与适配能力
 
-适配器与 `service` / `setting` / `model` 深度绑定的实测（归档基线 §2.6，见 [`archive/design-v1-history.md`](archive/design-v1-history.md)）证明净室剥离不可行。因此开工第一步固定为：
+适配器与 `service` / `setting` / `model` 深度绑定，净室剥离会破坏转发能力。因此工程基座固定为：
 
-1. **迁入**：把 `reference/new-api` 的 Go 源码复制进本仓库，**保留其包布局**（`relay/ relaykit/ dto/ common/ constant/ setting/ service/ model/ controller/ middleware/ router/ logger/ pkg/ i18n/`），改 module path 为 `pbr`、全量替换 import 路径。该步单独一个提交（`feat: 以 new-api 为基座迁入`）。
+1. **复用**：把 `reference/new-api` 的 Go 源码纳入本仓库实现，**保留其包布局**（`relay/ relaykit/ dto/ common/ constant/ setting/ service/ model/ controller/ middleware/ router/ logger/ pkg/ i18n/`），改 module path 为 `pbr`、全量替换 import 路径。
 2. **不迁**：`electron/`、`docs/`、`e2e/` 等非代码资产（`web/` **要迁**，见 §6）。
 3. **目标目录布局是演进终点，不是起点**（历史骨架树见归档 §10.4）：新写的路由核心放 `internal/`；旧包逐步改造或删除，不要求一次性重排目录。
-4. **计费与多用户先惰性化**（§10.2），W7 才物理清除；中间阶段允许 `service`/`setting` 包继续存在。
-5. **许可证**：保留 new-api 的 AGPL 头、`LICENSE`、`NOTICE`、`THIRD-PARTY-LICENSES.md`（前端既然只来自 new-api 一家上游，无需再另附其他蓝本清单）。品牌可替换，版权不可替换。
-
-> 关键取舍：**迁入的代码在中间阶段会包含计费与多用户代码**（只是不注册路由、不执行计费）。这是为"能编译、能转发"付的必要代价；W7 再清。
+4. **许可证**：保留 new-api 的 AGPL 头、`LICENSE`、`NOTICE`、`THIRD-PARTY-LICENSES.md`（前端既然只来自 new-api 一家上游，无需再另附其他蓝本清单）。品牌可替换，版权不可替换。
 
 ---
 
-## 11. 迁移机制（后期阶段，输入为私有台账）
+## 11. 开发阶段数据边界
 
-- 旧两层库 → PBR 的迁移算法、幂等 upsert、对账报告、`pbr migrate` 命令与切流/回滚步骤，**唯一规范见 [`MIGRATION.md`](../MIGRATION.md)**；历史版本（含已被 ADR 0005 推翻的隐式链口径）见 [`archive/design-v1-history.md`](archive/design-v1-history.md) §11。
-- 边界不变：输入是运维私有台账（渠道名、凭据、单价表），**一律不入仓库**；迁移产物经 `POST /api/import` 落库。
-- 无法归属/平局的成员必须进对账报告人工裁决，**不许静默丢弃**；读旧库必带 WAL 三件套并 checkpoint。
-
----
-
-## 12. 金标准用例（W1 起每节都跑，不许只做单测）
-
-> 施工波次 W0–W8 的波次定义与验收门已归档至 [`archive/design-v1-history.md`](archive/design-v1-history.md) §12（W7 已完成，证据见 `verify/` 与 `verify/final/`）。以下八项金标准仍然现行有效：
-
-① 工具调用 5/5（一票否决）② 多模态小图（尺寸 ≥10，过小图会被部分厂商拒）③ 思考参数半开时**由上游**返回 400，网关原样透传 ④ 长流式 ≥100K 输入 token ⑤ Anthropic `/v1/messages` 一发 ⑥ `embeddings` ⑦ 车道全挂时错误快抛不静默 ⑧ 429 限流不被误判为硬故障。
+- 不实现旧 `new-api`/`octopus` 数据库迁移、`pbr migrate`、双写、历史数据回填或旧数据兼容兜底。
+- 新实例从空 PBR SQLite 数据库开始，渠道、各模型车道和 Hermes ClientKey 通过管理 API 或控制台创建。
+- `/api/export` 与 `/api/import` 若保留，仅表示同版本 PBR 配置快照；不得声称支持旧系统数据恢复。
+- 运行态故障转移属于请求路由能力，不属于数据兜底；它只在显式车道的成员链内执行。
 
 ---
 
-## 13. 提交与分支纪律
+## 12. 金标准用例
 
-见 `AGENTS.md`。落地要点：大任务先改设计文档（`docs:`）→ 生成 breakdown（`breakdown:`）→ 并行实现（`feat:`/`fix:`）→ 删除 breakdown（`chore:`）；每波次一个主题的原子 commit，message 写"做了什么 + 实测证据路径"；不许顺手改 vendor 进来的适配器逻辑；默认 `main`，功能分支 `--no-ff` 合并后清理；**提交前自查 diff 不得出现渠道名/模型名/车道名单/凭据/厂商地址/单价**。
+Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](hermes-spec-v1.md) §6。
+通用路由、认证和管理契约仍分别以 routing/token/api spec 为准；其他模型车道复用同一套验收。
+
+---
+
+## 13. 协作与提交
+
+提交、分支、测试和敏感数据规则统一遵循仓库根目录 `AGENTS.md`，本文不重复维护。
 
 ---
 
 ## 14. 风险与已知坑
 
-1. **适配器与计费的耦合**是最大工程风险（实测分布见归档基线 §2.6，[`archive/design-v1-history.md`](archive/design-v1-history.md)）。对策：三段式减脂。
+1. **适配器与历史基座字段的耦合**是最大工程风险（实测分布见归档基线 §2.6，[`archive/design-v1-history.md`](archive/design-v1-history.md)）。对策：只移除不影响转发的产品面，适配器保留必要兼容字段。
 2. **假成功前科**：路由层写接口曾回 success 但库不动；厂商层创建接口缺包装会静默假写。对策：写→回读→断言。
-3. `model_mapping` 必须是 JSON dict（迁移只需读）。
+3. `model_mapping` 必须是 JSON dict，用于渠道级路由键到上游真名的运行时解析。
 4. 验证 `sk-` 令牌只能用 curl / node fetch；Python `urllib` 会被指纹过滤误判 401。
-5. 读旧库必带 WAL 三件套 + `wal_checkpoint(FULL)`。
-6. 欠费类上游以 HTTP 400 到达，不在默认重试状态码集，只有关键词命中才抓得到。
-7. 自动禁用后无半开自愈（上游 issue #5420）——本项目要修的就是它。
-8. 车道全挂必须"错误快抛、无静默兜底、不跨车道逃逸"。
-9. 同渠道同时承载车道流量与点名流量时，整渠道级故障会让点名请求 100% 撞墙——故 `PublicAlias` 点名也必须过冷却/熔断。
-10. **切流会打断外部告警链路**：若部署方有依赖旧库文件事件的外部告警，切流后需改指新库并验证出口存活；请记录在部署方自己的运维手册中。
-11. **AGPL-3.0**：上游均 AGPL。本系统仅本机自用（无公网入站、不分发），不触发开源义务；但**不许把仓库推到公开可见位置**。
+5. 欠费类上游以 HTTP 400 到达，不在默认重试状态码集，只有关键词命中才抓得到。
+6. 自动禁用后无半开自愈（上游 issue #5420）——本项目要修的就是它。
+7. 车道全挂必须"错误快抛、无静默兜底、不跨车道逃逸"。
+8. 同渠道同时承载车道流量与点名流量时，整渠道级故障会让点名请求 100% 撞墙——故 `PublicAlias` 点名也必须过冷却/熔断。
+9. **AGPL-3.0**：上游均 AGPL。本系统仅本机自用（无公网入站、不分发），不触发开源义务；但**不许把仓库推到公开可见位置**。
 
 ---
 
 ## 15. 交付物
 
 ① 可运行二进制 `pbr`（含 embed 的控制台）+ `Dockerfile`（多阶段：前端构建 → Go 构建）。
-② `README.md`：部署 / 车道配置 / 超时算术 / 管理密钥管理 / 与旧系统差异。
-③ `MIGRATION.md`：迁移算法 + 切流与回滚（含告警链路改造）。
-④ `docs/adr/`：至少 4 条——为什么以 new-api 转发管道为基座、为什么删 `model_mapping`、为什么默认开自动复通、为什么保留控制台但认证极简化。
-⑤ `verify/`：每波次的命令与输出证据，含时间戳。
-⑥ `GET /api/openapi.json`（机器可读契约）+ `GET /doc` / `GET /llms.txt`（面向 AI 的纯文本手册）+ `GET /doc/ui`（复用 Scalar 的交互式文档）。
-
-### 切流（交付后由运维执行）
-1. 下游逐个把 base_url 从旧路由层改指 PBR（模型名不变），每次改一个并跑一发真实会话验证。
-2. 全量切完后旧两套实例停容器但保留数据作归档。
-3. 回滚 = 把 base_url 指回旧路由层，一秒级。
+② `README.md`：部署 / 车道配置 / 超时算术 / 管理密钥管理。
+③ `docs/adr/`：记录以 new-api 转发管道为基座、保留渠道级 `model_mapping`、自动复通和轻量认证等关键决策。
+④ `verify/`：每波次的命令与输出证据，含时间戳。
+⑤ `GET /api/openapi.json`（机器可读契约）+ `GET /doc` / `GET /llms.txt`（面向 AI 的纯文本手册）+ `GET /doc/ui`（复用 Scalar 的交互式文档）。
 
 ---
 
@@ -477,13 +473,11 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 - **给人/AI 的入口**：`GET /doc`（默认 `text/markdown`，浏览器 `Accept: text/html` 返回说明页）、`GET /llms.txt`（`text/plain`）、`GET /doc/ui`（复用 GitHub 项目 Scalar 渲染 `/api/openapi.json`）。三者与 `/api/openapi.json` 均免鉴权，便于 AI 先读手册再自行派生管理密钥。
 - **前缀**：管理面规范前缀为 `/api`，`/api/v1` 为兼容别名（注册相同处理器）。与 AI 契约冲突的控制台内部资源（模型目录、审计）收在 `/api/console/*`；其余控制台内部接口仍在 `/api/*` 下同权限可用，但不属于稳定契约。
 
-### 16.4 存储与迁移版本
+### 16.4 存储与当前 schema
 
-- 实现采用**幂等的 ad-hoc 迁移**（`model/main.go` 的 `migrateDB()`）：`AutoMigrate` 建表补列，
-  叠加一组可重复执行的手写修正函数（删渠道 priority/weight 列、删任务表、迁移审计日志等），
-  每次启动都全量跑一遍，靠函数自身的幂等性保证安全；**没有** `schema_migrations` 版本表，
-  也没有 `internal/store/migrations/` 目录。
-- 迁移失败即启动失败，不允许半可用状态。
+- 开发阶段只保证当前 PBR schema 在新建 SQLite 数据库上初始化成功；破坏性 schema 变化允许重建开发库。
+- 不提供旧 `new-api`/`octopus` 数据库导入、历史数据回填、双写、旧字段兼容或数据恢复兜底。
+- 同版本 `/api/export` 与 `/api/import` 只处理 PBR 配置快照；它们不是数据库迁移工具。
 
 ### 16.5 日志保留
 
@@ -512,11 +506,10 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 | 4 | Docker | 镜像/容器名 `pbr`；数据卷挂 `/data`（含 `pbr.db`）；随仓库提供 `docker-compose.yml` 样例 |
 | 6 | 车道模式收敛 | **只保留 `failover`（默认）与 `manual`**；`weighted` / `round_robin` 与其成员 `weight` 已删（单用户网关不需要随机/轮询）。需要打散负载时拆车道或调顺序 |
 | 7 | 上游单价与成本折算 | **单层单价**：只有**渠道级上游单价**（渠道 `setting.pbr_prices`，人民币 / 百万 token，字段 `input`/`output`/`cache_read`/`cache_write`），在渠道编辑「上游单价」页签配置，计价键为请求模型名；渠道未配价 → 不折算（0）。**全局默认单价表（`PBRModelPrices`）已移除**。只用于日志 `estimated_cost` 与看板成本统计（含"渠道 × 模型"维度），**不参与准入、不扣额度、与下游计费无关**（本项目无计费）。基座 `setting/ratio_setting` 不再充当单价表（它仍是惰性遗留：提供路由用的模型名归一化 `RoutingMatchModelName`） |
-| 8 | 旧库日志 | **不迁移**；旧库整体归档保留，不额外导出 |
-| 9 | 请求头兼容 | 管理面仅收 `Authorization`；模型面 `Authorization` 与 `X-Api-Key` 都收（兼容存量客户端） |
+| 8 | 请求头兼容 | 管理面仅收 `Authorization`；模型面 `Authorization` 与 `X-Api-Key` 都收 |
 | 11 | 开工基座 | **以 new-api 源码迁入为基座**，非净室重写；前端**同样直接搬迁上游 `web/`**（见 §6 / §10.5） |
 | 12 | 亲和默认值 | 默认 `member_affinity_seconds=0`（**与现网一致，避免故障切换后长时间粘在备用成员**），可配 |
-| 13 | 前端包管理与适配范围 | 前端直接搬迁 new-api 上游 `web/`（Rsbuild + Bun 锁文件；环境不便时可用 pnpm）；保留除多用户/计费外全部页面；实质改造 = **成员链（故障切换）管理**（落位为侧边栏独立页 `/routes`，见 §7.7），并把认证接到 PBR 口令会话 |
+| 13 | 前端包管理与适配范围 | 前端复用上游 `web/`（Rsbuild + pnpm）；保留除多用户/计费外的运维页面；实质改造 = **成员链（故障切换）管理**（落位为侧边栏独立页 `/routes`，见 §7.7），并把认证接到 PBR 口令会话 |
 
 ### 16.10 Webhook 事件通知（已定）
 
@@ -557,11 +550,8 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 |---|---|---|
 | 1 | 网络暴露 | **全部监听 `0.0.0.0` 对局域网开放**（模型面与管理面同端口，凭登录口令/管理密钥鉴权，不做来源限制）。可用 `PBR_BIND=127.0.0.1` 收紧。局域网为明文 HTTP，因此**要求长随机口令** |
 | 2 | 部署形态 | **docker compose 样例 + 手动 docker run**；不做面板类应用商店打包 |
-| 3 | 旧端点兼容 | **一律不做兼容层**：旧管理端点全部翻新重构，切流后重写 ops 技能与告警脚本 |
+| 3 | 旧端点兼容 | **一律不做兼容层**：管理面按 PBR 当前契约重构，不为旧系统保留迁移期入口 |
 | 4 | 仓库远程 | **只留本地**，不配置 remote |
 
-### 非阻塞事项（切流阶段才需要，不挡开工）
-- 下游 base_url 的切换顺序与时间；旧两套实例停容器的时间。
+### 非阻塞事项（不挡开工）
 - 成本折算单价表的实际数值（属部署数据，运行期在**各渠道的 `pbr_prices`** 里配置，无全局层）。
-- 旧库归档保留时长。
-- 切流策略可选**分步走**：PBR 先只接管路由层、渠道暂指旧厂商层，验证后再把渠道直连厂商（比一次性替换风险低）。默认按"一次性替换"设计，若要分步需在切流前告知。
