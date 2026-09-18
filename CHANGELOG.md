@@ -17,6 +17,9 @@
 ### Changed
 - 控制台首页重做为 PBR 真实能力：模型即路由键、同名车道、优先级故障转移、冷却 / 亲和 / 熔断；新增「一次请求如何被路由」区块；统计口径修正为 **4** 个上游协议。
 - 控制台图标换为新的闪电电源徽标（AI 生成母版 + 可复现生成脚本）。
+- **管理面响应信封统一**（api-spec §2/§3）：成功一律裸资源（列表 `{items,next_cursor}`、动作类 `{changed}`/`{deleted}` 等语义化最小对象），失败一律 `{error:{code,message,hint,details?}}` 并带真实 HTTP 状态码；不再有 `{success,message,data}` 包装与"200 承载业务失败"。稳定契约端点与控制台内部端点共用同一信封。
+- **运维端点按名寻址**：`channels/batch/{status,tag}` 接受 `channels:[渠道名]`（`ids` 仍兼容，二者只能给一个）；`model-catalog/batch-delete` 接受 `models:[模型名]`；`channels/batch/copy` 改为 body `{channel}`。修复 `batch/copy` 与 `batch/fetch-models` 此前因参数不一致而不可用的问题。
+- **运维端点路由与响应策略同表声明**（design-v1 §16.3）：新增 `internal/api/ops_routes.go` 与 `internal/apiresp`，守卫测试强制每条已注册管理路由都有信封覆盖。
 
 ### Security
 - 客户端密钥只写不读，服务端只存 `sha256` 与展示前缀；管理密钥由登录口令派生、不落库。
