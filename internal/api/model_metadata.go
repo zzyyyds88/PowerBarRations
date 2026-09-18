@@ -234,7 +234,7 @@ func DeleteModelMetadataByModel(c *gin.Context) {
 		return
 	}
 	if record == nil {
-		apierr.NotFound(c, apierr.CodeValidationFailed, "model metadata '"+name+"' not found", "GET /api/model-metadata")
+		apierr.NotFoundModel(c, name)
 		return
 	}
 	removeFromChannels := strings.EqualFold(c.Query("remove_from_channels"), "true")
@@ -272,7 +272,10 @@ func DeleteModelMetadataByModel(c *gin.Context) {
 	if delErr != nil {
 		var laneErr *model.LaneReferenceError
 		if errors.As(delErr, &laneErr) {
-			c.JSON(http.StatusOK, gin.H{"success": false, "code": "conflict", "message": "model is still referenced by lanes", "data": gin.H{"blocked": laneErr.Blocked}})
+			apierr.ConflictDetails(c, apierr.CodeConflict,
+				"model is still referenced by lanes",
+				"retry with ?force=1 to also remove this model from channels",
+				gin.H{"blocked": laneErr.Blocked})
 			return
 		}
 		writeAPIError(c, delErr)

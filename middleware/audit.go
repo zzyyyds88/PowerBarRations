@@ -169,19 +169,24 @@ func auditAuthMethod(c *gin.Context) string {
 }
 
 // auditResponseSuccess 依据 HTTP 状态码与响应体推断操作是否成功。
-// 优先解析响应 JSON 中的 success 字段；无法解析时退回到状态码判断。
+//
+// 管理面已统一信封（design-v1 §5.1）：成功为裸资源、失败为 {error:{...}} 且带真实
+// HTTP 状态码。因此这里不再解析 `success` 字段（该字段已不存在），改为
+// "状态码 < 400 且响应体不是 error 包络"。
 func auditResponseSuccess(status int, body []byte) bool {
 	if status >= 400 {
 		return false
 	}
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) > 0 && trimmed[0] == '{' {
-		var resp struct {
-			Success *bool `json:"success"`
+		var probe struct {
+			Error *struct {
+				Code string `json:"code"`
+			} `json:"error"`
 		}
-		if err := common.Unmarshal(trimmed, &resp); err == nil && resp.Success != nil {
-			return *resp.Success
+		if err := common.Unmarshal(trimmed, &probe); err == nil && probe.Error != nil {
+			return false
 		}
 	}
-	return status < 400
+	return true
 }

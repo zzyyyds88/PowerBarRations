@@ -155,16 +155,48 @@ func ResetForTest() {
 	registry = map[string]Policy{}
 }
 
-// Middleware 按逐路由策略把基座信封改写成契约形态。
+// Default 是未显式登记策略的路由所用的兜底策略：成功体 = data 原样裸化，
+// 失败按 code/状态码归类。因此"新端点忘了登记"不会漏掉信封，只是拿不到定制成功体。
+var Default = Policy{
+	Failures: []FailureRule{
+		{BaseCode: "conflict", OutStatus: http.StatusConflict, OutCode: CodeConflict},
+		{BaseCode: "unauthorized", OutStatus: http.StatusUnauthorized, OutCode: "unauthorized"},
+		{BaseCode: "forbidden_scope", OutStatus: http.StatusForbidden, OutCode: "forbidden_scope"},
+		{BaseCode: "upstream_error", OutStatus: http.StatusBadGateway, OutCode: CodeUpstreamError},
+		{BaseCode: "invalid_request", OutStatus: http.StatusBadRequest, OutCode: CodeInvalidRequest},
+		{BaseCode: "validation_failed", OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed},
+		{BaseCode: "not_found", OutStatus: http.StatusNotFound, OutCode: CodeNotFound},
+		// 基座把失败也写成 200：无显式 code 时按"业务拒绝"处理（绝大多数是参数/状态校验）。
+		{Status: http.StatusOK, OutStatus: http.StatusBadRequest, OutCode: CodeValidationFailed},
+	},
+	Details: blockedDetails,
+}
+
+// blockedDetails 从基座响应提取车道引用明细（渠道名 → 引用它的车道名）。
+func blockedDetails(base Base) any {
+	value, ok := base.DataValue().(map[string]any)
+	if !ok {
+		return nil
+	}
+	if blocked, ok := value["blocked"]; ok {
+		return map[string]any{"blocked": blocked}
+	}
+	return nil
+}
+
+// Middleware 把基座信封改写成契约形态。
 //
-// 只对**已登记策略**的路由生效：未登记即原样透传（由守卫测试保证不遗漏）。
+// 对**所有**管理面路由生效：已登记策略的用其策略，未登记的回落 Default。
 // 显式 Passthrough 与超过 maxBuffer 的响应不缓冲、不改写。
 func Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		policy, ok := Lookup(c.Request.Method, c.FullPath())
-		if !ok || policy.Passthrough {
-			c.Next()
-			return
+		policy := Default
+		if registered, ok := Lookup(c.Request.Method, c.FullPath()); ok {
+			if registered.Passthrough {
+				c.Next()
+				return
+			}
+			policy = registered
 		}
 		w := &bufferedWriter{ResponseWriter: c.Writer, policy: policy}
 		c.Writer = w
