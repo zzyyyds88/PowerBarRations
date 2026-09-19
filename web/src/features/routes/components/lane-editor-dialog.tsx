@@ -47,8 +47,6 @@ export function LaneEditorDialog(props: {
   onOpenChange: (open: boolean) => void
   /** 空 = 新建车道；非空 = 编辑该车道的成员链。 */
   model?: string
-  /** 新建模式下的路由键初值（从"未配车道"卡片进入时预填）。 */
-  prefillName?: string
   onSaved: () => Promise<void> | void
 }) {
   const { t } = useTranslation()
@@ -77,7 +75,7 @@ export function LaneEditorDialog(props: {
     props.onOpenChange(open)
   }
 
-  // 只有真正存在车道（explicit/disabled）才预载成员；未配车道时后端返回的
+  // 只有真正存在车道（explicit/disabled）才预载成员；新建模式下后端返回的
   // members 是"推荐链"，按 ADR 0006 不得自动填入，必须从空列表开始。
   const hasLane =
     routeQuery.data?.source === 'explicit' ||
@@ -105,9 +103,8 @@ export function LaneEditorDialog(props: {
   } else {
     body = (
       <LaneComposer
-        key={props.model ?? props.prefillName ?? 'new'}
+        key={props.model ?? 'new'}
         model={props.model}
-        initialName={props.prefillName}
         initialMembers={initialMembers}
         initialMode={initialMode}
         initialActiveMember={initialActive}
