@@ -55,6 +55,9 @@ export function Routes() {
   const queryClient = useQueryClient()
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorModel, setEditorModel] = useState<string | undefined>(undefined)
+  const [editorPrefill, setEditorPrefill] = useState<string | undefined>(
+    undefined
+  )
   const [pendingDelete, setPendingDelete] = useState<PBRModelSummary | null>(
     null
   )
@@ -116,12 +119,19 @@ export function Routes() {
     await queryClient.invalidateQueries({ queryKey: laneSummariesKey })
   }
 
-  const openNewLane = () => {
+  const openNewLane = (prefill?: string) => {
     setEditorModel(undefined)
+    setEditorPrefill(prefill)
     setEditorOpen(true)
   }
-  const openEditLane = (model: string) => {
-    setEditorModel(model)
+  // 未配车道：新建模式（路由键可编辑，预填该模型名）；已配车道：编辑模式。
+  const openCard = (row: PBRModelSummary) => {
+    if (row.source === 'unconfigured') {
+      openNewLane(row.model)
+      return
+    }
+    setEditorModel(row.model)
+    setEditorPrefill(undefined)
     setEditorOpen(true)
   }
 
@@ -163,7 +173,7 @@ export function Routes() {
             members={laneOrders.get(row.model) ?? []}
             snapshot={laneRuntime.byLane.get(row.model)}
             now={nowMs}
-            onEdit={() => openEditLane(row.model)}
+            onEdit={() => openCard(row)}
             onDelete={() => setPendingDelete(row)}
           />
         ))}
@@ -178,7 +188,7 @@ export function Routes() {
           {t('Routing & Failover')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          <Button size='sm' onClick={openNewLane}>
+          <Button size='sm' onClick={() => openNewLane()}>
             <Plus className='size-4' />
             {t('New lane')}
           </Button>
@@ -224,6 +234,7 @@ export function Routes() {
           open
           onOpenChange={setEditorOpen}
           model={editorModel}
+          prefillName={editorPrefill}
           onSaved={refresh}
         />
       )}

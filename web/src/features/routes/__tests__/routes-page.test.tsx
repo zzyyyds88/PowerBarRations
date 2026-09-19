@@ -165,15 +165,24 @@ describe('路由与故障切换页', () => {
     expect(within(dialog).getByLabelText('Route key')).toBeDisabled()
   })
 
-  test('未配车道的卡片显示「新建车道」入口', async () => {
+  test('未配车道的卡片打开可编辑且预填路由键的编排器', async () => {
     mockRouteKeys()
     renderPage()
 
-    expect(await screen.findByText('model-2')).toBeInTheDocument()
-    // model-2 未配车道 → 卡片操作是「新建车道」而不是「编辑成员链」。
-    expect(
-      screen.getAllByRole('button', { name: 'Create lane' }).length
-    ).toBeGreaterThan(0)
+    const user = userEvent.setup()
+    const createButtons = await screen.findAllByRole('button', {
+      name: 'Create lane',
+    })
+    // model-2 是未配车道的那张卡片。
+    await user.click(createButtons[0])
+
+    const dialog = await screen.findByRole('dialog')
+    const routeKey = within(dialog).getByLabelText('Route key')
+    // 未配车道：新建模式，路由键可编辑且预填该模型名（ADR 0006）。
+    expect(routeKey).toBeEnabled()
+    expect(routeKey).toHaveValue('model-2')
+    // 未配车道不得自动填入推荐成员。
+    expect(within(dialog).getByText('No members yet')).toBeVisible()
   })
 
   test('页头「新建车道」打开可编辑路由键的编排器', async () => {

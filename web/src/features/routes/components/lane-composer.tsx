@@ -95,6 +95,8 @@ export interface ComposerMember {
 export interface LaneComposerProps {
   /** 新建时为空；编辑既有车道时为该车道名（路由键只读）。 */
   model?: string
+  /** 新建模式下的路由键初值（从"未配车道"卡片进入时预填，仍可编辑）。 */
+  initialName?: string
   /** 打开时从后端载入的初始成员（编辑既有车道用）。 */
   initialMembers?: ComposerMember[]
   initialMode?: PBRLaneMode
@@ -149,6 +151,8 @@ function ModelPickerItem(props: {
       type='button'
       disabled={props.added}
       onClick={props.onAdd}
+      aria-label={props.model}
+      title={props.model}
       className={cn(
         'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs transition-colors',
         props.added ? 'cursor-not-allowed opacity-50' : 'hover:bg-muted'
@@ -166,7 +170,7 @@ export function LaneComposer(props: LaneComposerProps) {
   const queryClient = useQueryClient()
   const editing = Boolean(props.model)
 
-  const [name, setName] = useState(props.model ?? '')
+  const [name, setName] = useState(props.model ?? props.initialName ?? '')
   const [members, setMembers] = useState<ComposerMember[]>(
     props.initialMembers ?? []
   )

@@ -176,6 +176,13 @@ JS_CLICK_CONTAINS = (
     "return false;})()"
 )
 
+# 按 aria-label 精确点击（编排器里的模型项按钮有首字符兜底图标，textContent 不可靠）。
+JS_CLICK_ARIA = (
+    "(function(){var name=%s;var bs=[...document.querySelectorAll('button[aria-label]')];"
+    "for(var i=0;i<bs.length;i++){if(bs[i].getAttribute('aria-label')===name){bs[i].click();return true;}}"
+    "return false;})()"
+)
+
 # 点选成员候选按钮：New lane / 成员链面板里以渠道名为按钮文案。
 JS_CLICK_CHANNEL = (
     "(function(){var name=%s;var bs=[...document.querySelectorAll('button')];"
@@ -206,6 +213,10 @@ def js_click_dialog(texts):
 
 def js_click_channel(name):
     return JS_CLICK_CHANNEL % json.dumps(name)
+
+
+def js_click_aria(name):
+    return JS_CLICK_ARIA % json.dumps(name)
 
 
 def main():
@@ -407,19 +418,29 @@ def main():
         check("回读渠道存在且 models 含 ui-model", s == 200 and MODEL in (ch.get("models") or []), (s, ch))
         cdp.shot("04-channel-created")
 
-        # ---- 用户动作 4：建车道（路由页编辑成员链）----
+        # ---- 用户动作 4：建车道（路由页卡片 + 两栏编排器，ADR 0006）----
         log("")
-        log("=== 用户动作 4：在路由页编辑成员链并保存 ===")
+        log("=== 用户动作 4：在路由页新建车道并保存 ===")
         cdp.nav(base + "/routes", wait=4)
         check("进入 /routes", cdp.val("location.pathname") == "/routes", cdp.val("location.pathname"))
-        # ui-model 已被渠道声明 → 路由页出现"未配车道 + 候选渠道"行；
-        # 正确入口是行内「Edit members」打开成员链面板，点候选渠道加入后 Save。
-        cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
-        check("成员链面板打开（出现候选渠道）",
-              wait_for("(function(){var bs=[...document.querySelectorAll('button')];return bs.some(function(b){return (b.textContent||'').trim()===%s;});})()" % json.dumps(CHANNEL), 15),
+        # ui-model 已被渠道声明但未配车道 → 路由页出现「未配车道」卡片。
+        check("路由页出现未配车道的卡片",
+              wait_for("document.body.innerText.indexOf(%s)>=0" % json.dumps(MODEL), 15),
               cdp.val("document.body.innerText.slice(-300)"))
-        picked = cdp.val(js_click_channel(CHANNEL))
-        check("点选候选渠道加入成员链", bool(picked), picked)
+        # 卡片操作是「新建车道」；也可用页头「New lane」。
+        cdp.val(js_click_exact(["Create lane", "新建车道", "New lane"]))
+        check("两栏编排器打开（左栏出现渠道折叠项）",
+              wait_for("(function(){var bs=[...document.querySelectorAll('button')];return bs.some(function(b){return (b.textContent||'').trim().indexOf(%s)>=0;});})()" % json.dumps(CHANNEL), 15),
+              cdp.val("document.body.innerText.slice(-400)"))
+        # 路由键（新建时可编辑）；未配车道时成员列表为空，必须手工加入成员。
+        cdp.val(js_set_selector("#lane-route-key", MODEL))
+        time.sleep(0.4)
+        # 展开渠道（折叠项文案是"渠道名+模型数"，用包含匹配），点模型项加入右栏。
+        picked = cdp.val(js_click_contains([CHANNEL]))
+        check("展开渠道折叠项", bool(picked), picked)
+        time.sleep(0.5)
+        picked_model = cdp.val(js_click_aria(MODEL))
+        check("点选模型加入成员", bool(picked_model), picked_model)
         time.sleep(0.6)
         cdp.shot("05-lane-dialog")
         cdp.val(js_click_exact(["Save", "保存"]))
