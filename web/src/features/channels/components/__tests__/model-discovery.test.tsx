@@ -281,29 +281,52 @@ test('a failed manual probe offers an inline retry and the next success opens th
   ).toBeVisible()
 })
 
-test('the Models field offers Fetch model list which pulls the batch endpoint and fills the form', async () => {
+// ui-spec §6.4：模型区只有一个探测入口（「探测上游模型」）。已保存渠道必须复用
+// 服务端已存密钥（GET /api/channel/fetch_models/{id}），不得发只有 base_url、没有 key
+// 的草稿探测——表单出于安全不回填 key，那样必然 401。
+test('the only discovery entry probes a saved channel through the stored key, never a keyless draft', async () => {
   mockChannelGet()
-  const post = vi
-    .spyOn(api, 'post')
-    .mockResolvedValue({ data: { models: ['upstream-new'] } })
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/channel/42') return { data: editingChannel }
+    if (url === '/api/channel/default_base_urls') return { data: {} }
+    if (url === '/api/prefill_group') return { data: [] }
+    if (url === '/api/channel/fetch_models/42') {
+      return { data: ['upstream-new'] }
+    }
+    throw new Error(`Unexpected GET ${url}`)
+  })
+  const post = vi.spyOn(api, 'post')
   const user = userEvent.setup()
   render(<DiscoveryHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
 
-  await user.click(screen.getByRole('button', { name: 'Fetch model list' }))
-  const dialog = await screen.findByRole('dialog', { name: 'Fetch Models' })
-  // Unsaved/draft connection info goes through the stable batch ops endpoint
-  // (bare {models:[...]} success body), not the legacy base endpoint.
-  expect(post).toHaveBeenCalledWith(
+  // 不再有「获取模型列表」重复入口。
+  expect(
+    screen.queryByRole('button', { name: 'Fetch model list' })
+  ).not.toBeInTheDocument()
+
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
+
+  // 探测走已保存渠道的密钥，且没有任何 keyless 草稿探测。
+  expect(get).toHaveBeenCalledWith(
+    '/api/channel/fetch_models/42',
+    expect.anything()
+  )
+  expect(post).not.toHaveBeenCalledWith(
     '/api/channels/batch/fetch-models',
-    expect.objectContaining({ type: 1, base_url: 'https://saved.example' }),
+    expect.anything(),
     expect.anything()
   )
 
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Select upstream models',
+  })
   await user.click(
     within(dialog).getByRole('checkbox', { name: 'upstream-new' })
   )
-  await user.click(within(dialog).getByRole('button', { name: 'Save Models' }))
+  await user.click(within(dialog).getByRole('button', { name: 'Apply' }))
 
   const models = screen.getByRole('group', { name: 'Models' })
   expect(within(models).getByText('upstream-new')).toBeVisible()

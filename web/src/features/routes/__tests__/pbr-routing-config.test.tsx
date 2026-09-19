@@ -20,7 +20,7 @@ For commercial licensing, please contact support@quantumnous.com
 车道成员编排器（ui-spec §6.3、ADR 0006）：
 - 成员候选 = 任意启用渠道的任意已声明模型，可跨渠道跨模型、无需同名；
 - 同一渠道可出现多次（去重键 = (渠道, 上游真名)）；
-- 无「自动添加」；默认 upstream_model 显式填所选模型名；
+- 无「自动添加」；默认 upstream_model = 按渠道 model_mapping 以所选模型为键解析的结果；
 - 顺序即优先级；manual 需指定 active member；空成员链拦截保存。
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -41,7 +41,11 @@ vi.mock('@/lib/api', () => ({
 const mockedGet = vi.mocked(api.get)
 const mockedPut = vi.mocked(api.put)
 
-/** 两个渠道：channel-a 声明两个模型，channel-b 声明一个。 */
+/**
+ * 两个渠道：channel-a 声明两个模型，channel-b 声明一个。
+ * channel-b 的映射键是它声明的模型名（b-model-1 → vendor-b/real-1），
+ * 用于验证"以成员所选模型为键"查映射（池化车道也能命中）。
+ */
 function mockCatalog() {
   mockedGet.mockImplementation(async (url: string) => {
     if (url === '/api/v1/channels') {
@@ -58,7 +62,7 @@ function mockCatalog() {
               name: 'channel-b',
               enabled: true,
               models: ['b-model-1'],
-              model_mapping: { 'pool-fast': 'vendor-b/model-1' },
+              model_mapping: { 'b-model-1': 'vendor-b/real-1' },
             },
           ],
         },
@@ -113,9 +117,33 @@ describe('车道成员编排器', () => {
       { members: { channel: string; upstream_model: string }[] },
     ]
     expect(url).toBe('/api/v1/lanes/pool-fast')
+    // channel-b 的 b-model-1 配了映射 → 默认写入映射右值；channel-a 无映射 → 写模型名。
     expect(body.members.map((m) => [m.channel, m.upstream_model])).toEqual([
       ['channel-a', 'a-model-1'],
-      ['channel-b', 'b-model-1'],
+      ['channel-b', 'vendor-b/real-1'],
+    ])
+  })
+
+  test('池化车道按成员所选模型命中渠道映射（查表键不是车道名）', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    // 车道名 111 与映射键 b-model-1 不同；映射仍须生效（ADR 0006 §5）。
+    renderComposer({ model: '111' })
+
+    await user.click(await screen.findByRole('button', { name: /channel-b/ }))
+    await user.click(await screen.findByRole('button', { name: /b-model-1/ }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      { members: { channel: string; upstream_model: string }[] },
+    ]
+    expect(body.members).toEqual([
+      expect.objectContaining({
+        channel: 'channel-b',
+        upstream_model: 'vendor-b/real-1',
+      }),
     ])
   })
 
