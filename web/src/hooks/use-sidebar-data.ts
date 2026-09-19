@@ -70,9 +70,10 @@ export function useSidebarData(): SidebarData {
         items: [
           {
             // 单一「数据看板」入口，落地概览；模型调用分析与成本统计为页内 Tab
-            // （ui-spec §6.2）。
+            // （ui-spec §6.2）。activeUrls 前缀匹配，切到任一 Tab 都保持高亮。
             title: t('Dashboard'),
             url: '/dashboard/overview',
+            activeUrls: ['/dashboard'],
             icon: LayoutDashboard,
           },
           {
