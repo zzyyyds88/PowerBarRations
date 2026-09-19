@@ -13,9 +13,7 @@ import (
 
 const (
 	BatchUpdateTypeUserQuota = iota
-	BatchUpdateTypeTokenQuota
 	BatchUpdateTypeUsedQuota
-	BatchUpdateTypeChannelUsedQuota
 	BatchUpdateTypeRequestCount
 	BatchUpdateTypeCount // if you add a new type, you need to add a new map and a new lock
 )
@@ -84,19 +82,6 @@ func batchUpdate() {
 		stores[i] = batchUpdateStores[i]
 		batchUpdateStores[i] = make(map[int]int)
 		batchUpdateLocks[i].Unlock()
-	}
-
-	for i, store := range stores {
-		if i == BatchUpdateTypeUserQuota || i == BatchUpdateTypeUsedQuota || i == BatchUpdateTypeRequestCount {
-			continue
-		}
-		for key, value := range store {
-			switch i {
-			// W7：BatchUpdateTypeTokenQuota（基座令牌额度）随多用户面删除。
-			case BatchUpdateTypeChannelUsedQuota:
-				updateChannelUsedQuota(key, value)
-			}
-		}
 	}
 
 	userQuotaStore := stores[BatchUpdateTypeUserQuota]

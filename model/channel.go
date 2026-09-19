@@ -979,21 +979,6 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 	return DB.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error
 }
 
-func UpdateChannelUsedQuota(id int, quota int) {
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeChannelUsedQuota, id, quota)
-		return
-	}
-	updateChannelUsedQuota(id, quota)
-}
-
-func updateChannelUsedQuota(id int, quota int) {
-	err := DB.Model(&Channel{}).Where("id = ?", id).Update("used_quota", gorm.Expr("used_quota + ?", quota)).Error
-	if err != nil {
-		common.SysLog(fmt.Sprintf("failed to update channel used quota: channel_id=%d, delta_quota=%d, error=%v", id, quota, err))
-	}
-}
-
 func DeleteDisabledChannel() (int64, error) {
 	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
 	return result.RowsAffected, result.Error
@@ -1162,12 +1147,6 @@ func (channel *Channel) GetHeaderOverride() map[string]any {
 		}
 	}
 	return headerOverride
-}
-
-func GetChannelsByIds(ids []int) ([]*Channel, error) {
-	var channels []*Channel
-	err := DB.Where("id in (?)", ids).Find(&channels).Error
-	return channels, err
 }
 
 // GetChannelsDeclaringModel 返回"声明了该模型"的渠道（直查 channels 表，含停用渠道）。

@@ -18,7 +18,3 @@ var grokSettings = defaultGrokSettings
 func init() {
 	config.GlobalConfig.Register("grok", &grokSettings)
 }
-
-func GetGrokSettings() *GrokSettings {
-	return &grokSettings
-}

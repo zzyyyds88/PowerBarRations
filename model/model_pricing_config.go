@@ -212,10 +212,6 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 	return result, nil
 }
 
-func ValidateModelPricing(name string, values PricingValues) error {
-	return validateModelPricing(name, values, PricingValues{})
-}
-
 // Writes pass the locked database snapshot here, so allowing an unchanged stale
 // override cannot bypass validation through an out-of-date process-local cache.
 func validateModelPricing(name string, values, previous PricingValues) error {

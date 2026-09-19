@@ -169,16 +169,6 @@ func FormatRootLogs(logs []*Log) {
 	}
 }
 
-func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
-	order := "id desc"
-	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
-		order = clickHouseLogOrder("")
-	}
-	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
-	formatUserLogs(logs, 0)
-	return logs, err
-}
-
 // RecordLogWithAdminInfo stores operator metadata under other.admin_info and
 // an optional, user-visible operation descriptor under other.op for localization.
 func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo *AuditAdminInfo, operation *AuditOperation, request ...*gin.Context) {

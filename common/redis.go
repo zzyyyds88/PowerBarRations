@@ -53,41 +53,6 @@ func InitRedisClient() (err error) {
 	return err
 }
 
-func RedisSet(key string, value string, expiration time.Duration) error {
-	if DebugEnabled {
-		SysLog(fmt.Sprintf("Redis SET: key=%s, value=%s, expiration=%v", key, value, expiration))
-	}
-	ctx := context.Background()
-	return RDB.Set(ctx, key, value, expiration).Err()
-}
-
-func RedisGet(key string) (string, error) {
-	if DebugEnabled {
-		SysLog(fmt.Sprintf("Redis GET: key=%s", key))
-	}
-	ctx := context.Background()
-	val, err := RDB.Get(ctx, key).Result()
-	return val, err
-}
-
-//func RedisExpire(key string, expiration time.Duration) error {
-//	ctx := context.Background()
-//	return RDB.Expire(ctx, key, expiration).Err()
-//}
-//
-//func RedisGetEx(key string, expiration time.Duration) (string, error) {
-//	ctx := context.Background()
-//	return RDB.GetSet(ctx, key, expiration).Result()
-//}
-
-func RedisDelKey(key string) error {
-	if DebugEnabled {
-		SysLog(fmt.Sprintf("Redis DEL Key: key=%s", key))
-	}
-	ctx := context.Background()
-	return RDB.Del(ctx, key).Err()
-}
-
 func RedisHSetObj(key string, obj any, expiration time.Duration) error {
 	if DebugEnabled {
 		SysLog(fmt.Sprintf("Redis HSET: key=%s, obj=%+v, expiration=%v", key, obj, expiration))
@@ -250,33 +215,6 @@ func RedisIncr(key string, delta int64) error {
 		txn.Expire(ctx, key, ttl)
 
 		// 执行事务
-		_, err = txn.Exec(ctx)
-		return err
-	}
-	return nil
-}
-
-func RedisHIncrBy(key, field string, delta int64) error {
-	if DebugEnabled {
-		SysLog(fmt.Sprintf("Redis HINCRBY: key=%s, field=%s, delta=%d", key, field, delta))
-	}
-	ttlCmd := RDB.TTL(context.Background(), key)
-	ttl, err := ttlCmd.Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return fmt.Errorf("failed to get TTL: %w", err)
-	}
-
-	if ttl > 0 {
-		ctx := context.Background()
-		txn := RDB.TxPipeline()
-
-		incrCmd := txn.HIncrBy(ctx, key, field, delta)
-		if err := incrCmd.Err(); err != nil {
-			return err
-		}
-
-		txn.Expire(ctx, key, ttl)
-
 		_, err = txn.Exec(ctx)
 		return err
 	}

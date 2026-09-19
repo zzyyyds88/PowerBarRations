@@ -85,16 +85,6 @@ func initModelListColumnNames(t *testing.T) {
 	}
 }
 
-func withSelfUseModeDisabled(t *testing.T) {
-	t.Helper()
-
-	original := operation_setting.SelfUseModeEnabled
-	operation_setting.SelfUseModeEnabled = false
-	t.Cleanup(func() {
-		operation_setting.SelfUseModeEnabled = original
-	})
-}
-
 func withSelfUseModeEnabled(t *testing.T) {
 	t.Helper()
 
@@ -125,14 +115,6 @@ func decodeListModelsResponse(t *testing.T, recorder *httptest.ResponseRecorder)
 		ids[item.Id] = struct{}{}
 	}
 	return ids
-}
-
-func pricingByModelName(pricings []model.Pricing) map[string]model.Pricing {
-	byName := make(map[string]model.Pricing, len(pricings))
-	for _, pricing := range pricings {
-		byName[pricing.ModelName] = pricing
-	}
-	return byName
 }
 
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {

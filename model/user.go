@@ -87,27 +87,6 @@ func (user *User) SetSetting(setting dto.UserSetting) {
 	user.Setting = string(settingBytes)
 }
 
-func UpdateUserSetting(userId int, setting dto.UserSetting) error {
-	if userId == 0 {
-		return errors.New("id 为空！")
-	}
-	settingBytes, err := common.Marshal(setting)
-	if err != nil {
-		return err
-	}
-	settingValue := string(settingBytes)
-	if err = DB.Model(&User{}).Where("id = ?", userId).Update("setting", settingValue).Error; err != nil {
-		return err
-	}
-	return updateUserSettingCache(userId, settingValue)
-}
-
-func GetMaxUserId() int {
-	var user User
-	DB.Unscoped().Last(&user)
-	return user.Id
-}
-
 func GetUserById(id int, selectAll bool) (*User, error) {
 	if id == 0 {
 		return nil, errors.New("id 为空！")
@@ -122,19 +101,6 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 	return &user, err
 }
 
-func IsAdmin(userId int) bool {
-	if userId == 0 {
-		return false
-	}
-	var user User
-	err := DB.Where("id = ?", userId).Select("role").Find(&user).Error
-	if err != nil {
-		common.SysLog("no such user " + err.Error())
-		return false
-	}
-	return user.Role >= common.RoleAdminUser
-}
-
 // GetUserQuota gets quota from Redis first, falls back to DB if needed
 func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 	if !fromDB && common.RedisEnabled {
@@ -146,16 +112,6 @@ func GetUserQuota(id int, fromDB bool) (quota int, err error) {
 	}
 
 	return quota, nil
-}
-
-func GetUserUsedQuota(id int) (quota int, err error) {
-	err = DB.Model(&User{}).Where("id = ?", id).Select("used_quota").Find(&quota).Error
-	return quota, err
-}
-
-func GetUserEmail(id int) (email string, err error) {
-	err = DB.Model(&User{}).Where("id = ?", id).Select("email").Find(&email).Error
-	return email, err
 }
 
 // GetUserGroup gets group from Redis first, falls back to DB if needed
@@ -234,15 +190,6 @@ func GetRootUser() (user *User) {
 	return user
 }
 
-func UpdateUserUsedQuotaAndRequestCount(id int, quota int) {
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUsedQuota, id, quota)
-		addNewRecord(BatchUpdateTypeRequestCount, id, 1)
-		return
-	}
-	updateUserUsedQuotaAndRequestCount(id, quota, 1)
-}
-
 // UpdateUserUsedQuota adjusts accumulated usage without changing request count.
 func UpdateUserUsedQuota(id int, quota int) {
 	if common.BatchUpdateEnabled {
@@ -251,19 +198,6 @@ func UpdateUserUsedQuota(id int, quota int) {
 	}
 	if err := DB.Model(&User{}).Where("id = ?", id).Update("used_quota", gorm.Expr("used_quota + ?", quota)).Error; err != nil {
 		common.SysLog("failed to update user used quota: " + err.Error())
-	}
-}
-
-func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
-	err := DB.Model(&User{}).Where("id = ?", id).Updates(
-		map[string]any{
-			"used_quota":    gorm.Expr("used_quota + ?", quota),
-			"request_count": gorm.Expr("request_count + ?", count),
-		},
-	).Error
-	if err != nil {
-		common.SysLog("failed to update user used quota and request count: " + err.Error())
-		return
 	}
 }
 

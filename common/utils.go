@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"math/big"
-	"math/rand"
 	"net"
 	"net/url"
 	"os"
@@ -21,33 +20,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
-
-func GetIp() (ip string) {
-	ips, err := net.InterfaceAddrs()
-	if err != nil {
-		log.Println(err)
-		return ip
-	}
-
-	for _, a := range ips {
-		if ipNet, ok := a.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
-			if ipNet.IP.To4() != nil {
-				ip = ipNet.IP.String()
-				if strings.HasPrefix(ip, "10") {
-					return
-				}
-				if strings.HasPrefix(ip, "172") {
-					return
-				}
-				if strings.HasPrefix(ip, "192.168") {
-					return
-				}
-				ip = ""
-			}
-		}
-	}
-	return
-}
 
 func GetNetworkIps() []string {
 	var networkIps []string
@@ -121,10 +93,6 @@ func IsRunningInContainer() bool {
 	return false
 }
 
-var sizeKB = 1024
-var sizeMB = sizeKB * 1024
-var sizeGB = sizeMB * 1024
-
 func Interface2String(inter any) string {
 	switch inter.(type) {
 	case string:
@@ -171,11 +139,6 @@ func GenerateRandomCharsKey(length int) (string, error) {
 func GenerateKey() (string, error) {
 	//rand.Seed(time.Now().UnixNano())
 	return GenerateRandomCharsKey(48)
-}
-
-func GetRandomInt(max int) int {
-	//rand.Seed(time.Now().UnixNano())
-	return rand.Intn(max)
 }
 
 func GetTimestamp() int64 {

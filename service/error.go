@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/logger"
@@ -44,25 +43,6 @@ import (
 //	openaiErr.LocalError = true
 //	return openaiErr
 //}
-
-func ClaudeErrorWrapper(err error, code string, statusCode int) *dto.ClaudeErrorWithStatusCode {
-	text := err.Error()
-	lowerText := strings.ToLower(text)
-	if !strings.HasPrefix(lowerText, "get file base64 from url") {
-		if strings.Contains(lowerText, "post") || strings.Contains(lowerText, "dial") || strings.Contains(lowerText, "http") {
-			common.SysLog(fmt.Sprintf("error: %s", text))
-			text = "请求上游地址失败"
-		}
-	}
-	claudeError := types.ClaudeError{
-		Message: text,
-		Type:    "new_api_error",
-	}
-	return &dto.ClaudeErrorWithStatusCode{
-		Error:      claudeError,
-		StatusCode: statusCode,
-	}
-}
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
