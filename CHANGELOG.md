@@ -10,8 +10,10 @@
 - 故障转移与容错：成员顺序故障转移、冷却、亲和、熔断三态与半开复通、429 与硬故障分类。
 - 管理面完整 HTTP API + OpenAPI：`/api/v1/{channels,lanes,routes,keys,logs,stats,export,import,system/options}`。
 - 控制台：渠道管理、模型管理（按名推断并自动采用图标）、路由与故障切换、系统任务、令牌、用量与成本看板、系统设置。
-- 上游模型探测：渠道编辑器内手动探测，探测结果用居中选择弹窗按需合并。
+- 上游模型探测：渠道编辑器内手动探测（**唯一入口**），探测结果用居中选择弹窗按需合并；已保存渠道复用服务端已存密钥。
 - 成本视图：按渠道 x 模型的请求数、token、成功率与上游折算花费（元）。
+- **车道成员自由编排**（ADR 0006）：成员可任选任意启用渠道的任意已声明模型，可跨渠道跨模型、无需同名、同一渠道可多次出现；`/routes` 以卡片网格展示车道、运行态与成员顺序。
+- **模型调用分析**：按模型的调用次数 / 成功率 / Token / 上游花费汇总，默认按调用次数倒序；成本统计按上游花费倒序。
 - CLI：`pbr auth reset`。
 
 ### Changed
@@ -20,6 +22,10 @@
 - **管理面响应信封统一**（api-spec §2/§3）：成功一律裸资源（列表 `{items,next_cursor}`、动作类 `{changed}`/`{deleted}` 等语义化最小对象），失败一律 `{error:{code,message,hint,details?}}` 并带真实 HTTP 状态码；不再有 `{success,message,data}` 包装与"200 承载业务失败"。稳定契约端点与控制台内部端点共用同一信封。
 - **运维端点按名寻址**：`channels/batch/{status,tag}` 接受 `channels:[渠道名]`（`ids` 仍兼容，二者只能给一个）；`model-catalog/batch-delete` 接受 `models:[模型名]`；`channels/batch/copy` 改为 body `{channel}`。修复 `batch/copy` 与 `batch/fetch-models` 此前因参数不一致而不可用的问题。
 - **运维端点路由与响应策略同表声明**（design-v1 §16.3）：新增 `internal/api/ops_routes.go` 与 `internal/apiresp`，守卫测试强制每条已注册管理路由都有信封覆盖。
+- **路由页只列真实车道**（ADR 0007）：`/routes` 只渲染 `source ∈ {explicit, disabled}` 的车道，渠道声明但未配车道的路由键不再以卡片出现——删车道即卡片消失，渠道声明与车道彻底分列；新建车道一律手填路由键。
+- **数据看板收敛为单一入口**：侧边栏只保留一个「数据看板」（落地 `/dashboard/overview`），概览 / 模型调用分析 / 成本统计为页内 Tab。
+- **成员默认上游真名按所选模型查渠道映射**（ADR 0006 §5）：从「渠道 × 模型 m」加入成员时以 m 为键解析 `model_mapping`，池化车道（车道名 ≠ m）也能命中映射。
+- 控制台探测入口去重：移除与「探测上游模型」重复的「获取模型列表」入口（其在已保存渠道上会发无密钥草稿探测而必然 401）。
 
 ### Security
 - 客户端密钥由服务端随机生成并明文入库，管理 API 可随时回读复制；鉴权仍走 `sha256` 哈希索引。管理密钥由登录口令派生、服务端只存其哈希、不落明文。
@@ -30,5 +36,7 @@
 ### Removed
 - 删除死代码 `createRootAccountIfNeed`（`root`/`123456` 默认账号）与内部施工文档。
 - 移除旧 `new-api`/`octopus` 两层网关的迁移机制：`internal/legacy` 包、`pbr migrate` 子命令与 `MIGRATION.md`。新实例只使用新建的 PBR 数据库（design-v1 §11）。
+- 物理删除 API 信息面板全链（概览面板、系统设置「API 地址」分节、`console_setting.api_info` 与 `/api/status` 的 `api_info` 字段）。
+- 移除超范围死代码：计费执行链、认证基座残留、旧选路链与渠道 pin、渠道亲和机制、任务插件与厂商营销文案等。
 
 [Unreleased]: https://github.com/zzyyyds88/PowerBarRations/commits/main
