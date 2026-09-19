@@ -2,7 +2,7 @@
 
 ## 设计文档是唯一事实来源
 
-- `docs/design-v1.md` 是当前有效的产品与技术设计基线；`docs/api-spec-v1.md`（管理 API 契约 + AI 调用手册）、`docs/routing-spec-v1.md`（路由与故障转移）、`docs/token-spec-v1.md`（令牌与认证）、`docs/ui-spec-v1.md`（控制台规格）是其规范性配套文件，与基线同级有效。
+- `docs/design-v1.md` 是当前有效的产品与技术设计基线；`docs/api-spec-v1.md`（管理 API 契约 + AI 调用手册）、`docs/routing-spec-v1.md`（路由与故障转移）、`docs/token-spec-v1.md`（令牌与认证）、`docs/ui-spec-v1.md`（控制台规格）、`docs/hermes-spec-v1.md`（Hermes 适配）、`docs/test-spec-v1.md`（测试规格：分层/方法/闸口）是其规范性配套文件，与基线同级有效。
 - 代码、测试、配置与设计文档冲突时，以当前设计文档为准；发现冲突后应立即修正。
 - 历史实施记录（如 plans/、research/、breakdown/）只用于追溯，不得覆盖当前设计。
 - `reference/`（若有）中的内容仅供调研参考，不属于本项目规范，也不作为实现依据。

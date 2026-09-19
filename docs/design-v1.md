@@ -11,6 +11,7 @@
 > - 令牌与认证：[`token-spec-v1.md`](token-spec-v1.md)
 > - UI 控制台：[`ui-spec-v1.md`](ui-spec-v1.md)
 > - Hermes 适配：[`hermes-spec-v1.md`](hermes-spec-v1.md)
+> - 测试规格：[`test-spec-v1.md`](test-spec-v1.md)
 > 冲突时：本文管架构与取舍，各 spec 管本领域细节契约。
 >
 > **文档纪律（重要）**：本文及配套规范只描述系统本身，**不含任何部署私有数据**——不写具体渠道名、模型名、车道名单、厂商地址、凭据、成本单价。这类内容属于部署方自己的运维配置，不入仓库。
