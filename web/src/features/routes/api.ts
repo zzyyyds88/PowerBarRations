@@ -25,6 +25,7 @@ PowerBarRations —— PBR 路由（成员链/故障切换）管理 API（api-sp
 把成员链固化为车道的 PUT /api/v1/lanes/{model}。成员链只支持手工添加/删除。
 */
 import { api } from '@/lib/api'
+import type { LaneHealthSnapshot } from '@/lib/route-events'
 
 // 路由键列表的共享 queryKey：「路由与故障切换」页与成员链面板/抽屉共用同一
 // 缓存条目，抽屉里保存/删除成员链后 invalidate 该前缀即可同时刷新两者。
@@ -249,3 +250,26 @@ export async function deletePBRFailover(model: string): Promise<void> {
 
 // 一键固化（POST /api/v1/lanes/seed）已按产品要求整体移除：成员链只支持手工
 // 添加/删除，不再提供批量生成入口。
+
+/** 单车道运行态快照（GET /api/v1/lanes/{name}/health，api-spec §6.5 形状）。 */
+export async function getPBRLaneHealth(
+  lane: string
+): Promise<LaneHealthSnapshot> {
+  const res = await api.get<LaneHealthSnapshot>(
+    `/api/v1/lanes/${encodeURIComponent(lane)}/health`
+  )
+  return res.data
+}
+
+/**
+ * 轮询兜底用：并发拉取多条车道的 health 快照。
+ *
+ * 单条车道失败不影响其余车道（allSettled）：兜底源本就允许不完整的对账结果，
+ * 失败车道下一轮（30s）自动重来；SSE 正常时这里的结果只做对账不主导渲染。
+ */
+export async function pollPBRLaneHealth(
+  lanes: string[]
+): Promise<LaneHealthSnapshot[]> {
+  const results = await Promise.allSettled(lanes.map(getPBRLaneHealth))
+  return results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+}
