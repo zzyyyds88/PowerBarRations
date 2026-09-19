@@ -25,8 +25,6 @@ import {
 } from './section-registry.tsx'
 
 const defaultContentSettings: ContentSettings = {
-  'console_setting.api_info': '[]',
-  'console_setting.api_info_enabled': true,
   Chats: '[]',
 }
 
@@ -36,23 +34,8 @@ function resolveContentSettings(
 ): ContentSettings {
   if (!raw || raw.length === 0) return settings
 
-  const optionMap = new Map(raw.map((item) => [item.key, item.value]))
-  const next = { ...settings }
-
-  const legacyMap = [
-    { current: 'console_setting.api_info', legacy: 'ApiInfo' },
-  ] as const
-
-  for (const { current, legacy } of legacyMap) {
-    if (!optionMap.has(current)) {
-      const legacyValue = optionMap.get(legacy)
-      if (legacyValue !== undefined) {
-        next[current] = legacyValue
-      }
-    }
-  }
-
-  return next
+  // 「API 地址」分节已删除，不再有 legacy 键需要归一化。
+  return settings
 }
 
 export function ContentSettings() {

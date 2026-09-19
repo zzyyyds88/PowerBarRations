@@ -46,10 +46,12 @@ const LazyCostDashboard = lazy(() =>
   }))
 )
 
-const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
-  overview: { titleKey: 'Overview' },
-  models: { titleKey: 'Model Call Analytics' },
-  cost: { titleKey: 'Cost analytics' },
+// 页标题恒为「数据看板」；概览 / 模型调用分析 / 成本统计是页内 Tab
+// （ui-spec §6.2：侧边栏只保留一个数据看板入口，落地 /dashboard/overview）。
+const SECTION_LABELS: Record<DashboardSectionId, string> = {
+  overview: 'Overview',
+  models: 'Model Call Analytics',
+  cost: 'Cost analytics',
 }
 
 function AnalyticsFallback() {
@@ -72,10 +74,6 @@ export function Dashboard() {
   const params = route.useParams()
   const activeSection = (params.section ??
     DASHBOARD_DEFAULT_SECTION) as DashboardSectionId
-  const meta = SECTION_META[activeSection] ?? SECTION_META.overview
-  const visibleSections = DASHBOARD_SECTION_IDS.filter(
-    (section) => section !== 'overview'
-  )
   const handleSectionChange = useCallback(
     (section: string) => {
       void navigate({
@@ -86,25 +84,24 @@ export function Dashboard() {
     [navigate]
   )
 
-  if (activeSection === 'overview') {
-    return <OverviewDashboard />
-  }
-
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('Dashboard')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
-          {visibleSections.length > 1 && (
-            <Tabs value={activeSection} onValueChange={handleSectionChange}>
-              <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
-                {visibleSections.map((section) => (
-                  <TabsTrigger key={section} value={section}>
-                    {t(SECTION_META[section].titleKey)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
+          <Tabs value={activeSection} onValueChange={handleSectionChange}>
+            <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
+              {DASHBOARD_SECTION_IDS.map((section) => (
+                <TabsTrigger key={section} value={section}>
+                  {t(SECTION_LABELS[section])}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          {activeSection === 'overview' && (
+            <FadeIn>
+              <OverviewDashboard />
+            </FadeIn>
           )}
           {activeSection === 'models' && (
             <FadeIn>

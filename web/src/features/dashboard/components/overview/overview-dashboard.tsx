@@ -31,7 +31,6 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { SectionPageLayout } from '@/components/layout'
 import {
   CardStaggerContainer,
   CardStaggerItem,
@@ -48,11 +47,6 @@ import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
-import {
-  useApiInfo,
-  useDashboardContentVisibility,
-} from '../../hooks/use-status-data'
-import { ApiInfoPanel } from './api-info-panel'
 import { PerformanceHealthPanel } from './performance-health-panel'
 import { SummaryCards } from './summary-cards'
 
@@ -274,8 +268,6 @@ function RequestPreview(props: {
 export function OverviewDashboard() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
-  const { items: apiInfoItems } = useApiInfo()
-  const { apiInfo: showApiInfoPanel } = useDashboardContentVisibility()
 
   const isAdmin = Boolean(user?.role && user.role >= ROLE.ADMIN)
 
@@ -313,7 +305,7 @@ export function OverviewDashboard() {
     () => [
       {
         label: t('Route active'),
-        value: apiInfoItems.length > 0 ? t('Online') : t('Current domain'),
+        value: t('Current domain'),
         icon: RadioTower,
         tone: 'info',
       },
@@ -333,7 +325,6 @@ export function OverviewDashboard() {
       },
     ],
     [
-      apiInfoItems.length,
       apiKeysError,
       refetchApiKeys,
       authSignalValue,
@@ -345,7 +336,8 @@ export function OverviewDashboard() {
   )
 
   const requestExample = useMemo<RequestExample>(() => {
-    const endpoint = normalizeEndpoint(apiInfoItems[0]?.url)
+    // API 信息面板已删除：端点直接用当前站点 origin 拼 /v1/chat/completions。
+    const endpoint = normalizeEndpoint(getCurrentOrigin())
     const model = modelsQuery.data?.[0] ?? 'gpt-4o-mini'
     const keyName = preferredKey?.name ?? t('No API key yet')
     const ready = Boolean(preferredKey?.id && model)
@@ -358,55 +350,33 @@ export function OverviewDashboard() {
       displayKey: preferredKey ? formatDisplayKey(preferredKey.key) : 'pbr-...',
       ready,
     }
-  }, [apiInfoItems, modelsQuery.data, preferredKey, t])
+  }, [modelsQuery.data, preferredKey, t])
 
-  const showLeftContentPanels = isAdmin || showApiInfoPanel
-
+  // 概览现在是「数据看板」页内的一个 Tab：页标题与 SectionPageLayout 由
+  // features/dashboard/index.tsx 提供，这里只返回内容（避免嵌套两层页布局）。
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Overview')}</SectionPageLayout.Title>
-      <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4'>
-          <SummaryCards />
+    <div className='flex flex-col gap-4'>
+      <SummaryCards />
 
-          <CardStaggerContainer
-            className={cn(
-              'grid grid-cols-1 gap-4',
-              showLeftContentPanels && 'xl:grid-cols-[minmax(0,1fr)_22rem]'
-            )}
-          >
-            {showLeftContentPanels && (
-              <div
-                className={cn(
-                  'grid min-w-0 grid-cols-1 gap-4',
-                  isAdmin && showApiInfoPanel && 'lg:grid-cols-2'
-                )}
-              >
-                {isAdmin && (
-                  <CardStaggerItem
-                    className={showApiInfoPanel ? 'lg:col-span-2' : undefined}
-                  >
-                    <PerformanceHealthPanel />
-                  </CardStaggerItem>
-                )}
-                {showApiInfoPanel && (
-                  <CardStaggerItem>
-                    <ApiInfoPanel />
-                  </CardStaggerItem>
-                )}
-              </div>
-            )}
-            <div className='grid min-w-0 grid-cols-1 content-start gap-4'>
-              <CardStaggerItem>
-                <RequestPreview
-                  example={requestExample}
-                  signals={heroSignals}
-                />
-              </CardStaggerItem>
-            </div>
-          </CardStaggerContainer>
+      <CardStaggerContainer
+        className={cn(
+          'grid grid-cols-1 gap-4',
+          isAdmin && 'xl:grid-cols-[minmax(0,1fr)_22rem]'
+        )}
+      >
+        {isAdmin && (
+          <div className='grid min-w-0 grid-cols-1 gap-4'>
+            <CardStaggerItem>
+              <PerformanceHealthPanel />
+            </CardStaggerItem>
+          </div>
+        )}
+        <div className='grid min-w-0 grid-cols-1 content-start gap-4'>
+          <CardStaggerItem>
+            <RequestPreview example={requestExample} signals={heroSignals} />
+          </CardStaggerItem>
         </div>
-      </SectionPageLayout.Content>
-    </SectionPageLayout>
+      </CardStaggerContainer>
+    </div>
   )
 }

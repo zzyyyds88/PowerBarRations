@@ -96,8 +96,6 @@ export type SiteSettings = {
 }
 
 export type ContentSettings = {
-  'console_setting.api_info': string
-  'console_setting.api_info_enabled': boolean
   Chats: string
 }
 

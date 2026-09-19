@@ -68,14 +68,6 @@ beforeEach(() => {
             ],
           },
         }
-      case '/api/status':
-        return {
-          data: {
-            data: {
-              api_info_enabled: false,
-            },
-          },
-        }
       case '/api/models':
         return {
           data: {
@@ -158,8 +150,6 @@ describe('overview layout', () => {
         throw new Error('Backend unavailable')
       }
       switch (url) {
-        case '/api/status':
-          return { data: { data: { api_info_enabled: false } } }
         case '/api/stats':
           return { data: { granularity: 'hour', group_by: 'lane', items: [] } }
         default:

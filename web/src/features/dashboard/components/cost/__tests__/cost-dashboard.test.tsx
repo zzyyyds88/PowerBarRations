@@ -51,6 +51,28 @@ const ITEMS: PBRStatBucket[] = [
   },
 ]
 
+// 按模型分组时 group 即模型名；用于「模型调用分析」分节用例。
+const MODEL_ITEMS: PBRStatBucket[] = [
+  {
+    bucket_ts: 1_700_000_000,
+    group: 'model-a',
+    requests: 2,
+    successes: 2,
+    prompt_tokens: 100,
+    completion_tokens: 50,
+    estimated_cost: 0.9,
+  },
+  {
+    bucket_ts: 1_700_000_000,
+    group: 'model-b',
+    requests: 3,
+    successes: 1,
+    prompt_tokens: 200,
+    completion_tokens: 100,
+    estimated_cost: 0.3,
+  },
+]
+
 let client: QueryClient
 
 beforeEach(() => {
@@ -84,7 +106,9 @@ describe('cost dashboard channel x model dimension', () => {
     expect(await screen.findByText('ch-a')).toBeVisible()
     expect(screen.getByRole('columnheader', { name: 'Channel' })).toBeVisible()
     expect(screen.getByRole('columnheader', { name: 'Model' })).toBeVisible()
-    expect(screen.getByRole('columnheader', { name: 'Requests' })).toBeVisible()
+    expect(
+      screen.getByRole('columnheader', { name: 'Call count' })
+    ).toBeVisible()
     expect(
       screen.getByRole('columnheader', { name: 'Token count' })
     ).toBeVisible()
@@ -113,6 +137,54 @@ describe('cost dashboard channel x model dimension', () => {
     expect(screen.getByText('¥1.20')).toBeVisible()
     expect(screen.getByText('5')).toBeVisible()
     expect(screen.getByText('450')).toBeVisible()
+  })
+
+  // ui-spec §6.2：模型调用分析以调用次数为主——数字卡以「Call count」打头，
+  // 分组表格默认按调用次数倒序（不是花费倒序）。
+  it('model analytics leads with call count and sorts rows by requests', async () => {
+    mockStats(MODEL_ITEMS)
+    renderDashboard(
+      <PbrAnalyticsDashboard
+        defaultGroupBy='model'
+        groupByOptions={['model']}
+        primaryMetric='requests'
+      />
+    )
+
+    expect(await screen.findByText('model-a')).toBeVisible()
+
+    // 数字卡：第一张必须是调用次数（两张桶共 5 次）。
+    const statCards = screen.getAllByText(
+      /^(Call count|Success rate|Token count|Upstream spend)$/
+    )
+    expect(statCards[0]).toHaveTextContent('Call count')
+    // 表格列头也以「Call count」呈现。
+    expect(
+      screen.getByRole('columnheader', { name: 'Call count' })
+    ).toBeVisible()
+
+    // 默认排序按调用次数倒序：model-b（3 次）在 model-a（2 次）之前。
+    const rows = screen.getAllByRole('row')
+    expect(within(rows[1]).getByText('model-b')).toBeVisible()
+    expect(within(rows[2]).getByText('model-a')).toBeVisible()
+  })
+
+  it('model analytics empty state talks about calls, not unit prices', async () => {
+    mockStats([])
+    renderDashboard(
+      <PbrAnalyticsDashboard
+        defaultGroupBy='model'
+        groupByOptions={['model']}
+        primaryMetric='requests'
+      />
+    )
+
+    expect(await screen.findByText('No call data yet')).toBeVisible()
+    expect(
+      screen.getByText(
+        'Once requests flow through lanes, call counts, success rate and token usage appear here.'
+      )
+    ).toBeVisible()
   })
 
   it('offers the channel x model option and switches to split columns', async () => {
