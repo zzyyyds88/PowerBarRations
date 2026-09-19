@@ -75,6 +75,7 @@ import {
   type PBRLaneMode,
   type PBRChannelCatalogEntry,
 } from '../api'
+import { defaultUpstreamForModel } from '../lib/lane-member-upstream'
 
 /** 编排器里的一个已选成员（草稿态）。 */
 export interface ComposerMember {
@@ -224,8 +225,10 @@ export function LaneComposer(props: LaneComposerProps) {
       .filter((c) => c.models.length > 0)
   }, [catalog, keyword])
 
-  const addMember = (channel: string, upstream: string) => {
-    // 默认显式填所选模型名（ADR 0006）；按 (渠道, 上游真名) 去重。
+  const addMember = (channel: string, model: string) => {
+    // 默认上游 = 按渠道 model_mapping 以所选模型为键解析的结果（ADR 0006 §5）：
+    // 有映射写映射右值，无映射写所选模型名。按 (渠道, 上游真名) 去重。
+    const upstream = defaultUpstreamForModel(channel, model, catalog)
     const key = memberKey({ channel, upstream_model: upstream })
     if (
       members.some(
@@ -368,7 +371,14 @@ export function LaneComposer(props: LaneComposerProps) {
                   key={model}
                   model={model}
                   added={selectedKeys.has(
-                    memberKey({ channel: channel.name, upstream_model: model })
+                    memberKey({
+                      channel: channel.name,
+                      upstream_model: defaultUpstreamForModel(
+                        channel.name,
+                        model,
+                        catalog
+                      ),
+                    })
                   )}
                   onAdd={() => addMember(channel.name, model)}
                 />
