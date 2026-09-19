@@ -33,8 +33,11 @@
 2. 否则按成员别名点名（`PublicAlias`）匹配；
 3. 都没有 → 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`（对"没建车道"与"上游全挂"不做区分，下游无需分支）。
 
-**配置入口**：
-- 路由页为每个模型展示已固化的成员链与可添加的候选渠道（候选来源 = 渠道声明 `models` **或** `model_mapping` 映射该键），人工增删/排序后保存即固化成车道；也可用「新建车道」为任意路由键手动建。
+**配置入口**（[ADR 0006](adr/0006-lane-free-member-composition.md)）：
+- 路由页以**卡片网格**列出全部车道，新建/编辑进入**两栏编排器**：左栏「渠道 → 模型」选择器（数据源 = `GET /api/channels` 各渠道的 `models`，带搜索），右栏已选成员有序列表（排序 / 删除 / 改上游真名 / 清空）。
+- **成员候选 = 任意启用渠道的任意已声明模型**：可跨渠道、跨模型组链，不要求成员声明了该路由键，**同一渠道可出现多次**（成员唯一键 = `(渠道, 上游真名)`）；路由键可任意命名，无需任何渠道声明过它。**不提供「自动添加」**，成员全部人工挑选。
+- `GET /api/routes/{model}` 的 `candidates` 语义**降级为推荐项**（声明或 `model_mapping` 映射了该键、且不在成员链里的渠道），只供界面高亮/排序，**不是可选范围限制**。
+- **渠道声明 `models` 的增删绝不自动建车道**（重申 ADR 0005）：新增模型后仍需人工显式建车道，未建一律 503。
 - 车道作为可选的高级层仍完整保留：两种模式（`failover` / `manual`，后者用 `active_member` 指定）、六键、成员级覆盖、别名。
 
 > 第 3 条是刻意的：让"模型名写错"与"上游全挂"对下游呈现同一错误形态，下游无需分支。
@@ -68,7 +71,7 @@ type LaneMember struct {
 - **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
 - **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。
 - **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则成员级显式改名会被渠道映射悄悄反向覆盖（优先级倒挂）。非 PBR 链路（渠道测试直连指定渠道）不受此约束。
-- 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。
+- 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。成员唯一键为 `(渠道, 上游真名)`，同一渠道可在一条车道内多次出现。
 - 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。**
 
 ### 1.3 进程内运行态（每车道一份，全部请求共享）
@@ -266,7 +269,8 @@ type LaneRuntime struct {
 | 熔断器 | 无 | 三态 + 半开 + 指数退避 |
 | 模式 | manual / failover | failover / manual（`weighted`/`round_robin` 已删） |
 | 成员改名 | 不支持（无别名列） | `upstream_model` + `public_alias` |
+| 成员候选范围 | 任选任意渠道模型（`ChannelModel`） | **同样任选任意渠道的任意模型**（ADR 0006）；`candidates` 仅作推荐 |
 | 运行态粒度 | 分组 | 车道（同） | 
 | 客户端身份校验 | `supported_models` 白名单（默认拒） | 令牌默认放行 + 显式拒绝（token-spec） |
 | 路由键 | 分组名（必须先建分组，否则"模型找不到"） | **模型名**：必须有同名启用车道才可调用；没建车道 → 503（ADR 0005、§1.1） |
-| 隐式车道 | 无此概念 | **不存在**：渠道声明只是候选成员来源，必须固化成车道（`PUT /lanes/{model}`）才可调用（ADR 0005） |
+| 隐式车道 | 无此概念 | **不存在**：渠道声明只是成员目录，**绝不自动建车道**，必须人工固化成车道（`PUT /lanes/{model}`）才可调用（ADR 0005、ADR 0006） |

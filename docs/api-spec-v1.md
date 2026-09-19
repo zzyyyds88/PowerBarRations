@@ -106,7 +106,7 @@
 }
 ```
 
-- `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游拉取模型清单（渠道编辑器内手动触发）。
+- `models`：本渠道提供的**模型清单**（模型名）。它既是"该渠道能提供什么"的目录，也是控制台成员选择器的候选来源（成员可任选任意渠道的任意模型，[ADR 0006](adr/0006-lane-free-member-composition.md)）。声明**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；**声明/新增模型绝不自动建车道**，未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游拉取模型清单（渠道编辑器内手动触发）。
 - **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`（明文前 4 字符，短密钥不整串回显）。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
@@ -380,14 +380,16 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计渠道存在且启用的成员，供界面标注"含不可用"）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（全部成员当前不可选时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
-| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`，成员级显式改名时给出 `upstream_override`、设了成员别名时给出 `public_alias`；响应顶层含 `mode` / `config`（车道模式与六键）。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（**声明或 `model_mapping` 映射**了该模型、但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
-| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/upstream_model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它 |
+| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`，成员级显式改名时给出 `upstream_override`、设了成员别名时给出 `public_alias`；响应顶层含 `mode` / `config`（车道模式与六键）。无车道时返回**推荐成员**（声明或 `model_mapping` 映射了该键的渠道，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——推荐项只供界面排序/高亮，不代表已可调用，也**不是成员可选范围限制**（成员候选 = 任意启用渠道的任意已声明模型，见本节末与 [ADR 0006](adr/0006-lane-free-member-composition.md)）。已配车道时额外返回 `candidates`（同口径推荐项、不在成员链里）。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
+| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/upstream_model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它。**成员可任选任意启用渠道的任意已声明模型**，不要求成员声明了该路由键，**同一渠道可多次出现**（去重键 = `(渠道, 上游真名)`）；成员 `upstream_model` 留空 = 用渠道 `model_mapping`/路由键 |
 | GET | `/api/lane-summaries` | **全部车道的成员顺序摘要**（不分页）：`{items: [{name, enabled, mode, active_member, orphan_member_count, members: [{channel, upstream_model, priority}]}]}`。供路由页一次取全量顺序，避免 `GET /api/lanes` 的 cursor 上限（200）在大部署下让摘要列退化 |
 | GET | `/api/model-metadata` | **模型目录元数据**（不分页）：`{items: [{model, description, icon, tags, endpoints, status, name_rule, has_metadata, configured_channel_count}]}`。这是"模型管理页"的稳定只读面；`has_metadata=false` 表示仅由渠道声明、尚无目录记录。**本面保持轻量：不返回 `matched_count` / `matched_models`**（命中集只在控制台面 `/api/console/models/**` 计算，那里本就要遍历渠道模型做全量填充）。`name_rule != 0` 的条目，`configured_channel_count` **按规则命中的模型名集合**统计去重后的渠道数（用一次内存预计算，与 `MatchesName` 同口径；不得按精确名查表，也不得逐条查库） |
 | PUT | `/api/model-metadata/{model}` | **写入模型目录元数据**（全量幂等 upsert）：body `{description, icon, tags, endpoints, status, name_rule}`；响应为写后回读。**`name_rule` 允许 `0`（精确）/ `1`（前缀）/ `2`（包含）/ `3`（后缀）**，由 `model.ValidateMetadataValues` 统一校验，越界返回 422 `validation_failed`。语义：非精确条目是一条**匹配规则**——`model` 字段是规则串而非真实模型名，运行期按 **精确 > 前缀 > 后缀 > 包含** 的优先级命中渠道声明的模型名（`model/model_meta.go` 的 `MatchesName` / `resolveModelMetadata`），即控制台上的"自动匹配"。命中数与命中清单只在控制台面返回 |
 | DELETE | `/api/model-metadata/{model}` | **删除模型目录记录**（按 `model_name` 精确匹配这条记录本身，非精确规则条目同样可删——删的只是规则，不影响被它命中的模型）：`?remove_from_channels=true` 同时把该模型从渠道声明里移除，**仅对 `name_rule=0` 允许**（规则条目的命中集是"一批"模型名，批量摘除渠道声明语义不明确，一律 422 拒绝）；被车道引用时 409（返回 `blocked` 渠道→车道清单），`?force=1` 覆盖并清理成员 |
 
-**UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 模型管理页为该模型设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
+**UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 路由与故障切换页为路由键设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
+
+**成员自由编排（[ADR 0006](adr/0006-lane-free-member-composition.md)）**：车道的成员可来自任意启用渠道的任意已声明模型，成员之间**无需同名**，**同一渠道可在一条车道内出现多次**（成员唯一键 = `(渠道, 上游真名)`）。前端成员选择器的数据源为 `GET /api/channels`（每渠道的 `models`）与 `GET /api/models`，不新增专用端点；`GET /api/routes/{model}` 的 `members`/`candidates` 只用于展示与推荐，**不限制可选范围**。渠道声明 `models` 的增删（含 `sync-models`）**绝不自动创建/修改/删除车道**。
 
 ```bash
 curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
