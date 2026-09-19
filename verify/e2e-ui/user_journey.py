@@ -461,12 +461,10 @@ def main():
             time.sleep(6)
             body = cdp.val("document.body.innerText") or ""
             check("试打台页面出现回复（pong）", "pong" in body.lower(), body[-300:])
-            # ui-spec §6.8 / test-spec §4 行 6 还要求试打台"显示 X-Served-By"。
-            # 实测：试打台从未捕获/展示该响应头（上游 new-api 同样没有，非本次回归）；
-            # 流式走 EventSource 读不到响应头，非流式 fetch 也未把 header 带进消息模型。
-            # 这是**产品缺口**，不是脚本问题：记为 NOTE 并在交付说明中单独列出，不静默放宽。
-            if "X-Served-By" not in body and "Served-By" not in body:
-                note("产品缺口：试打台未展示 X-Served-By（ui-spec §6.8 / test-spec §4 行 6 要求）")
+            # ui-spec §6.8 / test-spec §4 行 6：试打台必须展示实际命中的上游 X-Served-By。
+            # 展示文案是 i18n 的 "Served by: {{servedBy}}"（zh 为"实际服务：…"）。
+            check("试打台展示 X-Served-By（实际命中的上游）",
+                  ("Served by" in body) or ("实际服务" in body), body[-300:])
         else:
             check("试打台页面出现回复（pong）", False, "无客户端密钥")
         cdp.shot("08-playground")
