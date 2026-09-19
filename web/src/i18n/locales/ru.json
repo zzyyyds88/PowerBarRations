@@ -2876,6 +2876,7 @@
     "Self-hosted AI Gateway": "Самостоятельно размещённый AI-шлюз",
     "Send and observe": "Отправляйте и наблюдайте",
     "Served & observed": "Обслуживание и наблюдаемость",
+    "Served by: {{servedBy}}": "Обслужил: {{servedBy}}",
     "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.": "Шесть ключей управления на уровне полосы, трёхсостоянийный предохранитель (closed / open / half-open) и аффинность, отключаемая для полосы.",
     "Solidify the lanes": "Закрепите полосы",
     "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.": "Ключ администратора выводится из вашей парольной фразы; клиентские ключи хранятся в виде хэшей и показываются один раз.",

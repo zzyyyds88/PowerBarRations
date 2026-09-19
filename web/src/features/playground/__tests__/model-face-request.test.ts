@@ -38,6 +38,7 @@ describe('playground model-face request', () => {
       ok: true,
       status: 200,
       json: async () => ({ id: 'x', choices: [] }),
+      headers: new Headers(),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -53,6 +54,43 @@ describe('playground model-face request', () => {
       'Bearer pbr-client-key'
     )
     expect(JSON.parse(String(init.body))).toMatchObject({ model: 'model-1' })
+  })
+
+  test('非流式：响应头 X-Served-By 随响应返回（ui-spec §6.8）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: 'x',
+        choices: [{ message: { content: 'hi' } }],
+      }),
+      headers: new Headers({
+        'X-Served-By': 'channel=2:channel-b, model=model-y',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { response, servedBy } = await sendChatCompletion(
+      payload,
+      'pbr-client-key'
+    )
+
+    expect(response.id).toBe('x')
+    expect(servedBy).toBe('channel=2:channel-b, model=model-y')
+  })
+
+  test('非流式：响应头缺失时 servedBy 为 undefined（不伪造）', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ id: 'x', choices: [] }),
+      headers: new Headers(),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { servedBy } = await sendChatCompletion(payload, 'pbr-client-key')
+
+    expect(servedBy).toBeUndefined()
   })
 
   test('失败响应带上服务端 message，便于用户定位', async () => {

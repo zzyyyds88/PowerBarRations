@@ -2876,6 +2876,7 @@
     "Self-hosted AI Gateway": "自用 AI 閘道",
     "Send and observe": "發請求並觀測",
     "Served & observed": "命中與觀測",
+    "Served by: {{servedBy}}": "實際服務：{{servedBy}}",
     "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.": "六個車道級控制鍵、三態熔斷器（closed / open / half-open），以及可按車道關閉的親和。",
     "Solidify the lanes": "固化車道",
     "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.": "管理密鑰由登入口令派生；客戶端密鑰只存雜湊且僅顯示一次。",
