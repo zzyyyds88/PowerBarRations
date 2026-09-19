@@ -18,7 +18,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/middleware"
 	"github.com/zzyyyds88/PowerBarRations/model"
-	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
 	"github.com/zzyyyds88/PowerBarRations/relay"
 	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
@@ -27,7 +26,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 	"github.com/zzyyyds88/PowerBarRations/service"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
-	hosttypes "github.com/zzyyyds88/PowerBarRations/types"
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -239,15 +237,6 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	info.IsChannelTest = true
 	info.InitChannelMeta(c)
 
-	err = attachTestBillingRequestInput(info, request)
-	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
-		}
-	}
-
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {
 		return testResult{
@@ -290,15 +279,6 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	//logInfo := info
 	//logInfo.ApiKey = ""
 	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, info.ToString()))
-
-	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
-	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest)),
-		}
-	}
 
 	adaptor.Init(info)
 
@@ -494,18 +474,16 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	}
 	info.SetEstimatePromptTokens(usage.PromptTokens)
 
-	quota, tieredResult := settleTestQuota(info, priceData, usage)
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
-	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
+	other := service.GenerateTextOtherInfo(c, info, usage.PromptTokensDetails.CachedTokens)
 	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,
 		CompletionTokens: usage.CompletionTokens,
 		ModelName:        info.OriginModelName,
 		TokenName:        "模型测试",
-		Quota:            quota,
 		Content:          "模型测试",
 		UseTimeSeconds:   int(consumedTime),
 		IsStream:         info.IsStream,
@@ -518,51 +496,6 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		localErr:    nil,
 		newAPIError: nil,
 	}
-}
-
-func attachTestBillingRequestInput(info *relaycommon.RelayInfo, request dto.Request) error {
-	if info == nil {
-		return nil
-	}
-
-	input, err := helper.BuildBillingExprRequestInputFromRequest(request, info.RequestHeaders)
-	if err != nil {
-		return err
-	}
-	info.BillingRequestInput = &input
-	return nil
-}
-
-func settleTestQuota(info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage) (int, *billingexpr.TieredResult) {
-	if usage != nil && info != nil && info.TieredBillingSnapshot != nil {
-		isClaudeUsageSemantic := usage.UsageSemantic == "anthropic" || info.GetFinalRequestRelayFormat() == types.RelayFormatClaude
-		usedVars := billingexpr.UsedVars(info.TieredBillingSnapshot.ExprString)
-		if ok, quota, result := service.TryTieredSettle(info, service.BuildTieredTokenParams(usage, isClaudeUsageSemantic, usedVars)); ok {
-			return quota, result
-		}
-	}
-
-	quota := 0
-	if !priceData.UsePrice {
-		completionQuota := common.QuotaRound(float64(usage.CompletionTokens) * priceData.CompletionRatio)
-		quota = common.QuotaRound(float64(usage.PromptTokens) + float64(completionQuota))
-		quota = common.QuotaRound(float64(quota) * priceData.ModelRatio)
-		if priceData.ModelRatio != 0 && quota <= 0 {
-			quota = 1
-		}
-		return quota, nil
-	}
-
-	return common.QuotaFromFloat(priceData.ModelPrice * common.QuotaPerUnit), nil
-}
-
-func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData hosttypes.PriceData, usage *dto.Usage, tieredResult *billingexpr.TieredResult) *model.LogOther {
-	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
-		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
-	if tieredResult != nil {
-		service.InjectTieredBillingInfo(other, info, tieredResult)
-	}
-	return other
 }
 
 func coerceTestUsage(usageAny any, isStream bool, estimatePromptTokens int) (*dto.Usage, error) {

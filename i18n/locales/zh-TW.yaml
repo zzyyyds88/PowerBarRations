@@ -136,10 +136,8 @@ payment.callback_error: "回調位址設定錯誤"
 payment.create_failed: "建立訂單失敗"
 payment.start_failed: "啟用支付失敗"
 payment.amount_too_low: "訂閱方案金額過低"
-payment.stripe_not_configured: "Stripe 未設定或密鑰無效"
 payment.webhook_not_configured: "Webhook 未設定"
 payment.price_id_not_configured: "該訂閱方案未設定 StripePriceId"
-payment.creem_not_configured: "該訂閱方案未設定 CreemProductId"
 payment.compliance_required: "支付、兌換碼、訂閱方案和邀請返利功能已停用。管理員需先確認合規聲明後方可啟用。"
 
 # Topup messages

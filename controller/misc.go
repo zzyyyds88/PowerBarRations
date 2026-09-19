@@ -62,8 +62,6 @@ func GetStatus(c *gin.Context) {
 		"chats":                         setting.Chats,
 		"self_use_mode_enabled":         operation_setting.SelfUseModeEnabled,
 
-		"password_login_encryption_enabled": common.PasswordLoginEncryptionEnabled,
-
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,
 

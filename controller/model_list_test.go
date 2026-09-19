@@ -15,7 +15,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
-	"github.com/zzyyyds88/PowerBarRations/setting/config"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 	"gorm.io/gorm"
 )
@@ -86,33 +85,6 @@ func initModelListColumnNames(t *testing.T) {
 	}
 }
 
-func withTieredBillingConfig(t *testing.T, modes map[string]string, exprs map[string]string) {
-	t.Helper()
-
-	saved := map[string]string{}
-	require.NoError(t, config.GlobalConfig.SaveToDB(func(key, value string) error {
-		if strings.HasPrefix(key, "billing_setting.") {
-			saved[key] = value
-		}
-		return nil
-	}))
-	t.Cleanup(func() {
-		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
-		model.InvalidatePricingCache()
-	})
-
-	modeBytes, err := common.Marshal(modes)
-	require.NoError(t, err)
-	exprBytes, err := common.Marshal(exprs)
-	require.NoError(t, err)
-
-	require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{
-		"billing_setting.billing_mode": string(modeBytes),
-		"billing_setting.billing_expr": string(exprBytes),
-	}))
-	model.InvalidatePricingCache()
-}
-
 func withSelfUseModeDisabled(t *testing.T) {
 	t.Helper()
 
@@ -161,62 +133,6 @@ func pricingByModelName(pricings []model.Pricing) map[string]model.Pricing {
 		byName[pricing.ModelName] = pricing
 	}
 	return byName
-}
-
-func TestListModelsIncludesTieredBillingModel(t *testing.T) {
-	withSelfUseModeDisabled(t)
-	withTieredBillingConfig(t, map[string]string{
-		"zz-tiered-visible-model":      "tiered_expr",
-		"zz-tiered-empty-expr-model":   "tiered_expr",
-		"zz-tiered-missing-expr-model": "tiered_expr",
-	}, map[string]string{
-		"zz-tiered-visible-model":    `tier("base", p * 1 + c * 2)`,
-		"zz-tiered-empty-expr-model": "   ",
-	})
-
-	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.Create(&model.User{
-		Id:       1001,
-		Username: "model-list-user",
-		Password: "password",
-		Group:    "default",
-		Status:   common.UserStatusEnabled,
-	}).Error)
-	require.NoError(t, db.Create(&[]model.Ability{
-		{Group: "default", Model: "zz-tiered-visible-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "zz-tiered-empty-expr-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "zz-tiered-missing-expr-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "zz-unpriced-model", ChannelId: 1, Enabled: true},
-	}).Error)
-
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	ctx.Set("id", 1001)
-
-	ListModels(ctx, constant.ChannelTypeOpenAI)
-
-	ids := decodeListModelsResponse(t, recorder)
-	require.Contains(t, ids, "zz-tiered-visible-model")
-	require.NotContains(t, ids, "zz-tiered-empty-expr-model")
-	require.NotContains(t, ids, "zz-tiered-missing-expr-model")
-	require.NotContains(t, ids, "zz-unpriced-model")
-
-	pricingByName := pricingByModelName(model.GetPricing())
-	visiblePricing, ok := pricingByName["zz-tiered-visible-model"]
-	require.True(t, ok)
-	require.Equal(t, "tiered_expr", visiblePricing.BillingMode)
-	require.NotEmpty(t, visiblePricing.BillingExpr)
-
-	emptyExprPricing, ok := pricingByName["zz-tiered-empty-expr-model"]
-	require.True(t, ok)
-	require.Empty(t, emptyExprPricing.BillingMode)
-	require.Empty(t, emptyExprPricing.BillingExpr)
-
-	missingExprPricing, ok := pricingByName["zz-tiered-missing-expr-model"]
-	require.True(t, ok)
-	require.Empty(t, missingExprPricing.BillingMode)
-	require.Empty(t, missingExprPricing.BillingExpr)
 }
 
 func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T) {
@@ -290,48 +206,6 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 	}, payload.Data[0].SupportedEndpointTypes)
 }
 
-func TestListModelsTokenLimitIncludesTieredBillingModel(t *testing.T) {
-	withSelfUseModeDisabled(t)
-	withTieredBillingConfig(t, map[string]string{
-		"zz-token-tiered-visible-model":      "tiered_expr",
-		"zz-token-tiered-empty-expr-model":   "tiered_expr",
-		"zz-token-tiered-missing-expr-model": "tiered_expr",
-	}, map[string]string{
-		"zz-token-tiered-visible-model":    `tier("base", p * 1 + c * 2)`,
-		"zz-token-tiered-empty-expr-model": "",
-	})
-	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.Create(&[]model.Ability{
-		{Group: "default", Model: "zz-token-tiered-visible-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "zz-token-tiered-empty-expr-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "zz-token-tiered-missing-expr-model", ChannelId: 1, Enabled: true},
-		{Group: "default", Model: "zz-token-unpriced-model", ChannelId: 1, Enabled: true},
-	}).Error)
-
-	recorder := httptest.NewRecorder()
-	ctx, _ := gin.CreateTestContext(recorder)
-	ctx.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
-	common.SetContextKey(ctx, constant.ContextKeyUserGroup, "default")
-	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimitEnabled, true)
-	common.SetContextKey(ctx, constant.ContextKeyTokenModelLimit, map[string]bool{
-		"zz-token-tiered-visible-model":      true,
-		"zz-token-tiered-empty-expr-model":   true,
-		"zz-token-tiered-missing-expr-model": true,
-		"zz-token-unpriced-model":            true,
-	})
-
-	ListModels(ctx, constant.ChannelTypeOpenAI)
-
-	ids := decodeListModelsResponse(t, recorder)
-	require.Contains(t, ids, "zz-token-tiered-visible-model")
-	require.NotContains(t, ids, "zz-token-tiered-empty-expr-model")
-	require.NotContains(t, ids, "zz-token-tiered-missing-expr-model")
-	require.NotContains(t, ids, "zz-token-unpriced-model")
-}
-
-// W7（design-v1 §10.2.1）：用户分组 / token auto-group 已随多用户面删除，因此
-// "auto group 展开成配置的可选分组"这类用例不再成立。新语义锁在下面这条用例里：
-// token 分组为 "auto" 时退化为"当前分组"，不再去看任何 auto-group 快照。
 func TestListModelsAutoTokenGroupFallsBackToCurrentGroup(t *testing.T) {
 	withSelfUseModeEnabled(t)
 

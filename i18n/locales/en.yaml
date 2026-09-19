@@ -135,10 +135,8 @@ payment.callback_error: "Callback URL configuration error"
 payment.create_failed: "Failed to create order"
 payment.start_failed: "Failed to start payment"
 payment.amount_too_low: "Plan amount is too low"
-payment.stripe_not_configured: "Stripe is not configured or key is invalid"
 payment.webhook_not_configured: "Webhook is not configured"
 payment.price_id_not_configured: "StripePriceId is not configured for this plan"
-payment.creem_not_configured: "CreemProductId is not configured for this plan"
 payment.compliance_required: "Payment, redemption, subscription, and invitation reward features are disabled. The administrator must confirm compliance terms before enabling them."
 
 # Topup messages

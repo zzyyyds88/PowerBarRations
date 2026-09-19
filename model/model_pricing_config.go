@@ -12,8 +12,6 @@ import (
 	"sync"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
-	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
-	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 	"gorm.io/gorm"
@@ -51,7 +49,6 @@ var ErrModelPricingConflict = errors.New("model pricing changed; reload before s
 var modelPricingOptionKeys = []string{
 	"AudioCompletionRatio", "AudioRatio", "CacheRatio", "CompletionRatio",
 	"CreateCacheRatio", "ImageRatio", "ModelPrice", "ModelRatio",
-	"billing_setting.billing_expr", "billing_setting.billing_mode",
 }
 
 var modelPricingMutationMu sync.Mutex
@@ -137,23 +134,6 @@ func effectiveModelPricing(values map[string]map[string]any, name string) Pricin
 			result[key] = value
 		}
 	}
-	mode, _ := result["billing_setting.billing_mode"].(string)
-	if mode == "" {
-		_, hasPrice := result["ModelPrice"]
-		_, hasRatio := result["ModelRatio"]
-		if _, builtin := billing_setting.GetBuiltinBillingExpr(name); builtin && !hasPrice && !hasRatio {
-			mode = "tiered_expr"
-		}
-	}
-	if mode == "tiered_expr" {
-		result["billing_setting.billing_mode"] = mode
-		if _, exists := result["billing_setting.billing_expr"]; !exists {
-			if expression, ok := billing_setting.GetBuiltinBillingExpr(name); ok {
-				result["billing_setting.billing_expr"] = expression
-			}
-		}
-		return result
-	}
 	if _, exists := result["ModelPrice"]; exists {
 		return result
 	}
@@ -208,9 +188,6 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 				nameSet[name] = true
 			}
 		}
-		for name := range billing_setting.GetBuiltinBillingExprCopy() {
-			nameSet[name] = true
-		}
 		for name := range nameSet {
 			names = append(names, name)
 		}
@@ -225,20 +202,6 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 		entry.BillingDetails = ResolveLegacyBillingDetails(name, entry.Effective, configured)
 		result.Entries = append(result.Entries, entry)
 	}
-	// Preserve the existing settings editor's full-map interface. Built-in
-	// expressions are display defaults only; per-model writes do not persist them.
-	for name, expression := range billing_setting.GetBuiltinBillingExprCopy() {
-		effective := effectiveModelPricing(values, name)
-		if effective["billing_setting.billing_mode"] != "tiered_expr" {
-			continue
-		}
-		if _, ok := values["billing_setting.billing_mode"][name]; !ok {
-			values["billing_setting.billing_mode"][name] = "tiered_expr"
-		}
-		if _, ok := values["billing_setting.billing_expr"][name]; !ok {
-			values["billing_setting.billing_expr"][name] = expression
-		}
-	}
 	for key, entries := range values {
 		encoded, err := common.Marshal(entries)
 		if err != nil {
@@ -250,11 +213,7 @@ func GetModelPricingSnapshot(names []string) (*ModelPricingSnapshot, error) {
 }
 
 func ValidateModelPricing(name string, values PricingValues) error {
-	previous := PricingValues{}
-	if expression, ok := billing_setting.GetBillingExpr(name); ok {
-		previous["billing_setting.billing_expr"] = expression
-	}
-	return validateModelPricing(name, values, previous)
+	return validateModelPricing(name, values, PricingValues{})
 }
 
 // Writes pass the locked database snapshot here, so allowing an unchanged stale
@@ -267,39 +226,9 @@ func validateModelPricing(name string, values, previous PricingValues) error {
 		if !IsModelPricingOption(key) {
 			return fmt.Errorf("unsupported pricing field: %s", key)
 		}
-		if key == "billing_setting.billing_mode" {
-			if value != "ratio" && value != "tiered_expr" {
-				return errors.New("invalid billing mode")
-			}
-			continue
-		}
-		if key == "billing_setting.billing_expr" {
-			expression, ok := value.(string)
-			if !ok || strings.TrimSpace(expression) == "" {
-				return errors.New("billing expression is required")
-			}
-			// Even a model expression currently shadowed by every provider must
-			// compile; only its schema-specific smoke tests can be skipped.
-			if _, err := billingexpr.CompileFromCache(expression); err != nil {
-				return fmt.Errorf("model %s: %w", name, err)
-			}
-			if previous[key] != expression || len(billingexpr.UsedUsageKeys(expression)) == 0 {
-				if err := billing_setting.SmokeTestExpr(expression); err != nil {
-					return fmt.Errorf("model %s: %w", name, err)
-				}
-			}
-			continue
-		}
 		number, ok := value.(float64)
 		if !ok || math.IsNaN(number) || math.IsInf(number, 0) || number < 0 {
 			return fmt.Errorf("%s must be a finite, non-negative number", key)
-		}
-	}
-	if values["billing_setting.billing_mode"] == "tiered_expr" {
-		if _, exists := values["billing_setting.billing_expr"]; !exists {
-			if _, builtin := billing_setting.GetBuiltinBillingExpr(name); !builtin {
-				return errors.New("billing expression is required")
-			}
 		}
 	}
 	return nil

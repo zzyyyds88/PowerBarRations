@@ -166,8 +166,9 @@ func (i *ImageRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	}
 
 	// Keep n separate from ImagePriceRatio so size/quality and count remain
-	// independent billing dimensions. Fixed-price pre-consume stores this on
-	// PriceData, and image settlement reuses or replaces the same "n" ratio.
+	// independent dimensions. The "n" ratio records the validated request
+	// quantity for token-count metadata; the legacy dalle ratio is a display
+	// default only.
 	return &types.TokenCountMeta{
 		CombineText:     i.Prompt,
 		MaxTokens:       1584,

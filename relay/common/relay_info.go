@@ -8,14 +8,12 @@ import (
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
-	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
 	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/convmeta"
 	kitreasoning "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/reasoning"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
-	hosttypes "github.com/zzyyyds88/PowerBarRations/types"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -126,21 +124,9 @@ type RelayInfo struct {
 	// ClaudeToChatStreamState / ChatToGeminiStreamState hold per-attempt
 	// stream converters. InitChannelMeta nils them so a retry cannot resume a
 	// dirty converter (advanced tool index / finalized).
-	ClaudeToChatStreamState any
-	ChatToGeminiStreamState any
-	ReceivedResponseCount   int
-	FinalPreConsumedQuota   int // 最终预消耗的配额
-	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
-	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
-	// 必须在提交前锁定全额。
-	ForcePreConsume bool
-	// Billing 是计费会话，封装了预扣费/结算/退款的统一生命周期。
-	// 初始免费组可为 nil；若 auto 重试切换到付费组，会在发送前创建。
-	Billing BillingSettler
-	// BillingSource 是遗留日志字段（billing_source）；PBR 无计费/钱包/订阅语义，
-	// 恒为空，保留字段只是为了让历史日志读取方不报错。
-	BillingSource string
-	// RequestId is used for idempotent pre-consume/refund
+	ClaudeToChatStreamState   any
+	ChatToGeminiStreamState   any
+	ReceivedResponseCount     int
 	RequestId                 string
 	IsClaudeBetaQuery         bool // /v1/messages?beta=true
 	IsChannelTest             bool // channel test request
@@ -150,23 +136,9 @@ type RelayInfo struct {
 	UseRuntimeHeadersOverride bool
 	ParamOverrideAudit        []string
 
-	PriceData hosttypes.PriceData
-
-	// QuotaClamp is set (non-nil) when a quota conversion saturated at the
-	// supported single-request bound (or NaN fallback) while computing this request's charge.
-	// It is surfaced onto the consume/task log's admin_info for auditing.
-	QuotaClamp *common.QuotaClamp
-
-	// TieredBillingSnapshot captures tiered billing rules at pre-consume time.
-	// Auto-group retries refresh its group-dependent fields before each attempt
-	// and again before settlement. Non-nil only when billing mode is "tiered_expr".
-	TieredBillingSnapshot *billingexpr.BillingSnapshot
-	BillingRequestInput   *billingexpr.RequestInput
-	BillingImageCount     *int
-	// ImageRequestCount is the effective quantity sent on the current attempt;
-	// ImageQuotaBeforeGroup is the frozen legacy estimate before request ratios.
-	ImageRequestCount     int
-	ImageQuotaBeforeGroup float64
+	// ImageRequestCount is the effective quantity sent on the current attempt
+	// for image relays (routing/log metadata, not billing).
+	ImageRequestCount int
 
 	Request dto.Request
 
@@ -194,30 +166,18 @@ type RelayInfo struct {
 	*ChannelMeta
 }
 
-// UpdateImageCount replaces the billable quantity without changing the frozen
-// request parameters or multiplying the legacy and expression prices together.
+// UpdateImageCount records the effective outbound image quantity for the
+// current attempt without changing the frozen request parameters.
 func (info *RelayInfo) UpdateImageCount(count int64) {
 	if info == nil || count <= 0 || count > int64(dto.MaxImageN) {
 		return
 	}
-	if info.PriceData.UsePrice {
-		info.PriceData.AddOtherRatio("n", float64(count))
-	}
-	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.EstimatedImageCount != nil {
-		n := int(count)
-		info.BillingImageCount = &n
-	}
+	info.ImageRequestCount = int(count)
 }
 
 func (info *RelayInfo) RequestedImageCount() int {
-	if info.ImageRequestCount > 0 {
+	if info != nil && info.ImageRequestCount > 0 {
 		return info.ImageRequestCount
-	}
-	if info.TieredBillingSnapshot != nil && info.TieredBillingSnapshot.EstimatedImageCount != nil {
-		return *info.TieredBillingSnapshot.EstimatedImageCount
-	}
-	if count, ok := info.PriceData.OtherRatios()["n"]; ok && count >= 1 && count <= dto.MaxImageN {
-		return int(count)
 	}
 	return 1
 }
@@ -327,7 +287,6 @@ func (info *RelayInfo) ToString() string {
 	fmt.Fprintf(b, "ShouldIncludeUsage: %t, ", info.ShouldIncludeUsage)
 	fmt.Fprintf(b, "DisablePing: %t, ", info.DisablePing)
 	fmt.Fprintf(b, "SendResponseCount: %d, ", info.SendResponseCount)
-	fmt.Fprintf(b, "FinalPreConsumedQuota: %d, ", info.FinalPreConsumedQuota)
 
 	// User & token info (mask secrets)
 	fmt.Fprintf(b, "User{ Id: %d, Email: %q, Group: %q, UsingGroup: %q, Quota: %d }, ",
@@ -348,11 +307,6 @@ func (info *RelayInfo) ToString() string {
 	// Reasoning
 	if info.ReasoningEffort != "" {
 		fmt.Fprintf(b, "ReasoningEffort: %q, ", info.ReasoningEffort)
-	}
-
-	// Price data (non-sensitive)
-	if info.PriceData.UsePrice {
-		fmt.Fprintf(b, "PriceData{ %s }, ", info.PriceData.ToSetting())
 	}
 
 	// Channel metadata (mask ApiKey)

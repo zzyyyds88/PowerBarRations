@@ -136,10 +136,8 @@ payment.callback_error: "回调地址配置错误"
 payment.create_failed: "创建订单失败"
 payment.start_failed: "拉起支付失败"
 payment.amount_too_low: "套餐金额过低"
-payment.stripe_not_configured: "Stripe 未配置或密钥无效"
 payment.webhook_not_configured: "Webhook 未配置"
 payment.price_id_not_configured: "该套餐未配置 StripePriceId"
-payment.creem_not_configured: "该套餐未配置 CreemProductId"
 payment.compliance_required: "支付、兑换码、订阅计划和邀请返利功能已禁用。管理员需先确认合规声明后方可启用。"
 
 # Topup messages

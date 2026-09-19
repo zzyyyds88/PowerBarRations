@@ -265,11 +265,6 @@ func updateUserUsedQuotaAndRequestCount(id int, quota int, count int) {
 		common.SysLog("failed to update user used quota and request count: " + err.Error())
 		return
 	}
-
-	//// 更新缓存
-	//if err := invalidateUserCache(id); err != nil {
-	//	common.SysError("failed to invalidate user cache: " + err.Error())
-	//}
 }
 
 func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int) {

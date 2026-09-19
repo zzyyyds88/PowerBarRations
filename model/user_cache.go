@@ -59,27 +59,11 @@ func userCacheTTLSeconds() int {
 	return ttl
 }
 
-// invalidateUserCache clears user cache
-func invalidateUserCache(userId int) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisDelKey(getUserCacheKey(userId))
-}
-
 func populateUserCache(user User) error {
 	if !common.RedisEnabled {
 		return nil
 	}
 	return common.RedisHSetObj(getUserCacheKey(user.Id), user.ToBaseUser(), time.Duration(userCacheTTLSeconds())*time.Second)
-}
-
-// updateUserCache refreshes the cached user snapshot.
-//
-// W7 惰性遗留：基座的 auth-version fence（用户会话/权限变更的版本栅栏）随多用户面删除；
-// PBR 只有系统用户锚点，缓存仅用于读路径加速，直接以数据库快照覆盖即可。
-func updateUserCache(user User) error {
-	return populateUserCache(user)
 }
 
 // GetUserCache gets complete user cache from hash
@@ -113,28 +97,6 @@ func cacheGetUserBase(userId int) (*UserBase, error) {
 		return nil, fmt.Errorf("user cache schema is stale")
 	}
 	return &userCache, nil
-}
-
-// cacheIncrUserQuota/cacheDecrUserQuota 为基座额度缓存的惰性遗留；PBR 计费已停用，
-// 调用点已随计费链删除，保留仅为兼容仍引用它们的保留代码。
-func cacheIncrUserQuota(userId int, delta int64) error {
-	if !common.RedisEnabled {
-		return nil
-	}
-	return common.RedisHIncrBy(getUserCacheKey(userId), "Quota", delta)
-}
-
-func cacheDecrUserQuota(userId int, delta int64) error {
-	return cacheIncrUserQuota(userId, -delta)
-}
-
-func syncCreditUserQuotaCache(userId int, quota int, operation string) {
-	if quota <= 0 {
-		return
-	}
-	if err := cacheIncrUserQuota(userId, int64(quota)); err != nil {
-		common.SysLog(fmt.Sprintf("failed to sync %s credit to user quota cache: %s", operation, err.Error()))
-	}
 }
 
 // Helper functions to get individual fields if needed
@@ -184,10 +146,6 @@ func RefreshUserGroupCache(userId int) error {
 		return err
 	}
 	return updateUserCacheField(userId, "Group", authoritative.Group)
-}
-
-func updateUserEmailCache(userId int, email string) error {
-	return updateUserCacheField(userId, "Email", email)
 }
 
 func updateUserNameCache(userId int, username string) error {

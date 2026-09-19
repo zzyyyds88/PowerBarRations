@@ -53,14 +53,6 @@ func InitRedisClient() (err error) {
 	return err
 }
 
-func ParseRedisOption() *redis.Options {
-	opt, err := redis.ParseURL(os.Getenv("REDIS_CONN_STRING"))
-	if err != nil {
-		FatalLog("failed to parse Redis connection string: " + err.Error())
-	}
-	return opt
-}
-
 func RedisSet(key string, value string, expiration time.Duration) error {
 	if DebugEnabled {
 		SysLog(fmt.Sprintf("Redis SET: key=%s, value=%s, expiration=%v", key, value, expiration))
@@ -87,14 +79,6 @@ func RedisGet(key string) (string, error) {
 //	ctx := context.Background()
 //	return RDB.GetSet(ctx, key, expiration).Result()
 //}
-
-func RedisDel(key string) error {
-	if DebugEnabled {
-		SysLog(fmt.Sprintf("Redis DEL: key=%s", key))
-	}
-	ctx := context.Background()
-	return RDB.Del(ctx, key).Err()
-}
 
 func RedisDelKey(key string) error {
 	if DebugEnabled {

@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -10,7 +9,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"github.com/bytedance/gopkg/util/gopool"
-	"gorm.io/gorm"
 )
 
 const (
@@ -119,16 +117,6 @@ func batchUpdate() {
 		updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key])
 	}
 	common.SysLog("batch update finished")
-}
-
-func RecordExist(err error) (bool, error) {
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
-	}
-	return false, err
 }
 
 func shouldUpdateRedis(fromDB bool, err error) bool {

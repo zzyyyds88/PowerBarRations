@@ -2064,10 +2064,6 @@ func ManageMultiKeys(c *gin.Context) {
 	}
 }
 
-func multiKeyActionRequiresSensitiveWrite(action string) bool {
-	return action == "delete_key" || action == "delete_disabled_keys"
-}
-
 // OllamaPullModel 拉取 Ollama 模型
 func OllamaPullModel(c *gin.Context) {
 	var req struct {

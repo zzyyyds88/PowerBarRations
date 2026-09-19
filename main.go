@@ -293,13 +293,6 @@ func InitResources() error {
 		common.FatalLog("failed to initialize database: " + err.Error())
 		return err
 	}
-	if common.PasswordLoginEncryptionEnabled {
-		if err = model.InitPasswordEncryption(); err != nil {
-			common.FatalLog("failed to initialize password encryption: " + err.Error())
-			return err
-		}
-	}
-
 	model.CheckSetup()
 
 	// Initialize options, should after model.InitDB()

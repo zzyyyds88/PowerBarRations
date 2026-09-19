@@ -134,14 +134,6 @@ func exchangeJwtForAccessToken(signedJWT string, info *relaycommon.RelayInfo) (s
 	return "", fmt.Errorf("failed to get access token: %v", result)
 }
 
-func AcquireAccessToken(creds Credentials, proxy string) (string, error) {
-	signedJWT, err := createSignedJWT(creds.ClientEmail, creds.PrivateKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to create signed JWT: %w", err)
-	}
-	return exchangeJwtForAccessTokenWithProxy(signedJWT, proxy)
-}
-
 func exchangeJwtForAccessTokenWithProxy(signedJWT string, proxy string) (string, error) {
 	authURL := "https://www.googleapis.com/oauth2/v4/token"
 	data := url.Values{}

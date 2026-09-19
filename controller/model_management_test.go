@@ -18,8 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/model"
-	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/config"
 	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 	"gorm.io/gorm"
 )
@@ -32,7 +30,6 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	previousMaster, previousSQLite := common.IsMasterNode, common.SQLitePath
 	previousRedis, previousMemory := common.RedisEnabled, common.MemoryCacheEnabled
 	previousOptions := common.OptionMap
-	previousConfig := config.GlobalConfig.ExportAllConfigs()
 	restoreRatios := []struct {
 		value   string
 		restore func(string) error
@@ -62,7 +59,6 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	for _, value := range restoreRatios {
 		require.NoError(t, value.restore("{}"))
 	}
-	config.UpdateConfigFromMap(config.GlobalConfig.Get("billing_setting"), map[string]string{"billing_mode": "{}", "billing_expr": "{}"})
 	var version string
 	query := "SELECT version()"
 	if kind == "sqlite" {
@@ -74,7 +70,6 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 		for _, value := range restoreRatios {
 			require.NoError(t, value.restore(value.value))
 		}
-		config.UpdateConfigFromMap(config.GlobalConfig.Get("billing_setting"), map[string]string{"billing_mode": previousConfig["billing_setting.billing_mode"], "billing_expr": previousConfig["billing_setting.billing_expr"]})
 		common.OptionMap = previousOptions
 		common.IsMasterNode, common.SQLitePath = previousMaster, previousSQLite
 		common.RedisEnabled, common.MemoryCacheEnabled = previousRedis, previousMemory
@@ -216,11 +211,11 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 
 			})
 
-			t.Run("pricing_saves_zero_switches_modes_and_rejects_stale_batches", func(t *testing.T) {
+			t.Run("pricing_saves_zero_and_rejects_stale_batches", func(t *testing.T) {
 				before, err := model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
 				require.NoError(t, err)
 				changes := []model.ModelPricingChange{
-					{ModelName: "matrix-priced", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(0), "billing_setting.billing_mode": "ratio"}},
+					{ModelName: "matrix-priced", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(0)}},
 					{ModelName: "matrix-other", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelRatio": float64(1), "CreateCacheRatio": 1.25}},
 				}
 				require.NoError(t, model.UpdateModelPricing(changes))
@@ -229,12 +224,14 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 				assert.Equal(t, float64(0), loaded.Entries[0].Effective["ModelPrice"])
 				stale := changes[0]
 				changes[0].ExpectedVersion = loaded.Entries[0].Version
-				changes[0].Pricing = model.PricingValues{"billing_setting.billing_mode": "tiered_expr", "billing_setting.billing_expr": `tier("base", p * 2 + c * 8 + cr * 0 + cc * 2.5)`, "ModelRatio": float64(1)}
+				// Switching matrix-priced from a fixed price to a ratio must
+				// replace the whole draft: the old ModelPrice disappears.
+				changes[0].Pricing = model.PricingValues{"ModelRatio": float64(1), "CompletionRatio": float64(2)}
 				require.NoError(t, model.UpdateModelPricing(changes[:1]))
 				loaded, err = model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
 				require.NoError(t, err)
 				assert.Equal(t, 1.25, loaded.Entries[0].Configured["CreateCacheRatio"])
-				assert.Equal(t, "tiered_expr", loaded.Entries[1].Effective["billing_setting.billing_mode"])
+				assert.Equal(t, float64(1), loaded.Entries[1].Effective["ModelRatio"])
 				_, oldFixed := loaded.Entries[1].Configured["ModelPrice"]
 				assert.False(t, oldFixed)
 				other := model.ModelPricingChange{ModelName: "matrix-other", ExpectedVersion: loaded.Entries[0].Version, Pricing: model.PricingValues{"ModelRatio": float64(9)}}
@@ -291,27 +288,6 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 				}
 				assert.Equal(t, 1, successes)
 				assert.Equal(t, 1, conflicts)
-			})
-			t.Run("task_usage_and_builtin_reset", func(t *testing.T) {
-				{
-					const name = "gpt-6-astra"
-					builtin, exists := billing_setting.GetBuiltinBillingExpr(name)
-					require.True(t, exists)
-					before, err := model.GetModelPricingSnapshot([]string{name})
-					require.NoError(t, err)
-					require.Empty(t, before.Entries[0].Configured)
-					change := model.ModelPricingChange{ModelName: name, ExpectedVersion: before.Entries[0].Version, Pricing: model.PricingValues{"ModelPrice": float64(0)}}
-					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{change}))
-					custom, err := model.GetModelPricingSnapshot([]string{name})
-					require.NoError(t, err)
-					assert.Equal(t, float64(0), custom.Entries[0].Effective["ModelPrice"])
-					change.ExpectedVersion, change.Pricing, change.Reset = custom.Entries[0].Version, nil, true
-					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{change}))
-					reset, err := model.GetModelPricingSnapshot([]string{name})
-					require.NoError(t, err)
-					assert.Empty(t, reset.Entries[0].Configured)
-					assert.Equal(t, builtin, reset.Entries[0].Effective["billing_setting.billing_expr"])
-				}
 			})
 			t.Run("concurrent_import_creates_one_record", func(t *testing.T) {
 				update := model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: "matrix-concurrent-import", RecordVersion: model.MetadataRecordVersion(nil), Create: true}, Values: model.MetadataValues{Description: "Imported", Status: 1}}
@@ -671,7 +647,7 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					model.InitChannelCache()
 					baseline, err := model.GetModelPricingSnapshot([]string{name, keep})
 					require.NoError(t, err)
-					pricing := model.PricingValues{"ModelRatio": float64(1), "ModelPrice": float64(0), "CompletionRatio": float64(2), "CacheRatio": float64(0.1), "CreateCacheRatio": float64(1.25), "ImageRatio": float64(3), "AudioRatio": float64(4), "AudioCompletionRatio": float64(5), "billing_setting.billing_mode": "tiered_expr", "billing_setting.billing_expr": `tier("base", p * 2 + c * 4)`}
+					pricing := model.PricingValues{"ModelRatio": float64(1), "ModelPrice": float64(0), "CompletionRatio": float64(2), "CacheRatio": float64(0.1), "CreateCacheRatio": float64(1.25), "ImageRatio": float64(3), "AudioRatio": float64(4), "AudioCompletionRatio": float64(5)}
 					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{
 						{ModelName: name, ExpectedVersion: baseline.EmptyVersion, Pricing: pricing},
 						{ModelName: keep, ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(9)}},
@@ -712,7 +688,6 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					after, err := model.GetModelPricingSnapshot([]string{name, keep})
 					require.NoError(t, err)
 					assert.Equal(t, before, after, "partial option writes roll back")
-					assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(name), "failed deletion must not publish new runtime pricing")
 					var retained model.Model
 					require.NoError(t, db.First(&retained, metadata.Id).Error)
 					var channelAfter model.Channel
@@ -726,9 +701,6 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					require.NoError(t, err)
 					assert.Empty(t, after.Entries[0].Configured)
 					assert.Equal(t, before.Entries[1], after.Entries[1], "name rules do not expand pricing deletion")
-					assert.Equal(t, billing_setting.BillingModeRatio, billing_setting.GetBillingMode(name))
-					_, hasExpr := billing_setting.GetBillingExpr(name)
-					assert.False(t, hasExpr)
 					require.NoError(t, db.First(&channelAfter, channel.Id).Error)
 					expectedModels := channel.Models
 					if removeChannels {

@@ -374,10 +374,6 @@ func newHTTPClientWithPolicyAndTLS(policy HTTPTransportPolicy, tlsConfig *tls.Co
 	return newDirectHTTPClient(policy, tlsConfig)
 }
 
-func newProxyHTTPClient(proxyURL *url.URL) (*http.Client, error) {
-	return newHTTPClientFromPolicy(defaultHTTPTransportPolicy(), proxyURL, nil)
-}
-
 // GetHttpClientWithProxy returns the default client or a cached proxy-enabled client.
 func GetHttpClientWithProxy(rawProxyURL string) (*http.Client, error) {
 	return GetHttpClientWithProxySettings(rawProxyURL, dto.ChannelSettings{})

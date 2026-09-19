@@ -21,10 +21,7 @@ import (
 
 var commonGroupCol string
 var commonKeyCol string
-var commonTrueVal string
-var commonFalseVal string
 
-var logKeyCol string
 var logGroupCol string
 
 // jsonScanBytes 归一化 json 列的驱动返回值:不同驱动/协议模式下同一列可能
@@ -51,21 +48,15 @@ func initCol() {
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
 		commonGroupCol = `"group"`
 		commonKeyCol = `"key"`
-		commonTrueVal = "true"
-		commonFalseVal = "false"
 	} else {
 		commonGroupCol = "`group`"
 		commonKeyCol = "`key`"
-		commonTrueVal = "1"
-		commonFalseVal = "0"
 	}
 	switch common.LogDatabaseType() {
 	case common.DatabaseTypePostgreSQL:
 		logGroupCol = `"group"`
-		logKeyCol = `"key"`
 	default:
 		logGroupCol = "`group`"
-		logKeyCol = "`key`"
 	}
 }
 
@@ -333,7 +324,6 @@ func migrateDB() error {
 		&WebhookDelivery{},
 		&User{},
 		&Option{},
-		&LoginEncryptionKey{},
 		&Ability{},
 		&Log{},
 		&Model{},

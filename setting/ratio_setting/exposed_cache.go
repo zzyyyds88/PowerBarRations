@@ -1,55 +1,14 @@
 package ratio_setting
 
-import (
-	"maps"
-	"sync"
-	"sync/atomic"
-	"time"
+import "sync/atomic"
 
-	"github.com/gin-gonic/gin"
-)
+// 比率公开接口（/api/ratio 及 expose_ratio 开关）已随计费执行链退役，
+// 这里仅保留失效钩子：各 Update*ByJSONString 与模型定价写入路径仍会调用
+// InvalidateExposedDataCache，保持既有调用方签名不变。
+type exposedCache struct{}
 
-const exposedDataTTL = 30 * time.Second
-
-type exposedCache struct {
-	data      gin.H
-	expiresAt time.Time
-}
-
-var (
-	exposedData atomic.Value
-	rebuildMu   sync.Mutex
-)
+var exposedData atomic.Value
 
 func InvalidateExposedDataCache() {
 	exposedData.Store((*exposedCache)(nil))
-}
-
-func cloneGinH(src gin.H) gin.H {
-	dst := make(gin.H, len(src))
-	maps.Copy(dst, src)
-	return dst
-}
-
-func GetExposedData() gin.H {
-	if c, ok := exposedData.Load().(*exposedCache); ok && c != nil && time.Now().Before(c.expiresAt) {
-		return cloneGinH(c.data)
-	}
-	rebuildMu.Lock()
-	defer rebuildMu.Unlock()
-	if c, ok := exposedData.Load().(*exposedCache); ok && c != nil && time.Now().Before(c.expiresAt) {
-		return cloneGinH(c.data)
-	}
-	newData := gin.H{
-		"model_ratio":        GetModelRatioCopy(),
-		"completion_ratio":   GetCompletionRatioCopy(),
-		"cache_ratio":        GetCacheRatioCopy(),
-		"create_cache_ratio": GetCreateCacheRatioCopy(),
-		"model_price":        GetModelPriceCopy(),
-	}
-	exposedData.Store(&exposedCache{
-		data:      newData,
-		expiresAt: time.Now().Add(exposedDataTTL),
-	})
-	return cloneGinH(newData)
 }

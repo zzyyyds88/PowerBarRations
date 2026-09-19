@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"strings"
 
 	channelconstant "github.com/zzyyyds88/PowerBarRations/constant"
@@ -165,7 +164,6 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	//				fieldName = "image[]"
 	//			}
 	//
-	//			mimeType := detectImageMimeType(fileHeader.Filename)
 	//
 	//			h := make(textproto.MIMEHeader)
 	//			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, fieldName, fileHeader.Filename))
@@ -188,7 +186,6 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 	//			}
 	//			defer maskFile.Close()
 	//
-	//			mimeType := detectImageMimeType(maskFiles[0].Filename)
 	//
 	//			h := make(textproto.MIMEHeader)
 	//			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="mask"; filename="%s"`, maskFiles[0].Filename))
@@ -213,23 +210,6 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 
 	default:
 		return request, nil
-	}
-}
-
-func detectImageMimeType(filename string) string {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".webp":
-		return "image/webp"
-	default:
-		if strings.HasPrefix(ext, ".jp") {
-			return "image/jpeg"
-		}
-		return "image/png"
 	}
 }
 

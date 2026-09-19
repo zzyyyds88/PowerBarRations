@@ -4,14 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/console_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
@@ -29,19 +26,6 @@ var completionRatioMetaOptionKeys = []string{
 	"ImageRatio",
 	"AudioRatio",
 	"AudioCompletionRatio",
-}
-
-func isPaymentComplianceOptionKey(key string) bool {
-	return strings.HasPrefix(key, "payment_setting.compliance_")
-}
-
-func isPositiveOptionValue(value string) bool {
-	intValue, err := strconv.Atoi(strings.TrimSpace(value))
-	if err == nil {
-		return intValue > 0
-	}
-	floatValue, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	return err == nil && floatValue > 0
 }
 
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
@@ -88,7 +72,7 @@ func GetOptions(c *gin.Context) {
 	optionValues := make(map[string]string)
 	common.OptionMapRWMutex.Lock()
 	for k, v := range common.OptionMap {
-		if k == "theme.frontend" || k == "billing_setting.billing_mode" || k == "billing_setting.billing_expr" {
+		if k == "theme.frontend" {
 			continue
 		}
 		value := common.Interface2String(v)
@@ -109,19 +93,6 @@ func GetOptions(c *gin.Context) {
 		}
 	}
 	common.OptionMapRWMutex.Unlock()
-	// Display the same effective expressions used by pricing and settlement,
-	// including built-in defaults absent from persisted administrator options.
-	for key, values := range map[string]map[string]string{
-		"billing_setting.billing_mode": billing_setting.GetBillingModeCopy(),
-		"billing_setting.billing_expr": billing_setting.GetBillingExprCopy(),
-	} {
-		encoded, err := common.Marshal(values)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
-			return
-		}
-		options = append(options, &model.Option{Key: key, Value: string(encoded)})
-	}
 	options = append(options, &model.Option{
 		Key:   "CompletionRatioMeta",
 		Value: buildCompletionRatioMetaValue(optionValues),
@@ -265,26 +236,6 @@ func UpdateOption(c *gin.Context) {
 				"message": err.Error(),
 			})
 			return
-		}
-	case "billing_setting.billing_expr":
-		expressions := make(map[string]string)
-		if err = common.UnmarshalJsonStr(option.Value.(string), &expressions); err != nil {
-			common.ApiErrorMsg(c, "计费表达式配置必须是模型到表达式的 JSON 对象: "+err.Error())
-			return
-		}
-		models := make([]string, 0, len(expressions))
-		for modelName := range expressions {
-			models = append(models, modelName)
-		}
-		sort.Strings(models)
-		for _, modelName := range models {
-			err = model.ValidateModelPricing(modelName, model.PricingValues{
-				"billing_setting.billing_expr": expressions[modelName],
-			})
-			if err != nil {
-				common.ApiErrorMsg(c, fmt.Sprintf("模型 %s 的计费表达式无效: %v", modelName, err))
-				return
-			}
 		}
 	case "console_setting.api_info":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "ApiInfo")

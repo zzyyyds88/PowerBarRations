@@ -325,10 +325,6 @@ func InitRatioSettings() {
 	audioCompletionRatioMap.AddAll(defaultAudioCompletionRatio)
 }
 
-func GetModelPriceMap() map[string]float64 {
-	return modelPriceMap.ReadAll()
-}
-
 func ModelPrice2JSONString() string {
 	return modelPriceMap.MarshalJSONString()
 }
@@ -371,22 +367,6 @@ func GetModelRatio(name string) (float64, bool, string) {
 		return 37.5, operation_setting.SelfUseModeEnabled, name
 	}
 	return ratio, true, name
-}
-
-func DefaultModelRatio2JSONString() string {
-	jsonBytes, err := common.Marshal(defaultModelRatio)
-	if err != nil {
-		common.SysError("error marshalling model ratio: " + err.Error())
-	}
-	return string(jsonBytes)
-}
-
-func GetDefaultModelRatioMap() map[string]float64 {
-	return defaultModelRatio
-}
-
-func GetDefaultModelPriceMap() map[string]float64 {
-	return defaultModelPrice
 }
 
 // GetDefaultPricingMaps returns independent copies for model-level reset and
@@ -662,43 +642,11 @@ func UpdateAudioCompletionRatioByJSONString(jsonStr string) error {
 	return types.LoadFromJsonStringWithCallback(audioCompletionRatioMap, jsonStr, InvalidateExposedDataCache)
 }
 
-func GetModelRatioCopy() map[string]float64 {
-	return modelRatioMap.ReadAll()
-}
-
-func GetModelPriceCopy() map[string]float64 {
-	return modelPriceMap.ReadAll()
-}
-
-func GetCompletionRatioCopy() map[string]float64 {
-	return completionRatioMap.ReadAll()
-}
-
-func GetImageRatioCopy() map[string]float64 {
-	return imageRatioMap.ReadAll()
-}
-
-func GetAudioRatioCopy() map[string]float64 {
-	return audioRatioMap.ReadAll()
-}
-
-func GetAudioCompletionRatioCopy() map[string]float64 {
-	return audioCompletionRatioMap.ReadAll()
-}
-
 // RoutingMatchModelName returns the name used for channel-ability and token-limit
 // fallback matching: strip @ modifiers and legacy aliases first, then apply
 // wildcard normalization.
 func RoutingMatchModelName(name string) string {
 	return FormatMatchingModelName(hostreasoning.BaseModelName(name))
-}
-
-// HasConfiguredModelRatio reports whether name has an explicit ratio entry
-// after wildcard normalization. Self-use fallback does not count.
-func HasConfiguredModelRatio(name string) bool {
-	name = FormatMatchingModelName(name)
-	_, ok := modelRatioMap.Get(name)
-	return ok
 }
 
 // 转换模型名，减少渠道必须配置各种带参数模型
@@ -718,17 +666,4 @@ func FormatMatchingModelName(name string) string {
 		name = "gpt-4o-gizmo-*"
 	}
 	return name
-}
-
-// result: 倍率or价格， usePrice， exist
-func GetModelRatioOrPrice(model string) (float64, bool, bool) { // price or ratio
-	price, usePrice := GetModelPrice(model, false)
-	if usePrice {
-		return price, true, true
-	}
-	modelRatio, success, _ := GetModelRatio(model)
-	if success {
-		return modelRatio, false, true
-	}
-	return 37.5, false, false
 }

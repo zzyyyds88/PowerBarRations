@@ -1068,18 +1068,9 @@ func updateChannelUsedQuota(id int, quota int) {
 	}
 }
 
-func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
-}
-
 func DeleteDisabledChannel() (int64, error) {
 	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
 	return result.RowsAffected, result.Error
-}
-
-func GetPaginatedTags(offset int, limit int) ([]*string, error) {
-	return GetPaginatedChannelTags(DB.Model(&Channel{}), offset, limit)
 }
 
 func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, error) {
@@ -1329,29 +1320,4 @@ func GetChannelsByType(startIdx int, num int, idSort bool, channelType int) ([]*
 	_ = idSort
 	err := DB.Where("type = ?", channelType).Order("id desc").Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
 	return channels, err
-}
-
-// Count channels of specific type
-func CountChannelsByType(channelType int) (int64, error) {
-	var count int64
-	err := DB.Model(&Channel{}).Where("type = ?", channelType).Count(&count).Error
-	return count, err
-}
-
-// Return map[type]count for all channels
-func CountChannelsGroupByType() (map[int64]int64, error) {
-	type result struct {
-		Type  int64 `gorm:"column:type"`
-		Count int64 `gorm:"column:count"`
-	}
-	var results []result
-	err := DB.Model(&Channel{}).Select("type, count(*) as count").Group("type").Find(&results).Error
-	if err != nil {
-		return nil, err
-	}
-	counts := make(map[int64]int64)
-	for _, r := range results {
-		counts[r.Type] = r.Count
-	}
-	return counts, nil
 }
