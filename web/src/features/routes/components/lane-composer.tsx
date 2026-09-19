@@ -392,6 +392,10 @@ export function LaneComposer(props: LaneComposerProps) {
         : `${m.channel} / ${m.resolvedUpstream}`,
     }
   })
+  // 触发框显示所选成员的标签；找不到匹配项时回退原始值（不静默显示空）。
+  const activeMemberLabel =
+    memberOptions.find((option) => option.value === activeMember)?.label ??
+    activeMember
 
   return (
     <div className='flex min-h-0 flex-1 flex-col gap-4'>
@@ -421,7 +425,9 @@ export function LaneComposer(props: LaneComposerProps) {
             }}
           >
             <SelectTrigger aria-label={t('Mode')} className='w-full'>
-              <SelectValue />
+              {/* 显式给 SelectValue 子节点：Base UI 默认回显原始值（failover），
+                  会绕过 i18n，中文界面显示英文。 */}
+              <SelectValue>{t(mode)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value='failover'>{t('failover')}</SelectItem>
@@ -442,7 +448,9 @@ export function LaneComposer(props: LaneComposerProps) {
             }}
           >
             <SelectTrigger aria-label={t('Active member')} className='w-full'>
-              <SelectValue placeholder={t('Select a member')} />
+              <SelectValue placeholder={t('Select a member')}>
+                {activeMemberLabel}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {memberOptions.map((option) => (

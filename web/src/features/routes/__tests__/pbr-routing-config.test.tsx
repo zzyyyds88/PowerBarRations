@@ -26,6 +26,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import i18next from 'i18next'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -218,6 +219,36 @@ describe('车道成员编排器', () => {
     expect(
       screen.queryByRole('button', { name: /auto.?add/i })
     ).not.toBeInTheDocument()
+  })
+
+  // 回归：Base UI 的 SelectValue 默认回显原始值（failover/manual），会绕过 i18n，
+  // 中文界面出现英文。触发框必须渲染翻译后的标签。
+  test('模式下拉触发框显示翻译后的标签而非原始值', async () => {
+    // 测试环境的 i18n 资源为空（t 回退成 key），无法区分"原始值"与"翻译值"；
+    // 这里临时注入与原始值不同的标签，再断言触发框显示的是标签。
+    i18next.addResourceBundle('en', 'translation', {
+      failover: 'FAILOVER-LABEL',
+      manual: 'MANUAL-LABEL',
+    })
+    try {
+      mockCatalog()
+      const user = userEvent.setup()
+      renderComposer({ model: 'pool-fast' })
+
+      const trigger = screen.getByRole('combobox', { name: 'Mode' })
+      expect(trigger).toHaveTextContent('FAILOVER-LABEL')
+      expect(trigger).not.toHaveTextContent(/^failover$/)
+
+      await user.click(trigger)
+      await user.click(
+        await screen.findByRole('option', { name: 'MANUAL-LABEL' })
+      )
+      expect(screen.getByRole('combobox', { name: 'Mode' })).toHaveTextContent(
+        'MANUAL-LABEL'
+      )
+    } finally {
+      i18next.removeResourceBundle('en', 'translation')
+    }
   })
 })
 
