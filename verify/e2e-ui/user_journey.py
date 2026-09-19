@@ -418,17 +418,18 @@ def main():
         check("回读渠道存在且 models 含 ui-model", s == 200 and MODEL in (ch.get("models") or []), (s, ch))
         cdp.shot("04-channel-created")
 
-        # ---- 用户动作 4：建车道（路由页卡片 + 两栏编排器，ADR 0006）----
+        # ---- 用户动作 4：建车道（路由页只列真实车道，ADR 0007）----
         log("")
         log("=== 用户动作 4：在路由页新建车道并保存 ===")
         cdp.nav(base + "/routes", wait=4)
         check("进入 /routes", cdp.val("location.pathname") == "/routes", cdp.val("location.pathname"))
-        # ui-model 已被渠道声明但未配车道 → 路由页出现「未配车道」卡片。
-        check("路由页出现未配车道的卡片",
-              wait_for("document.body.innerText.indexOf(%s)>=0" % json.dumps(MODEL), 15),
-              cdp.val("document.body.innerText.slice(-300)"))
-        # 卡片操作是「新建车道」；也可用页头「New lane」。
-        cdp.val(js_click_exact(["Create lane", "新建车道", "New lane"]))
+        # ui-model 已被渠道声明但未配车道：按 ADR 0007 不出现「未配车道」卡片。
+        routes_body = cdp.val("document.body.innerText") or ""
+        check("路由页不出现渠道声明但未配车道的模型（ADR 0007）",
+              MODEL not in routes_body,
+              routes_body[-300:])
+        # 新建入口是页头「New lane」；路由键手工输入。
+        cdp.val(js_click_exact(["New lane", "新建车道", "Create lane"]))
         check("两栏编排器打开（左栏出现渠道折叠项）",
               wait_for("(function(){var bs=[...document.querySelectorAll('button')];return bs.some(function(b){return (b.textContent||'').trim().indexOf(%s)>=0;});})()" % json.dumps(CHANNEL), 15),
               cdp.val("document.body.innerText.slice(-400)"))
@@ -447,6 +448,34 @@ def main():
         time.sleep(3)
         s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
         check("回读车道已固化且可路由", s == 200 and route.get("routable") is True, (s, route))
+        # 保存后该车道出现在路由页。
+        cdp.nav(base + "/routes", wait=4)
+        check("路由页出现新车道",
+              wait_for("document.body.innerText.indexOf(%s)>=0" % json.dumps(MODEL), 15),
+              cdp.val("document.body.innerText.slice(-300)"))
+        # 删除车道后卡片立即消失（ADR 0007：删车道 = 卡片消失，不再退回未配车道占位）。
+        cdp.val(js_click_exact(["Delete lane", "删除车道"]))
+        time.sleep(1.2)
+        cdp.val(js_click_exact(["Remove lane", "删除车道"]))
+        time.sleep(3)
+        cdp.nav(base + "/routes", wait=4)
+        routes_after = cdp.val("document.body.innerText") or ""
+        check("删除车道后卡片从路由页消失（ADR 0007）",
+              MODEL not in routes_after,
+              routes_after[-300:])
+        # 重新建回车道，供后续试打台/日志动作使用。
+        cdp.val(js_click_exact(["New lane", "新建车道"]))
+        wait_for("!!document.querySelector('#lane-route-key')", 15)
+        cdp.val(js_set_selector("#lane-route-key", MODEL))
+        time.sleep(0.4)
+        cdp.val(js_click_contains([CHANNEL]))
+        time.sleep(0.5)
+        cdp.val(js_click_aria(MODEL))
+        time.sleep(0.5)
+        cdp.val(js_click_exact(["Save", "保存"]))
+        time.sleep(3)
+        s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        check("车道已重建可路由", s == 200 and route.get("routable") is True, (s, route))
 
         # ---- 用户动作 5：新建客户端密钥（表单）----
         log("")
