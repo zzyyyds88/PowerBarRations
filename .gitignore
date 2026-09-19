@@ -29,8 +29,9 @@
 # 本地代理会话设置（主机本地权限配置，不入库）
 .qoder/
 
-# 验收原始运行日志（含时间戳与请求细节，不入库；脱敏结论写 verify/**/README.md）
+# 验收原始运行日志与截图（含时间戳与请求细节，不入库；脱敏结论写 verify/**/README.md）
 verify/**/*.log
+verify/**/shots/
 
 # 控制台构建产物（Docker/本地构建生成；仓库只保留 web/dist/index.html 占位页）
 # 具体忽略规则以 web/.gitignore 为准（dist/* 但保留 dist/index.html）
