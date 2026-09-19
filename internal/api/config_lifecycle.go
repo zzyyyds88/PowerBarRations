@@ -600,7 +600,6 @@ func applyImport(c *gin.Context, bundle *ConfigBundle, result *ImportResult) err
 			if err := model.DB.Create(built).Error; err != nil {
 				return err
 			}
-			_ = built.AddAbilities(nil)
 			result.add("channels", plan.name)
 			continue
 		}
@@ -609,7 +608,6 @@ func applyImport(c *gin.Context, bundle *ConfigBundle, result *ImportResult) err
 			Select("*").Omit("id", "created_time").Updates(built).Error; err != nil {
 			return err
 		}
-		_ = built.UpdateAbilities(nil)
 		if saved, findErr := findChannelByName(plan.name); findErr == nil &&
 			channelDigestOfChannel(saved) == model.DigestOf(plan.config) {
 			result.unchanged("channels", plan.name)
@@ -1069,9 +1067,6 @@ func openAPIPaths() gin.H {
 		"/channels/batch/fetch-models": gin.H{
 			"post": secured("post", "拉取上游模型清单（不落库）：body {channel:name} / {channel_id} / {base_url,key,type}；成功 {models:[...]}", nil)["post"],
 		},
-		"/channels/batch/repair": gin.H{
-			"post": secured("post", "重建渠道路由索引（abilities）；成功 {repaired:n,failed:n}", nil)["post"],
-		},
 		"/channels/by-tag": gin.H{
 			"put": secured("put", "按标签批量改渠道配置；成功 {tag,updated:true}", nil)["put"],
 		},
@@ -1131,10 +1126,6 @@ func openAPIPaths() gin.H {
 		"/system/options/all": gin.H{
 			"get": secured("get", "完整系统选项（站点/内容/运维）；成功 {items:[{key,value}]}", nil)["get"],
 			"put": secured("put", "更新单个系统选项：body {key,value}；成功 {key,updated:true}", nil)["put"],
-		},
-		"/system/affinity-cache": gin.H{
-			"get":    secured("get", "渠道亲和缓存统计", nil)["get"],
-			"delete": secured("delete", "清除渠道亲和缓存：?all=true 或 ?rule_name=；成功 {deleted:n}", nil)["delete"],
 		},
 		"/system-tasks": gin.H{
 			"get": secured("get", "系统任务列表", []gin.H{queryParam("cursor", "上一页返回的 next_cursor"), queryParam("limit", "默认 50，上限 200")})["get"],

@@ -2,7 +2,7 @@ package cachex
 
 import "strings"
 
-// Namespace isolates keys between different cache use-cases. (e.g. "channel_affinity:v1").
+// Namespace isolates keys between different cache use-cases. (e.g. "my_cache:v1").
 type Namespace string
 
 func (n Namespace) prefix() string {

@@ -51,8 +51,6 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
-			optionRoute.GET("/channel_affinity_cache", controller.GetChannelAffinityCacheStats)
-			optionRoute.DELETE("/channel_affinity_cache", controller.ClearChannelAffinityCache)
 		}
 		performanceRoute := apiRouter.Group("/performance")
 		performanceRoute.Use(middleware.PBRAuth())
@@ -73,7 +71,6 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			logRoute.GET("/", middleware.PBRAuth(), controller.GetAllLogs)
 			logRoute.GET("/search", middleware.PBRAuth(), controller.SearchAllLogs)
-			logRoute.GET("/channel_affinity_usage_cache", middleware.PBRAuth(), controller.GetChannelAffinityUsageCacheStats)
 		}
 
 		systemTaskRoute := apiRouter.Group("/system-task")

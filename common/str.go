@@ -1,7 +1,6 @@
 package common
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -55,20 +54,6 @@ func StrToMap(str string) (map[string]any, error) {
 	return m, nil
 }
 
-func StrToJsonArray(str string) ([]any, error) {
-	var js []any
-	err := json.Unmarshal([]byte(str), &js)
-	if err != nil {
-		return nil, err
-	}
-	return js, nil
-}
-
-func IsJsonArray(str string) bool {
-	var js []any
-	return json.Unmarshal([]byte(str), &js) == nil
-}
-
 func IsJsonObject(str string) bool {
 	var js map[string]any
 	return json.Unmarshal([]byte(str), &js) == nil
@@ -91,10 +76,6 @@ func StringToByteSlice(s string) []byte {
 	tmp1 := (*[2]uintptr)(unsafe.Pointer(&s))
 	tmp2 := [3]uintptr{tmp1[0], tmp1[1], tmp1[1]}
 	return *(*[]byte)(unsafe.Pointer(&tmp2))
-}
-
-func EncodeBase64(str string) string {
-	return base64.StdEncoding.EncodeToString([]byte(str))
 }
 
 func GetJsonString(data any) string {

@@ -40,7 +40,6 @@ func TestListLaneSummariesReturnsAllLanesInOrder(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "sum-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "m"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "sum-lane", Enabled: true, Mode: model.LaneModeFailover,
 		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 5, UpstreamModel: "real"}}}))
 
@@ -71,7 +70,6 @@ func TestModelMetadataUpsertAndList(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "meta-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "declared-only"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 
 	// 写入目录记录
 	body := `{"description":"a pooled model","icon":"openai","tags":["chat","fast"],"status":1}`
@@ -187,7 +185,6 @@ func TestModelMetadataListCountsChannelsByMatchedNames(t *testing.T) {
 	}
 	for _, ch := range channels {
 		require.NoError(t, db.Create(ch).Error)
-		require.NoError(t, ch.AddAbilities(nil))
 	}
 	require.NoError(t, (&model.Model{ModelName: "qwen3-", NameRule: model.NameRulePrefix, Status: 1}).Insert())
 	require.NoError(t, (&model.Model{ModelName: "gpt-4o", NameRule: model.NameRuleExact, Status: 1}).Insert())
@@ -233,7 +230,6 @@ func TestModelMetadataPutEchoesMatchedChannelCount(t *testing.T) {
 	}
 	for _, ch := range channels {
 		require.NoError(t, db.Create(ch).Error)
-		require.NoError(t, ch.AddAbilities(nil))
 	}
 
 	recorder := callAPI(t, http.MethodPut, "/api/v1/model-metadata/qwen3-",
@@ -265,7 +261,6 @@ func TestDeleteModelMetadataRuleEntry(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "rule-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "qwen3-max"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 	require.NoError(t, (&model.Model{ModelName: "qwen3-", NameRule: model.NameRulePrefix, Status: 1}).Insert())
 
 	recorder := callAPI(t, http.MethodDelete, "/api/v1/model-metadata/qwen3-", "",
@@ -275,9 +270,9 @@ func TestDeleteModelMetadataRuleEntry(t *testing.T) {
 	require.NoError(t, db.Model(&model.Model{}).Where("model_name = ?", "qwen3-").Count(&remaining).Error)
 	assert.Zero(t, remaining, "规则记录本身应被删除")
 	// 命中集里的真实模型不受影响：渠道声明仍在。
-	var declared int64
-	require.NoError(t, db.Model(&model.Ability{}).Where("model = ?", "qwen3-max").Count(&declared).Error)
-	assert.NotZero(t, declared, "删规则不应摘除被命中模型的渠道声明")
+	declaring, err := model.GetChannelsDeclaringModel("qwen3-max")
+	require.NoError(t, err)
+	assert.NotEmpty(t, declaring, "删规则不应摘除被命中模型的渠道声明")
 }
 
 // 规则条目带 remove_from_channels 时必须被拒绝且不得删记录（model/model_meta.go:238 守卫）。
@@ -290,7 +285,6 @@ func TestDeleteModelMetadataRuleRejectsRemoveFromChannels(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "rule-del-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "qwen3-max"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 	require.NoError(t, (&model.Model{ModelName: "qwen3-suffix", NameRule: model.NameRuleSuffix, Status: 1}).Insert())
 
 	recorder := callAPI(t, http.MethodDelete,
@@ -303,9 +297,9 @@ func TestDeleteModelMetadataRuleRejectsRemoveFromChannels(t *testing.T) {
 	var remaining int64
 	require.NoError(t, db.Model(&model.Model{}).Where("model_name = ?", "qwen3-suffix").Count(&remaining).Error)
 	assert.Equal(t, int64(1), remaining, "被拒绝的删除不得移除规则记录")
-	var declared int64
-	require.NoError(t, db.Model(&model.Ability{}).Where("model = ?", "qwen3-max").Count(&declared).Error)
-	assert.NotZero(t, declared, "被拒绝的删除不得摘除渠道声明")
+	declaring, err := model.GetChannelsDeclaringModel("qwen3-max")
+	require.NoError(t, err)
+	assert.NotEmpty(t, declaring, "被拒绝的删除不得摘除渠道声明")
 }
 
 // 删除目录记录：remove_from_channels 且被车道引用时 409。
@@ -313,7 +307,6 @@ func TestDeleteModelMetadataBlockedByLaneReference(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "del-meta-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "meta-lane-model"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "meta-lane-model", Enabled: true, Mode: model.LaneModeFailover,
 		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 1}}}))
 	require.NoError(t, (&model.Model{ModelName: "meta-lane-model"}).Insert())

@@ -25,7 +25,6 @@ import (
 	relayhelper "github.com/zzyyyds88/PowerBarRations/relay/helper"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/service"
-	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 )
 
@@ -209,20 +208,16 @@ func TestMappedAliImageModelUsesUpstreamProtocol(t *testing.T) {
 	assert.IsType(t, &AliImageRequest{}, converted)
 }
 
-func TestAliImageCountMatchesLegacyReservation(t *testing.T) {
-	saved := ratio_setting.ModelPrice2JSONString()
-	require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(`{"z-image":0.04}`))
-	t.Cleanup(func() { require.NoError(t, ratio_setting.UpdateModelPriceByJSONString(saved)) })
+func TestAliImageRequestUsesValidatedProviderQuantity(t *testing.T) {
 	for _, tc := range []struct {
 		name, body string
 		count      int
-		multiplier float64
 	}{
-		{"provider override", `{"model":"z-image","n":2,"parameters":{"n":4}}`, 4, 1},
-		{"empty parameters inherit top-level", `{"model":"z-image","n":2,"parameters":{}}`, 2, 1},
-		{"null count inherits top-level", `{"model":"z-image","n":2,"parameters":{"n":null}}`, 2, 1},
-		{"default count", `{"model":"z-image"}`, 1, 1},
-		{"prompt extension", `{"model":"z-image","parameters":{"n":3,"prompt_extend":true}}`, 3, 2},
+		{"provider override", `{"model":"z-image","n":2,"parameters":{"n":4}}`, 4},
+		{"empty parameters inherit top-level", `{"model":"z-image","n":2,"parameters":{}}`, 2},
+		{"null count inherits top-level", `{"model":"z-image","n":2,"parameters":{"n":null}}`, 2},
+		{"default count", `{"model":"z-image"}`, 1},
+		{"prompt extension", `{"model":"z-image","parameters":{"n":3,"prompt_extend":true}}`, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -231,10 +226,7 @@ func TestAliImageCountMatchesLegacyReservation(t *testing.T) {
 			common.SetContextKey(c, rootconstant.ContextKeyChannelType, rootconstant.ChannelTypeAli)
 			request, err := relayhelper.GetAndValidOpenAIImageRequest(c, constant.RelayModeImagesGenerations)
 			require.NoError(t, err)
-			info := &relaycommon.RelayInfo{Request: request, OriginModelName: request.Model, UserGroup: "default", UsingGroup: "default"}
-			price, err := relayhelper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
-			require.NoError(t, err)
-			assert.Equal(t, common.QuotaFromFloat(0.04*float64(tc.count)*tc.multiplier*common.QuotaPerUnit), price.QuotaToPreConsume)
+			info := &relaycommon.RelayInfo{Request: request, OriginModelName: request.Model}
 			info.ChannelMeta = &relaycommon.ChannelMeta{ChannelType: rootconstant.ChannelTypeAli, UpstreamModelName: request.Model}
 			converted, err := oaiImage2AliImageRequest(info, *request, true)
 			require.NoError(t, err)

@@ -101,8 +101,8 @@ async function selectProtocolOption(
   )
 }
 
-// 编辑旧厂商类型渠道时，下拉额外保留唯一的「<原类型名> (Current)」选项；
-// 选中它保持 type 与 protocol 不变。
+// 编辑旧厂商类型渠道时，下拉额外保留唯一的「#<类型编号> (Current)」选项
+// （厂商展示名不保留，统一回退编号，ui-spec §6.4）；选中它保持 type 与 protocol 不变。
 async function selectLegacyTypeOption(
   user: UserEventInstance,
   name: string | RegExp
@@ -241,21 +241,21 @@ test.each([
     label: /^Base URL/,
     url: 'https://deepseek.server.example',
     savedUrl: '',
-    legacyOption: 'DeepSeek (Current)',
+    legacyOption: '#43 (Current)',
   },
   {
     type: 22,
     label: /^Private Deployment URL$/,
     url: 'https://fastgpt.server.example/api/openapi',
     savedUrl: '',
-    legacyOption: 'FastGPT (Current)',
+    legacyOption: '#22 (Current)',
   },
   {
     type: 45,
     label: /^API Base URL/,
     url: 'https://volcengine.server.example',
     savedUrl: 'https://custom.example',
-    legacyOption: 'VolcEngine (Current)',
+    legacyOption: '#45 (Current)',
   },
 ])(
   'editing legacy type $type keeps the server URL placeholder out of the saved address and keeps the type',
@@ -661,13 +661,13 @@ test('editing a legacy channel shows only its current type and does not rewrite 
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
   const protocol = screen.getByRole('combobox', { name: 'Protocol' })
-  expect(protocol).toHaveValue('Sora (Current)')
+  expect(protocol).toHaveValue('#55 (Current)')
   // 新契约不再暴露约 50 个厂商类型；旧渠道只额外保留「当前类型」一个入口。
   await user.click(protocol)
   expect(
     screen.queryByRole('option', { name: 'DoubaoVideo' })
   ).not.toBeInTheDocument()
-  await user.click(screen.getByRole('option', { name: 'Sora (Current)' }))
+  await user.click(screen.getByRole('option', { name: '#55 (Current)' }))
   // Re-selecting the saved type keeps the channel values.
   expect(modelsGroup().getByText('custom-model')).toBeVisible()
   expect(screen.getByDisplayValue('https://saved.example')).toBeVisible()

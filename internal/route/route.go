@@ -710,7 +710,7 @@ func Attach(c *gin.Context, s *State) {
 	c.Set(contextKey, s)
 }
 
-// From 取出请求态；非 PBR 路由（如任务插件走旧链路）返回 nil。
+// From 取出请求态；未经 PBRServe 注入路由态的请求（如渠道测试直连）返回 nil。
 func From(c *gin.Context) *State {
 	if c == nil {
 		return nil

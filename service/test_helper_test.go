@@ -2,14 +2,12 @@ package service
 
 import (
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/model"
 
 	"github.com/glebarez/sqlite"
-	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -56,85 +54,5 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM system_task_locks")
 		model.DB.Exec("DELETE FROM system_tasks")
-		seededTokenRemainMu.Lock()
-		seededTokenRemain = map[int]int{}
-		seededTokenRemainMu.Unlock()
 	})
-}
-
-func seedUser(t *testing.T, id int, quota int) {
-	t.Helper()
-	user := &model.User{Id: id, Username: "test_user", Quota: quota, Status: common.UserStatusEnabled}
-	require.NoError(t, model.DB.Create(user).Error)
-}
-
-// seededTokenRemain 记录测试里"预置"的令牌余额。基座 Token 表随 W7 删除，
-// 令牌余额不再变化，getTokenRemainQuota 因此返回预置值（恒等于未变动）。
-var (
-	seededTokenRemainMu sync.Mutex
-	seededTokenRemain   = map[int]int{}
-)
-
-func seedToken(t *testing.T, id int, userId int, key string, remainQuota int) {
-	t.Helper()
-	seededTokenRemainMu.Lock()
-	seededTokenRemain[id] = remainQuota
-	seededTokenRemainMu.Unlock()
-}
-
-func seedChannel(t *testing.T, id int) {
-	t.Helper()
-	ch := &model.Channel{Id: id, Name: "test_channel", Key: "sk-test", Status: common.ChannelStatusEnabled}
-	require.NoError(t, model.DB.Create(ch).Error)
-}
-
-func getUserQuota(t *testing.T, id int) int {
-	t.Helper()
-	var user model.User
-	require.NoError(t, model.DB.Select("quota").Where("id = ?", id).First(&user).Error)
-	return user.Quota
-}
-
-func getUserUsageAccounting(t *testing.T, id int) (int, int) {
-	t.Helper()
-	var user model.User
-	require.NoError(t, model.DB.Select("used_quota", "request_count").Where("id = ?", id).First(&user).Error)
-	return user.UsedQuota, user.RequestCount
-}
-
-func getChannelUsedQuota(t *testing.T, id int) int64 {
-	t.Helper()
-	var channel model.Channel
-	require.NoError(t, model.DB.Select("used_quota").Where("id = ?", id).First(&channel).Error)
-	return channel.UsedQuota
-}
-
-func getTokenRemainQuota(t *testing.T, id int) int {
-	t.Helper()
-	seededTokenRemainMu.Lock()
-	defer seededTokenRemainMu.Unlock()
-	return seededTokenRemain[id]
-}
-
-func getTokenUsedQuota(t *testing.T, id int) int {
-	t.Helper()
-	_ = id
-	return 0
-}
-
-func getLastLog(t *testing.T) *model.Log {
-	t.Helper()
-	var log model.Log
-	err := model.LOG_DB.Order("id desc").First(&log).Error
-	if err != nil {
-		return nil
-	}
-	return &log
-}
-
-func countLogs(t *testing.T) int64 {
-	t.Helper()
-	var count int64
-	model.LOG_DB.Model(&model.Log{}).Count(&count)
-	return count
 }

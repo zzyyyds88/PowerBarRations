@@ -262,7 +262,6 @@
 | POST | `/api/channels/batch/tag` | 批量设置标签：body `{channels:[name], tag:string\|null}` 或 `{ids, tag}`；成功 `{"changed":n}`；错误同上 |
 | POST | `/api/channels/batch/copy` | 复制渠道：body `{channel:name, suffix?, reset_balance?}`；成功 = **写后回读的渠道对象**（与 §4.1 同形）；名字不存在 → 404 |
 | POST | `/api/channels/batch/fetch-models` | 拉取上游模型清单（不落库）：body `{channel:name}`、`{channel_id:int}` 或 `{base_url, key, type}`；成功 `{"models":[...]}`；上游失败 → 502 `upstream_error` |
-| POST | `/api/channels/batch/repair` | 重建渠道路由索引（abilities）；成功 `{"repaired":n,"failed":n}`；已有修复任务在跑 → 409 `conflict` |
 | PUT | `/api/channels/by-tag` | 按标签批量改配置（改 `models` 时同样受车道引用守卫）；成功 `{"tag":"t","updated":true}`；被引用 → 409 + `details.blocked` |
 | POST | `/api/channels/by-tag/status` | 按标签批量启停：body `{tag, status}`；成功 `{"tag":"t","enabled":bool}`；tag 空或 status 非法 → 400 |
 | GET | `/api/channels/by-tag/models` | 按标签取模型清单：`?tag=`；成功 `{"tag":"t","models":[...]}`；tag 空 → 400 |
@@ -288,8 +287,6 @@
 |---|---|---|
 | GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维）；成功 `{"items":[{"key":"..","value":".."}]}` |
 | PUT | `/api/system/options/all` | 更新**单个**系统选项：body `{key: string, value: any}`（与基座同形，非子集对象）；成功 `{"key":"..","updated":true}`；值校验失败 → 422 `validation_failed` |
-| GET | `/api/system/affinity-cache` | 渠道亲和缓存统计；成功为统计对象 |
-| DELETE | `/api/system/affinity-cache` | 清除渠道亲和缓存：`?all=true` 或 `?rule_name=`（二选一）；成功 `{"deleted":n}`；两者都缺 → 400 `validation_failed` |
 | GET | `/api/system-tasks` | 系统任务列表；成功 `{"items":[...],"next_cursor":null}` |
 | GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll`）；成功 `{"task":<对象或 null>}`；缺 `type` → 400 |
 | GET | `/api/system-tasks/{id}` | 单任务详情（成功为任务对象）；不存在 → 404 `task_not_found` |
@@ -767,7 +764,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 | 内部性能明细 | `/api/perf-metrics/**` |
 
 > **已提升为稳定契约**（原属本表，现见 §5）：渠道批量启停/标签/复制/上游同步、Codex 与 Ollama
-> 渠道专用动作（§5.3.1）；完整系统选项、系统任务、性能与日志文件、亲和缓存（§5.3.2）；
+> 渠道专用动作（§5.3.1）；完整系统选项、系统任务、性能与日志文件（§5.3.2）；
 > 预填组（§5.3.3）；模型目录同步与缺失检测（§5.3.4）。
 
 **结论**：核心网关能力（渠道、车道与故障转移、客户端密钥、请求日志、统计、路由六键选项、

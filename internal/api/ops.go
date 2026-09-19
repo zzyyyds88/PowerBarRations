@@ -626,12 +626,9 @@ func DeletePrefillGroupByID(c *gin.Context) {
 
 var (
 	DeleteDisabledChannels = controller.DeleteDisabledChannel
-	RepairChannelAbilities = controller.FixChannelsAbilities
 	DetectAllUpstream      = controller.DetectAllChannelUpstreamModelUpdates
 	ApplyAllUpstream       = controller.ApplyAllChannelUpstreamModelUpdates
 	GetAllSystemOptions    = controller.GetOptions
-	AffinityCacheStats     = controller.GetChannelAffinityCacheStats
-	ClearAffinityCache     = controller.ClearChannelAffinityCache
 	ListSystemTasksHandler = controller.ListSystemTasks
 	CurrentSystemTask      = controller.GetCurrentSystemTask
 	CreateLogCleanupTask   = controller.CreateLogCleanupSystemTask

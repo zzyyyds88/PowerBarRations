@@ -287,9 +287,6 @@ func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (Mod
 				if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("models", channel.Models).Error; err != nil {
 					return err
 				}
-				if err := channel.UpdateAbilities(tx); err != nil {
-					return err
-				}
 				result.UpdatedChannels++
 			}
 		}
@@ -338,21 +335,39 @@ func GetAllModels(offset int, limit int) ([]*Model, error) {
 	return models, err
 }
 
-// ModelConnection describes an enabled route independently of catalog visibility or price.
+// ModelConnection describes an enabled channel declaration independently of
+// catalog visibility or price. abilities 表已删除：这里直接展开启用渠道的
+// (分组, 模型) 声明，仅供管理面元数据/渠道计数展示使用，不参与路由。
 type ModelConnection struct {
-	AbilityWithChannel
+	ChannelId   int    `json:"channel_id"`
 	ChannelName string `json:"channel_name"`
+	ChannelType int    `json:"channel_type"`
+	Group       string `json:"group"`
+	Model       string `json:"model"`
 }
 
 func GetModelConnections() ([]ModelConnection, error) {
-	var connections []ModelConnection
-	err := DB.Table("abilities").
-		Select("abilities.*, channels.type as channel_type, channels.name as channel_name").
-		Joins("JOIN channels ON abilities.channel_id = channels.id").
-		Where("abilities.enabled = ? AND channels.status = ?", true, common.ChannelStatusEnabled).
-		Order("abilities.model, abilities.channel_id").
-		Scan(&connections).Error
-	return connections, err
+	rows, err := getEnabledChannelCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	connections := make([]ModelConnection, 0, len(rows))
+	for _, row := range rows {
+		connections = append(connections, ModelConnection{
+			ChannelId:   row.ChannelId,
+			ChannelName: row.ChannelName,
+			ChannelType: row.ChannelType,
+			Group:       row.Group,
+			Model:       row.Model,
+		})
+	}
+	sort.SliceStable(connections, func(i, j int) bool {
+		if connections[i].Model != connections[j].Model {
+			return connections[i].Model < connections[j].Model
+		}
+		return connections[i].ChannelId < connections[j].ChannelId
+	})
+	return connections, nil
 }
 
 func normalizeLookupValues(values []string) []string {
@@ -372,41 +387,41 @@ func normalizeLookupValues(values []string) []string {
 	return normalized
 }
 
+// GetPreferredModelOwnerChannelTypes 返回"模型名 → 首选归属渠道类型"。
+//
+// abilities 表已删除：归属直接由启用渠道的声明推导，同一模型命中多个渠道时
+// 取渠道 id 最小者（旧 priority/weight 排序随基座选路一起删除）。
 func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (map[string]int, error) {
 	result := make(map[string]int)
 	modelNames = normalizeLookupValues(modelNames)
 	if len(modelNames) == 0 {
 		return result, nil
 	}
-
-	type row struct {
-		Model       string
-		ChannelType int
+	wanted := make(map[string]bool, len(modelNames))
+	for _, name := range modelNames {
+		wanted[name] = true
 	}
-	var rows []row
-
-	query := DB.Table("abilities").
-		Select("abilities.model as model, channels.type as channel_type").
-		Joins("JOIN channels ON abilities.channel_id = channels.id").
-		Where("abilities.model IN ? AND abilities.enabled = ? AND channels.status = ?", modelNames, true, common.ChannelStatusEnabled).
-		Order("COALESCE(abilities.priority, 0) DESC").
-		Order("abilities.weight DESC").
-		Order("abilities.channel_id ASC")
-
 	groups = normalizeLookupValues(groups)
-	if len(groups) > 0 {
-		query = query.Where("abilities."+commonGroupCol+" IN ?", groups)
+	groupSet := make(map[string]bool, len(groups))
+	for _, group := range groups {
+		groupSet[group] = true
 	}
 
-	if err := query.Scan(&rows).Error; err != nil {
+	rows, err := getEnabledChannelCapabilities()
+	if err != nil {
 		return nil, err
 	}
-
-	for _, r := range rows {
-		if _, ok := result[r.Model]; ok {
+	for _, row := range rows {
+		if !wanted[row.Model] {
 			continue
 		}
-		result[r.Model] = r.ChannelType
+		if len(groupSet) > 0 && !groupSet[row.Group] {
+			continue
+		}
+		if _, ok := result[row.Model]; ok {
+			continue
+		}
+		result[row.Model] = row.ChannelType
 	}
 	return result, nil
 }

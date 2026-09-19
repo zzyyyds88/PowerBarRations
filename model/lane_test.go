@@ -18,7 +18,6 @@ func setupLaneTest(t *testing.T) {
 	t.Helper()
 	truncateTables(t)
 	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
-	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
 	require.NoError(t, DB.Exec("DELETE FROM lane_members").Error)
 	require.NoError(t, DB.Exec("DELETE FROM lanes").Error)
 

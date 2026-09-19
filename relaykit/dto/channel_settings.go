@@ -355,9 +355,9 @@ func matchAdvancedCustomRouteModel(models []string, model string) bool {
 }
 
 // advancedCustomModelRegexCache caches compiled route model patterns. Route model
-// matching runs on the request hot path (distributor affinity, ability filtering,
-// channel cache filtering, adaptor resolve), so patterns must not be recompiled per
-// request. Invalid patterns are cached as nil to avoid recompiling them as well.
+// matching runs on the request hot path (channel cache filtering, adaptor resolve),
+// so patterns must not be recompiled per request. Invalid patterns are cached as
+// nil to avoid recompiling them as well.
 var advancedCustomModelRegexCache sync.Map // pattern string -> *regexp.Regexp (nil when invalid)
 
 func compileAdvancedCustomModelRegex(pattern string) *regexp.Regexp {

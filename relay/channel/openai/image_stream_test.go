@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zzyyyds88/PowerBarRations/constant"
-	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
 	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
@@ -39,7 +38,7 @@ func newImageTestContext(t *testing.T, body, contentType string, isStream bool) 
 	return c, recorder, resp, info
 }
 
-func TestImageExpressionUsesCompletedCountAndProtectsAbortedStreams(t *testing.T) {
+func TestImageCountUsesCompletedCountAndProtectsAbortedStreams(t *testing.T) {
 	oldTimeout := constant.StreamingTimeout
 	constant.StreamingTimeout = 30
 	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
@@ -51,7 +50,7 @@ func TestImageExpressionUsesCompletedCountAndProtectsAbortedStreams(t *testing.T
 		{"JSON uses actual count", `{"data":[{"b64_json":"first"},{"b64_json":"second"}]}`, false, false, 3, 2},
 		{"JSON wrapped as SSE uses actual count", `{"data":[{"b64_json":"first"}]}`, true, false, 3, 1},
 		{"empty response retains request", `{"data":[]}`, false, false, 3, 3},
-		{"completed stream refunds missing images", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\ndata: [DONE]\n\n", true, false, 3, 1},
+		{"completed stream adopts actual count", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\ndata: [DONE]\n\n", true, false, 3, 1},
 		{"client abort cannot reduce count", "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\n", true, true, 3, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,7 +62,7 @@ func TestImageExpressionUsesCompletedCountAndProtectsAbortedStreams(t *testing.T
 			if tc.abort {
 				c, _, resp, info = newDisconnectingImageStream(t, tc.body, "first")
 			}
-			info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{EstimatedImageCount: &tc.requested}
+			info.ImageRequestCount = tc.requested
 			if tc.stream {
 				_, err := OpenaiImageStreamHandler(c, info, resp)
 				require.Nil(t, err)
@@ -71,12 +70,7 @@ func TestImageExpressionUsesCompletedCountAndProtectsAbortedStreams(t *testing.T
 				_, err := OpenaiImageHandler(c, info, resp)
 				require.Nil(t, err)
 			}
-			count := info.RequestedImageCount()
-			if info.BillingImageCount != nil {
-				count = *info.BillingImageCount
-			}
-			assert.Equal(t, tc.want, count)
-			assert.Empty(t, info.PriceData.OtherRatios(), "expression quantities must not add a legacy multiplier")
+			assert.Equal(t, tc.want, info.RequestedImageCount())
 		})
 	}
 }
@@ -171,8 +165,7 @@ func TestOpenaiImageStreamHandlerForwardsSSEAndUsage(t *testing.T) {
 	}, "\n")
 
 	c, recorder, resp, info := newImageTestContext(t, body, "text/event-stream", true)
-	info.PriceData.UsePrice = true
-	info.PriceData.AddOtherRatio("n", 3)
+	info.ImageRequestCount = 3
 
 	usage, err := OpenaiImageStreamHandler(c, info, resp)
 	require.Nil(t, err)
@@ -186,7 +179,7 @@ func TestOpenaiImageStreamHandlerForwardsSSEAndUsage(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), `data: {"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7,"input_tokens_details":{"image_tokens":2,"text_tokens":1}}}`)
 	require.Contains(t, recorder.Body.String(), `data: [DONE]`)
 	require.Equal(t, "text/event-stream", recorder.Header().Get("Content-Type"))
-	require.Equal(t, 3.0, info.PriceData.OtherRatios()["n"], "streams without completed events keep the requested count")
+	require.Equal(t, 3, info.RequestedImageCount(), "streams without completed events keep the requested count")
 }
 
 func TestOpenaiImageStreamHandlerUsesCompletedEventCount(t *testing.T) {
@@ -210,14 +203,13 @@ func TestOpenaiImageStreamHandlerUsesCompletedEventCount(t *testing.T) {
 	}, "\n")
 
 	c, _, resp, info := newImageTestContext(t, body, "text/event-stream", true)
-	info.PriceData.UsePrice = true
-	info.PriceData.AddOtherRatio("n", 3)
+	info.ImageRequestCount = 3
 
 	usage, err := OpenaiImageStreamHandler(c, info, resp)
 
 	require.Nil(t, err)
 	require.Equal(t, 7, usage.TotalTokens)
-	require.Equal(t, 2.0, info.PriceData.OtherRatios()["n"])
+	require.Equal(t, 2, info.RequestedImageCount(), "completed events set the effective count")
 }
 
 // blockingBody serves one SSE chunk, then blocks until Close (the scanner's
@@ -297,10 +289,10 @@ func newDisconnectingImageStream(t *testing.T, sseBody, disconnectAfter string) 
 }
 
 // TestOpenaiImageStreamHandlerClientDisconnectKeepsRequestedCount guards the
-// billing invariant: completed-event counting must not lower the charge when
-// the client aborts the stream. Upstream already generated (and charged for)
-// all requested images, so a disconnect after the first completed event keeps
-// the requested n instead of dropping it to 1.
+// count invariant: completed-event counting must not lower the recorded count
+// when the client aborts the stream. Upstream already generated all requested
+// images, so a disconnect after the first completed event keeps the requested
+// n instead of dropping it to 1.
 func TestOpenaiImageStreamHandlerClientDisconnectKeepsRequestedCount(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
@@ -312,8 +304,7 @@ func TestOpenaiImageStreamHandlerClientDisconnectKeepsRequestedCount(t *testing.
 
 	body := "data: {\"type\":\"image_generation.completed\",\"b64_json\":\"first\"}\n\n"
 	c, recorder, resp, info := newDisconnectingImageStream(t, body, "first")
-	info.PriceData.UsePrice = true
-	info.PriceData.AddOtherRatio("n", 3)
+	info.ImageRequestCount = 3
 
 	usage, err := OpenaiImageStreamHandler(c, info, resp)
 
@@ -326,12 +317,12 @@ func TestOpenaiImageStreamHandlerClientDisconnectKeepsRequestedCount(t *testing.
 		[]relaycommon.StreamEndReason{relaycommon.StreamEndReasonClientGone, relaycommon.StreamEndReasonHandlerStop},
 		info.StreamStatus.EndReason)
 	require.Contains(t, recorder.Body.String(), `"b64_json":"first"`)
-	require.Equal(t, 3.0, info.PriceData.OtherRatios()["n"], "client abort must not reduce the billed image count")
+	require.Equal(t, 3, info.RequestedImageCount(), "client abort must not reduce the recorded image count")
 }
 
 // TestOpenaiImageStreamHandlerClientDisconnectRaisesCount covers the other
 // direction of the abort guard: when completed events already exceed the
-// recorded n, the higher actual count is billed even though the client aborted.
+// recorded n, the higher actual count is kept even though the client aborted.
 func TestOpenaiImageStreamHandlerClientDisconnectRaisesCount(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
@@ -349,8 +340,7 @@ func TestOpenaiImageStreamHandlerClientDisconnectRaisesCount(t *testing.T) {
 		``,
 	}, "\n")
 	c, _, resp, info := newDisconnectingImageStream(t, body, "second")
-	info.PriceData.UsePrice = true
-	info.PriceData.AddOtherRatio("n", 1)
+	info.ImageRequestCount = 1
 
 	usage, err := OpenaiImageStreamHandler(c, info, resp)
 
@@ -360,7 +350,7 @@ func TestOpenaiImageStreamHandlerClientDisconnectRaisesCount(t *testing.T) {
 	require.Contains(t,
 		[]relaycommon.StreamEndReason{relaycommon.StreamEndReasonClientGone, relaycommon.StreamEndReasonHandlerStop},
 		info.StreamStatus.EndReason)
-	require.Equal(t, 2.0, info.PriceData.OtherRatios()["n"], "completed events beyond the recorded n must raise the charge even on abort")
+	require.Equal(t, 2, info.RequestedImageCount(), "completed events beyond the recorded n must raise the count even on abort")
 }
 
 // TestOpenaiImageStreamHandlerWrapsJSONResponse covers the non-SSE fallback:
@@ -373,8 +363,7 @@ func TestOpenaiImageStreamHandlerWrapsJSONResponse(t *testing.T) {
 	body := `{"created":1710000000,"data":[{"b64_json":"first","revised_prompt":"draw a cat"},{"b64_json":"second"}],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7,"input_tokens_details":{"image_tokens":2,"text_tokens":1}}}`
 
 	c, recorder, resp, info := newImageTestContext(t, body, "application/json", true)
-	info.PriceData.UsePrice = true
-	info.PriceData.AddOtherRatio("n", 3)
+	info.ImageRequestCount = 3
 
 	usage, err := OpenaiImageStreamHandler(c, info, resp)
 	require.Nil(t, err)
@@ -392,10 +381,10 @@ func TestOpenaiImageStreamHandlerWrapsJSONResponse(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), `"revised_prompt":"draw a cat"`)
 	require.Contains(t, recorder.Body.String(), `data: [DONE]`)
 	require.Equal(t, 2, strings.Count(recorder.Body.String(), `event: image_generation.completed`))
-	require.Equal(t, 2.0, info.PriceData.OtherRatios()["n"])
+	require.Equal(t, 2, info.RequestedImageCount())
 }
 
-func TestOpenaiImageHandlerUsesPositiveActualCountForFixedPrice(t *testing.T) {
+func TestOpenaiImageHandlerUsesPositiveActualCount(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
 	t.Cleanup(func() { gin.SetMode(oldMode) })
@@ -404,25 +393,16 @@ func TestOpenaiImageHandlerUsesPositiveActualCountForFixedPrice(t *testing.T) {
 	tests := []struct {
 		name      string
 		body      string
-		usePrice  bool
-		wantCount float64
+		wantCount int
 	}{
 		{
-			name:      "fixed price uses data length",
+			name:      "response data length sets count",
 			body:      `{"data":[{"b64_json":"` + longImage + `"},{"b64_json":"second"}]}`,
-			usePrice:  true,
 			wantCount: 2,
 		},
 		{
 			name:      "empty data keeps requested count",
 			body:      `{"data":[]}`,
-			usePrice:  true,
-			wantCount: 3,
-		},
-		{
-			name:      "ratio billing ignores data length",
-			body:      `{"data":[{"b64_json":"first"},{"b64_json":"second"}]}`,
-			usePrice:  false,
 			wantCount: 3,
 		},
 	}
@@ -430,13 +410,12 @@ func TestOpenaiImageHandlerUsesPositiveActualCountForFixedPrice(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, recorder, resp, info := newImageTestContext(t, tt.body, "application/json", false)
-			info.PriceData.UsePrice = tt.usePrice
-			info.PriceData.AddOtherRatio("n", 3)
+			info.ImageRequestCount = 3
 
 			_, err := OpenaiImageHandler(c, info, resp)
 
 			require.Nil(t, err)
-			require.Equal(t, tt.wantCount, info.PriceData.OtherRatios()["n"])
+			require.Equal(t, tt.wantCount, info.RequestedImageCount())
 			require.Equal(t, tt.body, recorder.Body.String())
 		})
 	}

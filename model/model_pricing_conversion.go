@@ -2,30 +2,16 @@ package model
 
 import (
 	"errors"
-	"maps"
 	"math"
-	"slices"
 	"strings"
 
 	"github.com/shopspring/decimal"
 	"github.com/zzyyyds88/PowerBarRations/common"
-	"github.com/zzyyyds88/PowerBarRations/constant"
-	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
-	hostreasoning "github.com/zzyyyds88/PowerBarRations/setting/reasoning"
 )
 
-// ModelPricingConversion is a preview only. Saving still requires a versioned
-// ModelPricingChange through the existing pricing transaction.
-type ModelPricingConversion struct {
-	ModelPricingDescription
-	Expression        string `json:"expression,omitempty"`
-	UnsupportedReason string `json:"unsupported_reason,omitempty"`
-}
-
-// ModelPricingDescription is shared by previews, conversions and snapshot
-// entries. It describes effective prices without adding persisted settings.
+// ModelPricingDescription is shared by previews and snapshot entries. It
+// describes effective prices without adding persisted settings.
 type ModelPricingDescription struct {
 	Effective      PricingValues        `json:"effective,omitempty"`
 	CacheWriteMode CacheWriteMode       `json:"cache_write_mode,omitempty"`
@@ -61,9 +47,6 @@ type LegacyBillingDetails struct {
 
 func ResolveLegacyBillingDetails(name string, effective, configured PricingValues) LegacyBillingDetails {
 	details := LegacyBillingDetails{}
-	if effective["billing_setting.billing_mode"] == billing_setting.BillingModeTieredExpr {
-		return details
-	}
 	if _, fixed := effective["ModelPrice"]; fixed {
 		details.ImageCount = common.IsImageGenerationModel(name)
 		details.RequestRules = legacyDallePricingRules(name)
@@ -138,241 +121,4 @@ func ResolveCacheWriteMode(name string, configured PricingValues) CacheWriteMode
 		return CacheWriteStandard
 	}
 	return CacheWriteNone
-}
-
-// followChannelModelMapping walks one channel's mapping the same way
-// ModelMappedHelper does: visited-set cycle detection, self-map stops at
-// the current hop, a non-self cycle is reported to the caller.
-func followChannelModelMapping(modelMap map[string]string, start string) (string, bool) {
-	current := start
-	visited := map[string]bool{current: true}
-	for {
-		mapped, exists := modelMap[current]
-		if !exists || mapped == "" {
-			return current, false
-		}
-		if visited[mapped] {
-			if mapped == current {
-				return current, false
-			}
-			return "", true
-		}
-		visited[mapped] = true
-		current = mapped
-	}
-}
-
-func PreviewModelPricingConversion(name string, draft PricingValues) (*ModelPricingConversion, error) {
-	if draft == nil {
-		return nil, errors.New("pricing draft is required")
-	}
-	if err := ValidateModelPricing(name, draft); err != nil {
-		return nil, err
-	}
-	if draft["billing_setting.billing_mode"] == billing_setting.BillingModeTieredExpr {
-		return &ModelPricingConversion{UnsupportedReason: "This model already uses an expression."}, nil
-	}
-	// The draft is the complete editable configuration: omitted fields inherit
-	// relay defaults rather than silently retaining discarded saved values.
-	legacyDraft := make(PricingValues, len(draft)+1)
-	maps.Copy(legacyDraft, draft)
-	legacyDraft["billing_setting.billing_mode"] = billing_setting.BillingModeRatio
-	effective, err := PreviewModelPricing(name, legacyDraft)
-	if err != nil {
-		return nil, err
-	}
-	if err := ValidateModelPricing(name, effective); err != nil {
-		return nil, err
-	}
-	_, fixedPrice := effective["ModelPrice"]
-	preview := &ModelPricingConversion{ModelPricingDescription: ModelPricingDescription{Effective: effective, BillingDetails: ResolveLegacyBillingDetails(name, effective, draft)}}
-	if preview.BillingDetails.InvalidAudioPrice {
-		return nil, errors.New("audio prices must be finite")
-	}
-	if preview.BillingDetails.ConflictingAudioPrices {
-		return &ModelPricingConversion{UnsupportedReason: "Gemini and OpenAI audio prices differ for this model. Use separate billing model names to convert them."}, nil
-	}
-
-	// Inspect non-secret routing metadata so aliases cannot disguise a special
-	// settlement path as an ordinary text model.
-	var channels []Channel
-	candidates := DB.Model(&Ability{}).Select("channel_id").Where("model = ?", name)
-	if err := DB.Select("type", "status", "models", "model_mapping").Where("id IN (?)", candidates).Find(&channels).Error; err != nil {
-		return nil, err
-	}
-	names := []string{name}
-	aliPromptExtend, otherImageRoute := false, false
-	for _, channel := range channels {
-		if !slices.Contains(channel.GetModels(), name) {
-			continue
-		}
-		if slices.Contains(common.GetEndpointTypesByChannelType(channel.Type, name), constant.EndpointTypeOpenAIVideo) {
-			return &ModelPricingConversion{UnsupportedReason: "Video pricing must be converted manually."}, nil
-		}
-		if channel.Status == common.ChannelStatusEnabled && channel.Type == constant.ChannelTypeOpenRouter && strings.Contains(strings.ToLower(name), "claude") && !fixedPrice {
-			defaultRatio, hasDefault := ratio_setting.GetDefaultModelRatioMap()[name]
-			if hasDefault && effective["ModelRatio"] == defaultRatio && effective["CreateCacheRatio"] != float64(1) {
-				return &ModelPricingConversion{UnsupportedReason: "This OpenRouter Claude price derives cache-write usage from upstream cost and must be converted manually."}, nil
-			}
-		}
-		upstream := name
-		if channel.ModelMapping != nil && *channel.ModelMapping != "" {
-			var mapping map[string]string
-			if err := common.UnmarshalJsonStr(*channel.ModelMapping, &mapping); err != nil {
-				return &ModelPricingConversion{UnsupportedReason: "The model routing configuration could not be verified."}, nil
-			}
-			// Relay also resolves reasoning-suffixed names at any mapping hop.
-			candidates := []string{name}
-			for _, target := range mapping {
-				candidates = append(candidates, target)
-			}
-			for _, candidate := range candidates {
-				if mapping[candidate] == "" {
-					mapping[candidate] = mapping[hostreasoning.BaseModelName(candidate)]
-				}
-			}
-			var cycle bool
-			upstream, cycle = followChannelModelMapping(mapping, name)
-			if cycle {
-				return &ModelPricingConversion{UnsupportedReason: "The model routing configuration could not be verified."}, nil
-			}
-			if upstream != name {
-				names = append(names, upstream)
-			}
-		}
-		if channel.Status == common.ChannelStatusEnabled {
-			if channel.Type == constant.ChannelTypeAli && strings.Contains(upstream, "z-image") {
-				aliPromptExtend = true
-			} else {
-				otherImageRoute = true
-			}
-		}
-	}
-	for _, modelName := range names {
-		lower := strings.ToLower(modelName)
-		if strings.Contains(lower, "realtime") {
-			return &ModelPricingConversion{UnsupportedReason: "Realtime pricing must be converted manually."}, nil
-		}
-		if fixedPrice && ResolveLegacyBillingDetails(modelName, effective, draft).ImageCount {
-			preview.BillingDetails.ImageCount = true
-		}
-	}
-	var metadata []Model
-	if err := DB.Select("model_name", "name_rule", "endpoints").
-		Where("model_name IN ? OR name_rule <> ?", names, NameRuleExact).
-		Where("endpoints <> ?", "").Find(&metadata).Error; err != nil {
-		return nil, err
-	}
-	for _, entry := range metadata {
-		if entry.Endpoints == "" || !slices.ContainsFunc(names, entry.MatchesName) {
-			continue
-		}
-		var endpoints map[string]any
-		if err := common.UnmarshalJsonStr(entry.Endpoints, &endpoints); err != nil {
-			return &ModelPricingConversion{UnsupportedReason: "The model routing configuration could not be verified."}, nil
-		}
-		for endpoint := range endpoints {
-			switch constant.EndpointType(endpoint) {
-			case constant.EndpointTypeImageGeneration:
-				if fixedPrice {
-					preview.BillingDetails.ImageCount = true
-				}
-			case constant.EndpointTypeOpenAIVideo:
-				return &ModelPricingConversion{UnsupportedReason: "Video pricing must be converted manually."}, nil
-			case constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic, constant.EndpointTypeGemini, constant.EndpointTypeEmbeddings, constant.EndpointTypeJinaRerank:
-				// These endpoints use the ordinary token/fixed-request settlement.
-			}
-		}
-	}
-	var expression string
-	if fixedPrice {
-		price := effective["ModelPrice"].(float64)
-		expression = `tier("request", fixed(` + decimal.NewFromFloat(price).String() + `))`
-		if preview.BillingDetails.ImageCount {
-			if aliPromptExtend && otherImageRoute {
-				return &ModelPricingConversion{UnsupportedReason: "This model has different image request multipliers across channels. Use separate billing model names to convert them."}, nil
-			}
-			expression = `tier("image", fixed(` + decimal.NewFromFloat(price).String() + `)) * image_count`
-			if aliPromptExtend {
-				preview.BillingDetails.RequestRules = append(preview.BillingDetails.RequestRules, LegacyPricingRule{`param("parameters.prompt_extend") == true`, common.ZImagePromptExtendMultiplier})
-			}
-			for _, rule := range preview.BillingDetails.RequestRules {
-				expression += ` * (` + rule.Condition + ` ? ` + decimal.NewFromFloat(rule.Multiplier).String() + ` : 1)`
-			}
-		}
-	} else {
-		ratio, exists := effective["ModelRatio"].(float64)
-		if !exists {
-			return &ModelPricingConversion{UnsupportedReason: "Configure an input price before converting this model."}, nil
-		}
-		preview.CacheWriteMode = ResolveCacheWriteMode(name, draft)
-		base, err := legacyInputPricePerMillion(ratio)
-		if err != nil {
-			return nil, err
-		}
-		// Cache reads can overlap other separately priced input categories.
-		// Keep cr in that case: clamping the input remainder makes folding it
-		// into p non-equivalent. A zero base price is equivalent either way.
-		ordinaryAudio := preview.BillingDetails.AudioOutputPrice != nil
-		if ordinaryAudio && preview.CacheWriteMode != CacheWriteNone {
-			preview.BillingDetails.AudioTextBranches = true
-		}
-		mergeCacheRead := base.IsZero() || preview.CacheWriteMode == CacheWriteNone && effective["ImageRatio"].(float64) == 1 && (preview.BillingDetails.AudioInputPrice == nil || ordinaryAudio)
-		var expressionBody strings.Builder
-		expressionBody.WriteString(`tier("base", p * `)
-		expressionBody.WriteString(base.String())
-		// Retain explicit zero coefficients for included categories. Only
-		// Claude names inherit the relay's 1h / 5m factor of 6 / 3.75.
-		for _, lane := range []struct {
-			variable, key string
-			multiplier    float64
-		}{
-			{"c", "CompletionRatio", 1},
-			{"cr", "CacheRatio", 1},
-			{"cc", "CreateCacheRatio", 1},
-			{"cc1h", "CreateCacheRatio", 6 / 3.75},
-			{"img", "ImageRatio", 1},
-		} {
-			if ordinaryAudio && !preview.BillingDetails.AudioTextBranches && lane.variable != "c" {
-				continue
-			}
-			if lane.variable == "cc" && preview.CacheWriteMode == CacheWriteNone ||
-				lane.variable == "cc1h" && preview.CacheWriteMode != CacheWriteClaudeTTL {
-				continue
-			}
-			multiplier := effective[lane.key].(float64)
-			// Same-price input categories stay in p. Keep distinct prices,
-			// including explicit zero, as independently priced terms.
-			if (lane.variable == "img" || lane.variable == "cr" && mergeCacheRead) && multiplier == 1 {
-				continue
-			}
-			expressionBody.WriteString(" + " + lane.variable + " * ")
-			expressionBody.WriteString(base.Mul(decimal.NewFromFloat(multiplier)).Mul(decimal.NewFromFloat(lane.multiplier)).String())
-		}
-		for _, lane := range []struct {
-			variable string
-			price    *float64
-		}{
-			{"ai", preview.BillingDetails.AudioInputPrice},
-			{"ao", preview.BillingDetails.AudioOutputPrice},
-		} {
-			if lane.price != nil && !preview.BillingDetails.AudioTextBranches {
-				expressionBody.WriteString(" + " + lane.variable + " * " + decimal.NewFromFloat(*lane.price).String())
-			}
-		}
-		expressionBody.WriteString(")")
-		expression = expressionBody.String()
-		if ordinaryAudio && preview.BillingDetails.AudioTextBranches {
-			completion := base.Mul(decimal.NewFromFloat(effective["CompletionRatio"].(float64)))
-			// The audio settlement ignores cache/image ratios. Use the full
-			// input total here because variables in the text-only branch still
-			// participate in AST-based token normalization.
-			expression = `(ai > 0 || ao > 0) ? tier("audio", max(len - ai, 0) * ` + base.String() + ` + c * ` + completion.String() + ` + ai * ` + decimal.NewFromFloat(*preview.BillingDetails.AudioInputPrice).String() + ` + ao * ` + decimal.NewFromFloat(*preview.BillingDetails.AudioOutputPrice).String() + `) : ` + expression
-		}
-	}
-	if err := billing_setting.SmokeTestExpr(expression); err != nil {
-		return nil, err
-	}
-	preview.Expression = expression
-	return preview, nil
 }

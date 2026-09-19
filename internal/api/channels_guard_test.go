@@ -37,7 +37,6 @@ func TestPutChannelBlocksModelRemovalReferencedByLane(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "guard-ch", Type: 1, Key: "sk-guard", Status: common.ChannelStatusEnabled, Group: "default", Models: "keep-me,drop-me"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "drop-me", Enabled: true, Mode: model.LaneModeFailover,
 		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 1}}}))
 
@@ -63,10 +62,8 @@ func TestPutChannelCleanupKeepsLaneWithOtherMembers(t *testing.T) {
 	db := setupAPITestDB(t)
 	chA := &model.Channel{Name: "clean-a", Type: 1, Key: "sk-a", Status: common.ChannelStatusEnabled, Group: "default", Models: "m-drop"}
 	require.NoError(t, db.Create(chA).Error)
-	require.NoError(t, chA.AddAbilities(nil))
 	chB := &model.Channel{Name: "clean-b", Type: 1, Key: "sk-b", Status: common.ChannelStatusEnabled, Group: "default", Models: "m-drop"}
 	require.NoError(t, db.Create(chB).Error)
-	require.NoError(t, chB.AddAbilities(nil))
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "m-drop", Enabled: true, Mode: model.LaneModeFailover,
 		Members: []model.LaneMember{{ChannelId: chA.Id, Priority: 2}, {ChannelId: chB.Id, Priority: 1}}}))
 

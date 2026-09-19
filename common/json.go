@@ -1,7 +1,6 @@
 package common
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 
@@ -63,14 +62,6 @@ func DecodeJsonWithValidation(reader io.Reader, v any) error {
 
 func Marshal(v any) ([]byte, error) {
 	return kitutil.Marshal(v)
-}
-
-func IndentJson(data []byte) ([]byte, error) {
-	var buffer bytes.Buffer
-	if err := json.Indent(&buffer, data, "", "  "); err != nil {
-		return nil, err
-	}
-	return buffer.Bytes(), nil
 }
 
 func GetJsonType(data json.RawMessage) string {

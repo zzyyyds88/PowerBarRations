@@ -232,7 +232,7 @@
 | 页面 | 分节（实注册） |
 |---|---|
 | 站点 `/system-settings/site` | 站点信息（名称/Logo/页脚/关于/首页内容/服务器地址/法律页）、顶部导航、侧边栏模块 |
-| 模型 `/system-settings/models` | 全局模型配置、路由可靠性（重试与自动重试状态码、定时渠道测试与自动禁用/恢复开关、失败阈值、失败关键词表）、默认六键（`lane_defaults`，`GET/PUT /api/system/options`）、Gemini、Claude、Grok、渠道亲和 |
+| 模型 `/system-settings/models` | 全局模型配置、路由可靠性（重试与自动重试状态码、定时渠道测试与自动禁用/恢复开关、失败阈值、失败关键词表）、默认六键（`lane_defaults`，`GET/PUT /api/system/options`）、Gemini、Claude、Grok |
 | 运维 `/system-settings/operations` | 系统行为、监控与告警、SMTP 邮件、Worker 代理、日志维护（保留天数/手动清理）、性能 |
 | 内容 `/system-settings/content` | API 地址、对话预设 |
 

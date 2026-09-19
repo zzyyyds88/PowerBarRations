@@ -1,8 +1,6 @@
 package zhipu_4v
 
 import (
-	"time"
-
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 )
@@ -53,9 +51,4 @@ type ZhipuV4StreamResponse struct {
 	Created int64                                     `json:"created"`
 	Choices []dto.ChatCompletionsStreamResponseChoice `json:"choices"`
 	Usage   dto.Usage                                 `json:"usage"`
-}
-
-type tokenData struct {
-	Token      string
-	ExpiryTime time.Time
 }

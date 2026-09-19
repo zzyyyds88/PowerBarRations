@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ChannelAffinitySection } from '../general/channel-affinity'
 import type { ModelSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 import { ClaudeSettingsCard } from './claude-settings-card'
@@ -71,7 +70,6 @@ const MODELS_SECTIONS = [
     build: (settings: ModelSettings) => (
       <RoutingReliabilitySection
         defaultValues={{
-          RetryTimes: settings.RetryTimes,
           ChannelDisableThreshold: settings.ChannelDisableThreshold,
           AutomaticDisableChannelEnabled:
             settings.AutomaticDisableChannelEnabled,
@@ -148,28 +146,6 @@ const MODELS_SECTIONS = [
             settings['grok.violation_deduction_enabled'] ?? true,
           'grok.violation_deduction_amount':
             settings['grok.violation_deduction_amount'] ?? 0.05,
-        }}
-      />
-    ),
-  },
-  {
-    id: 'channel-affinity',
-    titleKey: 'Channel Affinity',
-    build: (settings: ModelSettings) => (
-      <ChannelAffinitySection
-        defaultValues={{
-          'channel_affinity_setting.enabled':
-            settings['channel_affinity_setting.enabled'],
-          'channel_affinity_setting.switch_on_success':
-            settings['channel_affinity_setting.switch_on_success'],
-          'channel_affinity_setting.keep_on_channel_disabled':
-            settings['channel_affinity_setting.keep_on_channel_disabled'],
-          'channel_affinity_setting.max_entries':
-            settings['channel_affinity_setting.max_entries'],
-          'channel_affinity_setting.default_ttl_seconds':
-            settings['channel_affinity_setting.default_ttl_seconds'],
-          'channel_affinity_setting.rules':
-            settings['channel_affinity_setting.rules'],
         }}
       />
     ),

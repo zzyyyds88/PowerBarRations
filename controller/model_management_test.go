@@ -18,8 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/model"
-	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/config"
 	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 	"gorm.io/gorm"
 )
@@ -32,7 +30,6 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	previousMaster, previousSQLite := common.IsMasterNode, common.SQLitePath
 	previousRedis, previousMemory := common.RedisEnabled, common.MemoryCacheEnabled
 	previousOptions := common.OptionMap
-	previousConfig := config.GlobalConfig.ExportAllConfigs()
 	restoreRatios := []struct {
 		value   string
 		restore func(string) error
@@ -58,11 +55,10 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 	require.NoError(t, model.InitDB())
 	database = model.DB
 	model.LOG_DB = database
-	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Channel{}, &model.Ability{}, &model.Option{}, &model.User{}, &model.AuditLog{}, &model.Lane{}, &model.LaneMember{}))
+	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Channel{}, &model.Option{}, &model.User{}, &model.AuditLog{}, &model.Lane{}, &model.LaneMember{}))
 	for _, value := range restoreRatios {
 		require.NoError(t, value.restore("{}"))
 	}
-	config.UpdateConfigFromMap(config.GlobalConfig.Get("billing_setting"), map[string]string{"billing_mode": "{}", "billing_expr": "{}"})
 	var version string
 	query := "SELECT version()"
 	if kind == "sqlite" {
@@ -74,7 +70,6 @@ func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
 		for _, value := range restoreRatios {
 			require.NoError(t, value.restore(value.value))
 		}
-		config.UpdateConfigFromMap(config.GlobalConfig.Get("billing_setting"), map[string]string{"billing_mode": previousConfig["billing_setting.billing_mode"], "billing_expr": previousConfig["billing_setting.billing_expr"]})
 		common.OptionMap = previousOptions
 		common.IsMasterNode, common.SQLitePath = previousMaster, previousSQLite
 		common.RedisEnabled, common.MemoryCacheEnabled = previousRedis, previousMemory
@@ -124,7 +119,6 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 					require.NoError(t, channel.Insert())
 				}
 				t.Cleanup(func() {
-					require.NoError(t, db.Where("channel_id IN ?", []int{active.Id, inactive.Id}).Delete(&model.Ability{}).Error)
 					require.NoError(t, db.Where("id IN ?", []int{active.Id, inactive.Id}).Delete(&model.Channel{}).Error)
 					require.NoError(t, db.Unscoped().Where("model_name LIKE ?", "listing-%").Delete(&model.Model{}).Error)
 					model.RefreshPricing()
@@ -216,11 +210,11 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 
 			})
 
-			t.Run("pricing_saves_zero_switches_modes_and_rejects_stale_batches", func(t *testing.T) {
+			t.Run("pricing_saves_zero_and_rejects_stale_batches", func(t *testing.T) {
 				before, err := model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
 				require.NoError(t, err)
 				changes := []model.ModelPricingChange{
-					{ModelName: "matrix-priced", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(0), "billing_setting.billing_mode": "ratio"}},
+					{ModelName: "matrix-priced", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(0)}},
 					{ModelName: "matrix-other", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelRatio": float64(1), "CreateCacheRatio": 1.25}},
 				}
 				require.NoError(t, model.UpdateModelPricing(changes))
@@ -229,12 +223,14 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 				assert.Equal(t, float64(0), loaded.Entries[0].Effective["ModelPrice"])
 				stale := changes[0]
 				changes[0].ExpectedVersion = loaded.Entries[0].Version
-				changes[0].Pricing = model.PricingValues{"billing_setting.billing_mode": "tiered_expr", "billing_setting.billing_expr": `tier("base", p * 2 + c * 8 + cr * 0 + cc * 2.5)`, "ModelRatio": float64(1)}
+				// Switching matrix-priced from a fixed price to a ratio must
+				// replace the whole draft: the old ModelPrice disappears.
+				changes[0].Pricing = model.PricingValues{"ModelRatio": float64(1), "CompletionRatio": float64(2)}
 				require.NoError(t, model.UpdateModelPricing(changes[:1]))
 				loaded, err = model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
 				require.NoError(t, err)
 				assert.Equal(t, 1.25, loaded.Entries[0].Configured["CreateCacheRatio"])
-				assert.Equal(t, "tiered_expr", loaded.Entries[1].Effective["billing_setting.billing_mode"])
+				assert.Equal(t, float64(1), loaded.Entries[1].Effective["ModelRatio"])
 				_, oldFixed := loaded.Entries[1].Configured["ModelPrice"]
 				assert.False(t, oldFixed)
 				other := model.ModelPricingChange{ModelName: "matrix-other", ExpectedVersion: loaded.Entries[0].Version, Pricing: model.PricingValues{"ModelRatio": float64(9)}}
@@ -292,27 +288,6 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 				assert.Equal(t, 1, successes)
 				assert.Equal(t, 1, conflicts)
 			})
-			t.Run("task_usage_and_builtin_reset", func(t *testing.T) {
-				{
-					const name = "gpt-6-astra"
-					builtin, exists := billing_setting.GetBuiltinBillingExpr(name)
-					require.True(t, exists)
-					before, err := model.GetModelPricingSnapshot([]string{name})
-					require.NoError(t, err)
-					require.Empty(t, before.Entries[0].Configured)
-					change := model.ModelPricingChange{ModelName: name, ExpectedVersion: before.Entries[0].Version, Pricing: model.PricingValues{"ModelPrice": float64(0)}}
-					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{change}))
-					custom, err := model.GetModelPricingSnapshot([]string{name})
-					require.NoError(t, err)
-					assert.Equal(t, float64(0), custom.Entries[0].Effective["ModelPrice"])
-					change.ExpectedVersion, change.Pricing, change.Reset = custom.Entries[0].Version, nil, true
-					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{change}))
-					reset, err := model.GetModelPricingSnapshot([]string{name})
-					require.NoError(t, err)
-					assert.Empty(t, reset.Entries[0].Configured)
-					assert.Equal(t, builtin, reset.Entries[0].Effective["billing_setting.billing_expr"])
-				}
-			})
 			t.Run("concurrent_import_creates_one_record", func(t *testing.T) {
 				update := model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: "matrix-concurrent-import", RecordVersion: model.MetadataRecordVersion(nil), Create: true}, Values: model.MetadataValues{Description: "Imported", Status: 1}}
 				var wg sync.WaitGroup
@@ -342,15 +317,11 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 				assert.EqualValues(t, 1, count)
 			})
 			t.Run("metadata_keeps_pricing_and_channel_identity", func(t *testing.T) {
-				active := model.Channel{Name: "Active route", Type: 1, Status: common.ChannelStatusEnabled}
-				disabled := model.Channel{Name: "Disabled route", Type: 1, Status: common.ChannelStatusManuallyDisabled}
+				// abilities 表已删除：分组/绑定渠道直接由启用渠道的 Group/Models 声明。
+				active := model.Channel{Name: "Active route", Type: 1, Status: common.ChannelStatusEnabled, Group: "available", Models: "matrix-hidden-unpriced"}
+				disabled := model.Channel{Name: "Disabled route", Type: 1, Status: common.ChannelStatusManuallyDisabled, Group: "disabled", Models: "matrix-hidden-unpriced"}
 				require.NoError(t, db.Create(&active).Error)
 				require.NoError(t, db.Create(&disabled).Error)
-				require.NoError(t, db.Create(&[]model.Ability{
-					{Model: "matrix-hidden-unpriced", Group: "available", ChannelId: active.Id, Enabled: true},
-					{Model: "matrix-hidden-unpriced", Group: "disabled", ChannelId: disabled.Id, Enabled: true},
-					{Model: "matrix-hidden-unpriced", Group: "inactive", ChannelId: active.Id, Enabled: false},
-				}).Error)
 				exact := &model.Model{ModelName: "matrix-hidden-unpriced", Status: 0, SyncOfficial: 0}
 				require.NoError(t, exact.Insert())
 				rule := &model.Model{ModelName: "matrix-hidden-", NameRule: model.NameRulePrefix}
@@ -380,15 +351,19 @@ func TestModelManagementDatabaseMatrix(t *testing.T) {
 				prices, err = model.GetModelPricingSnapshot([]string{"matrix-hidden-unpriced"})
 				require.NoError(t, err)
 				assert.Empty(t, prices.Entries[0].Configured)
-				var ability model.Ability
-				require.NoError(t, db.Where("model = ? AND channel_id = ? AND enabled = ?", "matrix-hidden-unpriced", active.Id, true).First(&ability).Error)
+				// 删目录记录不得动渠道声明本身（abilities 时代同口径）。
+				var channelAfter model.Channel
+				require.NoError(t, db.First(&channelAfter, active.Id).Error)
+				assert.Equal(t, []string{"matrix-hidden-unpriced"}, channelAfter.GetModels())
 			})
 			t.Run("metadata_preview_selection_versions_and_transaction", func(t *testing.T) {
 				local := &model.Model{ModelName: "matrix-existing", Description: "Local description", Tags: "keep", Status: 1, SyncOfficial: 1}
 				require.NoError(t, local.Insert())
 				blocked := &model.Model{ModelName: "matrix-blocked", Status: 1, SyncOfficial: 0}
 				require.NoError(t, blocked.Insert())
-				require.NoError(t, db.Create(&model.Ability{Model: "matrix-new", Group: "default", ChannelId: 1, Enabled: true}).Error)
+				// 渠道声明 matrix-new，使其在同步预览中归为 "site"（GetMissingModels 口径）。
+				siteChannel := model.Channel{Name: "Matrix site channel", Type: 1, Key: "fixture", Status: common.ChannelStatusEnabled, Group: "default", Models: "matrix-new"}
+				require.NoError(t, db.Create(&siteChannel).Error)
 				var revision atomic.Int32
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					assert.Contains(t, r.URL.Path, "/api/i18n/zh/newapi/")
@@ -499,9 +474,8 @@ func TestPricingDefaultBrands(t *testing.T) {
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
 
 			t.Run("pricing_derives_default_brands_without_persisting", func(t *testing.T) {
-				channel := model.Channel{Name: "Vendor fixture", Type: 1, Status: common.ChannelStatusEnabled}
+				channel := model.Channel{Name: "Vendor fixture", Type: 1, Status: common.ChannelStatusEnabled, Group: "default", Models: "gemini-vendor-fixture"}
 				require.NoError(t, db.Create(&channel).Error)
-				require.NoError(t, db.Create(&model.Ability{Model: "gemini-vendor-fixture", Group: "default", ChannelId: channel.Id, Enabled: true}).Error)
 				model.RefreshPricing()
 				model.GetPricing()
 				vendors := model.GetVendors()
@@ -542,7 +516,6 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 			require.NoError(t, metadataOnly.Insert())
 			channel := model.Channel{Name: "Retained channel", Type: 1, Key: "fixture-key", Models: metadataOnly.ModelName, Group: "default", Status: common.ChannelStatusEnabled}
 			require.NoError(t, db.Create(&channel).Error)
-			require.NoError(t, channel.UpdateAbilities(db))
 			recorder := modelManagementRequest(t, func(c *gin.Context) {
 				c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(metadataOnly.Id)}}
 				DeleteModelMeta(c)
@@ -553,8 +526,10 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.First(&retained, channel.Id).Error)
 			assert.Equal(t, channel.Models, retained.Models)
 			var count int64
-			require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ?", channel.Id).Count(&count).Error)
-			assert.EqualValues(t, 1, count)
+			declaring, err := model.GetChannelsDeclaringModel(metadataOnly.ModelName)
+			require.NoError(t, err)
+			require.Len(t, declaring, 1, "只删目录记录不得摘除渠道声明")
+			assert.Equal(t, channel.Id, declaring[0].Id)
 
 			for _, rule := range []int{model.NameRuleExact, model.NameRulePrefix, model.NameRuleContains, model.NameRuleSuffix} {
 				t.Run(fmt.Sprintf("rule_%d_exact_names_only_atomic_and_cached", rule), func(t *testing.T) {
@@ -572,13 +547,11 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					}
 					for i := range channels {
 						require.NoError(t, db.Create(&channels[i]).Error)
-						require.NoError(t, channels[i].UpdateAbilities(db))
 					}
 					common.MemoryCacheEnabled = true
 					model.InitChannelCache()
-					cached, err := model.GetRandomSatisfiedChannel("default", name, 0, nil)
-					require.NoError(t, err)
-					require.NotNil(t, cached)
+					require.Contains(t, model.GetGroupEnabledModels("default"), name,
+						"删除前 default 分组应声明该模型")
 					baseline, err := model.GetModelPricingSnapshot([]string{name})
 					require.NoError(t, err)
 					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: name, ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(2)}}}))
@@ -616,9 +589,8 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 						require.NoError(t, db.First(&after, original.Id).Error)
 						assertChannelBusinessFieldsEqual(t, original, after)
 					}
-					cached, err = model.GetRandomSatisfiedChannel("default", name, 0, nil)
-					require.NoError(t, err)
-					require.NotNil(t, cached)
+					require.Contains(t, model.GetGroupEnabledModels("default"), name,
+						"注入失败的删除不得改动渠道声明")
 					recorder := modelManagementRequest(t, BatchDeleteModelMeta, http.MethodPost, "/api/models/delete", body, &response)
 					require.True(t, response.Success, recorder.Body.String())
 					assert.Equal(t, model.ModelDeleteResult{DeletedCount: 2, UpdatedChannels: 3}, response.Data)
@@ -628,28 +600,12 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 						original.Models = []string{name + "-keep", "prefix-" + name, "", strings.ToUpper(name)}[i]
 						assertChannelBusinessFieldsEqual(t, original, after)
 					}
-					var abilities []model.Ability
-					require.NoError(t, db.Where("channel_id IN ?", []int{channels[0].Id, channels[1].Id, channels[2].Id, channels[3].Id}).Find(&abilities).Error)
-					assert.Len(t, abilities, 4)
-					for _, ability := range abilities {
-						assert.NotEqual(t, name, ability.Model)
-						assert.NotEqual(t, second.ModelName, ability.Model)
-						assert.NotEmpty(t, ability.Model)
-						if ability.ChannelId == channels[0].Id {
-							// 渠道 priority/weight 已删除：ability 行只保证启用与模型名正确。
-							assert.True(t, ability.Enabled)
-						}
-						if ability.ChannelId == channels[1].Id {
-							assert.False(t, ability.Enabled)
-						}
-					}
 					for _, group := range []string{"default", "vip", "last-model-group"} {
-						cached, _ = model.GetRandomSatisfiedChannel(group, name, 0, nil)
-						assert.Nil(t, cached)
+						assert.NotContains(t, model.GetGroupEnabledModels(group), name,
+							"删除后各分组都不应再声明该模型")
 					}
-					cached, err = model.GetRandomSatisfiedChannel("default", name+"-keep", 0, nil)
-					require.NoError(t, err)
-					require.NotNil(t, cached)
+					require.Contains(t, model.GetGroupEnabledModels("default"), name+"-keep",
+						"未被移除的声明必须保留")
 					pricingAfter, err := model.GetModelPricingSnapshot([]string{name, second.ModelName})
 					require.NoError(t, err)
 					assert.Equal(t, pricingBefore, pricingAfter)
@@ -667,11 +623,10 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					keep := name + "-keep"
 					channel := model.Channel{Name: "Independent pricing removal", Type: 1, Models: name + "," + keep, Group: "pricing-removal", Status: common.ChannelStatusEnabled}
 					require.NoError(t, db.Create(&channel).Error)
-					require.NoError(t, channel.UpdateAbilities(db))
 					model.InitChannelCache()
 					baseline, err := model.GetModelPricingSnapshot([]string{name, keep})
 					require.NoError(t, err)
-					pricing := model.PricingValues{"ModelRatio": float64(1), "ModelPrice": float64(0), "CompletionRatio": float64(2), "CacheRatio": float64(0.1), "CreateCacheRatio": float64(1.25), "ImageRatio": float64(3), "AudioRatio": float64(4), "AudioCompletionRatio": float64(5), "billing_setting.billing_mode": "tiered_expr", "billing_setting.billing_expr": `tier("base", p * 2 + c * 4)`}
+					pricing := model.PricingValues{"ModelRatio": float64(1), "ModelPrice": float64(0), "CompletionRatio": float64(2), "CacheRatio": float64(0.1), "CreateCacheRatio": float64(1.25), "ImageRatio": float64(3), "AudioRatio": float64(4), "AudioCompletionRatio": float64(5)}
 					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{
 						{ModelName: name, ExpectedVersion: baseline.EmptyVersion, Pricing: pricing},
 						{ModelName: keep, ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(9)}},
@@ -712,7 +667,6 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					after, err := model.GetModelPricingSnapshot([]string{name, keep})
 					require.NoError(t, err)
 					assert.Equal(t, before, after, "partial option writes roll back")
-					assert.Equal(t, billing_setting.BillingModeTieredExpr, billing_setting.GetBillingMode(name), "failed deletion must not publish new runtime pricing")
 					var retained model.Model
 					require.NoError(t, db.First(&retained, metadata.Id).Error)
 					var channelAfter model.Channel
@@ -726,9 +680,6 @@ func TestModelDeletionDatabaseMatrix(t *testing.T) {
 					require.NoError(t, err)
 					assert.Empty(t, after.Entries[0].Configured)
 					assert.Equal(t, before.Entries[1], after.Entries[1], "name rules do not expand pricing deletion")
-					assert.Equal(t, billing_setting.BillingModeRatio, billing_setting.GetBillingMode(name))
-					_, hasExpr := billing_setting.GetBillingExpr(name)
-					assert.False(t, hasExpr)
 					require.NoError(t, db.First(&channelAfter, channel.Id).Error)
 					expectedModels := channel.Models
 					if removeChannels {

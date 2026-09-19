@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -10,14 +9,11 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 
 	"github.com/bytedance/gopkg/util/gopool"
-	"gorm.io/gorm"
 )
 
 const (
 	BatchUpdateTypeUserQuota = iota
-	BatchUpdateTypeTokenQuota
 	BatchUpdateTypeUsedQuota
-	BatchUpdateTypeChannelUsedQuota
 	BatchUpdateTypeRequestCount
 	BatchUpdateTypeCount // if you add a new type, you need to add a new map and a new lock
 )
@@ -88,19 +84,6 @@ func batchUpdate() {
 		batchUpdateLocks[i].Unlock()
 	}
 
-	for i, store := range stores {
-		if i == BatchUpdateTypeUserQuota || i == BatchUpdateTypeUsedQuota || i == BatchUpdateTypeRequestCount {
-			continue
-		}
-		for key, value := range store {
-			switch i {
-			// W7：BatchUpdateTypeTokenQuota（基座令牌额度）随多用户面删除。
-			case BatchUpdateTypeChannelUsedQuota:
-				updateChannelUsedQuota(key, value)
-			}
-		}
-	}
-
 	userQuotaStore := stores[BatchUpdateTypeUserQuota]
 	usedQuotaStore := stores[BatchUpdateTypeUsedQuota]
 	requestCountStore := stores[BatchUpdateTypeRequestCount]
@@ -119,16 +102,6 @@ func batchUpdate() {
 		updateUserQuotaUsedQuotaAndRequestCount(key, userQuotaStore[key], usedQuotaStore[key], requestCountStore[key])
 	}
 	common.SysLog("batch update finished")
-}
-
-func RecordExist(err error) (bool, error) {
-	if err == nil {
-		return true, nil
-	}
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
-	}
-	return false, err
 }
 
 func shouldUpdateRedis(fromDB bool, err error) bool {

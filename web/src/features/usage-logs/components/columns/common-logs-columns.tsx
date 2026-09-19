@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { GitBranch, KeyRound, Sparkles } from 'lucide-react'
+import { GitBranch, KeyRound } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -154,14 +154,12 @@ export function useCommonLogsColumns(
       header: t('Channel'),
       accessorFn: (row) => row.channel,
       cell: function ChannelCell({ row }) {
-        const { sensitiveVisible, setAffinityTarget, setAffinityDialogOpen } =
-          useUsageLogsContext()
+        const { sensitiveVisible } = useUsageLogsContext()
         const log = row.original
 
         if (!isDisplayableLogType(log.type)) return null
 
         const other = parseLogOther(log.other)
-        const affinity = other?.admin_info?.channel_affinity
         const rawUseChannel = other?.admin_info?.use_channel ?? []
         const useChannel = Array.isArray(rawUseChannel)
           ? rawUseChannel.map(String).filter(Boolean)
@@ -236,27 +234,6 @@ export function useCommonLogsColumns(
                       </PopoverContent>
                     </Popover>
                   )}
-                  {affinity && (
-                    <button
-                      type='button'
-                      className='absolute -top-1 -right-1 leading-none text-amber-500'
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setAffinityTarget({
-                          rule_name: affinity.rule_name || '',
-                          using_group:
-                            affinity.using_group ||
-                            affinity.selected_group ||
-                            '',
-                          key_hint: affinity.key_hint || '',
-                          key_fp: affinity.key_fp || '',
-                        })
-                        setAffinityDialogOpen(true)
-                      }}
-                    >
-                      <Sparkles className='size-3 fill-current' />
-                    </button>
-                  )}
                 </div>
                 {log.channel_name && (
                   <span className='text-muted-foreground/70 truncate [font-family:var(--font-body)] !text-xs'>
@@ -276,22 +253,6 @@ export function useCommonLogsColumns(
                     <p className='text-muted-foreground text-xs'>
                       {t('Key')}: {multiKeyIndex}
                     </p>
-                  )}
-                  {affinity && (
-                    <div className='border-t pt-1 text-xs'>
-                      <p className='font-medium'>{t('Channel Affinity')}</p>
-                      <p>
-                        {t('Rule')}: {affinity.rule_name || '-'}
-                      </p>
-                      <p>
-                        {t('Group')}:{' '}
-                        {sensitiveVisible
-                          ? affinity.using_group ||
-                            affinity.selected_group ||
-                            '-'
-                          : '••••'}
-                      </p>
-                    </div>
                   )}
                 </div>
               </TooltipContent>

@@ -20,7 +20,6 @@ func TestOpsAdapterResolvesChannelNameToID(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "ops-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "m"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

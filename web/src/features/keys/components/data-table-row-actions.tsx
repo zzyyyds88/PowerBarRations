@@ -49,7 +49,6 @@ import {
 } from '@/components/ui/tooltip'
 import { useChatPresets } from '@/features/chat/hooks/use-chat-presets'
 import { resolveChatUrl, type ChatPreset } from '@/features/chat/lib/chat-links'
-import { sendToFluent } from '@/features/chat/lib/send-to-fluent'
 import { encodeChannelConnectionInfo } from '@/lib/channel-connection-info'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -106,25 +105,16 @@ export function DataTableRowActions<TData>({
     [apiKey.id, apiKey.key_plain, requestRotateAction]
   )
 
-  const hasChatPresets = chatPresets.length > 0
+  // fluent 型预设不提供密钥预填入口，与布局侧聊天菜单一样过滤掉，
+  // 行内操作只保留可打开链接的预设。
+  const openableChatPresets = chatPresets.filter(
+    (preset) => preset.type !== 'fluent'
+  )
+  const hasChatPresets = openableChatPresets.length > 0
   const toggleLabel = isEnabled ? t('Disable') : t('Enable')
 
   const openChatPresetWithKey = useCallback(
     async (preset: ChatPreset, realKey: string) => {
-      if (preset.type === 'fluent') {
-        const success = sendToFluent(realKey, serverAddress)
-        if (success) {
-          toast.success(t('Sent the API key to FluentRead.'))
-        } else {
-          toast.info(
-            t(
-              'FluentRead extension not detected. Please ensure it is installed and active.'
-            )
-          )
-        }
-        return
-      }
-
       const resolvedUrl = resolveChatUrl({
         template: preset.url,
         apiKey: realKey,
@@ -290,7 +280,7 @@ export function DataTableRowActions<TData>({
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>{t('Chat')}</DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              {chatPresets.map((preset) => (
+              {openableChatPresets.map((preset) => (
                 <DropdownMenuItem
                   key={preset.id}
                   onClick={() => handleOpenChatPreset(preset)}

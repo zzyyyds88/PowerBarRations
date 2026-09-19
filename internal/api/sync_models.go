@@ -149,11 +149,7 @@ func SyncChannelModels(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
-	// models 变了要重建渠道缓存与 abilities（后者供基座遗留链路使用）。
-	if err := channel.UpdateAbilities(nil); err != nil {
-		writeAPIError(c, err)
-		return
-	}
+	// models 变了要重建渠道缓存。
 	model.InitChannelCache()
 
 	// force 覆盖后同样要清理受影响车道上的本渠道成员（空车道删除并清运行态），

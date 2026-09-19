@@ -106,7 +106,7 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.DELETE("/keys/:name", api.DeleteKey)
 		authed.POST("/keys/:name/rotate", api.RotateKey)
 
-		// 模型路由（隐式车道）。用 catch-all 以支持带路径分隔符的模型名（如 vendor/model）。
+		// 模型路由（按路由键解析车道）。用 catch-all 以支持带路径分隔符的模型名（如 vendor/model）。
 		authed.GET("/models", api.ListModels)
 		authed.GET("/routes/*model", api.GetRoute)
 

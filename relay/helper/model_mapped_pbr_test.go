@@ -54,7 +54,7 @@ func TestModelMappedHelperKeepsPBRMappingResult(t *testing.T) {
 	assert.Equal(t, "mapped-a", request.Model)
 }
 
-// 非 PBR 链路（任务插件 / 显式 pin / 迁移期）没有 PBR 上下文键，渠道映射行为必须不变。
+// 非 PBR 链路（渠道测试直连指定渠道）没有 PBR 上下文键，渠道映射行为必须不变。
 func TestModelMappedHelperStillAppliesMappingWithoutPBRContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()

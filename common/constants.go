@@ -29,29 +29,11 @@ var CryptoSecret = uuid.New().String()
 var SessionCookieSecure = false
 var SessionCookieTrustedURLs []string
 
-const (
-	DefaultUserSessionActiveLimit           = 50
-	DefaultUserSessionIssuanceLimit         = 100
-	DefaultUserSessionIssuanceWindowSeconds = 24 * 60 * 60
-	DefaultUserSessionRevokedRetentionDays  = 7
-	DefaultUserSessionHourlyAlertThreshold  = 5000
-)
-
-var (
-	UserSessionActiveLimit           = DefaultUserSessionActiveLimit
-	UserSessionIssuanceLimit         = DefaultUserSessionIssuanceLimit
-	UserSessionIssuanceWindowSeconds = int64(DefaultUserSessionIssuanceWindowSeconds)
-	UserSessionRevokedRetentionDays  = DefaultUserSessionRevokedRetentionDays
-	UserSessionHourlyAlertThreshold  = DefaultUserSessionHourlyAlertThreshold
-)
-
 var OptionMap map[string]string
 var OptionMapRWMutex sync.RWMutex
 
 var ItemsPerPage = 10
 var MaxRecentItems = 1000
-
-var PasswordLoginEncryptionEnabled = false
 
 var EmailLoginAuthServerList = []string{
 	"smtp.sendcloud.net",
@@ -87,8 +69,6 @@ var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = true
 var QuotaRemindThreshold = 1000
 var PreConsumedQuota = 500
-
-var RetryTimes = 0
 
 //var RootUserEmail = ""
 
@@ -150,10 +130,6 @@ const (
 	RoleRootUser   = 100
 )
 
-func IsValidateRole(role int) bool {
-	return role == RoleGuestUser || role == RoleCommonUser || role == RoleAdminUser || role == RoleRootUser
-}
-
 // All duration's unit is seconds
 // Shouldn't larger then RateLimitKeyExpirationDuration
 var (
@@ -168,12 +144,6 @@ var (
 	CriticalRateLimitEnable   bool
 	CriticalRateLimitNum            = 20
 	CriticalRateLimitDuration int64 = 20 * 60
-
-	UploadRateLimitNum            = 10
-	UploadRateLimitDuration int64 = 60
-
-	DownloadRateLimitNum            = 10
-	DownloadRateLimitDuration int64 = 60
 
 	// Per-user search rate limit (applies after authentication, keyed by user ID)
 	SearchRateLimitEnable         = true

@@ -9,7 +9,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
-	"github.com/zzyyyds88/PowerBarRations/setting/billing_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 	"github.com/zzyyyds88/PowerBarRations/types"
 )
@@ -32,8 +31,6 @@ type Pricing struct {
 	AudioCompletionRatio   *float64                `json:"audio_completion_ratio,omitempty"`
 	EnableGroup            []string                `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType `json:"supported_endpoint_types"`
-	BillingMode            string                  `json:"billing_mode,omitempty"`
-	BillingExpr            string                  `json:"billing_expr,omitempty"`
 	PricingVersion         string                  `json:"pricing_version,omitempty"`
 }
 
@@ -106,14 +103,14 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 	return make([]constant.EndpointType, 0)
 }
 
-func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
-	if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
-		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
+func getPricingEndpointTypes(row channelCapability, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
+	if row.ChannelType != constant.ChannelTypeAdvancedCustom {
+		return common.GetEndpointTypesByChannelType(row.ChannelType, row.Model)
 	}
-	if config := advancedCustomConfigs[ability.ChannelId]; config != nil {
-		return config.SupportedEndpointTypesForModel(ability.Model)
+	if config := advancedCustomConfigs[row.ChannelId]; config != nil {
+		return config.SupportedEndpointTypesForModel(row.Model)
 	}
-	return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
+	return common.GetEndpointTypesByChannelType(row.ChannelType, row.Model)
 }
 
 // loadPricingAdvancedCustomConfigs runs inside updatePricing while
@@ -124,18 +121,18 @@ func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCusto
 // The returned configs are pointers shared with the channel cache; they are
 // replaced wholesale on update and never mutated in place, so reading them after
 // RUnlock is safe.
-func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[int]*dto.AdvancedCustomConfig {
+func loadPricingAdvancedCustomConfigs(rows []channelCapability) map[int]*dto.AdvancedCustomConfig {
 	channelIDs := make([]int, 0)
 	seen := make(map[int]struct{})
-	for _, ability := range enableAbilities {
-		if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
+	for _, row := range rows {
+		if row.ChannelType != constant.ChannelTypeAdvancedCustom {
 			continue
 		}
-		if _, exists := seen[ability.ChannelId]; exists {
+		if _, exists := seen[row.ChannelId]; exists {
 			continue
 		}
-		seen[ability.ChannelId] = struct{}{}
-		channelIDs = append(channelIDs, ability.ChannelId)
+		seen[row.ChannelId] = struct{}{}
+		channelIDs = append(channelIDs, row.ChannelId)
 	}
 	if len(channelIDs) == 0 {
 		return nil
@@ -178,24 +175,25 @@ func appendPricingEndpoint(endpoints []string, endpoint string) []string {
 
 func updatePricing() {
 	//modelRatios := common.GetModelRatios()
-	enableAbilities, err := GetAllEnableAbilityWithChannels()
+	// abilities 表已删除：定价目录直接由启用渠道展开（design-v1 §3.3）。
+	capabilities, err := getEnabledChannelCapabilities()
 	if err != nil {
-		common.SysLog(fmt.Sprintf("GetAllEnableAbilityWithChannels error: %v", err))
+		common.SysLog(fmt.Sprintf("getEnabledChannelCapabilities error: %v", err))
 		return
 	}
 	// 预加载模型元数据与供应商一次，避免循环查询
 	var allMeta []Model
 	_ = DB.Find(&allMeta).Error
-	names := make([]string, 0, len(enableAbilities))
-	for _, ability := range enableAbilities {
-		names = append(names, ability.Model)
+	names := make([]string, 0, len(capabilities))
+	for _, row := range capabilities {
+		names = append(names, row.Model)
 	}
 	metaMap := resolveModelMetadata(allMeta, names)
 
 	// 供应商展示信息为纯派生数据（Vendors 表已物理删除）：按模型名规则推断
 	// 默认品牌，仅用于定价页展示，不写库、不参与路由或计费。
 	vendorMap := make(map[int]PricingVendor)
-	modelVendorIDs := initDefaultVendorMapping(metaMap, vendorMap, enableAbilities)
+	modelVendorIDs := initDefaultVendorMapping(metaMap, vendorMap, capabilities)
 
 	// 构建对前端友好的供应商列表
 	vendorsList = make([]PricingVendor, 0, len(vendorMap))
@@ -205,29 +203,29 @@ func updatePricing() {
 
 	modelGroupsMap := make(map[string]*types.Set[string])
 
-	for _, ability := range enableAbilities {
-		groups, ok := modelGroupsMap[ability.Model]
+	for _, row := range capabilities {
+		groups, ok := modelGroupsMap[row.Model]
 		if !ok {
 			groups = types.NewSet[string]()
-			modelGroupsMap[ability.Model] = groups
+			modelGroupsMap[row.Model] = groups
 		}
-		groups.Add(ability.Group)
+		groups.Add(row.Group)
 	}
 
 	//这里使用切片而不是Set，因为一个模型可能支持多个端点类型，并且第一个端点是优先使用端点
 	modelSupportEndpointsStr := make(map[string][]string)
-	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(enableAbilities)
+	advancedCustomConfigs := loadPricingAdvancedCustomConfigs(capabilities)
 
 	// 先根据已有能力填充原生端点
-	for _, ability := range enableAbilities {
-		endpoints := modelSupportEndpointsStr[ability.Model]
-		channelTypes := getPricingEndpointTypesForAbility(ability, advancedCustomConfigs)
+	for _, row := range capabilities {
+		endpoints := modelSupportEndpointsStr[row.Model]
+		channelTypes := getPricingEndpointTypes(row, advancedCustomConfigs)
 		for _, channelType := range channelTypes {
 			if !common.StringsContains(endpoints, string(channelType)) {
 				endpoints = append(endpoints, string(channelType))
 			}
 		}
-		modelSupportEndpointsStr[ability.Model] = endpoints
+		modelSupportEndpointsStr[row.Model] = endpoints
 	}
 
 	// 再补充模型自定义端点：若配置有效则追加到已有推断，不再裁剪渠道真实能力
@@ -344,12 +342,6 @@ func updatePricing() {
 		if ratio_setting.ContainsAudioCompletionRatio(model) {
 			audioCompletionRatio := ratio_setting.GetAudioCompletionRatio(model)
 			pricing.AudioCompletionRatio = &audioCompletionRatio
-		}
-		if billingMode := billing_setting.GetBillingMode(model); billingMode == "tiered_expr" {
-			if expr, ok := billing_setting.GetBillingExpr(model); ok && strings.TrimSpace(expr) != "" {
-				pricing.BillingMode = billingMode
-				pricing.BillingExpr = expr
-			}
 		}
 		pricingMap = append(pricingMap, pricing)
 	}

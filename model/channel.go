@@ -519,12 +519,6 @@ func BatchInsertChannels(channels []Channel) error {
 			tx.Rollback()
 			return err
 		}
-		for _, channel_ := range chunk {
-			if err := channel_.AddAbilities(tx); err != nil {
-				tx.Rollback()
-				return err
-			}
-		}
 	}
 	return tx.Commit().Error
 }
@@ -533,7 +527,7 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	// 使用事务 分批删除channel表和abilities表
+	// 使用事务 分批删除 channel 表
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return 0, tx.Error
@@ -546,10 +540,6 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 			return 0, result.Error
 		}
 		deletedCount += result.RowsAffected
-		if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
-			tx.Rollback()
-			return 0, err
-		}
 	}
 	if err := tx.Commit().Error; err != nil {
 		return 0, err
@@ -686,13 +676,7 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
-	var err error
-	err = DB.Create(channel).Error
-	if err != nil {
-		return err
-	}
-	err = channel.AddAbilities(nil)
-	return err
+	return DB.Create(channel).Error
 }
 
 func (channel *Channel) Update() error {
@@ -740,7 +724,6 @@ func (channel *Channel) Update() error {
 		return err
 	}
 	DB.Model(channel).First(channel, "id = ?", channel.Id)
-	err = channel.UpdateAbilities(nil)
 	return err
 }
 
@@ -765,13 +748,7 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	var err error
-	err = DB.Delete(channel).Error
-	if err != nil {
-		return err
-	}
-	err = channel.DeleteAbilities()
-	return err
+	return DB.Delete(channel).Error
 }
 
 var channelStatusLock sync.Mutex
@@ -911,15 +888,6 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		}
 	}
 
-	shouldUpdateAbilities := false
-	defer func() {
-		if shouldUpdateAbilities {
-			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
-			if err != nil {
-				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
-			}
-		}
-	}()
 	channel, err := GetChannelById(channelId, true)
 	if err != nil {
 		return false
@@ -929,18 +897,13 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		}
 
 		if channel.ChannelInfo.IsMultiKey {
-			beforeStatus := channel.Status
 			handlerMultiKeyUpdate(channel, usingKey, status, reason)
-			if beforeStatus != channel.Status {
-				shouldUpdateAbilities = true
-			}
 		} else {
 			info := channel.GetOtherInfo()
 			info["status_reason"] = reason
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 			channel.Status = status
-			shouldUpdateAbilities = true
 		}
 		err = channel.saveStatusState()
 		if err != nil {
@@ -952,31 +915,20 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 }
 
 func EnableChannelByTag(tag string) error {
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusEnabled).Error
-	if err != nil {
-		return err
-	}
-	err = UpdateAbilityStatusByTag(tag, true)
-	return err
+	return DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusEnabled).Error
 }
 
 func DisableChannelByTag(tag string) error {
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusManuallyDisabled).Error
-	if err != nil {
-		return err
-	}
-	err = UpdateAbilityStatusByTag(tag, false)
-	return err
+	return DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusManuallyDisabled).Error
 }
 
-func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *string, group *string, priority *int64, weight *uint, paramOverride *string, headerOverride *string) error {
+// EditChannelByTag 按标签批量编辑渠道。渠道 priority/weight 与 abilities 表均已
+// 物理删除（路由顺序只在车道上），这里只改写渠道自身字段。
+func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *string, group *string, paramOverride *string, headerOverride *string) error {
 	updateData := Channel{}
-	shouldReCreateAbilities := false
-	updatedTag := tag
 	// 如果 newTag 不为空且不等于 tag，则更新 tag
 	if newTag != nil && *newTag != tag {
 		updateData.Tag = newTag
-		updatedTag = *newTag
 	}
 	if modelMapping != nil {
 		updateData.ModelMapping = modelMapping
@@ -1012,17 +964,11 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		if len(blocked) > 0 {
 			return &LaneReferenceError{Blocked: blocked}
 		}
-		shouldReCreateAbilities = true
 		updateData.Models = *models
 	}
 	if group != nil && *group != "" {
-		shouldReCreateAbilities = true
 		updateData.Group = *group
 	}
-	// 渠道 priority/weight 已删除（路由顺序只在车道上）：入参保留仅为兼容
-	// 基座调用方与既有控制台标签编辑接口，不再写入任何渠道列。
-	_ = priority
-	_ = weight
 	if paramOverride != nil {
 		updateData.ParamOverride = paramOverride
 	}
@@ -1030,56 +976,12 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		updateData.HeaderOverride = headerOverride
 	}
 
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error
-	if err != nil {
-		return err
-	}
-	if shouldReCreateAbilities {
-		channels, err := GetChannelsByTag(updatedTag, false, false)
-		if err == nil {
-			for _, channel := range channels {
-				err = channel.UpdateAbilities(nil)
-				if err != nil {
-					common.SysLog(fmt.Sprintf("failed to update abilities: channel_id=%d, tag=%s, error=%v", channel.Id, channel.GetTag(), err))
-				}
-			}
-		}
-	} else {
-		err := UpdateAbilityByTag(tag, newTag, priority, weight)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func UpdateChannelUsedQuota(id int, quota int) {
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeChannelUsedQuota, id, quota)
-		return
-	}
-	updateChannelUsedQuota(id, quota)
-}
-
-func updateChannelUsedQuota(id int, quota int) {
-	err := DB.Model(&Channel{}).Where("id = ?", id).Update("used_quota", gorm.Expr("used_quota + ?", quota)).Error
-	if err != nil {
-		common.SysLog(fmt.Sprintf("failed to update channel used quota: channel_id=%d, delta_quota=%d, error=%v", id, quota, err))
-	}
-}
-
-func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	return DB.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error
 }
 
 func DeleteDisabledChannel() (int64, error) {
 	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
 	return result.RowsAffected, result.Error
-}
-
-func GetPaginatedTags(offset int, limit int) ([]*string, error) {
-	return GetPaginatedChannelTags(DB.Model(&Channel{}), offset, limit)
 }
 
 func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, error) {
@@ -1247,25 +1149,28 @@ func (channel *Channel) GetHeaderOverride() map[string]any {
 	return headerOverride
 }
 
-func GetChannelsByIds(ids []int) ([]*Channel, error) {
-	var channels []*Channel
-	err := DB.Where("id in (?)", ids).Find(&channels).Error
-	return channels, err
-}
-
-// GetChannelsDeclaringModel 返回"声明了该模型"的渠道（经 abilities 表，含停用渠道）。
+// GetChannelsDeclaringModel 返回"声明了该模型"的渠道（直查 channels 表，含停用渠道）。
 //
 // 用于模型元数据删除前的车道引用检查：必须覆盖所有声明该模型的渠道，不能只看启用渠道，
 // 否则停用渠道上的成员会被漏判。
 func GetChannelsDeclaringModel(modelName string) ([]*Channel, error) {
-	var channelIDs []int
-	if err := DB.Model(&Ability{}).Where("model = ?", modelName).Distinct().Pluck("channel_id", &channelIDs).Error; err != nil {
-		return nil, err
-	}
-	if len(channelIDs) == 0 {
+	if strings.TrimSpace(modelName) == "" {
 		return nil, nil
 	}
-	return GetChannelsByIds(channelIDs)
+	var channels []*Channel
+	if err := DB.Omit("key").Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	declaring := make([]*Channel, 0)
+	for _, channel := range channels {
+		for _, name := range channel.GetModels() {
+			if name == modelName {
+				declaring = append(declaring, channel)
+				break
+			}
+		}
+	}
+	return declaring, nil
 }
 
 func BatchSetChannelTag(ids []int, tag *string) error {
@@ -1282,25 +1187,7 @@ func BatchSetChannelTag(ids []int, tag *string) error {
 		return err
 	}
 
-	// update ability status
-	//
-	// 必须在**同一事务连接**上查询：SQLite 单连接下，事务持写锁时再用全局 DB 查询会
-	// 自锁（事务等连接、连接等事务），请求永久挂起。此前这里用 GetChannelsByIds(ids)。
-	var channels []*Channel
-	if err := tx.Where("id in (?)", ids).Find(&channels).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	for _, channel := range channels {
-		err = channel.UpdateAbilities(tx)
-		if err != nil {
-			tx.Rollback()
-			return err
-		}
-	}
-
-	// 提交事务
+	// 提交事务（abilities 表已删除，标签变更只需改写 channels.tag）
 	return tx.Commit().Error
 }
 
@@ -1329,29 +1216,4 @@ func GetChannelsByType(startIdx int, num int, idSort bool, channelType int) ([]*
 	_ = idSort
 	err := DB.Where("type = ?", channelType).Order("id desc").Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
 	return channels, err
-}
-
-// Count channels of specific type
-func CountChannelsByType(channelType int) (int64, error) {
-	var count int64
-	err := DB.Model(&Channel{}).Where("type = ?", channelType).Count(&count).Error
-	return count, err
-}
-
-// Return map[type]count for all channels
-func CountChannelsGroupByType() (map[int64]int64, error) {
-	type result struct {
-		Type  int64 `gorm:"column:type"`
-		Count int64 `gorm:"column:count"`
-	}
-	var results []result
-	err := DB.Model(&Channel{}).Select("type, count(*) as count").Group("type").Find(&results).Error
-	if err != nil {
-		return nil, err
-	}
-	counts := make(map[int64]int64)
-	for _, r := range results {
-		counts[r.Type] = r.Count
-	}
-	return counts, nil
 }

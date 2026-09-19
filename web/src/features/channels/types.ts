@@ -204,11 +204,6 @@ export interface SearchChannelsResponse {
 /** `GET /api/channel/:id` 成功即裸渠道对象。 */
 export type GetChannelResponse = Channel
 
-/** `GET /api/channel/ops` 成功即 `{retry_times}`。 */
-export interface ChannelOpsResponse {
-  retry_times: number
-}
-
 /** `GET /api/channel/test/:id` 成功即 `{success:true,time}`（基座面裸化）。 */
 export interface ChannelTestResponse {
   success: boolean

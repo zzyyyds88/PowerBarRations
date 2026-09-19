@@ -16,9 +16,7 @@ import (
 // action 的 params 填充。本地化展示文案在前端 i18n 模板中维护，本表是语言中立的
 // 英文基线——调用方因此无需在每个埋点处手写句子（避免与 params 重复书写同一份值）。
 var auditContentTemplates = map[string]string{
-	"access_token.generate": "Generated a system access token",
-	"access_token.revoke":   "Revoked the system access token",
-	"option.update":         "Updated system setting ${key}",
+	"option.update": "Updated system setting ${key}",
 
 	"channel.create":             "Created channel ${name} (type ${type}, count ${count})",
 	"channel.update":             "Updated channel ${name} (ID: ${id})",
@@ -34,12 +32,6 @@ var auditContentTemplates = map[string]string{
 	"channel.multi_key_manage":   "Multi-key management ${action} on channel (ID: ${id})",
 	"channel.upstream_apply":     "Applied upstream model changes to channel (ID: ${id})",
 	"channel.upstream_apply_all": "Applied upstream model changes to ${count} channels",
-
-	"redemption.create":       "Created ${count} redemption codes named ${name} (${quota} each)",
-	"redemption.delete_batch": "Batch deleted ${count} redemption codes",
-
-	"subscription.plan_reset":      "Reset active subscriptions for plan ${plan_id}",
-	"subscription.user_plan_reset": "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
 }
 
 // auditContentEN 按 action 模板渲染英文兜底文本；未登记的 action 退回 action 本身。
@@ -97,24 +89,4 @@ func recordManageAuditFor(c *gin.Context, targetUserId int, action string, param
 	}
 	model.RecordOperationAuditLog(operatorUserId, c.GetInt("role"), auditContentEN(action, params), c.ClientIP(), action, params, auditOperatorInfo(c), nil, c)
 	markAuditLogged(c)
-}
-
-func tokenAuditParams(c *gin.Context) model.AuditFields {
-	params, ok := common.GetContextKeyType[model.AuditFields](c, constant.ContextKeyTokenAuditParams)
-	if !ok {
-		params = model.AuditFields{}
-		common.SetContextKey(c, constant.ContextKeyTokenAuditParams, params)
-	}
-	return params
-}
-
-func tokenBatchAuditParams(c *gin.Context, ids []int) model.AuditFields {
-	params := tokenAuditParams(c)
-	params["total"] = len(ids)
-	// Bound audit payloads without changing the batch operation's limits.
-	params["requested_ids"] = append([]int{}, ids[:min(len(ids), 100)]...)
-	if len(ids) > 100 {
-		params["requested_ids_truncated"] = true
-	}
-	return params
 }

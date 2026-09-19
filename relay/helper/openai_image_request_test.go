@@ -15,8 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
-	"github.com/zzyyyds88/PowerBarRations/pkg/billingexpr"
-	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 )
@@ -99,11 +97,6 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "true", url.Values(form.Value).Get("stream"))
 		require.Len(t, form.File["image"], 1)
-		billing, err := ResolveImageBillingRequestInput(c, &relaycommon.RelayInfo{Request: req}, billingexpr.RequestInput{})
-		require.NoError(t, err)
-		require.Equal(t, 1, *billing.ImageCount)
-		require.NotContains(t, string(billing.Body), "fake image")
-		require.NotContains(t, string(billing.Body), "edit this image")
 	})
 
 	t.Run("invalid stream value is rejected", func(t *testing.T) {
@@ -115,7 +108,7 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 	})
 }
 
-func TestImageBillingRequestUsesValidatedProviderCount(t *testing.T) {
+func TestImageRequestUsesValidatedProviderCount(t *testing.T) {
 	for _, tc := range []struct {
 		body           string
 		channel, count int
@@ -134,22 +127,21 @@ func TestImageBillingRequestUsesValidatedProviderCount(t *testing.T) {
 		{`{"model":"z-image","n":0}`, constant.ChannelTypeAli, 1, false},
 		{`{"model":"gpt-image-2","n":2,"parameters":{"n":0}}`, constant.ChannelTypeOpenAI, 2, false},
 	} {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(tc.body))
-		c.Request.Header.Set("Content-Type", "application/json")
-		common.SetContextKey(c, constant.ContextKeyChannelType, tc.channel)
-		request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
-		if tc.invalid {
-			require.Error(t, err)
-			continue
-		}
-		require.NoError(t, err)
-		input, err := ResolveImageBillingRequestInput(c, &relaycommon.RelayInfo{Request: request}, billingexpr.RequestInput{})
-		require.NoError(t, err)
-		require.Equal(t, tc.count, *input.ImageCount)
-		cost, _, err := billingexpr.RunExprWithRequest(`tier("image", fixed(0.04)) * image_count`, billingexpr.TokenParams{}, input)
-		require.NoError(t, err)
-		require.Equal(t, float64(tc.count)*40000, cost)
+		t.Run(tc.body, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(tc.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			common.SetContextKey(c, constant.ContextKeyChannelType, tc.channel)
+			request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+			if tc.invalid {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			count, err := request.ImageCount(tc.channel == constant.ChannelTypeAli)
+			require.NoError(t, err)
+			require.Equal(t, tc.count, count)
+		})
 	}
 }
 

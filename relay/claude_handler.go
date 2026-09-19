@@ -81,7 +81,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return newApiErr
 		}
 
-		service.PostTextConsumeQuota(c, info, usage, nil)
+		service.PostTextUsageLog(c, info, usage, nil)
 		return nil
 	}
 
@@ -152,6 +152,6 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		return newAPIError
 	}
 
-	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
+	service.PostTextUsageLog(c, info, usage.(*dto.Usage), nil)
 	return nil
 }

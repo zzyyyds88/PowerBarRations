@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/setting/config"
 	"github.com/zzyyyds88/PowerBarRations/types"
 )
@@ -50,21 +49,8 @@ func init() {
 	config.GlobalConfig.Register("group_ratio_setting", &groupRatioSetting)
 }
 
-func GetGroupRatioSetting() *GroupRatioSetting {
-	if groupRatioSetting.GroupSpecialUsableGroup == nil {
-		groupRatioSetting.GroupSpecialUsableGroup = types.NewRWMap[string, map[string]string]()
-		groupRatioSetting.GroupSpecialUsableGroup.AddAll(defaultGroupSpecialUsableGroup)
-	}
-	return &groupRatioSetting
-}
-
 func GetGroupRatioCopy() map[string]float64 {
 	return groupRatioMap.ReadAll()
-}
-
-func ContainsGroupRatio(name string) bool {
-	_, ok := groupRatioMap.Get(name)
-	return ok
 }
 
 func GroupRatio2JSONString() string {
@@ -73,27 +59,6 @@ func GroupRatio2JSONString() string {
 
 func UpdateGroupRatioByJSONString(jsonStr string) error {
 	return types.LoadFromJsonString(groupRatioMap, jsonStr)
-}
-
-func GetGroupRatio(name string) float64 {
-	ratio, ok := groupRatioMap.Get(name)
-	if !ok {
-		common.SysLog("group ratio not found: " + name)
-		return 1
-	}
-	return ratio
-}
-
-func GetGroupGroupRatio(userGroup, usingGroup string) (float64, bool) {
-	gp, ok := groupGroupRatioMap.Get(userGroup)
-	if !ok {
-		return -1, false
-	}
-	ratio, ok := gp[usingGroup]
-	if !ok {
-		return -1, false
-	}
-	return ratio, true
 }
 
 func GroupGroupRatio2JSONString() string {

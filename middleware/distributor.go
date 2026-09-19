@@ -7,18 +7,13 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
-	taskdto "github.com/zzyyyds88/PowerBarRations/dto"
 	"github.com/zzyyyds88/PowerBarRations/i18n"
-	"github.com/zzyyyds88/PowerBarRations/logger"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
-	"github.com/zzyyyds88/PowerBarRations/service"
-	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -31,157 +26,19 @@ type ModelRequest struct {
 
 func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
-		// PBR 单层路由：请求里的模型名即路由键，渠道声明 Models 即自动成链。
-		// 不适用的请求（任务插件、渠道 pin、非模型面）由 PBRServe 返回 false，走下方旧链路。
+		// PBR 单层路由：请求里的模型名即路由键，PBRServe 全量接管渠道选择
+		// （routing-spec §1.1，车道是唯一选路入口）。
 		if PBRServe(c) {
 			return
 		}
-		var channel *model.Channel
-		constraints := service.GetChannelConstraints(c)
-		constraints.AddFilter(taskdto.ChannelFilter{
-			Kind:        taskdto.FilterRequestPath,
-			RequestPath: c.Request.URL.Path,
-		})
-		modelRequest, shouldSelectChannel, err := getModelRequest(c)
-		if err != nil {
+		// PBRServe 不再接管的只剩"模型名解析失败 / 模型名为空"这一类根本
+		// 无法确定路由键的请求，在这里产出与迁移前旧链路相同的 400 错误形态。
+		if _, err := getModelRequest(c); err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		if pin, found, overridden := constraints.ResolvedPin(); found {
-			for _, lost := range overridden {
-				logger.LogWarn(c, fmt.Sprintf(
-					"channel pin overridden: winning_source=%s winning_channel_id=%d overridden_source=%s overridden_channel_id=%d",
-					pin.Source, pin.ChannelId, lost.Source, lost.ChannelId,
-				))
-			}
-			channel, err = model.CacheGetChannel(pin.ChannelId)
-			if err != nil {
-				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidChannelId))
-				return
-			}
-			if channel.Status != common.ChannelStatusEnabled {
-				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
-				return
-			}
-			if ok, _ := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !ok {
-				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}))
-				return
-			}
-		} else {
-			// Select a channel for the user
-			// check token model mapping
-			modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
-			if modelLimitEnable {
-				s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
-				if !ok {
-					// token model limit is empty, all models are not allowed
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenNoModelAccess))
-					return
-				}
-				var tokenModelLimit map[string]bool
-				tokenModelLimit, ok = s.(map[string]bool)
-				if !ok {
-					tokenModelLimit = map[string]bool{}
-				}
-				if !tokenModelLimitAllows(tokenModelLimit, modelRequest.Model) {
-					abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorTokenModelForbidden, map[string]any{"Model": modelRequest.Model}))
-					return
-				}
-			}
-
-			if shouldSelectChannel {
-				if modelRequest.Model == "" {
-					abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
-					return
-				}
-				var selectGroup string
-				usingGroup := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-				// 分组恒为 default：基座的用户分组/`/pg/chat/completions` 试玩入口
-				// 已随多用户面删除（W7），没有"按用户覆盖分组"这回事。
-
-				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
-					affinityUsable := false
-					preferred, err := model.CacheGetChannel(preferredChannelID)
-					affinitySatisfied := false
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
-						affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelRequest.Model, constraints.Filters)
-					}
-					if affinitySatisfied {
-						if usingGroup == "auto" {
-							// W7：auto group 随多用户面删除，退化为"当前分组"。
-							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-							autoGroups := []string{}
-							if userGroup != "" {
-								autoGroups = append(autoGroups, userGroup)
-							}
-							for _, g := range autoGroups {
-								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-									selectGroup = g
-									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-									channel = preferred
-									affinityUsable = true
-									service.MarkChannelAffinityUsed(c, g, preferred.Id)
-									break
-								}
-							}
-						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
-							channel = preferred
-							selectGroup = usingGroup
-							affinityUsable = true
-							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
-						}
-					}
-					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
-						service.ClearCurrentChannelAffinityCache(c)
-					}
-				}
-
-				if channel == nil {
-					channel, selectGroup, err = service.CacheGetRandomSatisfiedChannel(&service.RetryParam{
-						Ctx:         c,
-						ModelName:   modelRequest.Model,
-						TokenGroup:  usingGroup,
-						RequestPath: c.Request.URL.Path,
-						Retry:       common.GetPointer(0),
-					})
-					if err != nil {
-						showGroup := usingGroup
-						if usingGroup == "auto" {
-							showGroup = fmt.Sprintf("auto(%s)", selectGroup)
-						}
-						message := i18n.T(c, i18n.MsgDistributorGetChannelFailed, map[string]any{"Group": showGroup, "Model": modelRequest.Model, "Error": err.Error()})
-						// 如果错误，但是渠道不为空，说明是数据库一致性问题
-						//if channel != nil {
-						//	common.SysError(fmt.Sprintf("渠道不存在：%d", channel.Id))
-						//	message = "数据库一致性已被破坏，请联系管理员"
-						//}
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, message, types.ErrorCodeModelNotFound)
-						return
-					}
-					if channel == nil {
-						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, noAvailableChannelMessage(c, usingGroup, modelRequest.Model), types.ErrorCodeModelNotFound)
-						return
-					}
-				}
-			}
-		}
-		if channel != nil {
-			if ok, _ := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !ok {
-				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, noAvailableChannelMessage(c, common.GetContextKeyString(c, constant.ContextKeyUsingGroup), modelRequest.Model), types.ErrorCodeModelNotFound)
-				return
-			}
-		}
-		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
-		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
-		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
-			service.RecordChannelAffinity(c, channel.Id)
-		}
+		abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorModelNameRequired))
 	}
-}
-
-func noAvailableChannelMessage(c *gin.Context, group, modelName string) string {
-	return i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": group, "Model": modelName})
 }
 
 // getModelFromRequest 从请求中读取模型信息
@@ -311,9 +168,8 @@ func getJSONStringValue(result gjson.Result, field string) (string, error) {
 	return result.String(), nil
 }
 
-func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
+func getModelRequest(c *gin.Context) (*ModelRequest, error) {
 	var modelRequest ModelRequest
-	shouldSelectChannel := true
 	if strings.HasPrefix(c.Request.URL.Path, "/v1beta/models/") || strings.HasPrefix(c.Request.URL.Path, "/v1/models/") {
 		// Gemini API 路径处理: /v1beta/models/gemini-2.0-flash:generateContent
 		relayMode := relayconstant.RelayModeGemini
@@ -325,7 +181,7 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 	} else if !strings.HasPrefix(c.Request.URL.Path, "/v1/audio/transcriptions") && !strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
 		req, err := getModelFromRequest(c)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		modelRequest.Model = req.Model
 	}
@@ -378,26 +234,8 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		c.Set("relay_mode", relayMode)
 	}
 
-	return &modelRequest, shouldSelectChannel, nil
+	return &modelRequest, nil
 }
-
-// tokenModelLimitAllows reports whether a token model-limit map authorizes
-// model. Exact name, wildcard-normalized name, and routing-normalized name
-// (modifiers and legacy aliases stripped) are all accepted.
-func tokenModelLimitAllows(limit map[string]bool, model string) bool {
-	if limit[model] {
-		return true
-	}
-	if formatted := ratio_setting.FormatMatchingModelName(model); limit[formatted] {
-		return true
-	}
-	return limit[ratio_setting.RoutingMatchModelName(model)]
-}
-
-// 修复 #4834: GET /v1/video/generations/:task_id && /v1/video/:task_id 此前不解析 model，
-// 当 token 启用「可用模型限制」时，下游 modelLimitEnable 校验会因
-// modelRequest.Model 为空而误报 "This token has no access to model"。
-// 从已存储的任务记录中回填 OriginModelName 即可让校验走在正确的模型上。
 
 func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, modelName string) *types.NewAPIError {
 	c.Set("original_model", modelName) // for retry
@@ -412,9 +250,6 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	common.SetContextKey(c, constant.ContextKeyChannelOtherSetting, channel.GetOtherSettings())
 	paramOverride := channel.GetParamOverride()
 	headerOverride := channel.GetHeaderOverride()
-	if mergedParam, applied := service.ApplyChannelAffinityOverrideTemplate(c, paramOverride); applied {
-		paramOverride = mergedParam
-	}
 	common.SetContextKey(c, constant.ContextKeyChannelParamOverride, paramOverride)
 	common.SetContextKey(c, constant.ContextKeyChannelHeaderOverride, headerOverride)
 	if nil != channel.OpenAIOrganization && *channel.OpenAIOrganization != "" {

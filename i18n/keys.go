@@ -151,10 +151,8 @@ const (
 	MsgPaymentCreateFailed       = "payment.create_failed"
 	MsgPaymentStartFailed        = "payment.start_failed"
 	MsgPaymentAmountTooLow       = "payment.amount_too_low"
-	MsgPaymentStripeNotConfig    = "payment.stripe_not_configured"
 	MsgPaymentWebhookNotConfig   = "payment.webhook_not_configured"
 	MsgPaymentPriceIdNotConfig   = "payment.price_id_not_configured"
-	MsgPaymentCreemNotConfig     = "payment.creem_not_configured"
 	MsgPaymentComplianceRequired = "payment.compliance_required"
 )
 
@@ -242,12 +240,6 @@ const (
 	MsgPerfGcExecuted       = "performance.gc_executed"
 )
 
-// Ability related messages
-const (
-	MsgAbilityDbCorrupted   = "ability.db_corrupted"
-	MsgAbilityRepairRunning = "ability.repair_running"
-)
-
 // OAuth related messages
 const (
 	MsgOAuthInvalidCode     = "oauth.invalid_code"
@@ -276,18 +268,11 @@ const (
 
 // Distributor related messages
 const (
-	MsgDistributorInvalidRequest          = "distributor.invalid_request"
-	MsgDistributorInvalidChannelId        = "distributor.invalid_channel_id"
-	MsgDistributorChannelDisabled         = "distributor.channel_disabled"
-	MsgDistributorAffinityChannelDisabled = "distributor.affinity_channel_disabled"
-	MsgDistributorTokenNoModelAccess      = "distributor.token_no_model_access"
-	MsgDistributorTokenModelForbidden     = "distributor.token_model_forbidden"
-	MsgDistributorModelNameRequired       = "distributor.model_name_required"
-	MsgDistributorInvalidPlayground       = "distributor.invalid_playground_request"
-	MsgDistributorGroupAccessDenied       = "distributor.group_access_denied"
-	MsgDistributorGetChannelFailed        = "distributor.get_channel_failed"
-	MsgDistributorNoAvailableChannel      = "distributor.no_available_channel"
-	MsgDistributorInvalidParseModel       = "distributor.invalid_request_parse_model"
+	MsgDistributorInvalidRequest    = "distributor.invalid_request"
+	MsgDistributorModelNameRequired = "distributor.model_name_required"
+	MsgDistributorInvalidPlayground = "distributor.invalid_playground_request"
+	MsgDistributorGroupAccessDenied = "distributor.group_access_denied"
+	MsgDistributorInvalidParseModel = "distributor.invalid_request_parse_model"
 )
 
 // Custom OAuth provider related messages

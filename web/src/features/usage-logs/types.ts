@@ -19,9 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 /**
  * Type definitions for usage logs
  */
-import type { RequestRuleTrace } from '@/features/pricing/lib/billing-expr'
-
 import type { UsageLog } from './data/schema'
+import type { RequestRuleTrace } from './lib/billing-expr'
+
 // ============================================================================
 // Log Category Types
 // ============================================================================
@@ -65,17 +65,6 @@ export type LogFilters = CommonLogFilters
 /**
  * Parsed data from the 'other' field in usage logs
  */
-export interface ChannelAffinityInfo {
-  rule_name?: string
-  selected_group?: string
-  key_source?: string
-  key_path?: string
-  key_key?: string
-  key_hint?: string
-  key_fp?: string
-  using_group?: string
-}
-
 export const USAGE_BILLING_PATH = {
   LOCAL: 'local',
   UPSTREAM: 'upstream',
@@ -103,7 +92,6 @@ export interface LogOtherData {
     use_channel?: number[]
     local_count_tokens?: boolean
     usage_billing_path?: UsageBillingPath | string
-    channel_affinity?: ChannelAffinityInfo
     // Top-up audit fields (type=1, admin only)
     payment_method?: string
     callback_payment_method?: string

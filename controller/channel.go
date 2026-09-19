@@ -92,12 +92,6 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm
 	return query
 }
 
-func GetChannelOps(c *gin.Context) {
-	common.ApiSuccess(c, gin.H{
-		"retry_times": common.RetryTimes,
-	})
-}
-
 func GetChannelDefaultBaseURLs(c *gin.Context) {
 	baseURLs := make(map[int]string)
 	for channelType, baseURL := range constant.ChannelBaseURLs {
@@ -264,22 +258,6 @@ func FetchUpstreamModels(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    ids,
-	})
-}
-
-func FixChannelsAbilities(c *gin.Context) {
-	success, fails, err := model.FixAbility()
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data": gin.H{
-			"success": success,
-			"fails":   fails,
-		},
 	})
 }
 
@@ -896,8 +874,7 @@ func EditTagChannels(c *gin.Context) {
 		}
 		channelTag.HeaderOverride = common.GetPointer[string](trimmed)
 	}
-	// 渠道 priority/weight 已删除：入参传 nil（EditChannelByTag 内部同样忽略）。
-	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, nil, nil, channelTag.ParamOverride, channelTag.HeaderOverride)
+	err = model.EditChannelByTag(channelTag.Tag, channelTag.NewTag, channelTag.ModelMapping, channelTag.Models, channelTag.Groups, channelTag.ParamOverride, channelTag.HeaderOverride)
 	if err != nil {
 		var laneErr *model.LaneReferenceError
 		if errors.As(err, &laneErr) {
@@ -2062,10 +2039,6 @@ func ManageMultiKeys(c *gin.Context) {
 		})
 		return
 	}
-}
-
-func multiKeyActionRequiresSensitiveWrite(action string) bool {
-	return action == "delete_key" || action == "delete_disabled_keys"
 }
 
 // OllamaPullModel 拉取 Ollama 模型

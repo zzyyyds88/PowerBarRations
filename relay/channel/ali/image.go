@@ -59,12 +59,6 @@ func oaiImage2AliImageRequest(info *relaycommon.RelayInfo, request dto.ImageRequ
 	if request.BillingParameters != nil {
 		imageRequest.Parameters.PromptExtend = request.BillingParameters.PromptExtend
 	}
-	if info.TieredBillingSnapshot == nil {
-		info.PriceData.AddOtherRatio("n", float64(count))
-		if strings.Contains(request.Model, "z-image") && imageRequest.Parameters.PromptExtendValue() {
-			info.PriceData.AddOtherRatio("prompt_extend", common.ZImagePromptExtendMultiplier)
-		}
-	}
 
 	// 同步图片模型和异步图片模型请求格式不一样
 	if isSync {

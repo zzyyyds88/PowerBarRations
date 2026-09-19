@@ -27,8 +27,6 @@ import (
 
 const (
 	RouteSourceExplicit = "explicit"
-	// RouteSourceImplicit 已废弃（ADR 0005 删除隐式链），保留常量避免历史数据/调用方编译失败。
-	RouteSourceImplicit = "implicit"
 	// RouteSourceUnconfigured：渠道声明了该模型但没有对应启用车道 → 不可调用。
 	RouteSourceUnconfigured = "unconfigured"
 
@@ -227,7 +225,8 @@ type ResolvedRoute struct {
 	Source string          `json:"source"`
 	Mode   string          `json:"mode"`
 	Config LaneRelayConfig `json:"config"`
-	// RouteKey 规范化后的路由键：显式车道（含别名点名）为车道名，隐式为请求模型名。
+	// RouteKey 规范化后的路由键：显式车道（含别名点名）为车道名；没有车道可解析
+	// （unconfigured）时为请求模型名本身。
 	// 令牌的车道权限以此判定（token-spec §3.2）。
 	RouteKey string `json:"route_key"`
 	// ActiveMember 仅 manual 模式使用：人工指定的成员，取值优先匹配成员的
