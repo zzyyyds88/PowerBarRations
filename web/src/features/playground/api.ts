@@ -19,9 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import { API_ENDPOINTS } from './constants'
+import { servedByFromResponse } from './lib/streaming/served-by'
 import type {
   ChatCompletionRequest,
   ChatCompletionResponse,
+  ChatCompletionResult,
   ModelOption,
 } from './types'
 
@@ -30,12 +32,14 @@ import type {
  *
  * 用 `fetch` 而不是管理面的 axios 实例：模型面凭据是客户端密钥，
  * 而 axios 实例的请求拦截器会强制带上管理面 access token 与会话 Cookie。
+ *
+ * 同时把响应头 X-Served-By 一并返回（ui-spec §6.8：试打台展示实际命中的上游）。
  */
 export async function sendChatCompletion(
   payload: ChatCompletionRequest,
   clientKey: string,
   signal?: AbortSignal
-): Promise<ChatCompletionResponse> {
+): Promise<ChatCompletionResult> {
   const response = await fetch(API_ENDPOINTS.CHAT_COMPLETIONS, {
     method: 'POST',
     credentials: 'omit',
@@ -49,7 +53,8 @@ export async function sendChatCompletion(
   if (!response.ok) {
     throw new Error(await buildModelFaceErrorMessage(response))
   }
-  return (await response.json()) as ChatCompletionResponse
+  const body = (await response.json()) as ChatCompletionResponse
+  return { response: body, servedBy: servedByFromResponse(response) }
 }
 
 /** 把模型面的失败响应压成一句可展示的话（优先服务端 message，其次状态码）。 */

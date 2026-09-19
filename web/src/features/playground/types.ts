@@ -49,6 +49,13 @@ export interface Message {
   isContentComplete?: boolean
   status?: MessageStatus
   errorCode?: string | null
+  /**
+   * 实际服务本次请求的成员（响应头 X-Served-By，ui-spec §6.8）。
+   *
+   * 流式/非流式都会在响应头里回传，值为 channel=<id>:<name>, model=<upstream>；
+   * 缺失（旧上游/直连）时 undefined，展示层据此不渲染。
+   */
+  servedBy?: string
 }
 
 // API payload types
@@ -112,6 +119,14 @@ export interface ChatCompletionResponse {
     completion_tokens: number
     total_tokens: number
   }
+}
+
+/**
+ * 非流式调用的返回：响应体 + 实际命中的上游（X-Served-By，可能缺失）。
+ */
+export interface ChatCompletionResult {
+  response: ChatCompletionResponse
+  servedBy?: string
 }
 
 // Configuration types

@@ -2876,6 +2876,7 @@
     "Self-hosted AI Gateway": "セルフホスト AI ゲートウェイ",
     "Send and observe": "送信して観測",
     "Served & observed": "応答元の記録",
+    "Served by: {{servedBy}}": "応答元：{{servedBy}}",
     "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.": "6 つのレーン単位の制御キー、三態サーキットブレーカー（closed / open / half-open）、レーンごとに無効化できるアフィニティ。",
     "Solidify the lanes": "レーンを確定",
     "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.": "管理キーはパスフレーズから派生し、クライアントキーはハッシュのみ保存され一度だけ表示されます。",

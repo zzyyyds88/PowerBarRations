@@ -2876,6 +2876,7 @@
     "Self-hosted AI Gateway": "Cổng AI tự vận hành",
     "Send and observe": "Gửi và quan sát",
     "Served & observed": "Phục vụ và quan sát",
+    "Served by: {{servedBy}}": "Phục vụ bởi: {{servedBy}}",
     "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.": "Sáu khóa điều khiển cấp làn, circuit breaker ba trạng thái (closed / open / half-open), và affinity có thể tắt theo làn.",
     "Solidify the lanes": "Cố định các làn",
     "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.": "Khóa quản trị được dẫn xuất từ cm mật khẩu; client key chỉ lưu dạng hash và hiển thị một lần.",

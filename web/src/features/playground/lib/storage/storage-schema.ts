@@ -87,6 +87,9 @@ const messageSchema = z.object({
   isContentComplete: z.boolean().optional(),
   status: messageStatusSchema.optional(),
   errorCode: z.string().nullable().optional(),
+  // 实际命中的上游（X-Served-By，ui-spec §6.8）：与耗时同属展示元数据，
+  // 随消息持久化，刷新后仍可见。
+  servedBy: z.string().optional(),
 })
 
 export const messagesSchema = z.array(messageSchema)

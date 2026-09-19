@@ -2876,6 +2876,7 @@
     "Self-hosted AI Gateway": "Self-hosted AI Gateway",
     "Send and observe": "Send and observe",
     "Served & observed": "Served & observed",
+    "Served by: {{servedBy}}": "Served by: {{servedBy}}",
     "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.": "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.",
     "Solidify the lanes": "Solidify the lanes",
     "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.": "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.",

@@ -2876,6 +2876,7 @@
     "Self-hosted AI Gateway": "Passerelle IA auto-hébergée",
     "Send and observe": "Envoyer et observer",
     "Served & observed": "Servi et observé",
+    "Served by: {{servedBy}}": "Servi par : {{servedBy}}",
     "Six lane-level control keys, a three-state circuit breaker (closed / open / half-open), and affinity that can be turned off per lane.": "Six clés de contrôle par voie, un disjoncteur à trois états (closed / open / half-open) et une affinité désactivable par voie.",
     "Solidify the lanes": "Fixer les voies",
     "The admin key is derived from your passphrase; client keys are stored as hashes and shown only once.": "La clé d'administration est dérivée de votre phrase secrète ; les clés client sont stockées hachées et affichées une seule fois.",

@@ -27,13 +27,20 @@ import {
   parseStreamErrorDetails,
   parseStreamMessageUpdates,
 } from '../lib'
+import { servedByFromStreamHeaders } from '../lib/streaming/served-by'
 import type { ChatCompletionRequest } from '../types'
 
 interface StreamEventSource {
   readyState?: number
   addEventListener: (
     type: string,
-    listener: (event: Event & { data?: string; readyState?: number }) => void
+    listener: (
+      event: Event & {
+        data?: string
+        readyState?: number
+        headers?: Record<string, string | string[]>
+      }
+    ) => void
   ) => void
   close: () => void
   stream: () => void
@@ -43,6 +50,8 @@ interface StreamRequestCallbacks {
   onUpdate: (type: 'reasoning' | 'content', chunk: string) => void
   onComplete: () => void
   onError: (error: string, errorCode?: string) => void
+  /** 收到响应头时回调实际命中的上游（X-Served-By）；缺失则不回调。 */
+  onServedBy?: (servedBy: string) => void
 }
 
 interface StreamRequestControllerRuntime {
@@ -112,6 +121,14 @@ export function createStreamRequestController(
       callbacks.onError(errorMessage, errorCode)
       closeActiveSource(nextSource)
     }
+
+    // 响应头到达时（sse.js 的 open 事件）取 X-Served-By：这是流式路径唯一能拿到
+    // 响应头的时机（ui-spec §6.8）。缺失或为空则不回调，展示层不渲染。
+    nextSource.addEventListener('open', (event) => {
+      if (!isCurrent()) return
+      const servedBy = servedByFromStreamHeaders(event.headers)
+      if (servedBy) callbacks.onServedBy?.(servedBy)
+    })
 
     nextSource.addEventListener('message', (event) => {
       if (!isCurrent() || completed) return
@@ -214,7 +231,8 @@ export function useStreamRequest(
       payload: ChatCompletionRequest,
       onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
       onComplete: () => void,
-      onError: (error: string, errorCode?: string) => void
+      onError: (error: string, errorCode?: string) => void,
+      onServedBy?: (servedBy: string) => void
     ) =>
       controller.send(
         payload,
@@ -222,6 +240,7 @@ export function useStreamRequest(
           onUpdate,
           onComplete,
           onError,
+          onServedBy,
         },
         // 每次发送都取当前密钥：密钥改了不必重建 controller。
         getHeaders()

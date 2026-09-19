@@ -212,6 +212,21 @@ export function useChatHandler({
     [scheduleStreamFlush]
   )
 
+  // 记录实际命中的上游（X-Served-By）：流式在响应头到达时回调，非流式在响应返回后写入。
+  const handleServedBy = useCallback(
+    (generation: number, servedBy: string) => {
+      if (generation !== requestGenerationRef.current) return
+      onMessageUpdate((prev) => {
+        if (generation !== requestGenerationRef.current) return prev
+        return updateLastAssistantMessage(prev, (message) => ({
+          ...message,
+          servedBy,
+        }))
+      })
+    },
+    [onMessageUpdate]
+  )
+
   // Handle stream complete
   const handleStreamComplete = useCallback(
     (generation: number) => {
@@ -270,7 +285,8 @@ export function useChatHandler({
         payload,
         (type, chunk) => handleStreamUpdate(generation, type, chunk),
         () => handleStreamComplete(generation),
-        (error, errorCode) => handleStreamError(generation, error, errorCode)
+        (error, errorCode) => handleStreamError(generation, error, errorCode),
+        (servedBy) => handleServedBy(generation, servedBy)
       )
     },
     [
@@ -281,6 +297,7 @@ export function useChatHandler({
       handleStreamUpdate,
       handleStreamComplete,
       handleStreamError,
+      handleServedBy,
     ]
   )
 
@@ -303,7 +320,7 @@ export function useChatHandler({
 
       try {
         setIsRequesting(true)
-        const response = await sendChatCompletion(
+        const { response, servedBy } = await sendChatCompletion(
           payload,
           clientKey,
           abortController.signal
@@ -328,7 +345,8 @@ export function useChatHandler({
               response
             )
 
-            return updatedMessage ?? message
+            if (!updatedMessage) return message
+            return servedBy ? { ...updatedMessage, servedBy } : updatedMessage
           })
         })
       } catch (error: unknown) {

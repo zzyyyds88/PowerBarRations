@@ -63,6 +63,15 @@ class FakeStreamSource {
       })
     }
   }
+
+  emitHeaders(headers: Record<string, string | string[]>) {
+    for (const listener of this.listeners.get('open') ?? []) {
+      listener({ headers } as unknown as Event & {
+        data?: string
+        readyState?: number
+      })
+    }
+  }
 }
 
 const payload: ChatCompletionRequest = {
@@ -76,6 +85,56 @@ const noopCallbacks = {
   onComplete: () => undefined,
   onError: () => undefined,
 }
+
+describe('X-Served-By over streaming (ui-spec §6.8)', () => {
+  test('open 事件带 X-Served-By 时回调实际命中的上游', async () => {
+    const sources: FakeStreamSource[] = []
+    const served: string[] = []
+    const controller = createStreamRequestController({
+      getHeaders: async () => ({ Authorization: 'Bearer k' }),
+      createSource: () => {
+        const source = new FakeStreamSource()
+        sources.push(source)
+        return source
+      },
+      setStreaming: () => undefined,
+    })
+
+    await controller.send(payload, {
+      ...noopCallbacks,
+      onServedBy: (value) => served.push(value),
+    })
+
+    sources[0]?.emitHeaders({
+      'x-served-by': ['channel=1:channel-a, model=model-x'],
+    })
+
+    expect(served).toEqual(['channel=1:channel-a, model=model-x'])
+  })
+
+  test('响应头没有 X-Served-By 时不回调（不伪造）', async () => {
+    const sources: FakeStreamSource[] = []
+    const served: string[] = []
+    const controller = createStreamRequestController({
+      getHeaders: async () => ({ Authorization: 'Bearer k' }),
+      createSource: () => {
+        const source = new FakeStreamSource()
+        sources.push(source)
+        return source
+      },
+      setStreaming: () => undefined,
+    })
+
+    await controller.send(payload, {
+      ...noopCallbacks,
+      onServedBy: (value) => served.push(value),
+    })
+
+    sources[0]?.emitHeaders({ 'content-type': ['text/event-stream'] })
+
+    expect(served).toEqual([])
+  })
+})
 
 describe('latest-wins stream request coordination', () => {
   test('only creates a stream for the latest header request', async () => {
