@@ -13,7 +13,7 @@
 | 管理面 | `/api/*` | **二选一**：`Authorization: Bearer <管理密钥>`（AI/脚本）或 HttpOnly 会话 Cookie（浏览器，登录后自动携带） |
 | 模型面 | `/v1/*` | `Authorization: Bearer <客户端密钥>`（同时兼容 `X-Api-Key`） |
 
-**管理密钥 = `Base64(SHA256(登录口令))`**（无账号体系），由调用方自行计算，服务端只存其哈希；首次使用先 `POST /api/setup` 设置口令（未初始化时除 `/health`、`/version`、`/setup*`、`/auth/login` 外一律 `409`/`401`）；浏览器登录 `POST /api/auth/login` 换 HttpOnly Cookie（不写 localStorage），AI/脚本走 Bearer，两通道等价。派生规则、会话属性、失败退避与恢复手段（`PBR_ADMIN_KEY(S)`、`pbr auth reset`、`PBR_BIND` 与明文 HTTP 边界）详见 [`token-spec-v1.md`](token-spec-v1.md) §2；认证失败的响应形态见 §3（401 `unauthorized`）。
+**管理密钥 = `Base64(SHA256(登录口令))`**（无账号体系），由调用方自行计算，服务端只存其哈希；首次使用先 `POST /api/setup` 设置口令（未初始化时除 `/health`、`/version`、`/setup*`、`/auth/login`、`/auth/logout`、`/auth/session`、`/openapi.json` 与根路径 `/doc*`、`/llms.txt` 外一律 `409`/`401`）；浏览器登录 `POST /api/auth/login` 换 HttpOnly Cookie（不写 localStorage），AI/脚本走 Bearer，两通道等价。派生规则、会话属性、失败退避与恢复手段（`PBR_ADMIN_KEY(S)`、`pbr auth reset`、`PBR_BIND` 与明文 HTTP 边界）详见 [`token-spec-v1.md`](token-spec-v1.md) §2；认证失败的响应形态见 §3（401 `unauthorized`）。
 
 > 前缀说明：`/api` 是规范前缀；`/api/v1` 保留为**兼容别名**（注册完全相同的处理器），既有脚本无需改动。控制台内部资源的边界见 §9。面向 AI 的手册：`GET /doc`（`text/markdown`）、`GET /llms.txt`（`text/plain`）、交互式文档 `GET /doc/ui`（§5.1）。
 
@@ -35,8 +35,7 @@
 5. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。**非法/损坏的 cursor 返回 400 `validation_failed`**（不得静默回退到第一页，否则调用方会陷入翻页死循环）。
 6. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
 7. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。
-8. **幂等键（可选）**：请求头 `Idempotency-Key` 可用于重试去重。
-9. **管理面不做全局限流**：PBR 是自用单用户网关，管理面 `/api/*` 与静态控制台**默认关闭**基座遗留的全局限流
+8. **管理面不做全局限流**：PBR 是自用单用户网关，管理面 `/api/*` 与静态控制台**默认关闭**基座遗留的全局限流
    （`GLOBAL_API_RATE_LIMIT_ENABLE`/`GLOBAL_WEB_RATE_LIMIT_ENABLE` 默认 `false`）。控制台一次页面加载会并发多个
    管理请求，基座默认的 360/120 次窗口（继承自 new-api 的多租户公网假设）会把正常浏览打成 429。
    限流只作用于**客户端密钥与模型面**（`rate_limit_rpm`/`max_concurrency`，见 token-spec §3.4）与登录失败退避。
@@ -66,7 +65,7 @@
 | 401 | `unauthorized` | 密钥缺失或错误 |
 | 403 | `forbidden_scope` | 客户端密钥访问了被 deny 的车道（仅模型面） |
 | 404 | `lane_not_found` / `channel_not_found` / `key_not_found` / `log_not_found` | 对象不存在 |
-| 404 | `model_not_found` | 模型目录记录不存在（`GET/PUT/DELETE /api/model-metadata/{model}`）；按名批量操作时 `details.unknown` 列出未知名 |
+| 404 | `model_not_found` | 模型目录记录不存在（`PUT/DELETE /api/model-metadata/{model}`）；按名批量操作时 `details.unknown` 列出未知名 |
 | 404 | `task_not_found` | `GET /api/system-tasks/{id}` 的任务不存在 |
 | 404 | `prefill_group_not_found` | `DELETE /api/prefill-groups/{id}` 的组不存在 |
 | 404 | `webhook_target_not_found` | `POST /api/webhooks/test` 的 name 不在配置里（§5.8） |
@@ -101,7 +100,7 @@
   ],
   "model_mapping": { "model-1": "vendor-a/model-1" },
   "key_set": true,
-  "key_prefix": "sk-abcd",
+  "key_prefix": "sk-a",
   "created_at": "2026-09-14T12:00:00Z",
   "updated_at": "2026-09-14T12:00:00Z"
 }
@@ -109,7 +108,7 @@
 
 - `models`：本渠道提供的**路由键候选**（模型名）。声明只是"候选成员来源"，**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游拉取模型清单（渠道编辑器内手动触发）。
 - **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
-- **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`。`PUT` 时若省略 `key` 则保留原值。
+- **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`（明文前 4 字符，短密钥不整串回显）。`PUT` 时若省略 `key` 则保留原值。
 - `type` 取值见 `GET /api/capabilities` 的 `adapters`。
 - `base_url`：**允许带版本段或完整端点结尾**。对 OpenAI/Anthropic/Gemini 渠道，网关拼接上游路径前会**剥掉结尾的完整端点**（`/chat/completions`、`/responses[/compact]`、`/messages`、`/completions`、`/embeddings`）**与版本段**（`/v1`、`/v1beta`、`/v1alpha`），因此下面三种写法等价、不会出现 `/v1/v1` 或 `…/v1/chat/completions/v1/…`：
   `https://host` ≡ `https://host/v1` ≡ `https://host/v1/chat/completions`。
@@ -124,6 +123,7 @@
   "name": "lane-alpha",
   "enabled": true,
   "mode": "failover",
+  "active_member": "",
   "config": {
     "member_max_attempts": 2,
     "member_retry_interval_seconds": 3,
@@ -136,7 +136,10 @@
     { "channel": "channel-a", "upstream_model": "model-x", "public_alias": "", "priority": 2 },
     { "channel": "channel-b", "upstream_model": "model-x", "public_alias": "", "priority": 1,
       "overrides": { "member_max_attempts": 1 } }
-  ]
+  ],
+  "orphan_member_count": 0,
+  "created_at": "2026-09-14T12:00:00Z",
+  "updated_at": "2026-09-14T12:00:00Z"
 }
 ```
 
@@ -145,6 +148,7 @@
 - **`priority` 是车道内顺序，数字大者优先**（示例中的 2/1 表示 channel-a 先试）。控制台用"上移/下移"维护，写库即该值；成员数组顺序与 `priority` 降序一致。
 - **成员没有 `weight` 字段**（随 `weighted` 模式一并删除）；旧配置里出现会被忽略。
 - `overrides` 为成员级六键覆盖，省略字段表示继承车道。
+- **`active_member` 仅 `manual` 模式使用**：人工指定的成员（成员的 `public_alias`，或 `channel/upstream_model` 标签；空串表示未指定）。`orphan_member_count` 是成员中"渠道已不存在"的悬空数量（只读，不落库）；`created_at` / `updated_at` 为车道时间戳。
 - **每条车道都是显式对象**：`GET /lanes` 就是全部路由入口，不存在隐藏的自动链（ADR 0005）；没建车道的模型一律 `503`。
 
 ### 4.3 ClientKey
@@ -170,7 +174,7 @@
 - `lane_policy.mode ∈ all | allow`；生效车道 = `(all ? 全部 : allow_lanes) - deny_lanes`。默认 `all` 且不拒绝任何车道（见 [token-spec-v1.md](token-spec-v1.md) §3.2）。
 - 每项含 `"key"`：当前 PBR 实例创建或轮换时生成的明文密钥；`key_prefix` 为前 12 字符展示前缀，恒有值。配置快照不包含明文密钥，恢复后需重新创建或轮换。
 
-### 4.4 RequestLog（见 §4.5 端点的响应）
+### 4.4 RequestLog（见 §5.5 观测端点的响应）
 
 ```json
 {
@@ -178,11 +182,15 @@
   "ts": "2026-09-14T12:00:00Z",
   "lane": "lane-alpha",
   "request_model": "lane-alpha",
+  "route_source": "explicit",
   "channel": "channel-b",
   "upstream_model": "model-x",
   "key_name": "client-a",
+  "inbound_format": "openai",
   "success": true,
   "http_status": 200,
+  "error_kind": "",
+  "error_summary": "",
   "prompt_tokens": 1200,
   "completion_tokens": 340,
   "cache_read_tokens": 0,
@@ -192,6 +200,7 @@
   "total_ms": 3100,
   "is_stream": true,
   "total_attempts": 2,
+  "estimated_cost": 0.02,
   "attempts": [
     { "attempt_num": 1, "member": "channel-a/model-x", "status": "failed",
       "duration_ms": 800, "error_kind": "timeout", "msg": "stream first event timeout" },
@@ -201,6 +210,8 @@
 ```
 
 `status ∈ success | failed | cooldown | circuit_break | skipped`。
+
+`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled`）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）；`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。
 
 ---
 
@@ -224,7 +235,7 @@
 | GET | `/llms.txt` | 与 `/doc` 同源的纯文本手册（**免鉴权**） |
 | GET | `/doc/ui` | 交互式 OpenAPI 文档（复用 Scalar，指向 `/api/openapi.json`。**免鉴权**） |
 | GET | `/api/system/options` | 全局选项 |
-| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
+| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
 
 ### 5.2 车道
 
@@ -239,6 +250,8 @@
 | POST | `/api/lanes/{name}/probe` | 逐成员探活 |
 | GET | `/api/lanes/{name}/health` | 当前冷却/熔断/亲和快照 |
 | POST | `/api/lanes/{name}/circuits/reset` | 清除该车道全部熔断与冷却 |
+
+- **成员别名点名**：`/api/lanes/{name}/health`、`/api/lanes/{name}/probe`、`/api/lanes/{name}/circuits/reset` 的 `{name}` 除车道名外也接受成员 `public_alias`（点名到该别名所属车道，并标记被点名成员，`model.GetLaneByAlias` 解析）；`GET`/`PUT`/`DELETE /api/lanes/{name}` 只按车道名。模型面按路由键解析时同样优先命中同名车道，未命中再按成员别名点名。
 
 ### 5.3 渠道
 
@@ -348,7 +361,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/logs` | 过滤：`lane` `channel` `key` `success` `since` `until` `cursor` `limit` |
+| GET | `/api/logs` | 过滤：`lane` `channel` `key` `model` `success` `since` `until` `cursor` `limit` |
 | GET | `/api/logs/{id}` | 单条（含 attempts 链） |
 | POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变** |
 | GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。`channel_model` 的 `group` 形如 `渠道␟模型` |
@@ -367,7 +380,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计渠道存在且启用的成员，供界面标注"含不可用"）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（全部成员当前不可选时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
-| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（**声明或 `model_mapping` 映射**了该模型、但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
+| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority`，成员级显式改名时给出 `upstream_override`、设了成员别名时给出 `public_alias`；响应顶层含 `mode` / `config`（车道模式与六键）。无车道时返回**候选成员**（渠道声明，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——候选只用于界面上"添加成员"，不代表已可调用；已配车道时额外返回 `candidates`（**声明或 `model_mapping` 映射**了该模型、但不在成员链里的渠道），让新增渠道声明后无需删车道重建。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/upstream_model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它 |
 | GET | `/api/lane-summaries` | **全部车道的成员顺序摘要**（不分页）：`{items: [{name, enabled, mode, active_member, orphan_member_count, members: [{channel, upstream_model, priority}]}]}`。供路由页一次取全量顺序，避免 `GET /api/lanes` 的 cursor 上限（200）在大部署下让摘要列退化 |
 | GET | `/api/model-metadata` | **模型目录元数据**（不分页）：`{items: [{model, description, icon, tags, endpoints, status, name_rule, has_metadata, configured_channel_count}]}`。这是"模型管理页"的稳定只读面；`has_metadata=false` 表示仅由渠道声明、尚无目录记录。**本面保持轻量：不返回 `matched_count` / `matched_models`**（命中集只在控制台面 `/api/console/models/**` 计算，那里本就要遍历渠道模型做全量填充）。`name_rule != 0` 的条目，`configured_channel_count` **按规则命中的模型名集合**统计去重后的渠道数（用一次内存预计算，与 `MatchesName` 同口径；不得按精确名查表，也不得逐条查库） |
@@ -383,9 +396,18 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 {
   "model": "model-1",
   "source": "explicit",
+  "mode": "failover",
+  "config": {
+    "member_max_attempts": 2,
+    "member_retry_interval_seconds": 3,
+    "member_non_stream_response_timeout_seconds": 120,
+    "member_stream_first_event_timeout_seconds": 30,
+    "member_cooldown_seconds": 60,
+    "member_affinity_seconds": 0
+  },
   "members": [
-    { "channel": "channel-a", "upstream_model": "model-1", "priority": 2 },
-    { "channel": "channel-b", "upstream_model": "model-1", "priority": 1 }
+    { "channel": "channel-a", "channel_enabled": true, "upstream_model": "model-1", "priority": 2 },
+    { "channel": "channel-b", "channel_enabled": true, "upstream_model": "model-1", "priority": 1 }
   ]
 }
 ```
@@ -508,13 +530,18 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
 ```json
 {
   "lane": "lane-alpha",
+  "probed": 2,
   "results": [
-    { "channel": "channel-a", "upstream_model": "model-x", "status": "success", "duration_ms": 640 },
+    { "channel": "channel-a", "upstream_model": "model-x", "status": "success", "duration_ms": 640,
+      "ok": true, "status_code": 200, "latency_ms": 640 },
     { "channel": "channel-b", "upstream_model": "model-y", "status": "failed",
-      "duration_ms": 8000, "error_kind": "timeout", "msg": "non-stream response timeout" }
+      "duration_ms": 8000, "error_kind": "timeout", "msg": "non-stream response timeout",
+      "ok": false, "status_code": 0, "latency_ms": 8000 }
   ]
 }
 ```
+
+`probed` 为本次实际探测的成员数；每个成员结果除 `status` / `duration_ms` / `error_kind` / `msg` 外，还保留早期实现的兼容字段 `ok`（是否成功）、`status_code`（上游 HTTP 状态，未拿到为 0）、`latency_ms`（耗时，与 `duration_ms` 同值）。
 
 ### 6.5 车道健康快照（冷却/熔断/亲和）
 
@@ -758,10 +785,12 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 
 | 能力 | 仍属控制台内部（非稳定契约） |
 |---|---|
-| 仪表盘/状态聚合视图 | `/api/status`、`/api/console/models`（展示聚合） |
+| 仪表盘/状态聚合视图 | `/api/status`、`/api/status/test`、`/api/console/models/**`（展示聚合与模型目录控制台面） |
 | 变更审计（控制台视图） | `/api/console/audit` |
 | 基座兼容别名（与 §5.3.1 稳定端点等价，参数/响应随控制台变动） | `/api/channel/**` |
+| 系统选项/性能/日志文件/系统任务/预填组的基座路径 | `/api/option/*`、`/api/performance/*`、`/api/log/*`、`/api/system-task/*`、`/api/prefill_group/*` |
 | 内部性能明细 | `/api/perf-metrics/**` |
+| 静态内容 | `/api/about`、`/api/user-agreement`、`/api/privacy-policy`、`/api/home_page_content` |
 
 > **已提升为稳定契约**（原属本表，现见 §5）：渠道批量启停/标签/复制/上游同步、Codex 与 Ollama
 > 渠道专用动作（§5.3.1）；完整系统选项、系统任务、性能与日志文件（§5.3.2）；
