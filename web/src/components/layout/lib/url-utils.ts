@@ -61,7 +61,19 @@ export function checkIsActive(
 ): boolean {
   const hrefWithoutQuery = href.split('?')[0]
 
-  if (item.activeUrls?.some((url) => urlToString(url) === hrefWithoutQuery)) {
+  // activeUrls 允许前缀匹配：条目声明 '/dashboard' 时，/dashboard/overview、
+  // /dashboard/models 等子路径都算命中（单入口 + 页内 Tab 的场景，ui-spec §6.2）。
+  if (
+    item.activeUrls?.some((url) => {
+      const target = urlToString(url)
+      if (!target) return false
+      const targetWithoutQuery = target.split('?')[0]
+      return (
+        hrefWithoutQuery === targetWithoutQuery ||
+        hrefWithoutQuery.startsWith(`${targetWithoutQuery}/`)
+      )
+    })
+  ) {
     return true
   }
 
