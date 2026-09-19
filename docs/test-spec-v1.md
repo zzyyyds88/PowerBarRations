@@ -65,7 +65,8 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 每次失败截图存档。
 
 **注意**：`verify/final/console_flow.py` 现为"UI 走查 + API 代建"混合；L3 的要求是**用户路径由 UI 触发**。
-`verify/e2e-ui/user_journey.py` 覆盖上表；`verify/final/a3_console.sh` 仍保留做逐页渲染走查。
+`verify/e2e-ui/user_journey.py` 覆盖上表（含试打台展示 `X-Served-By`，ui-spec §6.8）；
+`verify/final/a3_console.sh` 仍保留做逐页渲染走查。
 
 ## 5. 真实 API 运维测试（L2）
 
