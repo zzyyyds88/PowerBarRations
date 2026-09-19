@@ -787,7 +787,7 @@ curl -sfX POST "$PBR/api/import" -H "Authorization: Bearer $ADMIN_KEY" \
 
 | 能力 | 仍属控制台内部（非稳定契约） |
 |---|---|
-| 仪表盘/状态聚合视图 | `/api/status`、`/api/status/test`、`/api/console/models/**`（展示聚合与模型目录控制台面） |
+| 仪表盘/状态聚合视图 | `/api/status`、`/api/status/test`、`/api/console/models/**`（展示聚合与模型目录控制台面）。`/api/status` 不再返回 `api_info` / `api_info_enabled`（API 信息面板已整体删除，见 ui-spec §6.2） |
 | 变更审计（控制台视图） | `/api/console/audit` |
 | 基座兼容别名（与 §5.3.1 稳定端点等价，参数/响应随控制台变动） | `/api/channel/**` |
 | 系统选项/性能/日志文件/系统任务/预填组的基座路径 | `/api/option/*`、`/api/performance/*`、`/api/log/*`、`/api/system-task/*`、`/api/prefill_group/*` |

@@ -63,7 +63,8 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 2 | 登出/登录 | `/sign-in` 表单 | 会话 Cookie 生效；错误口令被拒 |
 | 3 | 新建渠道 | 渠道管理 → 新建渠道（表单） | 列表出现该渠道；回读 `GET /channels/{name}` 一致 |
 | 4 | 编辑车道成员链 | 路由页 → 编辑成员链（拖拽/上移/下移/保存） | `GET /routes/{model}` 顺序一致 |
-| 4b | 自由编排（池化） | 路由页 → 新建车道：任意路由键 + 跨渠道跨模型挑选成员 | `PUT /lanes/{name}` 成功；`GET /routes/{name}` 成员与所选一致（含同一渠道多个模型）；渠道声明该键并非前提 |
+| 4b | 自由编排（池化） | 路由页 → 页头「新建车道」：手填任意路由键 + 跨渠道跨模型挑选成员 | `PUT /lanes/{name}` 成功；`GET /routes/{name}` 成员与所选一致（含同一渠道多个模型）；渠道声明该键并非前提 |
+| 4c | 路由页只列真实车道 | 路由页 + 模型管理页 | 渠道声明但未配车道的路由键**不在路由页出现**；删除车道后该卡片立即消失（[ADR 0007](adr/0007-routes-lists-lanes-only.md)）；模型管理页仍以「不可调用」徽章表达 |
 | 5 | 新建客户端密钥 | 令牌页 → 新建（表单） | 一次性明文可见；回读一致 |
 | 6 | 试打台对话 | 试打台 | 页面显示回复与 `X-Served-By` |
 | 7 | 查看请求日志 | 请求日志页 | 该请求出现且含车道/渠道 |
@@ -89,7 +90,7 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 2 | 建渠道 | `PUT /channels/{name}` | 回读 key_prefix、models 一致 |
 | 3 | 建车道 | `PUT /lanes/{model}` | 回读成员顺序=priority 降序 |
 | 3b | 池化车道（跨渠道跨模型） | `PUT /lanes/{name}`（成员任选，含同一渠道多次） | 回读成员 = 提交的 `(渠道, 上游真名)` 列表；未声明该键的成员同样写入 |
-| 3c | 声明模型不自动建车道 | `PUT /channels/{name}` 新增模型后 `GET /models` | 新模型 `source=unconfigured`、`routable=false`；`GET /lanes` 不新增任何车道 |
+| 3c | 声明模型不自动建车道 | `PUT /channels/{name}` 新增模型后 `GET /models` | 新模型 `source=unconfigured`、`routable=false`；`GET /lanes` 不新增任何车道，路由页也不出现新卡片 |
 | 4 | 路由总览 | `GET /models`、`GET /routes/{model}` | `routable=true` |
 | 5 | 端到端调用 | `POST /v1/chat/completions`（客户端密钥） | 200；日志出现 |
 | 6 | 排障 | `GET /lanes/{name}/health`、`GET /logs?success=false` | 冷却/熔断/attempts 可读 |
