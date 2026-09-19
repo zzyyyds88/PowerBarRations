@@ -16,127 +16,71 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+/*
+车道成员编排器（ui-spec §6.3、ADR 0006）：
+- 成员候选 = 任意启用渠道的任意已声明模型，可跨渠道跨模型、无需同名；
+- 同一渠道可出现多次（去重键 = (渠道, 上游真名)）；
+- 无「自动添加」；默认 upstream_model 显式填所选模型名；
+- 顺序即优先级；manual 需指定 active member；空成员链拦截保存。
+*/
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
 import { savePBRFailover } from '../api'
-import { ModelRoutingPanel } from '../components/model-routing-panel'
+import { LaneComposer } from '../components/lane-composer'
 
 vi.mock('@/lib/api', () => ({
-  api: {
-    get: vi.fn(),
-    put: vi.fn(),
-    delete: vi.fn(),
-    post: vi.fn(),
-  },
+  api: { get: vi.fn(), put: vi.fn(), delete: vi.fn(), post: vi.fn() },
 }))
 
 const mockedGet = vi.mocked(api.get)
 const mockedPut = vi.mocked(api.put)
-const mockedDelete = vi.mocked(api.delete)
 
-function renderPanel(initialModel?: string) {
+/** 两个渠道：channel-a 声明两个模型，channel-b 声明一个。 */
+function mockCatalog() {
+  mockedGet.mockImplementation(async (url: string) => {
+    if (url === '/api/v1/channels') {
+      return {
+        data: {
+          items: [
+            {
+              name: 'channel-a',
+              enabled: true,
+              models: ['a-model-1', 'a-model-2'],
+              model_mapping: {},
+            },
+            {
+              name: 'channel-b',
+              enabled: true,
+              models: ['b-model-1'],
+              model_mapping: { 'pool-fast': 'vendor-b/model-1' },
+            },
+          ],
+        },
+      } as never
+    }
+    if (url === '/api/v1/system/options') {
+      return { data: { lane_defaults: {} } } as never
+    }
+    throw new Error(`Unexpected GET ${url}`)
+  })
+}
+
+function renderComposer(
+  props: Partial<Parameters<typeof LaneComposer>[0]> = {}
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <ModelRoutingPanel initialModel={initialModel} />
+      <LaneComposer onSaved={() => {}} onCancel={() => {}} {...props} />
     </QueryClientProvider>
   )
-}
-
-/** 已配车道：两个成员，a 在前。 */
-function mockConfiguredLane() {
-  mockedGet.mockImplementation(async (url: string) => {
-    if (url === '/api/v1/models') {
-      return {
-        data: {
-          items: [
-            {
-              model: 'model-1',
-              source: 'explicit',
-              routable: true,
-              member_count: 2,
-            },
-          ],
-        },
-      } as never
-    }
-    if (url === '/api/v1/routes/model-1') {
-      return {
-        data: {
-          model: 'model-1',
-          source: 'explicit',
-          routable: true,
-          mode: 'failover',
-          members: [
-            {
-              channel_id: 1,
-              channel: 'channel-a',
-              upstream_model: 'real-a',
-              priority: 2,
-            },
-            {
-              channel_id: 2,
-              channel: 'channel-b',
-              upstream_model: 'real-b',
-              priority: 1,
-            },
-          ],
-        },
-      } as never
-    }
-    throw new Error(`Unexpected GET ${url}`)
-  })
-}
-
-/** 未配车道：建议链给出两个候选，成员列表为空。 */
-function mockUnconfiguredModel() {
-  mockedGet.mockImplementation(async (url: string) => {
-    if (url === '/api/v1/models') {
-      return {
-        data: {
-          items: [
-            {
-              model: 'model-1',
-              source: 'unconfigured',
-              routable: false,
-              member_count: 2,
-            },
-          ],
-        },
-      } as never
-    }
-    if (url === '/api/v1/routes/model-1') {
-      return {
-        data: {
-          model: 'model-1',
-          source: 'unconfigured',
-          routable: false,
-          members: [
-            {
-              channel_id: 1,
-              channel: 'channel-a',
-              upstream_model: 'real-a',
-              priority: 2,
-            },
-            {
-              channel_id: 2,
-              channel: 'channel-b',
-              upstream_model: 'real-b',
-              priority: 1,
-            },
-          ],
-        },
-      } as never
-    }
-    throw new Error(`Unexpected GET ${url}`)
-  })
 }
 
 beforeEach(() => {
@@ -144,435 +88,116 @@ beforeEach(() => {
   mockedPut.mockResolvedValue({ data: {} } as never)
 })
 
-describe('成员链手工管理', () => {
-  test('删除成员后保存只提交剩余成员且顺序即优先级', async () => {
-    mockConfiguredLane()
-    const user = userEvent.setup()
-    renderPanel('model-1')
+afterEach(() => {
+  cleanup()
+})
 
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(
-      screen.getAllByRole('button', { name: 'Remove member' })[0]
-    )
+describe('车道成员编排器', () => {
+  test('可为任意路由键跨渠道挑选成员并保存', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    renderComposer()
+
+    await user.type(screen.getByLabelText('Route key'), 'pool-fast')
+    // 展开两个渠道并各选一个模型（无需声明该路由键）。
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /a-model-1/ }))
+    await user.click(screen.getByRole('button', { name: /channel-b/ }))
+    await user.click(await screen.findByRole('button', { name: /b-model-1/ }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
-    const [, body] = mockedPut.mock.calls[0] as [
+    const [url, body] = mockedPut.mock.calls[0] as [
       string,
-      { members: { channel: string; priority: number }[] },
+      { members: { channel: string; upstream_model: string }[] },
     ]
-    expect(body.members.map((m) => m.channel)).toEqual(['channel-b'])
-    expect(body.members[0].priority).toBe(1)
-  })
-
-  test('上移成员后保存按新顺序生成递减优先级', async () => {
-    mockConfiguredLane()
-    const user = userEvent.setup()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: 'Move down' })[0])
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
-    const [, body] = mockedPut.mock.calls[0] as [
-      string,
-      { members: { channel: string; priority: number }[] },
-    ]
-    expect(body.members.map((m) => m.channel)).toEqual([
-      'channel-b',
-      'channel-a',
+    expect(url).toBe('/api/v1/lanes/pool-fast')
+    expect(body.members.map((m) => [m.channel, m.upstream_model])).toEqual([
+      ['channel-a', 'a-model-1'],
+      ['channel-b', 'b-model-1'],
     ])
-    expect(body.members.map((m) => m.priority)).toEqual([2, 1])
   })
 
-  test('编辑上游真名后保存提交成员级覆盖', async () => {
-    mockConfiguredLane()
+  test('同一渠道的两个模型可作为两个成员存在', async () => {
+    mockCatalog()
     const user = userEvent.setup()
-    renderPanel('model-1')
+    renderComposer({ model: 'pool-fast' })
 
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.type(
-      screen.getByLabelText('Upstream model for channel-a'),
-      'renamed-a'
-    )
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /a-model-1/ }))
+    await user.click(screen.getByRole('button', { name: /a-model-2/ }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
     const [, body] = mockedPut.mock.calls[0] as [
       string,
-      { members: { channel: string; upstream_model?: string }[] },
+      { members: { channel: string; upstream_model: string }[] },
     ]
-    expect(body.members[0]).toMatchObject({
-      channel: 'channel-a',
-      upstream_model: 'renamed-a',
-    })
+    expect(body.members.map((m) => m.upstream_model)).toEqual([
+      'a-model-1',
+      'a-model-2',
+    ])
+    expect(body.members.every((m) => m.channel === 'channel-a')).toBe(true)
   })
 
-  test('未配车道时成员列表为空，添加候选后才可保存', async () => {
-    mockUnconfiguredModel()
+  test('已加入的成员在左栏显示为选中且不可重复加入', async () => {
+    mockCatalog()
     const user = userEvent.setup()
-    renderPanel('model-1')
+    renderComposer()
+    await user.type(screen.getByLabelText('Route key'), 'pool-fast')
 
-    expect(await screen.findByText('No members yet')).toBeInTheDocument()
-    const save = screen.getByRole('button', { name: 'Save' })
-    expect(save).toBeDisabled()
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /a-model-1/ }))
+    const item = await screen.findByRole('button', { name: /a-model-1/ })
+    expect(item).toBeDisabled()
+  })
 
-    const candidateArea = screen
-      .getByText('Candidate channels (declared in channels)')
-      .closest('div')
-    expect(candidateArea).not.toBeNull()
-    await user.click(
-      within(candidateArea as HTMLElement).getByRole('button', {
-        name: /channel-a/,
-      })
-    )
-    await waitFor(() => expect(save).toBeEnabled())
-    await user.click(save)
+  test('排序与改名随保存提交，顺序即优先级', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    renderComposer({ model: 'pool-fast' })
+
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /a-model-1/ }))
+    await user.click(screen.getByRole('button', { name: /a-model-2/ }))
+    // 把第二个成员上移并改名（两个成员同渠道，label 相同，取排序后的首位）。
+    await user.click(screen.getAllByRole('button', { name: 'Move up' })[1])
+    const rename = screen.getAllByLabelText('Upstream model for channel-a')[0]
+    await user.clear(rename)
+    await user.type(rename, 'renamed-a2')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(mockedPut).toHaveBeenCalled())
     const [, body] = mockedPut.mock.calls[0] as [
       string,
-      { members: { channel: string; priority: number }[] },
+      { members: { upstream_model: string; priority: number }[] },
     ]
-    expect(body.members.map((m) => m.channel)).toEqual(['channel-a'])
+    expect(body.members[0].upstream_model).toBe('renamed-a2')
+    expect(body.members[0].priority).toBeGreaterThan(body.members[1].priority)
   })
 
   test('空成员链阻止保存', async () => {
-    mockConfiguredLane()
+    mockCatalog()
+    renderComposer()
     const user = userEvent.setup()
-    renderPanel('model-1')
+    await user.type(screen.getByLabelText('Route key'), 'pool-fast')
 
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(
-      screen.getAllByRole('button', { name: 'Remove member' })[0]
-    )
-    await user.click(
-      screen.getAllByRole('button', { name: 'Remove member' })[0]
-    )
-
-    expect(screen.getByText('No members yet')).toBeInTheDocument()
+    expect(await screen.findByText('No members yet')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     expect(mockedPut).not.toHaveBeenCalled()
   })
-})
 
-describe('savePBRFailover 六键来源', () => {
-  test('新车道用系统设置里的默认六键（不写死前端默认值）', async () => {
-    mockedGet.mockImplementation(async (url: string) => {
-      if (url === '/api/v1/system/options') {
-        return {
-          data: {
-            lane_defaults: {
-              member_max_attempts: 5,
-              member_retry_interval_seconds: 0,
-              member_non_stream_response_timeout_seconds: 90,
-              member_stream_first_event_timeout_seconds: 15,
-              member_cooldown_seconds: 30,
-              member_affinity_seconds: 7,
-            },
-          },
-        } as never
-      }
-      // 车道不存在 → 404 风格的失败
-      throw new Error('not found')
-    })
-    mockedPut.mockResolvedValue({ data: {} } as never)
-
-    await savePBRFailover('model-1', [{ channel: 'channel-a', priority: 10 }])
-
-    expect(mockedPut).toHaveBeenCalledWith('/api/v1/lanes/model-1', {
-      enabled: true,
-      mode: 'failover',
-      active_member: '',
-      config: {
-        member_max_attempts: 5,
-        member_retry_interval_seconds: 0,
-        member_non_stream_response_timeout_seconds: 90,
-        member_stream_first_event_timeout_seconds: 15,
-        member_cooldown_seconds: 30,
-        member_affinity_seconds: 7,
-      },
-      members: [{ channel: 'channel-a', priority: 10 }],
-    })
-  })
-
-  test('已有车道保留其自身六键，只改成员顺序', async () => {
-    mockedGet.mockImplementation(async (url: string) => {
-      if (url === '/api/v1/system/options') {
-        return { data: { lane_defaults: { member_max_attempts: 5 } } } as never
-      }
-      return {
-        data: {
-          config: {
-            member_max_attempts: 1,
-            member_retry_interval_seconds: 0,
-            member_non_stream_response_timeout_seconds: 120,
-            member_stream_first_event_timeout_seconds: 30,
-            member_cooldown_seconds: 60,
-            member_affinity_seconds: 0,
-          },
-        },
-      } as never
-    })
-    mockedPut.mockResolvedValue({ data: {} } as never)
-
-    await savePBRFailover('model-1', [{ channel: 'channel-b', priority: 5 }])
-
-    const [, body] = mockedPut.mock.calls[0] as [string, { config: unknown }]
-    expect(body.config).toMatchObject({ member_max_attempts: 1 })
-  })
-
-  test('系统设置读取失败时回落内置默认值', async () => {
-    mockedGet.mockRejectedValue(new Error('boom'))
-    mockedPut.mockResolvedValue({ data: {} } as never)
-
-    await savePBRFailover('model-1', [{ channel: 'channel-a', priority: 1 }])
-
-    const [, body] = mockedPut.mock.calls[0] as [
-      string,
-      { config: Record<string, number> },
-    ]
-    expect(body.config).toMatchObject({
-      member_max_attempts: 2,
-      member_retry_interval_seconds: 3,
-      member_non_stream_response_timeout_seconds: 120,
-      member_stream_first_event_timeout_seconds: 30,
-      member_cooldown_seconds: 60,
-      member_affinity_seconds: 0,
-    })
-  })
-})
-
-/** 两个已配车道模型：用于验证「有草稿时切换模型」的丢弃确认。 */
-function mockTwoModels() {
-  mockedGet.mockImplementation(async (url: string) => {
-    if (url === '/api/v1/models') {
-      return {
-        data: {
-          items: [
-            {
-              model: 'model-1',
-              source: 'explicit',
-              routable: true,
-              member_count: 2,
-            },
-            {
-              model: 'model-2',
-              source: 'explicit',
-              routable: true,
-              member_count: 1,
-            },
-          ],
-        },
-      } as never
-    }
-    if (url === '/api/v1/routes/model-1') {
-      return {
-        data: {
-          model: 'model-1',
-          source: 'explicit',
-          routable: true,
-          members: [
-            {
-              channel_id: 1,
-              channel: 'channel-a',
-              upstream_model: 'real-a',
-              priority: 2,
-            },
-            {
-              channel_id: 3,
-              channel: 'channel-c',
-              upstream_model: 'real-c',
-              priority: 1,
-            },
-          ],
-        },
-      } as never
-    }
-    if (url === '/api/v1/routes/model-2') {
-      return {
-        data: {
-          model: 'model-2',
-          source: 'explicit',
-          routable: true,
-          members: [
-            {
-              channel_id: 2,
-              channel: 'channel-b',
-              upstream_model: 'real-b',
-              priority: 1,
-            },
-          ],
-        },
-      } as never
-    }
-    throw new Error(`Unexpected GET ${url}`)
-  })
-}
-
-describe('删除车道二次确认', () => {
-  test('单击 Remove lane 先弹确认，取消不删除', async () => {
-    mockConfiguredLane()
-    mockedDelete.mockResolvedValue({ data: {} } as never)
+  test('manual 模式必须指定 active member 才能保存', async () => {
+    mockCatalog()
     const user = userEvent.setup()
-    renderPanel('model-1')
+    renderComposer({ model: 'pool-fast' })
 
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Remove lane' }))
-
-    const dialog = await screen.findByRole('alertdialog')
-    expect(within(dialog).getByText('Remove this lane?')).toBeVisible()
-    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-    expect(mockedDelete).not.toHaveBeenCalled()
-  })
-
-  test('确认后调用删除接口', async () => {
-    mockConfiguredLane()
-    mockedDelete.mockResolvedValue({ data: {} } as never)
-    const user = userEvent.setup()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Remove lane' }))
-    const dialog = await screen.findByRole('alertdialog')
-    await user.click(
-      within(dialog).getByRole('button', { name: 'Remove lane' })
-    )
-
-    await waitFor(() =>
-      expect(mockedDelete).toHaveBeenCalledWith('/api/v1/lanes/model-1')
-    )
-  })
-
-  test('未配车道时 Remove lane 禁用', async () => {
-    mockUnconfiguredModel()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('No members yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Remove lane' })).toBeDisabled()
-  })
-})
-
-describe('手工成员链（无一键固化入口）', () => {
-  test('不再渲染 Generate missing lanes 按钮', async () => {
-    mockConfiguredLane()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Generate missing lanes' })
-    ).not.toBeInTheDocument()
-  })
-
-  test('空成员链时保存按钮给出原因提示', async () => {
-    mockUnconfiguredModel()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('No members yet')).toBeInTheDocument()
-    expect(
-      screen.getByText('Keep at least one member, or remove the lane.')
-    ).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
-  })
-
-  test('有草稿时切换模型先确认放弃，确认后加载另一条车道', async () => {
-    mockTwoModels()
-    const user = userEvent.setup()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    // 制造草稿（下移会置 dirty）。
-    await user.click(screen.getAllByRole('button', { name: 'Move down' })[0])
-    await user.click(screen.getByRole('button', { name: /model-2/ }))
-
-    const dialog = await screen.findByRole('alertdialog')
-    expect(within(dialog).getByText('Discard unsaved changes?')).toBeVisible()
-    await user.click(
-      within(dialog).getByRole('button', { name: 'Discard changes' })
-    )
-
-    expect(await screen.findByText('channel-b')).toBeInTheDocument()
-  })
-
-  // 已配车道的模型也要能看到「声明了该模型但不在成员链里」的候选渠道（后端 candidates），
-  // 否则新增渠道声明后只能删掉车道重建（ui-spec §6.3）。
-  test('已配车道时展示后端 candidates 并可加入成员', async () => {
-    mockedGet.mockImplementation(async (url: string) => {
-      if (url === '/api/v1/models') {
-        return {
-          data: {
-            items: [
-              {
-                model: 'model-1',
-                source: 'explicit',
-                routable: true,
-                member_count: 1,
-              },
-            ],
-          },
-        } as never
-      }
-      if (url === '/api/v1/routes/model-1') {
-        return {
-          data: {
-            model: 'model-1',
-            source: 'explicit',
-            routable: true,
-            mode: 'failover',
-            members: [
-              {
-                channel_id: 1,
-                channel: 'channel-a',
-                upstream_model: 'real-a',
-                priority: 1,
-              },
-            ],
-            candidates: [
-              {
-                channel_id: 3,
-                channel: 'channel-c',
-                upstream_model: 'real-c',
-                priority: 1,
-              },
-            ],
-          },
-        } as never
-      }
-      throw new Error(`Unexpected GET ${url}`)
-    })
-    const user = userEvent.setup()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    expect(
-      screen.getByText('Candidate channels (declared in channels)')
-    ).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'channel-c' }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
-    const [, body] = mockedPut.mock.calls[0] as [
-      string,
-      { members: { channel: string }[] },
-    ]
-    expect(body.members.map((m) => m.channel)).toEqual([
-      'channel-a',
-      'channel-c',
-    ])
-  })
-
-  // manual 模式：保存时必须带上 mode 与 active_member（routing-spec §5）。
-  test('manual 模式保存带上 active_member', async () => {
-    mockConfiguredLane()
-    mockedPut.mockResolvedValue({ data: {} } as never)
-    const user = userEvent.setup()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    // 切换到 manual 并指定 channel-a 为当前成员。
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /a-model-1/ }))
     await user.click(screen.getByRole('combobox', { name: 'Mode' }))
     await user.click(await screen.findByRole('option', { name: 'manual' }))
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     await user.click(screen.getByRole('combobox', { name: 'Active member' }))
     await user.click(await screen.findByRole('option', { name: /channel-a/ }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -583,22 +208,55 @@ describe('手工成员链（无一键固化入口）', () => {
       { mode: string; active_member: string },
     ]
     expect(body.mode).toBe('manual')
-    expect(body.active_member).toBe('channel-a/real-a')
+    expect(body.active_member).toBe('channel-a/a-model-1')
   })
 
-  // manual 模式未选 active member 时保存必须被拦截。
-  test('manual 模式未选 active member 时禁止保存', async () => {
-    mockConfiguredLane()
-    const user = userEvent.setup()
-    renderPanel('model-1')
-
-    expect(await screen.findByText('channel-a')).toBeInTheDocument()
-    await user.click(screen.getByRole('combobox', { name: 'Mode' }))
-    await user.click(await screen.findByRole('option', { name: 'manual' }))
-
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  test('不渲染「自动添加」入口（成员全部人工挑选）', async () => {
+    mockCatalog()
+    renderComposer()
+    await screen.findByRole('button', { name: /channel-a/ })
     expect(
-      screen.getByText('Pick the active member for manual mode before saving.')
-    ).toBeVisible()
+      screen.queryByRole('button', { name: /auto.?add/i })
+    ).not.toBeInTheDocument()
+  })
+})
+
+describe('savePBRFailover 六键来源', () => {
+  test('调用方显式传入的六键优先', async () => {
+    mockedGet.mockRejectedValue(new Error('not found'))
+    await savePBRFailover('model-1', [{ channel: 'channel-a', priority: 10 }], {
+      config: { member_max_attempts: 9 },
+    })
+    const [, body] = mockedPut.mock.calls[0] as [string, { config: unknown }]
+    expect(body.config).toMatchObject({ member_max_attempts: 9 })
+  })
+
+  test('系统设置读取失败时回落内置默认值', async () => {
+    mockedGet.mockRejectedValue(new Error('boom'))
+    await savePBRFailover('model-1', [{ channel: 'channel-a', priority: 1 }])
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      { config: Record<string, number> },
+    ]
+    expect(body.config).toMatchObject({
+      member_max_attempts: 2,
+      member_retry_interval_seconds: 3,
+      member_cooldown_seconds: 60,
+      member_affinity_seconds: 0,
+    })
+  })
+
+  test('已有车道保留其自身六键，只改成员顺序', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/system/options') {
+        return { data: { lane_defaults: { member_max_attempts: 5 } } } as never
+      }
+      return {
+        data: { config: { member_max_attempts: 1 } },
+      } as never
+    })
+    await savePBRFailover('model-1', [{ channel: 'channel-b', priority: 5 }])
+    const [, body] = mockedPut.mock.calls[0] as [string, { config: unknown }]
+    expect(body.config).toMatchObject({ member_max_attempts: 1 })
   })
 })

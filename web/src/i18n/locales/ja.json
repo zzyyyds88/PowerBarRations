@@ -2973,6 +2973,21 @@
     "Pick the active member for manual mode before saving.": "手動指定モードでは保存前に使用メンバーを選択してください。",
     "Add members": "メンバーを追加",
     "Add member channels from the candidates below.": "下の候補からメンバーチャネルを追加します。",
-    "All candidate channels are already added.": "すべての候補チャネルが追加済みです。"
+    "All candidate channels are already added.": "すべての候補チャネルが追加済みです。",
+    "Members (order)": "Members (order)",
+    "Search channels or models": "Search channels or models",
+    "No channels declare models yet.": "No channels declare models yet.",
+    "Pick models from the left to add them to this lane.": "Pick models from the left to add them to this lane.",
+    "Create lane": "Create lane",
+    "Delete lane": "Delete lane",
+    "Edit lane": "Edit lane",
+    "Pick member channels and models from any channel, then order them. The order is the failover order.": "Pick member channels and models from any channel, then order them. The order is the failover order.",
+    "Max attempts": "Max attempts",
+    "Retry interval (s)": "Retry interval (s)",
+    "Non-stream timeout (s)": "Non-stream timeout (s)",
+    "Stream first event timeout (s)": "Stream first event timeout (s)",
+    "Cooldown (s)": "Cooldown (s)",
+    "Affinity (s)": "Affinity (s)",
+    "Create a lane by hand and pick members from any channel to make a route key callable.": "Create a lane by hand and pick members from any channel to make a route key callable."
   }
 }

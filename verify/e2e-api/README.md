@@ -17,4 +17,5 @@ bash verify/e2e-api/ops_runbook.sh
 
 | 时间 | 结果 | 证据 |
 |---|---|---|
+| 2026-09-19 | **PASS=21 FAIL=0** | `verify/e2e-api/run-20260919-130927.log` |
 | 2026-09-19 | **PASS=21 FAIL=0** | `verify/e2e-api/run-20260919-105901.log` |

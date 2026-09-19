@@ -73,6 +73,8 @@ export interface PBRRouteDetail {
   mode?: string
   route_key?: string
   active_member?: string
+  /** 车道六键（后端 GET /api/v1/routes/{model} 一并返回）。 */
+  config?: Record<string, number>
   members: PBRRouteMember[]
   /**
    * 已配车道时，后端额外返回「声明了该模型但不在成员链里」的候选渠道，
@@ -89,6 +91,82 @@ interface ListResponse<T> {
 export async function listPBRModels(): Promise<PBRModelSummary[]> {
   const res = await api.get<ListResponse<PBRModelSummary>>('/api/v1/models')
   return res.data.items ?? []
+}
+
+/**
+ * 成员选择器的候选目录：每个启用渠道 + 它声明的模型清单（ADR 0006）。
+ *
+ * 成员候选 = **任意启用渠道的任意已声明模型**，与路由键是否同名无关；
+ * 数据源直接复用 `GET /api/v1/channels`（已返回每渠道 models 与 model_mapping），
+ * 不新增专用端点。`model_mapping` 供界面解析成员的上游真名展示。
+ */
+export interface PBRChannelCatalogEntry {
+  name: string
+  enabled: boolean
+  models: string[]
+  /** 路由键 → 上游真名；成员未显式改名时用于展示解析结果。 */
+  model_mapping: Record<string, string>
+}
+
+/** 拉取全部渠道的模型目录（成员选择器左栏）。 */
+export async function listPBRChannelCatalog(): Promise<
+  PBRChannelCatalogEntry[]
+> {
+  // 自用规模一页取全；limit 有上限时按 next_cursor 继续翻。
+  interface ChannelListResponse {
+    items?: {
+      name: string
+      enabled?: boolean
+      models?: string[]
+      model_mapping?: Record<string, string>
+    }[]
+    next_cursor?: string | null
+  }
+  const entries: PBRChannelCatalogEntry[] = []
+  let cursor: string | null = null
+  for (let page = 0; page < 50; page += 1) {
+    const res: { data: ChannelListResponse } =
+      await api.get<ChannelListResponse>('/api/v1/channels', {
+        params: { limit: 200, cursor: cursor ?? undefined },
+      })
+    for (const item of res.data.items ?? []) {
+      entries.push({
+        name: item.name,
+        enabled: item.enabled !== false,
+        models: item.models ?? [],
+        model_mapping: item.model_mapping ?? {},
+      })
+    }
+    cursor = res.data.next_cursor ?? null
+    if (!cursor) break
+  }
+  return entries
+}
+
+/**
+ * 车道成员的唯一键 = `(渠道, 上游真名)`（ADR 0006）。
+ *
+ * 同一渠道可在一条车道内出现多次（各自对应不同上游模型），因此**不能按渠道去重**；
+ * 未显式改名的成员用解析后的上游真名参与去重。
+ */
+export function memberKey(member: {
+  channel: string
+  upstream_model: string
+}): string {
+  return `${member.channel}\u0000${member.upstream_model}`
+}
+
+/** 解析成员展示用的上游真名：显式改名 > 渠道映射 > 路由键。 */
+export function resolveUpstreamModel(
+  override: string,
+  routeKey: string,
+  channel?: PBRChannelCatalogEntry
+): string {
+  const trimmed = override.trim()
+  if (trimmed !== '' && trimmed !== routeKey) return trimmed
+  const mapped = channel?.model_mapping?.[routeKey]
+  if (mapped && mapped.trim() !== '') return mapped.trim()
+  return trimmed !== '' ? trimmed : routeKey
 }
 
 /** GET /api/v1/lanes 的精简项：车道名 + 有序成员（成员数组顺序即故障切换顺序）。 */
@@ -156,11 +234,16 @@ export interface PBRMemberInput {
 
 export type PBRLaneMode = 'failover' | 'manual'
 
-/** 成员链保存选项：模式与 manual 的 active member。 */
+/** 成员链保存选项：模式、manual 的 active member 与六键。 */
 export interface PBRSaveLaneOptions {
   mode?: PBRLaneMode
   /** 仅 manual 模式：成员别名，或 "channel/upstream_model" 标签。 */
   activeMember?: string
+  /**
+   * 车道六键。编排器显式传入（含用户在「高级」区改过的值）；
+   * 不传则沿用该车道已有的六键，再回落 `lane_defaults`。
+   */
+  config?: Record<string, number>
 }
 
 /**
@@ -178,15 +261,17 @@ export async function savePBRFailover(
   members: PBRMemberInput[],
   options?: PBRSaveLaneOptions
 ): Promise<void> {
-  const config = await loadLaneDefaults()
   // 已有车道：保留其自身六键，只提交顺序（避免用默认值覆盖自定义配置）。
   const existing = await getPBRLaneDetail(model)
+  // 六键来源优先级：调用方显式传入 > 车道已有 > lane_defaults。
+  const config =
+    options?.config ?? existing?.config ?? (await loadLaneDefaults())
   await api.put(`/api/v1/lanes/${encodeURIComponent(model)}`, {
     // 保存即让这条车道生效：被停用的车道在用户点保存后重新启用。
     enabled: true,
     mode: options?.mode ?? existing?.mode ?? 'failover',
     active_member: options?.activeMember ?? existing?.activeMember ?? '',
-    config: existing?.config ?? config,
+    config,
     members,
   })
 }
@@ -204,6 +289,24 @@ async function loadLaneDefaults(): Promise<Record<string, number>> {
     // 忽略：回落内置默认值
   }
   return BUILTIN_LANE_DEFAULTS
+}
+
+/** 已存在车道的模式 / active_member / 六键（编辑弹窗初始化用）。 */
+export interface PBRLaneDetail {
+  mode: PBRLaneMode
+  activeMember: string
+  config: Record<string, number> | null
+}
+
+/** 读取某车道的模式与六键；车道不存在返回 null。 */
+export async function getPBRLane(model: string): Promise<PBRLaneDetail | null> {
+  const detail = await getPBRLaneDetail(model)
+  if (detail.mode === null && detail.config === null) return null
+  return {
+    mode: detail.mode ?? 'failover',
+    activeMember: detail.activeMember ?? '',
+    config: detail.config,
+  }
 }
 
 /** 已存在车道的六键与模式；不存在或读取失败返回 null。 */
