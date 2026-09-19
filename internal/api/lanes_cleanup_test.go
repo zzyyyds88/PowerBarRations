@@ -19,7 +19,6 @@ func TestCleanupLaneMembersRemovesOrphans(t *testing.T) {
 	db := setupAPITestDB(t)
 	keep := &model.Channel{Name: "keep-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "mix-model"}
 	require.NoError(t, db.Create(keep).Error)
-	require.NoError(t, keep.AddAbilities(nil))
 	// 车道 A：一个有效成员 + 一个指向不存在渠道的悬空成员 → 清理后保留。
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "mix-model", Enabled: true, Mode: model.LaneModeFailover,
 		Members: []model.LaneMember{{ChannelId: keep.Id, Priority: 2}, {ChannelId: 999999, Priority: 1}}}))

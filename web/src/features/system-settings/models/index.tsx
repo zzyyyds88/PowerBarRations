@@ -59,7 +59,6 @@ const defaultModelSettings: ModelSettings = {
   UserUsableGroups: '',
   GroupGroupRatio: '',
   'group_ratio_setting.group_special_usable_group': '{}',
-  RetryTimes: 0,
   ChannelDisableThreshold: '',
   AutomaticDisableChannelEnabled: false,
   AutomaticEnableChannelEnabled: false,
@@ -71,12 +70,6 @@ const defaultModelSettings: ModelSettings = {
   'monitor_setting.auto_test_channel_minutes': 10,
   'monitor_setting.channel_test_concurrency': 1,
   'monitor_setting.channel_test_mode': 'scheduled_all',
-  'channel_affinity_setting.enabled': false,
-  'channel_affinity_setting.switch_on_success': true,
-  'channel_affinity_setting.keep_on_channel_disabled': false,
-  'channel_affinity_setting.max_entries': 100000,
-  'channel_affinity_setting.default_ttl_seconds': 3600,
-  'channel_affinity_setting.rules': '[]',
 }
 
 export function ModelSettings() {

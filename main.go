@@ -90,11 +90,8 @@ func main() {
 			defer func() {
 				if r := recover(); r != nil {
 					common.SysLog(fmt.Sprintf("InitChannelCache panic: %v, retrying once", r))
-					// Retry once
-					_, _, fixErr := model.FixAbility()
-					if fixErr != nil {
-						common.FatalLog(fmt.Sprintf("InitChannelCache failed: %s", fixErr.Error()))
-					}
+					// Retry once；再次 panic 直接按启动失败处理
+					model.InitChannelCache()
 				}
 			}()
 			model.InitChannelCache()

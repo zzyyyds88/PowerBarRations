@@ -13,7 +13,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/logger"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
-	"github.com/zzyyyds88/PowerBarRations/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,24 +23,22 @@ import (
 //   - 首次选路：middleware.Distribute() 顶部的 PBRServe()；
 //   - 重试选路：controller/relay.go 的 getChannel() → PBRNextChannel()。
 //
-// 不适用 PBR 的请求（显式渠道 pin、非模型面）返回 false，交回迁移前的旧链路，
-// 保证"只裁计费与多用户、其余功能保留"（design-v1 §1.4）。
+// PBRServe 返回 false 仅表示"模型名解析失败 / 模型名为空"这类无法确定路由键的
+// 请求，由 Distribute 产出 400；显式渠道 pin（sk-<key>-<channelId>）已随产品收敛
+// 物理删除，车道是唯一选路入口（design-v1 §3.3）。
 
 // PBRServe 尝试用 PBR 路由接管本次请求的渠道选择。
 //
-// 返回 true 表示已处理完毕（成功注入渠道，或已写出 503）；false 表示不适用，调用方应走旧链路。
+// 返回 true 表示已处理完毕（成功注入渠道，或已写出 403 / 503）；false 表示请求
+// 无法确定路由键（模型名解析失败或为空），调用方应产出 400。
 func PBRServe(c *gin.Context) bool {
-	if _, found, _ := service.GetChannelConstraints(c).ResolvedPin(); found {
-		// 显式渠道 pin（如 sk-<key>-<channelId>）语义是"就要这个渠道"，不走模型名键控。
-		return false
-	}
-	modelRequest, shouldSelectChannel, err := getModelRequest(c)
-	if err != nil || !shouldSelectChannel {
+	modelRequest, err := getModelRequest(c)
+	if err != nil {
 		return false
 	}
 	modelName := strings.TrimSpace(modelRequest.Model)
 	if modelName == "" {
-		// 交给旧链路产出原有的"模型名必填"错误形态。
+		// 交给 Distribute 产出原有的"模型名必填"400 错误形态。
 		return false
 	}
 	// 令牌的车道权限判在"规范化后的路由键"上：别名点名先归一到所属车道。

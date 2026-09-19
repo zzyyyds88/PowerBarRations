@@ -558,11 +558,6 @@ func checkAndPersistChannelUpstreamModelUpdates(
 	if err = updateChannelUpstreamModelSettings(channel, *settings, modelsChanged); err != nil {
 		return false, autoAdded, err
 	}
-	if modelsChanged {
-		if err = channel.UpdateAbilities(nil); err != nil {
-			return true, autoAdded, err
-		}
-	}
 	return modelsChanged, autoAdded, nil
 }
 
@@ -1020,11 +1015,6 @@ func applyChannelUpstreamModelUpdates(
 		return nil, nil, nil, nil, false, err
 	}
 
-	if modelsChanged {
-		if err := channel.UpdateAbilities(nil); err != nil {
-			return addModels, removeModels, remainingModels, remainingRemoveModels, true, err
-		}
-	}
 	return addModels, removeModels, remainingModels, remainingRemoveModels, modelsChanged, nil
 }
 

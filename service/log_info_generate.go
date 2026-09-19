@@ -57,8 +57,6 @@ func AppendRelayLogAdminInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo,
 	if common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens) {
 		other.SetAdmin("local_count_tokens", true)
 	}
-
-	AppendChannelAffinityAdminInfo(ctx, other)
 }
 
 // GenerateTextOtherInfo 组装消费日志的元数据 other。

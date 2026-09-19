@@ -219,17 +219,9 @@ func PutChannel(c *gin.Context) {
 			writeAPIError(c, err)
 			return
 		}
-		if err := channel.AddAbilities(nil); err != nil {
-			writeAPIError(c, err)
-			return
-		}
 	} else {
 		channel.UpdatedAt = time.Now().Unix()
 		if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Select("*").Omit("id", "created_time").Updates(channel).Error; err != nil {
-			writeAPIError(c, err)
-			return
-		}
-		if err := channel.UpdateAbilities(nil); err != nil {
 			writeAPIError(c, err)
 			return
 		}
@@ -305,10 +297,6 @@ func DeleteChannel(c *gin.Context) {
 	}
 	if dryRun(c) {
 		dryRunResult(c, "channels", "remove", name)
-		return
-	}
-	if err := ch.DeleteAbilities(); err != nil {
-		writeAPIError(c, err)
 		return
 	}
 	if err := model.DB.Delete(&model.Channel{}, ch.Id).Error; err != nil {

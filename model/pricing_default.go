@@ -71,7 +71,7 @@ var defaultVendorIcons = map[string]string{
 
 // initDefaultVendorMapping 按模型名规则推断展示用供应商，并返回 模型名→供应商 ID。
 // 供应商表已随 Vendors 功能物理删除，这里只构建纯展示数据，不写库、不参与路由或计费。
-func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]PricingVendor, enableAbilities []AbilityWithChannel) map[string]int {
+func initDefaultVendorMapping(metaMap map[string]*Model, vendorMap map[int]PricingVendor, enableAbilities []channelCapability) map[string]int {
 	patterns := make([]string, 0, len(defaultVendorRules))
 	for pattern := range defaultVendorRules {
 		patterns = append(patterns, pattern)

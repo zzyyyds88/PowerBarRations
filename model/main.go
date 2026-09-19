@@ -310,6 +310,16 @@ func migrateDB() error {
 		common.SysError("failed to drop legacy system_instances table: " + err.Error())
 	}
 
+	// abilities 表随基座旧 priority/weight 选路与显式渠道 pin 物理删除：删表失败不阻塞启动。
+	if err := migrateDropAbilitiesTable(DB); err != nil {
+		common.SysError("failed to drop legacy abilities table: " + err.Error())
+	}
+
+	// 渠道亲和选项行随基座"渠道亲和"机制物理删除（只有车道级亲和）：删除失败不阻塞启动。
+	if err := migrateDropChannelAffinityOptions(DB); err != nil {
+		common.SysError("failed to drop legacy channel affinity options: " + err.Error())
+	}
+
 	// W7（design-v1 §10.2.1）：计费/多用户相关表随多用户面物理删除，AutoMigrate
 	// 只保留 PBR 自有表与仍被保留管理面使用的基座表（User 仅作系统用户锚点）。
 	if err := DB.AutoMigrate(
@@ -324,7 +334,6 @@ func migrateDB() error {
 		&WebhookDelivery{},
 		&User{},
 		&Option{},
-		&Ability{},
 		&Log{},
 		&Model{},
 		&PrefillGroup{},

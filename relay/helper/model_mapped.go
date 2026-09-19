@@ -21,7 +21,7 @@ func ModelMappedHelper(c *gin.Context, info *relaycommon.RelayInfo, request dto.
 	// model_mapping > 路由键"解析出上游真名并注入上下文（routing-spec §1.2）。
 	// 此时**不得**再用渠道 model_mapping 二次改写：那是以 OriginModelName 为起点
 	// 重新查一遍映射，会把成员级显式改名反向覆盖成渠道映射值。
-	// 非 PBR 链路（任务插件、显式渠道 pin、未走 PBR 的迁移期请求）没有这个上下文键，行为不变。
+	// 非 PBR 链路（渠道测试直连指定渠道）没有这个上下文键，行为不变。
 	if pbrUpstream := rootcommon.GetContextKeyString(c, constant.ContextKeyPBRUpstreamModel); pbrUpstream != "" {
 		if info.UpstreamModelName == "" {
 			info.UpstreamModelName = pbrUpstream

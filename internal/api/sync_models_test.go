@@ -18,7 +18,6 @@ func TestRemovedModelLaneRefsDetectsLaneUse(t *testing.T) {
 
 	channel := &model.Channel{Name: "sync-ch", Type: 1, Key: "sk-x", Status: common.ChannelStatusEnabled, Group: "default", Models: "keep-me,drop-me"}
 	require.NoError(t, db.Create(channel).Error)
-	require.NoError(t, channel.AddAbilities(nil))
 
 	// 真正会被打断的情况：车道名 = 被移除的路由键，成员来自本渠道。
 	dropped := &model.Lane{Name: "drop-me", Mode: model.LaneModeFailover, Enabled: true, Members: []model.LaneMember{
@@ -65,10 +64,8 @@ func TestCleanupLanesForRemovedModels(t *testing.T) {
 
 	chA := &model.Channel{Name: "clean-a", Type: 1, Key: "sk-a", Status: common.ChannelStatusEnabled, Group: "default", Models: "m-drop,m-keep"}
 	require.NoError(t, db.Create(chA).Error)
-	require.NoError(t, chA.AddAbilities(nil))
 	chB := &model.Channel{Name: "clean-b", Type: 1, Key: "sk-b", Status: common.ChannelStatusEnabled, Group: "default", Models: "m-drop"}
 	require.NoError(t, db.Create(chB).Error)
-	require.NoError(t, chB.AddAbilities(nil))
 
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "m-drop", Enabled: true, Mode: model.LaneModeFailover, Members: []model.LaneMember{
 		{ChannelId: chA.Id, Priority: 2}, {ChannelId: chB.Id, Priority: 1},

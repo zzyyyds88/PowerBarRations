@@ -65,17 +65,6 @@ export type LogFilters = CommonLogFilters
 /**
  * Parsed data from the 'other' field in usage logs
  */
-export interface ChannelAffinityInfo {
-  rule_name?: string
-  selected_group?: string
-  key_source?: string
-  key_path?: string
-  key_key?: string
-  key_hint?: string
-  key_fp?: string
-  using_group?: string
-}
-
 export const USAGE_BILLING_PATH = {
   LOCAL: 'local',
   UPSTREAM: 'upstream',
@@ -103,7 +92,6 @@ export interface LogOtherData {
     use_channel?: number[]
     local_count_tokens?: boolean
     usage_billing_path?: UsageBillingPath | string
-    channel_affinity?: ChannelAffinityInfo
     // Top-up audit fields (type=1, admin only)
     payment_method?: string
     callback_payment_method?: string

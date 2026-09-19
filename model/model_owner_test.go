@@ -9,9 +9,11 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/constant"
 )
 
+// abilities 表与渠道 priority/weight 均已物理删除：模型归属渠道类型直接由
+// 启用渠道的声明推导，多渠道命中同一模型时按渠道 id 升序取第一个。
+
 func clearPreferredOwnerTables(t *testing.T) {
 	t.Helper()
-	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
 	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
 }
 
@@ -21,10 +23,7 @@ func insertPreferredOwnerCandidate(
 	modelName string,
 	group string,
 	channelType int,
-	priority int64,
-	weight uint,
 	channelStatus int,
-	abilityEnabled bool,
 ) {
 	t.Helper()
 	require.NoError(t, DB.Create(&Channel{
@@ -33,14 +32,8 @@ func insertPreferredOwnerCandidate(
 		Key:    fmt.Sprintf("key-%d", channelID),
 		Status: channelStatus,
 		Name:   fmt.Sprintf("channel-%d", channelID),
-	}).Error)
-	require.NoError(t, DB.Create(&Ability{
-		Group:     group,
-		Model:     modelName,
-		ChannelId: channelID,
-		Enabled:   abilityEnabled,
-		Priority:  &priority,
-		Weight:    weight,
+		Group:  group,
+		Models: modelName,
 	}).Error)
 }
 
@@ -57,7 +50,7 @@ func TestGetPreferredModelOwnerChannelTypes(t *testing.T) {
 		{
 			name: "openai only",
 			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeOpenAI, 0, 0, common.ChannelStatusEnabled, true)
+				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeOpenAI, common.ChannelStatusEnabled)
 			},
 			groups:   []string{"default"},
 			expected: constant.ChannelTypeOpenAI,
@@ -66,37 +59,17 @@ func TestGetPreferredModelOwnerChannelTypes(t *testing.T) {
 		{
 			name: "codex only",
 			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeCodex, 0, 0, common.ChannelStatusEnabled, true)
+				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeCodex, common.ChannelStatusEnabled)
 			},
 			groups:   []string{"default"},
 			expected: constant.ChannelTypeCodex,
 			found:    true,
 		},
 		{
-			name: "priority wins",
+			name: "lowest channel id wins on ties",
 			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeOpenAI, 1, 100, common.ChannelStatusEnabled, true)
-				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeCodex, 2, 0, common.ChannelStatusEnabled, true)
-			},
-			groups:   []string{"default"},
-			expected: constant.ChannelTypeCodex,
-			found:    true,
-		},
-		{
-			name: "weight wins when priority is equal",
-			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeOpenAI, 1, 10, common.ChannelStatusEnabled, true)
-				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeCodex, 1, 20, common.ChannelStatusEnabled, true)
-			},
-			groups:   []string{"default"},
-			expected: constant.ChannelTypeCodex,
-			found:    true,
-		},
-		{
-			name: "channel id stabilizes exact ties",
-			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeCodex, 1, 10, common.ChannelStatusEnabled, true)
-				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeOpenAI, 1, 10, common.ChannelStatusEnabled, true)
+				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeCodex, common.ChannelStatusEnabled)
+				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeOpenAI, common.ChannelStatusEnabled)
 			},
 			groups:   []string{"default"},
 			expected: constant.ChannelTypeOpenAI,
@@ -105,18 +78,18 @@ func TestGetPreferredModelOwnerChannelTypes(t *testing.T) {
 		{
 			name: "group filter excludes other groups",
 			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 1, modelName, "vip", constant.ChannelTypeCodex, 10, 100, common.ChannelStatusEnabled, true)
-				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeOpenAI, 1, 0, common.ChannelStatusEnabled, true)
+				insertPreferredOwnerCandidate(t, 1, modelName, "vip", constant.ChannelTypeCodex, common.ChannelStatusEnabled)
+				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeOpenAI, common.ChannelStatusEnabled)
 			},
 			groups:   []string{"default"},
 			expected: constant.ChannelTypeOpenAI,
 			found:    true,
 		},
 		{
-			name: "disabled candidates are ignored",
+			name: "disabled channels are ignored",
 			setup: func(t *testing.T) {
-				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeCodex, 10, 100, common.ChannelStatusEnabled, false)
-				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeOpenAI, 1, 0, common.ChannelStatusManuallyDisabled, true)
+				insertPreferredOwnerCandidate(t, 1, modelName, "default", constant.ChannelTypeCodex, common.ChannelStatusManuallyDisabled)
+				insertPreferredOwnerCandidate(t, 2, modelName, "default", constant.ChannelTypeOpenAI, common.ChannelStatusAutoDisabled)
 			},
 			groups: []string{"default"},
 			found:  false,

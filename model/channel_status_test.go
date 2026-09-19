@@ -13,7 +13,6 @@ import (
 func setupChannelStatusTest(t *testing.T) {
 	t.Helper()
 	truncateTables(t)
-	require.NoError(t, DB.Exec("DELETE FROM abilities").Error)
 	require.NoError(t, DB.Exec("DELETE FROM channels").Error)
 
 	memoryCacheEnabled := common.MemoryCacheEnabled

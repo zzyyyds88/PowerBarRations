@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,14 +16,14 @@ func resetPricingEndpointTestTables(t *testing.T) {
 	t.Helper()
 	originalMemoryCacheEnabled := common.MemoryCacheEnabled
 	common.MemoryCacheEnabled = true
-	require.NoError(t, DB.AutoMigrate(&Channel{}, &Ability{}, &Model{}))
-	for _, table := range []string{"abilities", "channels", "models"} {
+	require.NoError(t, DB.AutoMigrate(&Channel{}, &Model{}))
+	for _, table := range []string{"channels", "models"} {
 		require.NoError(t, DB.Exec("DELETE FROM "+table).Error)
 	}
 	InitChannelCache()
 	InvalidatePricingCache()
 	t.Cleanup(func() {
-		for _, table := range []string{"abilities", "channels", "models"} {
+		for _, table := range []string{"channels", "models"} {
 			require.NoError(t, DB.Exec("DELETE FROM "+table).Error)
 		}
 		InitChannelCache()
@@ -39,6 +40,7 @@ func insertPricingEndpointChannel(t *testing.T, channelID int, channelType int, 
 		Key:    fmt.Sprintf("key-%d", channelID),
 		Status: common.ChannelStatusEnabled,
 		Name:   fmt.Sprintf("channel-%d", channelID),
+		Group:  "default",
 	}
 	if settings.AdvancedCustom != nil {
 		channel.SetOtherSettings(settings)
@@ -46,14 +48,14 @@ func insertPricingEndpointChannel(t *testing.T, channelID int, channelType int, 
 	require.NoError(t, DB.Create(channel).Error)
 }
 
-func insertPricingEndpointAbility(t *testing.T, channelID int, modelName string) {
+// insertPricingEndpointModel 把模型声明直接写进渠道的 models 列
+// （abilities 表已删除，定价目录由启用渠道声明展开）。
+func insertPricingEndpointModel(t *testing.T, channelID int, modelName string) {
 	t.Helper()
-	require.NoError(t, DB.Create(&Ability{
-		Group:     "default",
-		Model:     modelName,
-		ChannelId: channelID,
-		Enabled:   true,
-	}).Error)
+	var channel Channel
+	require.NoError(t, DB.First(&channel, channelID).Error)
+	models := append(channel.GetModels(), modelName)
+	require.NoError(t, DB.Model(&Channel{}).Where("id = ?", channelID).Update("models", strings.Join(models, ",")).Error)
 }
 
 func pricingEndpointAdvancedCustomConfig(routes ...dto.AdvancedCustomRoute) dto.ChannelOtherSettings {
@@ -93,8 +95,8 @@ func TestPricingAdvancedCustomUsesConfiguredEndpointTypes(t *testing.T) {
 			Models:       []string{"re:^gemini-"},
 		},
 	))
-	insertPricingEndpointAbility(t, 101, "gemini-2.5-flash")
-	insertPricingEndpointAbility(t, 101, "gpt-4o")
+	insertPricingEndpointModel(t, 101, "gemini-2.5-flash")
+	insertPricingEndpointModel(t, 101, "gpt-4o")
 
 	byModel := pricingEndpointTypesByModel(t)
 
@@ -118,7 +120,7 @@ func TestPricingModelMetadataEndpointsMergeWithAdvancedCustomInference(t *testin
 			Models:       []string{"re:^gemini-"},
 		},
 	))
-	insertPricingEndpointAbility(t, 103, "gemini-2.5-flash")
+	insertPricingEndpointModel(t, 103, "gemini-2.5-flash")
 	require.NoError(t, DB.Create(&Model{
 		ModelName: "gemini-2.5-flash",
 		Endpoints: `{
@@ -147,7 +149,7 @@ func TestPricingModelMetadataEndpointsCanProvideEndpointWithoutChannelInference(
 			Models:       []string{"re:^gemini-"},
 		},
 	))
-	insertPricingEndpointAbility(t, 104, "metadata-only-model")
+	insertPricingEndpointModel(t, 104, "metadata-only-model")
 	require.NoError(t, DB.Create(&Model{
 		ModelName: "metadata-only-model",
 		Endpoints: `{
@@ -166,7 +168,7 @@ func TestPricingAdvancedCustomMissingConfigFallsBackToChannelType(t *testing.T) 
 	resetPricingEndpointTestTables(t)
 
 	insertPricingEndpointChannel(t, 102, constant.ChannelTypeAdvancedCustom, dto.ChannelOtherSettings{})
-	insertPricingEndpointAbility(t, 102, "gpt-4o")
+	insertPricingEndpointModel(t, 102, "gpt-4o")
 
 	byModel := pricingEndpointTypesByModel(t)
 
@@ -179,9 +181,9 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 	insertPricingEndpointChannel(t, 201, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 202, constant.ChannelTypeGemini, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 203, constant.ChannelTypeAnthropic, dto.ChannelOtherSettings{})
-	insertPricingEndpointAbility(t, 201, "gpt-4o")
-	insertPricingEndpointAbility(t, 202, "gemini-2.5-flash")
-	insertPricingEndpointAbility(t, 203, "claude-3-5-sonnet")
+	insertPricingEndpointModel(t, 201, "gpt-4o")
+	insertPricingEndpointModel(t, 202, "gemini-2.5-flash")
+	insertPricingEndpointModel(t, 203, "claude-3-5-sonnet")
 
 	byModel := pricingEndpointTypesByModel(t)
 
@@ -199,7 +201,7 @@ func TestInitChannelCacheInvalidatesPricingCache(t *testing.T) {
 			UpstreamPath: "/v1/chat/completions",
 		},
 	))
-	insertPricingEndpointAbility(t, 301, "gemini-3.5-flash")
+	insertPricingEndpointModel(t, 301, "gemini-3.5-flash")
 	InitChannelCache()
 
 	initial := pricingEndpointTypesByModel(t)
@@ -244,7 +246,7 @@ func TestInitChannelCacheInvalidatesStartupPricingBuiltBeforeChannelCache(t *tes
 			Models:       []string{"re:^gemini-"},
 		},
 	))
-	insertPricingEndpointAbility(t, 302, "gemini-3.5-flash")
+	insertPricingEndpointModel(t, 302, "gemini-3.5-flash")
 
 	staleByModel := pricingEndpointTypesFromPricing(GetPricing())
 	require.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, staleByModel["gemini-3.5-flash"])

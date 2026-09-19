@@ -462,7 +462,6 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.quota_override': 'Overrode user quota from {{from}} to {{to}}',
   // System settings
   'option.update': 'Updated system setting {{key}}',
-  'option.clear_affinity_cache': 'Cleared channel affinity cache',
   // Performance / cache
   'performance.clear_disk_cache': 'Cleared disk cache',
   'performance.gc': 'Triggered garbage collection',

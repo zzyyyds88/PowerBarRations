@@ -38,7 +38,7 @@ func TestUnconfiguredModelDoesNotRegisterRuntime(t *testing.T) {
 // 非显式来源即使恰好带了成员也不登记：注册表的唯一合法来源是显式车道。
 func TestNonExplicitRouteDoesNotRegisterRuntime(t *testing.T) {
 	resolved := testRoute("lane-non-explicit-registry", 1, 1)
-	resolved.Source = model.RouteSourceImplicit
+	resolved.Source = model.RouteSourceUnconfigured
 
 	NewState(resolved)
 	assert.Nil(t, Default.Get(laneKeyOf(resolved)),

@@ -1,23 +1,17 @@
 package model
 
 import (
-	"errors"
 	"fmt"
-	"math/rand"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
-	"github.com/zzyyyds88/PowerBarRations/dto"
 	"github.com/zzyyyds88/PowerBarRations/logger"
 	kitdto "github.com/zzyyyds88/PowerBarRations/relaykit/dto"
-	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 )
 
-var group2model2channels map[string]map[string][]int // enabled channel
-var channelsIDM map[int]*Channel                     // all channels include disabled
+var channelsIDM map[int]*Channel // all channels include disabled
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
@@ -40,37 +34,7 @@ func InitChannelCache() {
 			}
 		}
 	}
-	var abilities []*Ability
-	DB.Find(&abilities)
-	groups := make(map[string]bool)
-	for _, ability := range abilities {
-		groups[ability.Group] = true
-	}
-	newGroup2model2channels := make(map[string]map[string][]int)
-	for group := range groups {
-		newGroup2model2channels[group] = make(map[string][]int)
-	}
-	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
-			continue // skip disabled channels
-		}
-		groups := strings.SplitSeq(channel.Group, ",")
-		for group := range groups {
-			models := channel.GetModels()
-			for _, model := range models {
-				if _, ok := newGroup2model2channels[group][model]; !ok {
-					newGroup2model2channels[group][model] = make([]int, 0)
-				}
-				newGroup2model2channels[group][model] = append(newGroup2model2channels[group][model], channel.Id)
-			}
-		}
-	}
-
-	// 渠道 priority 已删除（路由顺序只在车道上）：候选列表保持 DB 返回的稳定
-	// 顺序（按渠道 id），不再按优先级排序。
-
 	channelSyncLock.Lock()
-	group2model2channels = newGroup2model2channels
 	//channelsIDM = newChannelId2channel
 	for i, channel := range newChannelId2channel {
 		if channel.ChannelInfo.IsMultiKey {
@@ -102,60 +66,6 @@ func SyncChannelCache(frequency int) {
 		common.SysLog("syncing channels from database")
 		InitChannelCache()
 	}
-}
-
-func GetRandomSatisfiedChannel(
-	group string,
-	model string,
-	retry int,
-	filters []dto.ChannelFilter,
-) (*Channel, error) {
-	// if memory cache is disabled, get channel directly from database
-	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, filters)
-	}
-
-	channelSyncLock.RLock()
-	defer channelSyncLock.RUnlock()
-
-	// First, try to find channels with the exact model name.
-	channels, _ := filterCandidateIDs(group2model2channels[group][model], model, filters)
-
-	// If no channels found, try to find channels with the normalized model name.
-	if len(channels) == 0 {
-		normalizedModel := ratio_setting.RoutingMatchModelName(model)
-		channels, _ = filterCandidateIDs(group2model2channels[group][normalizedModel], model, filters)
-	}
-
-	if len(channels) == 0 {
-		return nil, nil
-	}
-
-	if len(channels) == 1 {
-		if channel, ok := channelsIDM[channels[0]]; ok {
-			return channel, nil
-		}
-		return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channels[0])
-	}
-
-	// 渠道 priority/weight 已删除：这条遗留选择链（仅任务插件与显式渠道 pin 会走到）
-	// 只剩单一优先级层级，因此 retry 不再参与选择；权重按历史上"全部为 0"的兜底
-	// 口径处理，即等概率随机，结果与渠道配置无关且可预期。
-	_ = retry
-	_ = group
-	_ = model
-	randomWeight := rand.Intn(len(channels) * 100)
-	for _, channelId := range channels {
-		channel, ok := channelsIDM[channelId]
-		if !ok {
-			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
-		}
-		randomWeight -= 100
-		if randomWeight < 0 {
-			return channel, nil
-		}
-	}
-	return nil, errors.New("channel not found")
 }
 
 func CacheGetChannel(id int) (*Channel, error) {
@@ -199,20 +109,7 @@ func CacheUpdateChannelStatus(id int, status int) {
 	if channel, ok := channelsIDM[id]; ok {
 		channel.Status = status
 	}
-	if status != common.ChannelStatusEnabled {
-		// delete the channel from group2model2channels
-		for group, model2channels := range group2model2channels {
-			for model, channels := range model2channels {
-				for i, channelId := range channels {
-					if channelId == id {
-						// remove the channel from the slice
-						group2model2channels[group][model] = append(channels[:i], channels[i+1:]...)
-						break
-					}
-				}
-			}
-		}
-	}
+
 }
 
 func CacheUpdateChannel(channel *Channel) {

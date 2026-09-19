@@ -105,10 +105,6 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicyUpstreamWith(modelsSuccess),
 		},
 		{
-			Method: http.MethodPost, Path: "/channels/batch/repair", Handler: RepairChannelAbilities,
-			Policy: opsPolicyWith(repairSuccess),
-		},
-		{
 			Method: http.MethodPut, Path: "/channels/by-tag", Handler: EditChannelsByTag,
 			Policy: opsPolicyWith(tagUpdatedSuccess),
 		},
@@ -192,14 +188,6 @@ func opsRoutes() []OpsRoute {
 		{
 			Method: http.MethodPut, Path: "/system/options/all", Handler: UpdateSystemOptionsByName,
 			Policy: opsPolicyWith(optionUpdatedSuccess),
-		},
-		{
-			Method: http.MethodGet, Path: "/system/affinity-cache", Handler: AffinityCacheStats,
-			Policy: opsPolicy(),
-		},
-		{
-			Method: http.MethodDelete, Path: "/system/affinity-cache", Handler: ClearAffinityCache,
-			Policy: opsPolicyWith(deletedSuccess),
 		},
 		{
 			Method: http.MethodGet, Path: "/system-tasks", Handler: ListSystemTasksHandler,
@@ -317,14 +305,6 @@ func deletedCountSuccess(_ *gin.Context, base apiresp.Base) any {
 	return gin.H{"deleted": intOf(base.DataValue())}
 }
 
-func deletedSuccess(_ *gin.Context, base apiresp.Base) any {
-	value, ok := base.DataValue().(map[string]any)
-	if !ok {
-		return gin.H{"deleted": 0}
-	}
-	return gin.H{"deleted": intOf(value["deleted"])}
-}
-
 func deletedTrueSuccess(c *gin.Context, base apiresp.Base) any {
 	id := 0
 	if raw := c.Param("id"); raw != "" {
@@ -351,14 +331,6 @@ func itemsSuccess(_ *gin.Context, base apiresp.Base) any {
 
 func taskWrappedSuccess(_ *gin.Context, base apiresp.Base) any {
 	return gin.H{"task": base.DataValue()}
-}
-
-func repairSuccess(_ *gin.Context, base apiresp.Base) any {
-	value, ok := base.DataValue().(map[string]any)
-	if !ok {
-		return gin.H{"repaired": 0, "failed": 0}
-	}
-	return gin.H{"repaired": intOf(value["success"]), "failed": intOf(value["fails"])}
 }
 
 func tagUpdatedSuccess(c *gin.Context, _ apiresp.Base) any {

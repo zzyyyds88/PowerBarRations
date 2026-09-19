@@ -185,8 +185,8 @@ func (info *RelayInfo) RequestedImageCount() int {
 // upstreamModelName 取发给上游的模型名。
 //
 // PBR 路由把"改写上游模型名"的能力下沉到车道成员（design-v1 §3.3），成员声明的
-// upstream_model 由 internal/route 经 ContextKeyPBRUpstreamModel 注入；隐式车道
-// 与该键为空时回落到请求名（original_model），行为与迁移前一致。
+// upstream_model 由 internal/route 经 ContextKeyPBRUpstreamModel 注入；该键为空
+// （非车道链路，如渠道测试直连）时回落到请求名（original_model）。
 func upstreamModelName(c *gin.Context) string {
 	if name := common.GetContextKeyString(c, constant.ContextKeyPBRUpstreamModel); name != "" {
 		return name

@@ -19,7 +19,6 @@ func TestListModelsIncludesLaneHealth(t *testing.T) {
 	db := setupAPITestDB(t)
 	ch := &model.Channel{Name: "health-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "health-model"}
 	require.NoError(t, db.Create(ch).Error)
-	require.NoError(t, ch.AddAbilities(nil))
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "health-model", Enabled: true, Mode: model.LaneModeFailover,
 		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 1}}}))
 

@@ -23,7 +23,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 	"github.com/zzyyyds88/PowerBarRations/service"
 	"github.com/zzyyyds88/PowerBarRations/setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
@@ -212,25 +211,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// PBR 无额度计费（design-v1 §1.3/G7）：转发路径不做价格折算、预扣费与退款，
 	// 错误路径直接使用上游/本地返回的原始错误。
 
-	retryParam := &service.RetryParam{
-		Ctx:         c,
-		TokenGroup:  relayInfo.TokenGroup,
-		ModelName:   relayInfo.OriginModelName,
-		RequestPath: c.Request.URL.Path,
-		Retry:       common.GetPointer(0),
+	// PBR 车道是唯一选路入口（routing-spec §1.1）：走到这里必然已由 PBRServe 注入请求态。
+	pbrState := pbrroute.From(c)
+	if pbrState == nil {
+		newAPIError = types.NewError(errors.New("pbr route state missing"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
 
-	// 尝试轮数上界：PBR 路由按"成员数 × 单成员尝试预算"决定；旧链路沿用全局 RetryTimes。
-	maxRetry := common.RetryTimes
-	if pbrState := pbrroute.From(c); pbrState != nil {
-		maxRetry = pbrState.MaxRetriesForLoop()
-	}
+	// 尝试轮数上界由车道链决定："成员数 × 单成员尝试预算"（routing-spec §3）。
+	maxRetry := pbrState.MaxRetriesForLoop()
 
-	for ; retryParam.GetRetry() <= maxRetry; retryParam.IncreaseRetry() {
-		relayInfo.RetryIndex = retryParam.GetRetry()
-		channel, channelErr := getChannel(c, relayInfo, retryParam)
+	for attempt := 0; attempt <= maxRetry; attempt++ {
+		relayInfo.RetryIndex = attempt
+		channel, channelErr := getChannel(c, relayInfo, pbrState)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
@@ -264,27 +259,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			// 上报成功：解除冷却、复位熔断、按需启动亲和（routing-spec §5/§6）。
-			if pbrState := pbrroute.From(c); pbrState != nil {
-				pbrState.OnSuccess()
-			}
+			pbrState.OnSuccess()
 			return
 		}
 
 		relayInfo.LastError = newAPIError
 		if carrier := model.GetPBRLogCarrier(c); carrier != nil {
-			if pbrState := pbrroute.From(c); pbrState != nil {
-				carrier.Attempts = pbrState.LogAttempts()
-				carrier.TotalAttempts = len(carrier.Attempts)
-			}
+			carrier.Attempts = pbrState.LogAttempts()
+			carrier.TotalAttempts = len(carrier.Attempts)
 		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
-		if !shouldRetry(c, newAPIError, maxRetry-retryParam.GetRetry()) {
+		if !shouldRetry(c, newAPIError) {
 			// 不换人（client_error/canceled）时不会有下一轮，先把探测槽还掉
-			if pbrState := pbrroute.From(c); pbrState != nil {
-				pbrState.ReleaseProbe()
-			}
+			pbrState.ReleaseProbe()
 			break
 		}
 	}
@@ -375,31 +364,16 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 	return meta
 }
 
-func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
+func getChannel(c *gin.Context, info *relaycommon.RelayInfo, pbrState *pbrroute.State) (*model.Channel, *types.NewAPIError) {
 	// ChannelMeta == nil 表示这是本请求的首次尝试：渠道上下文已由 Distribute 注入，
 	// 直接复用，不得再推进成员链（否则首个成员会被跳过）。
 	if info.ChannelMeta == nil {
 		return channelFromSelectedContext(c), nil
 	}
-	// PBR 路由态存在时，重试选路由成员链推进（routing-spec §3），不再查 group/abilities。
-	if pbrState := pbrroute.From(c); pbrState != nil {
-		channel, ok := middleware.PBRNextChannel(c, pbrState, info.OriginModelName, info.LastError)
-		if !ok {
-			return nil, pbrroute.NoAvailableError(info.OriginModelName)
-		}
-		return channel, nil
-	}
-	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
-	if err != nil {
-		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
-	}
-	if channel == nil {
-		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
-	}
-
-	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
-	if newAPIError != nil {
-		return nil, newAPIError
+	// 重试选路由车道成员链推进（routing-spec §3）。
+	channel, ok := middleware.PBRNextChannel(c, pbrState, info.OriginModelName, info.LastError)
+	if !ok {
+		return nil, pbrroute.NoAvailableError(info.OriginModelName)
 	}
 	return channel, nil
 }
@@ -421,41 +395,13 @@ func channelFromSelectedContext(c *gin.Context) *model.Channel {
 	}
 }
 
-func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError) bool {
 	if openaiErr == nil {
 		return false
 	}
 	// PBR 路由按 routing-spec §4.1 的分类决定是否换人：429/5xx/401 等换人，
 	// client_error 与 canceled 不换人、不冷却（避免一个坏请求打冷健康成员）。
-	if pbrroute.From(c) != nil {
-		return pbrroute.ShouldSwitchMember(pbrroute.Classify(openaiErr))
-	}
-	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-		return false
-	}
-	if types.IsChannelError(openaiErr) {
-		return true
-	}
-	if types.IsSkipRetryError(openaiErr) {
-		return false
-	}
-	if retryTimes <= 0 {
-		return false
-	}
-	if service.GetChannelConstraints(c).SuppressesRetry() {
-		return false
-	}
-	code := openaiErr.StatusCode
-	if code >= 200 && code < 300 {
-		return false
-	}
-	if code < 100 || code > 599 {
-		return true
-	}
-	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return false
-	}
-	return operation_setting.ShouldRetryByStatusCode(code)
+	return pbrroute.ShouldSwitchMember(pbrroute.Classify(openaiErr))
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {

@@ -40,7 +40,7 @@ func setupModelListControllerTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Ability{}, &model.Model{}, &model.Lane{}, &model.LaneMember{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Channel{}, &model.Model{}, &model.Lane{}, &model.LaneMember{}))
 
 	t.Cleanup(func() {
 		sqlDB, err := db.DB()
@@ -180,12 +180,6 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 		},
 	})
 	require.NoError(t, db.Create(channel).Error)
-	require.NoError(t, db.Create(&model.Ability{
-		Group:     "default",
-		Model:     "gemini-3.5-flash",
-		ChannelId: 701,
-		Enabled:   true,
-	}).Error)
 
 	model.InitChannelCache()
 	model.GetPricing()
@@ -210,9 +204,10 @@ func TestListModelsAutoTokenGroupFallsBackToCurrentGroup(t *testing.T) {
 	withSelfUseModeEnabled(t)
 
 	db := setupModelListControllerTestDB(t)
-	require.NoError(t, db.Create(&[]model.Ability{
-		{Group: "default", Model: "zz-default-model", ChannelId: 1, Enabled: true},
-		{Group: "vip", Model: "zz-vip-model", ChannelId: 1, Enabled: true},
+	// abilities 表已删除：分组可见性直接由启用渠道的 Group/Models 决定。
+	require.NoError(t, db.Create(&[]model.Channel{
+		{Id: 1, Name: "list-ch-default", Type: 1, Key: "sk-1", Status: common.ChannelStatusEnabled, Group: "default", Models: "zz-default-model"},
+		{Id: 2, Name: "list-ch-vip", Type: 1, Key: "sk-2", Status: common.ChannelStatusEnabled, Group: "vip", Models: "zz-vip-model"},
 	}).Error)
 
 	recorder := httptest.NewRecorder()

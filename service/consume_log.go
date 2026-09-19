@@ -21,7 +21,7 @@ import (
 // 消费元数据日志（design-v1 §8/G7"只看不扣"）。
 //
 // 计费执行链（预扣费/结算/倍率折算）已按 §1.3 物理删除；这里只保留转发收尾
-// 必需的三件事：观测渠道亲和用量缓存、把 token 用量回填 PBR 日志载体
+// 必需的两件事：把 token 用量回填 PBR 日志载体
 // （model.RecordConsumeLog 内按 pbr_prices 折算成本）、写基座用量元数据日志。
 
 func usageSemantic(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {
@@ -53,9 +53,6 @@ func PostTextUsageLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	billingUsage := effectiveBillingUsage(usage)
 	if usage == nil {
 		extraContent = append(extraContent, "上游没有返回用量信息")
-	}
-	if originUsage != nil {
-		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, billingUsage, relayInfo.GetFinalRequestRelayFormat())
 	}
 
 	modelName := relayInfo.GetBillingModelName()
