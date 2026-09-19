@@ -355,9 +355,7 @@ export function OverviewDashboard() {
       model,
       keyName,
       keyId: preferredKey?.id,
-      displayKey: preferredKey
-        ? formatDisplayKey(preferredKey.key)
-        : 'pbr-...',
+      displayKey: preferredKey ? formatDisplayKey(preferredKey.key) : 'pbr-...',
       ready,
     }
   }, [apiInfoItems, modelsQuery.data, preferredKey, t])

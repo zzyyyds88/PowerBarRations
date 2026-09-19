@@ -255,11 +255,7 @@ export function resolveLaneSnapshots(params: {
   return { byLane, sseDriven: sseFresh }
 }
 
-export type RouteEventStatus =
-  | 'connecting'
-  | 'open'
-  | 'reconnecting'
-  | 'closed'
+export type RouteEventStatus = 'connecting' | 'open' | 'reconnecting' | 'closed'
 
 export interface RouteEventStreamOptions {
   /** 收到 route-state 帧（一次为该连接当前全量车道的快照）。 */

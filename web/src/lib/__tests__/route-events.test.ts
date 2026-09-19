@@ -37,7 +37,10 @@ function frame(event: string, data: unknown): SseFrame {
   return { event, data: JSON.stringify(data) }
 }
 
-function snapshot(lane: string, extra?: Partial<LaneHealthSnapshot>): LaneHealthSnapshot {
+function snapshot(
+  lane: string,
+  extra?: Partial<LaneHealthSnapshot>
+): LaneHealthSnapshot {
   return {
     lane,
     current_member: '',
@@ -67,7 +70,9 @@ describe('createSseFrameParser', () => {
 
   test('CRLF 行尾与 data 值里的冒号', () => {
     const parser = createSseFrameParser()
-    const frames = parser.feed('event: route-state\r\ndata: {"u":"http://x:8080/a"}\r\n\r\n')
+    const frames = parser.feed(
+      'event: route-state\r\ndata: {"u":"http://x:8080/a"}\r\n\r\n'
+    )
     expect(frames).toEqual([
       { event: 'route-state', data: '{"u":"http://x:8080/a"}' },
     ])
@@ -87,9 +92,7 @@ describe('createSseFrameParser', () => {
   test('流异常结束时 flush 取回未以空行收尾的最后一段', () => {
     const parser = createSseFrameParser()
     expect(parser.feed('event: route-state\ndata: {"a":1}')).toEqual([])
-    expect(parser.flush()).toEqual([
-      { event: 'route-state', data: '{"a":1}' },
-    ])
+    expect(parser.flush()).toEqual([{ event: 'route-state', data: '{"a":1}' }])
   })
 })
 
@@ -106,16 +109,20 @@ describe('parseRouteStateFrame', () => {
   })
 
   test('非 route-state 事件名被忽略', () => {
-    expect(parseRouteStateFrame(frame('ping', { ts: 'x', lanes: [] }))).toBeNull()
+    expect(
+      parseRouteStateFrame(frame('ping', { ts: 'x', lanes: [] }))
+    ).toBeNull()
   })
 
   test('坏 JSON、缺字段、members 非数组的帧都安全返回 null', () => {
-    expect(parseRouteStateFrame({ event: 'route-state', data: '{not json' })).toBeNull()
     expect(
-      parseRouteStateFrame(frame('route-state', { lanes: [] }))
+      parseRouteStateFrame({ event: 'route-state', data: '{not json' })
     ).toBeNull()
+    expect(parseRouteStateFrame(frame('route-state', { lanes: [] }))).toBeNull()
     expect(
-      parseRouteStateFrame(frame('route-state', { ts: 't', lanes: [{ lane: 1 }] }))
+      parseRouteStateFrame(
+        frame('route-state', { ts: 't', lanes: [{ lane: 1 }] })
+      )
     ).toBeNull()
   })
 })
@@ -204,7 +211,8 @@ describe('resolveLaneSnapshots（双源对账）', () => {
 
 function makeStreamBody() {
   const chunks: string[] = []
-  let waiting: ((v: { done: boolean; value?: Uint8Array }) => void) | null = null
+  let waiting: ((v: { done: boolean; value?: Uint8Array }) => void) | null =
+    null
   const encoder = new TextEncoder()
   const body = {
     getReader: () => ({
@@ -240,7 +248,6 @@ const routeStateChunk = (lanes: LaneHealthSnapshot[]) =>
     ts: '2026-09-19T12:00:00Z',
     lanes,
   })}\n\n`
-
 
 describe('openRouteEventStream', () => {
   test('建连解析帧并回调 onLanes；带 Cookie 凭据与 SSE Accept 头', async () => {

@@ -154,7 +154,9 @@ for i in 1 2; do
 done
 
 # 5) 2 条被拒车道 → 403（中间件阶段结束）
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"allow","allow_lanes":["other-model"],"deny_lanes":[]}}' \
+# allow 白名单放未知路由键会被批次2 B1 判 422 而拒绝该 PUT；改用 deny 形式（命中即拒绝，
+# 不触发"未知键"校验），同样让 w5-model 被拒。
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"all","allow_lanes":[],"deny_lanes":["w5-model"]}}' \
   "$BASE/api/v1/keys/client-w5" > /dev/null
 for i in 1 2; do
   CODE=$(chat w5-model "$CLIENT_PLAIN" "$(ok_body w5-model)"); COUNT=$((COUNT+1))

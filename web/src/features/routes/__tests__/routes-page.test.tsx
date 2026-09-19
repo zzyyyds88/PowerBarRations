@@ -44,8 +44,7 @@ vi.mock('@/lib/api', () => ({
 // SSE 长连接与真实 fetch 不在本页用例职责内（运行态渲染见 lane-runtime.test.tsx）：
 // 这里只桩掉连接器，保留帧解析/对账等纯逻辑为真实实现。
 vi.mock('@/lib/route-events', async (importOriginal) => {
-  const mod =
-    (await importOriginal()) as typeof import('@/lib/route-events')
+  const mod = (await importOriginal()) as typeof import('@/lib/route-events')
   return { ...mod, openRouteEventStream: vi.fn(() => ({ close: vi.fn() })) }
 })
 
