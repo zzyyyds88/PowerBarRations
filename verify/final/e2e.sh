@@ -209,7 +209,9 @@ echo
 echo "=== F：安全（未初始化/错误密钥/被拒车道/密钥明文可回读）==="
 WRONG=$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-the-key' "$BASE/api/v1/lanes")
 check "错误管理密钥 401" "$WRONG" "401"
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"allow","allow_lanes":["nope"],"deny_lanes":[]}}' "$BASE/api/v1/keys/e2e-client" > /dev/null
+# allow 白名单里放一个真实存在的车道（e2e-embed），从而对 e2e-model 形成拒绝：
+# 不能再用不存在的 nope——批次2 B1 已把"未知路由键"改判 422，那条 PUT 会被拒、策略不生效。
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"allow","allow_lanes":["e2e-embed"],"deny_lanes":[]}}' "$BASE/api/v1/keys/e2e-client" > /dev/null
 DENY=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' -d '{"model":"e2e-model","messages":[{"role":"user","content":"hi"}]}')
 check "被拒车道 403" "$DENY" "403"
 curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"all","allow_lanes":[],"deny_lanes":[]}}' "$BASE/api/v1/keys/e2e-client" > /dev/null
@@ -221,12 +223,13 @@ if [[ -n "$KEY_READBACK" && "$KEY_READBACK" == "$CLIENT_PLAIN" ]]; then
 else
   echo "  FAIL: 回读明文与创建响应不一致（回读=$KEY_READBACK）"; FAIL=$((FAIL+1))
 fi
-if grep -a -q "$CLIENT_PLAIN" "$WORK/pbr.db" 2>/dev/null; then
+# SQLite 跑在 WAL 模式：新写入可能还在 -wal 里未回写主库，必须连同 -wal 一起查。
+if grep -a -q "$CLIENT_PLAIN" "$WORK"/pbr.db* 2>/dev/null; then
   echo "  PASS: 客户端密钥明文入库（§3.3 明文存储契约）"; PASS=$((PASS+1))
 else
   echo "  FAIL: 库中应能检索到客户端密钥明文"; FAIL=$((FAIL+1))
 fi
-if grep -a -q "$ADMIN_KEY" "$WORK/pbr.db" 2>/dev/null; then
+if grep -a -q "$ADMIN_KEY" "$WORK"/pbr.db* 2>/dev/null; then
   echo "  FAIL: 库中出现管理密钥明文"; FAIL=$((FAIL+1))
 else
   echo "  PASS: 库中无管理密钥明文"; PASS=$((PASS+1))
