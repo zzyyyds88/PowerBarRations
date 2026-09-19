@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"net/http"
 	"strconv"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
@@ -8,6 +9,16 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// apiErrorConflict 写出"唯一名冲突"的基座失败信封：显式 code=conflict，
+// 让适配层按 code 机械映射到 409 conflict（api-spec §5.3.3），不猜中文文案。
+func apiErrorConflict(c *gin.Context, msg string) {
+	c.JSON(http.StatusOK, gin.H{
+		"success": false,
+		"code":    "conflict",
+		"message": msg,
+	})
+}
 
 // GetPrefillGroups 获取预填组列表，可通过 ?type=xxx 过滤
 func GetPrefillGroups(c *gin.Context) {
@@ -36,7 +47,7 @@ func CreatePrefillGroup(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	} else if dup {
-		common.ApiErrorMsg(c, "组名称已存在")
+		apiErrorConflict(c, "组名称已存在")
 		return
 	}
 
@@ -63,7 +74,7 @@ func UpdatePrefillGroup(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	} else if dup {
-		common.ApiErrorMsg(c, "组名称已存在")
+		apiErrorConflict(c, "组名称已存在")
 		return
 	}
 

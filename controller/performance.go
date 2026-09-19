@@ -319,7 +319,8 @@ func CleanupLogFiles(c *gin.Context) {
 
 	var deletedCount int
 	var freedBytes int64
-	var failedFiles []string
+	// 初始化而非 nil 切片：契约（api-spec §5.3.2）要求成功体里 failed_files 恒为数组（[]），不是 null。
+	failedFiles := []string{}
 	for _, f := range toDelete {
 		fullPath := filepath.Join(*common.LogDir, f.Name)
 		if err := os.Remove(fullPath); err != nil {
@@ -337,8 +338,11 @@ func CleanupLogFiles(c *gin.Context) {
 	}
 
 	if len(failedFiles) > 0 {
+		// 显式 code=partial_failure：适配层按 code 机械映射为 500 + error.details.failed_files
+		// （api-spec §5.3.2"部分删除失败 → 500"），与"参数非法 → 400"区分开。
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
+			"code":    "partial_failure",
 			"message": fmt.Sprintf("部分文件删除失败（%d/%d）", len(failedFiles), len(toDelete)),
 			"data":    result,
 		})

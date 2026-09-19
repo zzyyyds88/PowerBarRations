@@ -27,9 +27,12 @@ type OpsRoute struct {
 }
 
 // opsConflictFirst 是通用失败规则：显式 conflict 优先，其余 200 业务失败兜底 400。
+// 基座自己给出 409 的（如 detect-all 的"已有同类任务在跑"）按 conflict 归类
+// （api-spec §3），不得退化成兜底的 invalid_request。
 func opsFailureRules() []apiresp.FailureRule {
 	return []apiresp.FailureRule{
 		{BaseCode: "conflict", OutStatus: http.StatusConflict, OutCode: apiresp.CodeConflict},
+		{Status: http.StatusConflict, OutStatus: http.StatusConflict, OutCode: apiresp.CodeConflict},
 		{Status: http.StatusOK, OutStatus: http.StatusBadRequest, OutCode: apiresp.CodeValidationFailed},
 	}
 }
@@ -51,6 +54,30 @@ func opsPolicy() apiresp.Policy {
 	return apiresp.Policy{Failures: opsFailureRules(), Details: opsConflictDetails}
 }
 
+// logFilesFailureDetails 提取"部分删除失败"的文件清单（api-spec §5.3.2：
+// DELETE /api/system/log-files 部分删除失败 → 500 + details.failed_files）。
+func logFilesFailureDetails(base apiresp.Base) any {
+	value, ok := base.DataValue().(map[string]any)
+	if !ok {
+		return nil
+	}
+	if failed, ok := value["failed_files"]; ok {
+		return gin.H{"failed_files": failed}
+	}
+	return nil
+}
+
+// opsPolicyLogFilesCleanup 是日志文件清理的策略：在通用规则前插入
+// partial_failure → 500 internal_error（+ details.failed_files 明细）。
+func opsPolicyLogFilesCleanup() apiresp.Policy {
+	return apiresp.Policy{
+		Failures: append([]apiresp.FailureRule{
+			{BaseCode: "partial_failure", OutStatus: http.StatusInternalServerError, OutCode: apiresp.CodeInternalError},
+		}, opsFailureRules()...),
+		Details: logFilesFailureDetails,
+	}
+}
+
 // opsPolicyWith 构造"自定义成功体 + 通用失败映射"的策略。
 func opsPolicyWith(success apiresp.SuccessFunc) apiresp.Policy {
 	p := opsPolicy()
@@ -58,13 +85,30 @@ func opsPolicyWith(success apiresp.SuccessFunc) apiresp.Policy {
 	return p
 }
 
+// opsPolicyOptionWrite 是 PUT /api/system/options/all 的专用策略：
+// 适配层已挡住"缺 key"这类参数错误，进入基座后的 200 业务失败全部是
+// **选项值校验失败**（theme/倍率/JSON 等），契约固定为 422 validation_failed
+// （api-spec §5.3.2）。通用规则会把它们映射成 400，故单独建表。
+func opsPolicyOptionWrite() apiresp.Policy {
+	return apiresp.Policy{
+		Failures: []apiresp.FailureRule{
+			{BaseCode: "conflict", OutStatus: http.StatusConflict, OutCode: apiresp.CodeConflict},
+			{Status: http.StatusOK, OutStatus: http.StatusUnprocessableEntity, OutCode: apiresp.CodeValidationFailed},
+		},
+		Success: optionUpdatedSuccess,
+	}
+}
+
 // opsPolicyUpstream 是上游类端点（Codex/Ollama/上游探测）的失败映射：
-// 剩余失败按上游错误 502。
+// 剩余失败按上游错误 502（api-spec §5.3.1）。基座对"上游调用失败"实际给出的
+// 状态既有 200（success:false）也有 500，两者都要映射，否则 Ollama pull/delete
+// 的上游失败会漏成 500 internal_error。
 func opsPolicyUpstream() apiresp.Policy {
 	return apiresp.Policy{
 		Failures: []apiresp.FailureRule{
 			{BaseCode: "conflict", OutStatus: http.StatusConflict, OutCode: apiresp.CodeConflict},
 			{Status: http.StatusOK, OutStatus: http.StatusBadGateway, OutCode: apiresp.CodeUpstreamError},
+			{Status: http.StatusInternalServerError, OutStatus: http.StatusBadGateway, OutCode: apiresp.CodeUpstreamError},
 		},
 	}
 }
@@ -162,8 +206,9 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicyCodex(),
 		},
 		{
+			// 上游失败（基座给 200/500）→ 502 upstream_error（api-spec §5.3.1）。
 			Method: http.MethodPost, Path: "/channels/:name/ollama/pull", Handler: OllamaPullByName,
-			Policy: opsPolicyWith(ollamaPullSuccess),
+			Policy: opsPolicyUpstreamWith(ollamaPullSuccess),
 		},
 		{
 			// SSE 流式端点：不套信封（design-v1 §5.1）。进入流之前的参数/渠道错误
@@ -173,11 +218,11 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodDelete, Path: "/channels/:name/ollama/models", Handler: OllamaDeleteByName,
-			Policy: opsPolicyWith(ollamaDeleteSuccess),
+			Policy: opsPolicyUpstreamWith(ollamaDeleteSuccess),
 		},
 		{
 			Method: http.MethodGet, Path: "/channels/:name/ollama/version", Handler: OllamaVersionByName,
-			Policy: opsPolicyWith(ollamaVersionSuccess),
+			Policy: opsPolicyUpstreamWith(ollamaVersionSuccess),
 		},
 
 		// —— 系统选项、任务与性能（api-spec §5.3.2）——
@@ -187,7 +232,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPut, Path: "/system/options/all", Handler: UpdateSystemOptionsByName,
-			Policy: opsPolicyWith(optionUpdatedSuccess),
+			Policy: opsPolicyOptionWrite(),
 		},
 		{
 			Method: http.MethodGet, Path: "/system-tasks", Handler: ListSystemTasksHandler,
@@ -226,8 +271,10 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicy(),
 		},
 		{
+			// 部分删除失败：基座给 success:false + code=partial_failure + data.failed_files，
+			// 映射为 500 并把 failed_files 透进 error.details（api-spec §5.3.2）。
 			Method: http.MethodDelete, Path: "/system/log-files", Handler: CleanupLogFilesHandler,
-			Policy: opsPolicy(),
+			Policy: opsPolicyLogFilesCleanup(),
 		},
 
 		// —— 预填组（api-spec §5.3.3）——

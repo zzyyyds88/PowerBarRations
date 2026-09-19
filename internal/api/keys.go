@@ -199,7 +199,8 @@ func CreateKey(c *gin.Context) {
 		Enabled:   true,
 	}
 	if buildErr := applyClientKeyPayload(key, &payload); buildErr != nil {
-		apierr.Write(c, http.StatusBadRequest, buildErr.code, buildErr.message, "")
+		// 状态由 apiError 自带（lane_policy 语义校验 422，其余字段校验 400，api-spec §5.4）。
+		writeAPIError(c, buildErr)
 		return
 	}
 	if dryRun(c) {
@@ -236,7 +237,8 @@ func PutKey(c *gin.Context) {
 	}
 	key := &model.ClientKey{Name: name}
 	if buildErr := applyClientKeyPayload(key, &payload); buildErr != nil {
-		apierr.Write(c, http.StatusBadRequest, buildErr.code, buildErr.message, "")
+		// 状态由 apiError 自带（lane_policy 语义校验 422，其余字段校验 400，api-spec §5.4）。
+		writeAPIError(c, buildErr)
 		return
 	}
 	// 未提供的字段保持原值。
@@ -384,21 +386,25 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 		if mode != model.LanePolicyModeAll && mode != model.LanePolicyModeAllow {
 			// 显式拒绝非法 mode：此前只有读取路径的宽容回落（静默变"允许全部"），
 			// 写入路径必须报错，避免用户以为设置了限制、实际被放宽。
-			return &apiError{code: apierr.CodeValidationFailed, message: "lane_policy.mode must be all or allow"}
+			// 语义类校验失败按契约返回 422（api-spec §5.4）。
+			return &apiError{status: http.StatusUnprocessableEntity,
+				code: apierr.CodeValidationFailed, message: "lane_policy.mode must be all or allow"}
 		}
 		// 权限判定的对象是"路由键"（token-spec §3.2）：allow_lanes 里写不存在的键会被
 		// 静默接受，用户以为"允许了模型 X"，实际是死键（请求得到 503 而非 403，分不清
-		// 权限还是没配车道）。这里显式拒绝并列出未知键。
+		// 权限还是没配车道）。这里显式拒绝并列出未知键（api-spec §5.4：422）。
 		if unknown := unknownRouteKeys(payload.LanePolicy.AllowLanes); len(unknown) > 0 {
 			return &apiError{
+				status:  http.StatusUnprocessableEntity,
 				code:    apierr.CodeValidationFailed,
 				message: "unknown route key(s) in lane_policy.allow_lanes: " + strings.Join(unknown, ", ") + " (no lane and no channel declares them)",
 			}
 		}
 		// deny_lanes 与 allow_lanes 对称校验：否则用户以为"拒绝了模型 X"，实际是拼错的
-		// 死键，等于没有拒绝——同样属于静默放宽权限。
+		// 死键，等于没有拒绝——同样属于静默放宽权限（api-spec §5.4：422）。
 		if unknown := unknownRouteKeys(payload.LanePolicy.DenyLanes); len(unknown) > 0 {
 			return &apiError{
+				status:  http.StatusUnprocessableEntity,
 				code:    apierr.CodeValidationFailed,
 				message: "unknown route key(s) in lane_policy.deny_lanes: " + strings.Join(unknown, ", ") + " (no lane and no channel declares them)",
 			}
