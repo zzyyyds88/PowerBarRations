@@ -1132,8 +1132,11 @@ func DetectAllChannelUpstreamModelUpdates(c *gin.Context) {
 		return
 	}
 	if !created {
+		// 显式 code=conflict：适配层按 code 机械映射为 409 conflict（api-spec §5.3.1），
+		// 避免只剩 HTTP 409 时被兜底规则归成 invalid_request。
 		c.JSON(http.StatusConflict, gin.H{
 			"success": false,
+			"code":    "conflict",
 			"message": "已有模型更新任务正在运行或等待中，不能启动本次手动任务",
 			"data": gin.H{
 				"task_id": task.TaskID,

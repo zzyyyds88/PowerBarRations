@@ -570,14 +570,18 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 // ---------- PBR 每成员超时（routing-spec §8）----------
 //
 // 非流式：整响应必须在 member_non_stream_response_timeout_seconds 内读完。
-// 流式：只等首个字节（首事件超时的近似），首个字节到达即解除计时；提交后不再设总超时，
-// 交由客户端断开控制。
+// 流式：等**首个有效 SSE 事件**（routing-spec §3.5"流式等首个有效事件"、§8 首事件
+// 超时）。计时只在解析出一个承载真实内容的 data 事件后解除：注释行（": ..."）、
+// 心跳（event: ping / {"type":"ping"} / {"ping":...}）、空 data 都不解除——上游
+// 只发保活帧装作活着时，必须照常超时换人。提交后不再设总超时，交由客户端断开控制。
 //
 // 未走 PBR 路由的请求不会设置这两个上下文键，行为与迁移前完全一致。
 
 type pbrAttemptTimeout struct {
-	cancel          context.CancelFunc
-	timer           *time.Timer
+	cancel context.CancelFunc
+	timer  *time.Timer
+	// stopOnFirstRead 标记这是流式的首事件计时：只在解析出**首个有效 SSE 事件**时
+	// 解除（见 sseFirstEventDetector），非首字节。
 	stopOnFirstRead bool
 	stopped         bool
 	// fired 标记"超时时钟已到"。用它把底层 context.Canceled 翻译成 DeadlineExceeded，
@@ -626,7 +630,9 @@ func (t *pbrAttemptTimeout) wrap(err error) error {
 	return fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, err)
 }
 
-func (t *pbrAttemptTimeout) firstByte() {
+// releaseFirstEventTimer 解除流式首事件计时（幂等）。仅当已解析出首个**有效**
+// SSE 事件时调用；注释行/心跳/空 data 不算（见 sseFirstEventDetector）。
+func (t *pbrAttemptTimeout) releaseFirstEventTimer() {
 	if t == nil || !t.stopOnFirstRead || t.stopped {
 		return
 	}
@@ -652,12 +658,19 @@ func (t *pbrAttemptTimeout) close() {
 type pbrTimeoutBody struct {
 	io.ReadCloser
 	timeout *pbrAttemptTimeout
+	// detector 流式响应的"首个有效 SSE 事件"识别状态机（routing-spec §8）。
+	// 只观察、不改动字节流：读到的数据原样返回给下游解析。
+	detector sseFirstEventDetector
 }
 
 func (b *pbrTimeoutBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
-	if n > 0 {
-		b.timeout.firstByte()
+	if n > 0 && b.timeout != nil {
+		// 流式：解析出首个有效 SSE 事件才解除计时（注释/心跳/空 data 不解除）；
+		// 非流式 stopOnFirstRead=false，解除调用本身是无操作，行为不变。
+		if !b.timeout.stopOnFirstRead || b.detector.feed(p[:n]) {
+			b.timeout.releaseFirstEventTimer()
+		}
 	}
 	if err != nil {
 		// 读失败可能是我方超时造成的：统一走 wrap 翻译（routing-spec §8）
@@ -669,4 +682,95 @@ func (b *pbrTimeoutBody) Read(p []byte) (int, error) {
 func (b *pbrTimeoutBody) Close() error {
 	b.timeout.close()
 	return b.ReadCloser.Close()
+}
+
+// sseFirstEventDetector 识别流式响应中的"首个有效 SSE 事件"（routing-spec §3.5
+// "流式等首个有效事件"、§8 首事件超时）。判定标准：
+//
+//   - 解除：承载非空内容的 `data:` 行（首个真实事件），或非 SSE 框架的裸载荷
+//     起始行（`{`/`[` 开头的原始 JSON——上游没按 SSE 回，按首字节语义解除）；
+//   - 不解除：注释行（`...`）、`event: ping|heartbeat|keep-alive` 名下的 data、
+//     内容为 `{"type":"ping"}` / `{"ping":...}` 的心跳 data、空 `data:`、
+//     以及 `id:`/`retry:` 等无载荷字段行。
+//
+// 逐行增量解析，跨 Read 边界的半行会缓存；单行超过上限时按已读前缀直接判定，
+// 拒绝无界缓冲。只观察字节流，不消费、不改写。
+type sseFirstEventDetector struct {
+	partial   []byte
+	overflow  bool
+	eventName string
+	done      bool
+}
+
+// sseMaxTrackedLine 单行跟踪上限：真实首事件远小于此，超限只为防内存无界增长。
+const sseMaxTrackedLine = 64 << 10
+
+// feed 把新读到的字节喂进状态机；返回 true 表示首个有效事件已出现。
+func (d *sseFirstEventDetector) feed(p []byte) bool {
+	if d.done {
+		return true
+	}
+	for _, ch := range p {
+		if ch == '\n' {
+			line := strings.TrimSuffix(string(d.partial), "\r")
+			d.partial = d.partial[:0]
+			d.overflow = false
+			if d.lineIsFirstEvent(line) {
+				d.done = true
+				return true
+			}
+			continue
+		}
+		if d.overflow {
+			continue
+		}
+		d.partial = append(d.partial, ch)
+		if len(d.partial) >= sseMaxTrackedLine {
+			// 超长单行：用已读前缀判定一次，随后丢弃剩余（防无界缓冲）。
+			if d.lineIsFirstEvent(string(d.partial)) {
+				d.done = true
+				return true
+			}
+			d.partial = d.partial[:0]
+			d.overflow = true
+		}
+	}
+	return d.done
+}
+
+// lineIsFirstEvent 判定一行是否构成"首个有效事件"的载荷行。
+func (d *sseFirstEventDetector) lineIsFirstEvent(line string) bool {
+	switch {
+	case line == "":
+		// 空行 = 事件边界：下一个 event:/data: 属于新事件。
+		d.eventName = ""
+	case strings.HasPrefix(line, ":"):
+		// SSE 注释 / 代理层心跳（": ping"、": ping\n\n" 等）：无载荷，不算事件。
+	case strings.HasPrefix(line, "event:"):
+		d.eventName = strings.TrimSpace(line[len("event:"):])
+	case strings.HasPrefix(line, "data:"):
+		payload := strings.TrimSpace(line[len("data:"):])
+		if payload != "" && !ssePayloadIsHeartbeat(d.eventName, payload) {
+			return true
+		}
+	default:
+		// 非 SSE 框架的裸载荷（raw JSON 错误体等）：按"首字节已到"解除，与旧行为一致，
+		// 避免"上游根本不回 SSE"时把完整响应误判成超时。
+		return strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[")
+	}
+	return false
+}
+
+// ssePayloadIsHeartbeat 判定 data 载荷是否只是保活心跳而非真实事件。
+func ssePayloadIsHeartbeat(eventName, payload string) bool {
+	switch strings.ToLower(eventName) {
+	case "ping", "heartbeat", "keepalive", "keep-alive":
+		return true
+	}
+	if payload == "[DONE]" {
+		// 合法终止事件：说明上游管道打通，算有效事件。
+		return false
+	}
+	compact := strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(payload)
+	return strings.HasPrefix(compact, `{"ping"`) || strings.Contains(compact, `"type":"ping"`)
 }

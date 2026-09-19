@@ -48,8 +48,10 @@ import {
   pbrModelsQueryKey,
   type PBRModelSummary,
 } from './api'
+import { LaneRuntimeCell } from './components/lane-runtime-cell'
 import { ModelRoutingDrawer } from './components/model-routing-drawer'
 import { NewLaneDialog } from './components/new-lane-dialog'
+import { useLaneRuntime } from './hooks/use-lane-runtime'
 
 // 车道顺序摘要挂在同一前缀 queryKey 下：抽屉里保存/删除成员链后，
 // 面板 invalidate ['pbr-routable-models'] 会连同本键一起刷新。
@@ -76,6 +78,11 @@ export function Routes() {
   const [newLaneOpen, setNewLaneOpen] = useState(false)
 
   const models = modelsQuery.data ?? []
+  // 车道运行态（ui-spec §4）：SSE 主源 + 30s 轮询兜底；只对已配车道的路由键订阅。
+  const laneNames = models
+    .filter((m) => m.source === 'explicit')
+    .map((m) => m.model)
+  const { runtime: laneRuntime, nowMs } = useLaneRuntime(laneNames)
   // 车道名 = 模型名：用车道列表补出每行的成员顺序（GET /api/v1/models 只有数量）。
   const laneOrders = new Map(
     (lanesQuery.data ?? []).map((lane) => [lane.name, lane.members])
@@ -253,6 +260,21 @@ export function Routes() {
                 </div>
               )
             },
+          },
+          {
+            id: 'runtime',
+            header: t('Runtime'),
+            className: 'h-9 w-56',
+            cellClassName: tableStyles.topCell,
+            cell: (row) =>
+              row.source === 'explicit' ? (
+                <LaneRuntimeCell
+                  snapshot={laneRuntime.byLane.get(row.model)}
+                  now={nowMs}
+                />
+              ) : (
+                <span className='text-muted-foreground text-xs'>—</span>
+              ),
           },
           {
             id: 'actions',

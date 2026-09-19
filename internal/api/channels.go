@@ -288,11 +288,13 @@ func DeleteChannel(c *gin.Context) {
 			}
 		}
 		sort.Strings(laneNames)
-		// 引用清单放进 message：错误包络固定为 {code,message,hint}（api-spec §3），
-		// 调用方需要"被哪些车道引用"才能自助解阻。
-		apierr.Conflict(c, apierr.CodeConflict,
+		// 引用清单同时进 message 与 error.details.lanes（api-spec §3"details.lanes"、
+		// §5.3 DELETE）：message 给人读，details 给调用方 AI 机器判定"被哪些车道
+		// 引用"以自助解阻，不得要求解析 message。与 PUT 收窄模型的口径一致。
+		apierr.WriteDetails(c, http.StatusConflict, apierr.CodeConflict,
 			"channel is referenced by lanes: "+strings.Join(laneNames, ", "),
-			"PUT /api/v1/lanes/{name} to remove the members first")
+			"PUT /api/v1/lanes/{name} to remove the members first",
+			gin.H{"lanes": laneNames})
 		return
 	}
 	if dryRun(c) {

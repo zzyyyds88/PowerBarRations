@@ -81,7 +81,8 @@ func TestLaneDefaultsAreConfigurableAndAffectNewLanes(t *testing.T) {
 	})
 }
 
-// 非法默认六键必须 400，而不是把坏值写进 option 表。
+// 非法默认六键必须 422（api-spec §6.9：四个时长/预算键 > 0、两个间隔键 ≥ 0），
+// 而不是把坏值写进 option 表，也不得误报参数错误 400。
 func TestLaneDefaultsValidation(t *testing.T) {
 	setupImportTestDB(t)
 	gin.SetMode(gin.TestMode)
@@ -100,7 +101,7 @@ func TestLaneDefaultsValidation(t *testing.T) {
 		c.Request = httptest.NewRequest(http.MethodPut, "/api/system/options", strings.NewReader(body))
 		c.Request.Header.Set("Content-Type", "application/json")
 		PutSystemOptions(c)
-		assert.Equalf(t, http.StatusBadRequest, recorder.Code, "body=%s", body)
+		assert.Equalf(t, http.StatusUnprocessableEntity, recorder.Code, "body=%s", body)
 	}
 	assert.EqualValues(t, 2, model.DefaultLaneRelayConfig().MemberMaxAttempts, "校验失败不得写库")
 }

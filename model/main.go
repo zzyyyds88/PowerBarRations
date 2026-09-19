@@ -315,6 +315,12 @@ func migrateDB() error {
 		common.SysError("failed to drop legacy abilities table: " + err.Error())
 	}
 
+	// User 表配额/邀请列（quota/used_quota/aff_code）随纯锚点化物理删除（design-v1 §3.4）：
+	// 删列失败不阻塞启动。
+	if err := migrateDropUserQuotaColumns(DB); err != nil {
+		common.SysError("failed to drop legacy user quota columns: " + err.Error())
+	}
+
 	// 渠道亲和选项行随基座"渠道亲和"机制物理删除（只有车道级亲和）：删除失败不阻塞启动。
 	if err := migrateDropChannelAffinityOptions(DB); err != nil {
 		common.SysError("failed to drop legacy channel affinity options: " + err.Error())

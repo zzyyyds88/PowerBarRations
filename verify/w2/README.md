@@ -53,7 +53,7 @@ go test ./internal/route/ -count=1
 | 门 3：probe 逐成员 | `POST /api/v1/lanes/mode-failover/probe` | `probed:2`，两个成员均 `status:"success"`（api-spec §6.4）；`POST /channels/channel-a/test` 亦成功 | 日志第 50–53 行 |
 | 门 4：四模式各一条 | 四条车道各打一发 | failover→`channel=1:channel-a`；manual→`channel=2:channel-b`（active_member）；weighted→权重 1 的成员；round_robin→两发交替 channel-a/channel-b | 日志第 57–66 行 |
 | 429 不误伤 | 注入 429 连打 3 发 | `circuit=closed`、score 0.6、`last_error_kind=soft_rate_limit`（硬故障 3 次即打开，429 需 5 次） | 日志第 70–71 行 |
-| client_error 不冷却不换人 | 注入 400（无关键词） | 原样返回 **400**（不是 503）；该成员 `cooldown_until=0`、`failure_score=0` | 日志第 73–76 行 |
+| client_error 不冷却不换人 | 注入 400（无关键词） | 原样返回 **400**（不是 503）；该成员 `cooldown_until=null`（api-spec §6.5 RFC3339/null）、`failure_score=0` | 日志第 73–76 行 |
 | 欠费关键词 | 注入 400 + `Your credit balance is too low` | 归类 `hard_quota`，进冷却；单成员车道返回固定 503 | 日志第 78–80 行 |
 | 清除熔断/冷却 | `POST /lanes/solo-model/circuits/reset` | `{"reset":<清除的熔断器条目数>}`（api-spec §6.6） | 日志第 84 行 |
 
@@ -67,7 +67,7 @@ go test ./internal/route/ -count=1
 - 回归证据（run-20260916-051012.log，PASS=37 FAIL=0）：门 5 让 channel-a 的上游模型
   `hang-a` 4s 不发响应头（车道流式首事件超时 1s）→ 请求最终 `X-Served-By: channel=2:channel-b`，
   响应体不是错误包，`hang-model` 健康快照里 `channel-a/hang-a` 为
-  `last_error_kind=soft_transient` 且 `cooldown_until>0`（修复前会是 `canceled` + 无冷却 + 直接把
+  `last_error_kind=soft_transient` 且 `cooldown_until` 非 null（修复前会是 `canceled` + 无冷却 + 直接把
   `do_request_failed` 500 透给下游）。
 - 单测：`internal/route/probe_ownership_test.go::TestClassifyPrefersDeadlineOverCanceled`、
   `relay/channel/pbr_attempt_timeout_test.go`。

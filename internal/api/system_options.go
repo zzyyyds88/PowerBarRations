@@ -257,7 +257,8 @@ func PutSystemOptions(c *gin.Context) {
 	if patch.LaneDefaults != nil {
 		encoded, err := encodeLaneDefaults(patch.LaneDefaults)
 		if err != nil {
-			apierr.Validation(c, err.Error())
+			// 默认六键是语义校验（四个 > 0、两个 ≥ 0），契约固定为 422（api-spec §6.9）。
+			apierr.Unprocessable(c, apierr.CodeValidationFailed, err.Error())
 			return
 		}
 		updates[model.OptionLaneDefaults] = encoded

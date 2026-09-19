@@ -141,7 +141,8 @@ assert_json_health() {
     echo "  FAIL: $desc（$payload）"; FAIL=$((FAIL+1))
   fi
 }
-assert_json_health "client_error 不冷却不换人" "all(m['cooldown_until']==0 and m['failure_score']==0 for m in d['members'])" "$HEALTH_AFTER_400"
+# api-spec §6.5：cooldown_until 为 RFC3339 字符串，无冷却为 null（不再是 unix 毫秒 0）。
+assert_json_health "client_error 不冷却不换人" "all(m['cooldown_until'] is None and m['failure_score']==0 for m in d['members'])" "$HEALTH_AFTER_400"
 control '{"model":"e2e-model","status":200}'
 
 echo
@@ -205,17 +206,25 @@ assert_json_health "429 记入软故障且熔断未打开" "any(m['last_error_ki
 control '{"model":"e2e-model","status":200}'
 
 echo
-echo "=== F：安全（未初始化/错误密钥/被拒车道/明文不入库）==="
+echo "=== F：安全（未初始化/错误密钥/被拒车道/密钥明文可回读）==="
 WRONG=$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer not-the-key' "$BASE/api/v1/lanes")
 check "错误管理密钥 401" "$WRONG" "401"
 curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"allow","allow_lanes":["nope"],"deny_lanes":[]}}' "$BASE/api/v1/keys/e2e-client" > /dev/null
 DENY=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' -d '{"model":"e2e-model","messages":[{"role":"user","content":"hi"}]}')
 check "被拒车道 403" "$DENY" "403"
 curl -s "${A[@]}" -X PUT -d '{"enabled":true,"lane_policy":{"mode":"all","allow_lanes":[],"deny_lanes":[]}}' "$BASE/api/v1/keys/e2e-client" > /dev/null
-if grep -a -q "$CLIENT_PLAIN" "$WORK/pbr.db" 2>/dev/null; then
-  echo "  FAIL: 库中出现客户端密钥明文"; FAIL=$((FAIL+1))
+# 现行契约（token-spec v1 §3.3，commit 03a91f）：客户端密钥**明文入库**、管理 API
+# 详情可回读，与创建响应一致；仅管理密钥仍以 sha256 落库、明文不得出现。
+KEY_READBACK=$(curl -s "${A[@]}" "$BASE/api/v1/keys/e2e-client" | jget 'd["key"]')
+if [[ -n "$KEY_READBACK" && "$KEY_READBACK" == "$CLIENT_PLAIN" ]]; then
+  echo "  PASS: GET /api/keys/{name} 回读明文与创建响应一致"; PASS=$((PASS+1))
 else
-  echo "  PASS: 库中无客户端密钥明文"; PASS=$((PASS+1))
+  echo "  FAIL: 回读明文与创建响应不一致（回读=$KEY_READBACK）"; FAIL=$((FAIL+1))
+fi
+if grep -a -q "$CLIENT_PLAIN" "$WORK/pbr.db" 2>/dev/null; then
+  echo "  PASS: 客户端密钥明文入库（§3.3 明文存储契约）"; PASS=$((PASS+1))
+else
+  echo "  FAIL: 库中应能检索到客户端密钥明文"; FAIL=$((FAIL+1))
 fi
 if grep -a -q "$ADMIN_KEY" "$WORK/pbr.db" 2>/dev/null; then
   echo "  FAIL: 库中出现管理密钥明文"; FAIL=$((FAIL+1))
@@ -241,7 +250,7 @@ check "重启后密钥前缀不变" "$AFTER_KEY" "$BEFORE_KEY"
 AFTER_MODELS=$(curl -s "${A[@]}" "$BASE/api/v1/models")
 check "重启后模型路由仍在" "$AFTER_MODELS" '"model":"e2e-model"'
 AFTER_HEALTH=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/e2e-model/health")
-assert_json_health "重启后运行态清空（无残留冷却）" "all(m['cooldown_until']==0 for m in d['members'])" "$AFTER_HEALTH"
+assert_json_health "重启后运行态清空（无残留冷却）" "all(m['cooldown_until'] is None for m in d['members'])" "$AFTER_HEALTH"
 RESP_AFTER=$(curl -s -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' -d '{"model":"e2e-model","messages":[{"role":"user","content":"hi"}]}')
 check "重启后原密钥仍可转发" "$RESP_AFTER" 'pong from fake upstream'
 

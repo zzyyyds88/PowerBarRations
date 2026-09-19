@@ -14,7 +14,9 @@ package route
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -174,6 +176,15 @@ type State struct {
 	skipRecorded map[string]bool
 	// memberCfg 每个成员生效的六键（车道默认叠加成员级覆盖）。
 	memberCfg []model.LaneRelayConfig
+	// rounds 已经通过 Next 选出的尝试轮数；reloads 已经做过配置重读的轮数。
+	// 二者不等说明新一轮已经开始 → 下一轮选路前重读车道配置（routing-spec §3
+	// 第 4 步"每轮重新读取车道配置，支持热更新"）。首轮不重读：NewState 入口的
+	// 解析就是本轮的读取，避免每请求多打一次 DB。
+	rounds  int
+	reloads int
+	// snapshotSig 当前 Route 快照的内容签名（applyRouteLocked 时刷新），
+	// 用于重读时判定"配置是否真的变了"。
+	snapshotSig string
 }
 
 func laneKeyOf(resolved *model.ResolvedRoute) string {
@@ -182,6 +193,10 @@ func laneKeyOf(resolved *model.ResolvedRoute) string {
 	}
 	return resolved.Model
 }
+
+// resolveRouteForReload 尝试循环每轮重读车道配置的注入点（routing-spec §3 第 4 步
+// "每轮重新读取车道配置，支持热更新"）。生产走 model.ResolveRoute；测试可替换。
+var resolveRouteForReload = model.ResolveRoute
 
 // budgetFor 该成员在本请求内的尝试预算（成员级覆盖优先）。
 func (s *State) budgetFor(idx int) int {
@@ -205,8 +220,10 @@ func (s *State) configFor(idx int) model.LaneRelayConfig {
 // SnapshotLanes 会随"请求过的模型名数"无界增长，SSE 快照退化成每个模型名
 // 一次 DB 查询（routing-spec §1.3）。空链请求不会选中成员，给一个不登记的
 // 临时运行态即可，既避免 nil 解引用又不污染注册表。
+//
+// 入口解析只是**首轮**的配置读取；此后每轮尝试开始前由 Next 重读车道配置
+// （routing-spec §3 第 4 步"每轮重新读取车道配置，支持热更新"，见 reloadLocked）。
 func NewState(resolved *model.ResolvedRoute) *State {
-	cfg := resolved.Config.Normalize()
 	routeKey := laneKeyOf(resolved)
 	var runtime *Runtime
 	if resolved.Source == model.RouteSourceExplicit && len(resolved.Members) > 0 {
@@ -216,12 +233,45 @@ func NewState(resolved *model.ResolvedRoute) *State {
 		runtime.laneName = routeKey
 	}
 	s := &State{
-		Route:           resolved,
-		Runtime:         runtime,
-		current:         -1,
-		attempts:        map[int]int{},
-		cooldownSeconds: cfg.MemberCooldownSeconds,
+		Runtime:  runtime,
+		current:  -1,
+		attempts: map[int]int{},
 	}
+	s.applyRouteLocked(resolved)
+	return s
+}
+
+// applyRouteLocked 换用新的解析快照并重建请求内的派生态（成员顺序、六键、预算
+// 计数）。NewState 首轮与每轮重读（reloadLocked）共用这一条路径。
+//
+// 热更新语义：
+//   - 尝试计数按**成员键（channelId:upstreamModel）**迁移，同一成员在新旧快照间
+//     的预算消耗不因重读而清零；新加成员从 0 计。
+//   - 当前成员按键重定位；已从成员链消失的成员置为"未选中"。其失败归属发生在
+//     重读**之前**（Next 先按旧快照记 lastErr 再重读），不会丢失。
+//   - Runtime 登记门与首轮一致：重读期间车道从无到有时切换到登记运行态。
+func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
+	currentKey := ""
+	oldAttempts := make(map[string]int, len(s.attempts))
+	if s.Route != nil {
+		if s.current >= 0 && s.current < len(s.Route.Members) {
+			currentKey = memberKeyOf(&s.Route.Members[s.current])
+		}
+		for idx, n := range s.attempts {
+			if idx >= 0 && idx < len(s.Route.Members) {
+				oldAttempts[memberKeyOf(&s.Route.Members[idx])] = n
+			}
+		}
+	}
+
+	cfg := resolved.Config.Normalize()
+	if resolved.Source == model.RouteSourceExplicit && len(resolved.Members) > 0 {
+		s.Runtime = Default.For(laneKeyOf(resolved))
+	}
+	s.Route = resolved
+	s.cooldownSeconds = cfg.MemberCooldownSeconds
+	s.snapshotSig = routeSnapshotSignature(resolved)
+
 	order := make([]int, 0, len(resolved.Members))
 	if resolved.PinnedMemberId != 0 {
 		for i, m := range resolved.Members {
@@ -238,10 +288,21 @@ func NewState(resolved *model.ResolvedRoute) *State {
 		order = append(order, i)
 	}
 	s.order = order
+
 	s.memberCfg = make([]model.LaneRelayConfig, len(resolved.Members))
 	for i := range resolved.Members {
 		s.memberCfg[i] = resolved.EffectiveConfig(&resolved.Members[i])
 	}
+
+	s.attempts = make(map[int]int, len(resolved.Members))
+	for i := range resolved.Members {
+		s.attempts[i] = oldAttempts[memberKeyOf(&resolved.Members[i])]
+	}
+	s.current = -1
+	if currentKey != "" {
+		s.current = s.indexOfKey(currentKey)
+	}
+
 	// 清理已不在成员链里的残留运行态（routing-spec §1.3）：成员删除后重新
 	// 加回同一 (channel_id, upstream_model) 会复用同一个键，不清就会继承
 	// 旧的冷却/熔断状态。
@@ -252,7 +313,63 @@ func NewState(resolved *model.ResolvedRoute) *State {
 	// 传入车道版本：只有"比上次处理过的版本更新、且成员集合确实变化"时才清理一次，
 	// 避免旧配置的并发请求用旧成员集合删掉新配置刚写入的成员运行态（routing-spec §1.3）。
 	s.Runtime.PruneStaleState(valid, resolved.LaneVersion)
-	return s
+}
+
+// reloadLocked 在新一轮尝试开始前重读车道配置（调用方持 s.mu）。
+//
+// 同一轮内一致性：重读只发生在两轮之间（上一轮的错误已按**旧快照**归属完），
+// 从选中成员到本轮结束，快照不再变动——成员标签、六键、超时都出自同一份解析结果。
+// 重读失败（DB 抖动、车道解析错误）保留旧快照继续尝试，不让瞬时故障改变路由。
+func (s *State) reloadLocked() {
+	if s.rounds == 0 || s.reloads >= s.rounds || s.Route == nil {
+		return
+	}
+	s.reloads = s.rounds
+	resolved, err := resolveRouteForReload(s.Route.Model)
+	if err != nil || resolved == nil {
+		return
+	}
+	if routeSnapshotSignature(resolved) == s.snapshotSig {
+		// 内容未变：不重建，避免每轮无谓地重排下标与裁剪运行态。
+		return
+	}
+	s.applyRouteLocked(resolved)
+}
+
+// routeSnapshotSignature 解析快照的内容签名：成员链（含改名/别名/优先级/成员级
+// 覆盖）、模式、active_member、点名与六键。只含影响选路的字段；
+// Channel/ChannelEnabled 等展示字段刻意排除——渠道启停由尝试循环每轮直接查库
+// 判定（middleware.PBRNextChannel），不需要经快照重建。
+func routeSnapshotSignature(resolved *model.ResolvedRoute) string {
+	var b strings.Builder
+	cfg := resolved.Config.Normalize()
+	b.WriteString(resolved.Source)
+	b.WriteByte('|')
+	b.WriteString(resolved.Mode)
+	b.WriteByte('|')
+	b.WriteString(resolved.RouteKey)
+	b.WriteByte('|')
+	b.WriteString(resolved.ActiveMember)
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(resolved.PinnedMemberId))
+	b.WriteByte('|')
+	b.WriteString(strconv.FormatInt(resolved.LaneVersion, 10))
+	b.WriteByte('|')
+	for _, v := range [6]int{
+		cfg.MemberMaxAttempts, cfg.MemberRetryIntervalSeconds,
+		cfg.MemberNonStreamResponseTimeoutSeconds, cfg.MemberStreamFirstEventTimeoutSeconds,
+		cfg.MemberCooldownSeconds, cfg.MemberAffinitySeconds,
+	} {
+		b.WriteString(strconv.FormatInt(int64(v), 10))
+		b.WriteByte(',')
+	}
+	for i := range resolved.Members {
+		m := &resolved.Members[i]
+		fmt.Fprintf(&b, "|%d:%s:%s:%s:%d:%d:%s",
+			m.ChannelId, m.UpstreamModel, m.UpstreamOverride, m.PublicAlias,
+			m.Priority, m.MemberId, strings.TrimSpace(m.Overrides))
+	}
+	return b.String()
 }
 
 // Current 返回当前成员（未选过时为 nil）。
@@ -274,6 +391,10 @@ func (s *State) currentMemberLocked() *model.RouteMember {
 // 第二个返回值是本轮开始前应等待的时长（同成员重试间隔，routing-spec §3.1）。
 // 返回 ok=false 表示"没有可用成员/不该继续尝试"，调用方应按 §4.2 快抛 503
 // （客户端的错则原样返回，见 §4.1 的 client_error / canceled 两行）。
+//
+// 热更新（routing-spec §3 第 4 步"每轮重新读取车道配置"）：上一轮的错误先按
+// **旧快照**归属（尝试计数/冷却/熔断都记在实际打过的那份配置上），随后、选新成员
+// 之前重读车道配置——运行中改成员链或六键，下一轮即生效。同一轮内使用同一快照。
 func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Duration, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -299,13 +420,18 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 		memberCfg := s.configFor(s.current)
 		if budgetLeft && ShouldRetrySameMember(kind) {
 			// 同成员原地重试：按 retry_interval 间隔后再打一次（§3.1）。
+			// 这仍是一轮新尝试：计数后下一轮 Next 前重读配置。
 			s.attempts[s.current]++
+			s.rounds++
 			s.attemptStartedAt = time.Now()
 			return member, time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second, true
 		}
 		// 尝试预算耗尽或硬故障：写入冷却与熔断计分后换人。
+		// §2.1：manual 车道不参与冷却——人工指定的成员就是唯一选择，冷却在此
+		// 没有可换的替代者，只会把请求变成 503；熔断计分照常。
+		manual := s.Route.Mode == model.LaneModeManual
 		s.Runtime.withLock(func() {
-			s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, CurrentCircuitSettings())
+			s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, !manual, CurrentCircuitSettings())
 			s.Runtime.releaseProbe(key)
 			if s.claimedProbe == key {
 				s.claimedProbe = ""
@@ -313,10 +439,14 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 		})
 	}
 
+	// 新一轮选路开始：先重读车道配置（成员链/六键），保证运行中改配置本轮生效。
+	s.reloadLocked()
+
 	member, ok := s.pickLocked()
 	if !ok {
 		return nil, 0, false
 	}
+	s.rounds++
 	// 新一轮尝试开始计时（duration_ms = 从选中到出结果）。
 	s.attemptStartedAt = time.Now()
 	return member, 0, true
@@ -593,6 +723,8 @@ func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := memberKeyOf(member)
+	// §2.1：manual 车道不参与冷却（同 Next 的失败归属路径），熔断计分照常。
+	manual := s.Route.Mode == model.LaneModeManual
 	s.Runtime.withLock(func() {
 		s.history = append(s.history, Attempt{
 			AttemptNum: len(s.history) + 1,
@@ -601,7 +733,7 @@ func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string
 			ErrorKind:  KindSoftTransient,
 			Msg:        "member unavailable: " + reason,
 		})
-		s.Runtime.recordFailure(key, KindSoftTransient, s.cooldownSeconds, CurrentCircuitSettings())
+		s.Runtime.recordFailure(key, KindSoftTransient, s.cooldownSeconds, !manual, CurrentCircuitSettings())
 	})
 	s.markAttemptedLocked(key)
 }

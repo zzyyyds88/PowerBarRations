@@ -22,7 +22,6 @@ func TestListModelsSupportsOpenAIAndGeminiAuthentication(t *testing.T) {
 		Username: "models-user",
 		Status:   common.UserStatusEnabled,
 		Group:    "default",
-		Quota:    100,
 	}
 	require.NoError(t, model.DB.Create(&user).Error)
 	createTestClientKey(t, "models-key", "modelstestkey")
@@ -108,7 +107,7 @@ func setupRelayRouterTestDB(t *testing.T) {
 	require.NoError(t, os.Setenv("SQL_DSN", "local"))
 	require.NoError(t, model.InitDB())
 	model.LOG_DB = model.DB
-	require.NoError(t, model.DB.AutoMigrate(&model.User{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.User{}, &model.Channel{}, &model.Lane{}, &model.LaneMember{}))
 
 	t.Cleanup(func() {
 		if sqlDB, err := model.DB.DB(); err == nil {

@@ -154,7 +154,8 @@ func (l *keyLimiter) release() {
 // SetupContextForPBRClientKey 把 PBR 客户端身份写进上下文。
 //
 // 同时把迁移期的记账锚点（系统用户）挂上，使基座转发管道里的记账代码仍能工作
-// （design-v1 §10.2 的逻辑停用阶段：额度恒无限、准入不查余额）。
+// （design-v1 §10.2 的逻辑停用阶段：锚点用户无余额语义——quota 列已按 §3.4 删除，
+// 准入不查余额）。
 const contextKeyPBRClient = "pbr_client_key"
 
 // PBRClientKeyFrom 取当前请求的 PBR 客户端密钥（未走 PBR 鉴权时为 nil）。

@@ -19,7 +19,7 @@ func TestAppendEventNotifiesSubscriberWithLane(t *testing.T) {
 	runtime := Default.For("lane-subscribe-test")
 	runtime.withLock(func() {
 		// 硬失败权重 1.0 < 阈值 2：只触发 cooldown 事件，不打开熔断。
-		runtime.recordFailure("7:model-x", KindHardAuth, 60, DefaultCircuitSettings())
+		runtime.recordFailure("7:model-x", KindHardAuth, 60, true, DefaultCircuitSettings())
 	})
 	require.NotEmpty(t, events)
 	last := events[len(events)-1]
@@ -46,7 +46,7 @@ func TestEventSubscriberCanBeUnset(t *testing.T) {
 
 	runtime := Default.For("lane-unset-test")
 	runtime.withLock(func() {
-		runtime.recordFailure("7:model-x", KindHardAuth, 60, DefaultCircuitSettings())
+		runtime.recordFailure("7:model-x", KindHardAuth, 60, true, DefaultCircuitSettings())
 	})
 	assert.False(t, called)
 }

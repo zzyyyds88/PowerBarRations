@@ -13,8 +13,10 @@ import (
 
 const UserNameMaxLength = 20
 
-// User if you add sensitive fields, don't forget to clean them in setupLogin function.
-// Otherwise, the sensitive information will be saved on local storage in plain text!
+// User 是多用户面删除后保留的**纯锚点行**（design-v1 §3.3/§3.4）：
+// 基座转发管道与渠道测试等仍需一个用户身份作为归属，但不承载任何配额/邀请语义。
+// §3.4 明令禁止 quota / used_quota 等配额字段，aff_code（邀请返利）随多用户面删除，
+// 这些列的物理删除见 migrateDropUserQuotaColumns。
 type User struct {
 	Id                   int                        `json:"id"`
 	Username             string                     `json:"username" gorm:"unique;index" validate:"max=20"`
@@ -27,11 +29,8 @@ type User struct {
 	Email                string                     `json:"email" gorm:"index" validate:"max=50"`
 	AccessToken          *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
 	AccessTokenCreatedAt *int64                     `json:"-" gorm:"type:bigint;column:access_token_created_at"`
-	Quota                int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota            int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount         int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	RequestCount         int                        `json:"request_count" gorm:"type:int;default:0;"` // request number
 	Group                string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
-	AffCode              string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	DeletedAt            gorm.DeletedAt             `gorm:"index"`
 	Setting              string                     `json:"setting" gorm:"type:text;column:setting"`
 	Remark               string                     `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=255"`
@@ -44,7 +43,6 @@ func (user *User) ToBaseUser() *UserBase {
 	cache := &UserBase{
 		Id:          user.Id,
 		Group:       user.Group,
-		Quota:       user.Quota,
 		Status:      user.Status,
 		Role:        user.Role,
 		Username:    user.Username,
@@ -99,19 +97,6 @@ func GetUserById(id int, selectAll bool) (*User, error) {
 		err = DB.Omit("password", "access_token").First(&user, "id = ?", id).Error
 	}
 	return &user, err
-}
-
-// GetUserQuota gets quota from Redis first, falls back to DB if needed
-func GetUserQuota(id int, fromDB bool) (quota int, err error) {
-	if !fromDB && common.RedisEnabled {
-		return getUserQuotaCache(id)
-	}
-	err = DB.Model(&User{}).Where("id = ?", id).Select("quota").Find(&quota).Error
-	if err != nil {
-		return 0, err
-	}
-
-	return quota, nil
 }
 
 // GetUserGroup gets group from Redis first, falls back to DB if needed
@@ -188,34 +173,6 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 func GetRootUser() (user *User) {
 	DB.Where("role = ?", common.RoleRootUser).First(&user)
 	return user
-}
-
-// UpdateUserUsedQuota adjusts accumulated usage without changing request count.
-func UpdateUserUsedQuota(id int, quota int) {
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUsedQuota, id, quota)
-		return
-	}
-	if err := DB.Model(&User{}).Where("id = ?", id).Update("used_quota", gorm.Expr("used_quota + ?", quota)).Error; err != nil {
-		common.SysLog("failed to update user used quota: " + err.Error())
-	}
-}
-
-func updateUserQuotaUsedQuotaAndRequestCount(id int, quota int, usedQuota int, requestCount int) {
-	if quota == 0 && usedQuota == 0 && requestCount == 0 {
-		return
-	}
-
-	err := DB.Model(&User{}).Where("id = ?", id).Updates(
-		map[string]any{
-			"quota":         gorm.Expr("quota + ?", quota),
-			"used_quota":    gorm.Expr("used_quota + ?", usedQuota),
-			"request_count": gorm.Expr("request_count + ?", requestCount),
-		},
-	).Error
-	if err != nil {
-		common.SysLog("failed to batch update user quota, used quota and request count: " + err.Error())
-	}
 }
 
 // GetUsernameById gets username from Redis first, falls back to DB if needed

@@ -46,9 +46,10 @@ func resolveRuntimeRoute(name string) (*model.ResolvedRoute, string, error) {
 
 // GetLaneHealth GET /api/v1/lanes/{name}/health
 //
-// 快照含每成员 circuit / cooldown_until / consecutive_failures / last_error_kind，
-// 以及 current_member / probe_member / affinity_until；events 带时间戳，
-// 用于验收"熔断打开 → 半开 → 复通"的时间线证据。
+// 快照含每成员 circuit / cooldown_until / consecutive_failures / rolling_success_rate /
+// last_error_kind，以及 current_member / probe_member / affinity（对象）与 events
+// （带时间戳，用于验收"熔断打开 → 半开 → 复通"的时间线证据）。
+// 时间字段为 RFC3339 UTC 字符串，无冷却/无亲和为 null（api-spec §6.5 / §2.6）。
 func GetLaneHealth(c *gin.Context) {
 	resolved, key, err := resolveRuntimeRoute(c.Param("name"))
 	if err != nil {

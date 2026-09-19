@@ -307,8 +307,7 @@ server {
 ```
 
 - 走代理时用 `SESSION_COOKIE_SECURE=true` 让会话 Cookie 带 `Secure`（网关自己不会自动加）；
-  **它必须与 `SESSION_COOKIE_TRUSTED_URL` 成对设置**（逗号分隔的 `https://` 站点源，如 `https://pbr.example.com`），
-  只设前者会因缺少可信源导致进程启动即 `log.Fatal`。
+  这是**单开关**，设置后单独生效，无其他配套必填项（token-spec v1 §2.5）。
 - **不要**把明文端口直接暴露到不可信网络：管理口令衍生弱（单次 SHA256、无盐），
   且请求里含渠道 key 与客户端密钥。至少把 `PBR_BIND` 收成 `127.0.0.1`，或用上面的代理。
 - **首启顺序**：未初始化时 `POST /api/v1/setup` 免鉴权，**先到者即可设定口令接管**。
@@ -348,8 +347,7 @@ server {
 | `SQLITE_PATH` | `/data/pbr.db?...` | SQLite 路径；建议保留 WAL / busy_timeout 参数 |
 | `SESSION_SECRET` / `CRYPTO_SECRET` | 必填 | 同 Compose 中的 `PBR_*` 两项 |
 | `PBR_BIND` | `0.0.0.0` | 监听地址 |
-| `SESSION_COOKIE_SECURE` | `false` | 走 HTTPS 反代时设为 `true`（必须与下一项成对） |
-| `SESSION_COOKIE_TRUSTED_URL` | 空 | `SESSION_COOKIE_SECURE=true` 时必填：逗号分隔的 `https://` 站点源 |
+| `SESSION_COOKIE_SECURE` | `false` | 走 HTTPS 反代时设为 `true`（单开关，会话 Cookie 带 `Secure`） |
 | `ANONYMOUS_REQUEST_BODY_LIMIT_KB` | `2048` | 管理面（`/api`）请求体上限（KB）；模型面另有 `MAX_REQUEST_BODY_MB`（默认 128） |
 | `PERFORMANCE_MONITOR_ENABLED` | `false` | 本机资源过载守卫（默认关闭，避免误判路由全挂） |
 | `VERSION` | 空 | 运行时覆盖版本号（构建期由 ldflags 注入） |
