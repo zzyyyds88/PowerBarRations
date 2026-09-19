@@ -27,6 +27,23 @@ python3 verify/e2e-ui/user_journey.py
 |---|---|---|
 | 2026-09-19 | **PASS=27 FAIL=0** | `verify/e2e-ui/run-20260919-*.log` |
 
+## 手动操作（真实图形浏览器，人可亲手点）
+
+自动化脚本之外，另提供**可见的真实浏览器环境**供人手动操作（不是 CDP 脚本驱动）：
+
+```bash
+bash verify/e2e-ui/live_browser.sh start    # 起 Xvfb + openbox + 有头 Chromium + noVNC
+bash verify/e2e-ui/live_browser.sh status   # 查看状态与访问地址
+bash verify/e2e-ui/live_browser.sh shot 名  # 抓当前屏幕截图
+bash verify/e2e-ui/live_browser.sh stop     # 停止
+```
+
+- 浏览器**真实可见**（Xvfb 虚拟显示 :99 + openbox），经 x11vnc + noVNC 暴露为网页：
+  `http://<本机IP>:6080/vnc.html?autoconnect=1&resize=scale`，在浏览器里用**真实鼠标键盘**操作。
+- 已预置演示数据（渠道 demo-channel / 车道 demo-model / 客户端密钥），可直接点。
+- 可用 `xdotool` 在 `DISPLAY=:99` 上注入 OS 级鼠标/键盘事件（等价真人输入）。
+- 依赖：`Xvfb x11vnc websockify novnc openbox xdotool imagemagick`。
+
 ## 覆盖的用户路径
 
 首启设口令、登出/登录（含错误口令被拒）、新建渠道（表单）、编辑车道成员链、
