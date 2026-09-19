@@ -31,7 +31,7 @@ For commercial licensing, please contact support@quantumnous.com
  *   - `<html data-build-rev>` / `data-app-channel`
  *   - `<meta name="build-id" content="…">`     — head metadata
  *   - `:root { --app-build-rev: '…' }`         — CSS custom property
- *   - `localStorage['app:rev']`                — cache-key derivation
+ *   - `localStorage['pbr_app:rev']`            — cache-key derivation
  *
  * Read by `getBuildRevision()` and surfaced in support bundles.
  */
@@ -46,7 +46,7 @@ For commercial licensing, please contact support@quantumnous.com
 const BUILD_CHANNEL_TAG = '2k6e8r7p'
 
 const BUILD_REV_PREFIX = 'rv'
-const LS_REVISION_KEY = 'app:rev'
+const LS_REVISION_KEY = 'pbr_app:rev'
 
 interface BuildDescriptor {
   readonly rev: string

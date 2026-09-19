@@ -95,12 +95,12 @@ export function ChannelsPrimaryButtons() {
   )
 
   const handleTagModeToggle = (checked: boolean) => {
-    localStorage.setItem('enable-tag-mode', String(checked))
+    localStorage.setItem('pbr_enable-tag-mode', String(checked))
     setEnableTagMode(checked)
   }
 
   const handleIdSortToggle = (checked: boolean) => {
-    localStorage.setItem('channels-id-sort', String(checked))
+    localStorage.setItem('pbr_channels-id-sort', String(checked))
     setIdSort(checked)
   }
 

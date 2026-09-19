@@ -26,8 +26,10 @@ var DefaultCollapseSidebar = false // default value of collapse sidebar
 
 var SessionSecret = uuid.New().String()
 var CryptoSecret = uuid.New().String()
+
+// SessionCookieSecure 会话 Cookie 是否带 Secure 属性（token-spec v1 §2.5：
+// 网关只跑明文 HTTP，仅当外部反向代理终结 TLS 时经 SESSION_COOKIE_SECURE=true 显式开启）
 var SessionCookieSecure = false
-var SessionCookieTrustedURLs []string
 
 var OptionMap map[string]string
 var OptionMapRWMutex sync.RWMutex

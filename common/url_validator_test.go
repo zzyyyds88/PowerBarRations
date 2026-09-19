@@ -126,96 +126,51 @@ func resetSessionCookieSettingsAfterTest(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
 		SessionCookieSecure = false
-		SessionCookieTrustedURLs = nil
 	})
 }
 
 func TestInitSessionCookieSettingsDefaultsToInsecure(t *testing.T) {
 	resetSessionCookieSettingsAfterTest(t)
 	t.Setenv("SESSION_COOKIE_SECURE", "")
-	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "")
 
 	require.NoError(t, InitSessionCookieSettings())
 	assert.False(t, SessionCookieSecure)
-	assert.Empty(t, SessionCookieTrustedURLs)
 }
 
-func TestInitSessionCookieSettingsRequiresBothEnvVars(t *testing.T) {
-	t.Run("secure without trusted url", func(t *testing.T) {
-		resetSessionCookieSettingsAfterTest(t)
-		t.Setenv("SESSION_COOKIE_SECURE", "true")
-		t.Setenv("SESSION_COOKIE_TRUSTED_URL", "")
+func TestInitSessionCookieSettingsExplicitFalse(t *testing.T) {
+	resetSessionCookieSettingsAfterTest(t)
+	t.Setenv("SESSION_COOKIE_SECURE", "false")
 
-		require.Error(t, InitSessionCookieSettings())
-	})
-
-	t.Run("trusted url without secure", func(t *testing.T) {
-		resetSessionCookieSettingsAfterTest(t)
-		t.Setenv("SESSION_COOKIE_SECURE", "")
-		t.Setenv("SESSION_COOKIE_TRUSTED_URL", "https://example.com")
-
-		require.Error(t, InitSessionCookieSettings())
-	})
+	require.NoError(t, InitSessionCookieSettings())
+	assert.False(t, SessionCookieSecure)
 }
 
-func TestInitSessionCookieSettingsRequiresHTTPSURL(t *testing.T) {
+// token-spec v1 §2.5：SESSION_COOKIE_SECURE=true 是单开关，单独生效即
+// 开启会话 Cookie 的 Secure 属性，不要求任何其他配套环境变量。
+func TestInitSessionCookieSettingsSecureAloneEnablesSecure(t *testing.T) {
 	resetSessionCookieSettingsAfterTest(t)
 	t.Setenv("SESSION_COOKIE_SECURE", "true")
-	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "http://example.com")
-
-	require.Error(t, InitSessionCookieSettings())
-}
-
-func TestInitSessionCookieSettingsEnablesSecureCookie(t *testing.T) {
-	resetSessionCookieSettingsAfterTest(t)
-	t.Setenv("SESSION_COOKIE_SECURE", "true")
-	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "https://example.com")
 
 	require.NoError(t, InitSessionCookieSettings())
 	assert.True(t, SessionCookieSecure)
-	assert.Equal(t, []string{"https://example.com"}, SessionCookieTrustedURLs)
 }
 
-func TestInitSessionCookieSettingsAllowsMultipleTrustedURLs(t *testing.T) {
-	resetSessionCookieSettingsAfterTest(t)
-	t.Setenv("SESSION_COOKIE_SECURE", "true")
-	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "https://example.com, https://admin.example.com")
-
-	require.NoError(t, InitSessionCookieSettings())
-	assert.True(t, SessionCookieSecure)
-	assert.Equal(t, []string{"https://example.com", "https://admin.example.com"}, SessionCookieTrustedURLs)
-}
-
-func TestInitSessionCookieSettingsRejectsEmptyTrustedURLInList(t *testing.T) {
-	resetSessionCookieSettingsAfterTest(t)
-	t.Setenv("SESSION_COOKIE_SECURE", "true")
-	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "https://example.com,")
-
-	require.Error(t, InitSessionCookieSettings())
-}
-
-func TestInitSessionCookieSettingsNormalizesExactOrigins(t *testing.T) {
-	resetSessionCookieSettingsAfterTest(t)
-	t.Setenv("SESSION_COOKIE_SECURE", "true")
-	t.Setenv("SESSION_COOKIE_TRUSTED_URL", "https://EXAMPLE.com:443,https://admin.example.com:8443/")
-
-	require.NoError(t, InitSessionCookieSettings())
-	assert.Equal(t, []string{"https://example.com", "https://admin.example.com:8443"}, SessionCookieTrustedURLs)
-}
-
-func TestInitSessionCookieSettingsRejectsNonOriginURLs(t *testing.T) {
-	for _, trustedURL := range []string{
-		"https://*.example.com",
-		"https://user@example.com",
-		"https://example.com/admin",
-		"https://example.com?next=admin",
-		"https://example.com#admin",
-	} {
-		t.Run(trustedURL, func(t *testing.T) {
+func TestInitSessionCookieSettingsAcceptsCaseInsensitiveTrue(t *testing.T) {
+	for _, raw := range []string{"TRUE", " True ", "true"} {
+		t.Run(raw, func(t *testing.T) {
 			resetSessionCookieSettingsAfterTest(t)
-			t.Setenv("SESSION_COOKIE_SECURE", "true")
-			t.Setenv("SESSION_COOKIE_TRUSTED_URL", trustedURL)
-			require.Error(t, InitSessionCookieSettings())
+			t.Setenv("SESSION_COOKIE_SECURE", raw)
+
+			require.NoError(t, InitSessionCookieSettings())
+			assert.True(t, SessionCookieSecure)
 		})
 	}
+}
+
+func TestInitSessionCookieSettingsRejectsInvalidValue(t *testing.T) {
+	resetSessionCookieSettingsAfterTest(t)
+	t.Setenv("SESSION_COOKIE_SECURE", "yes-please")
+
+	require.Error(t, InitSessionCookieSettings())
+	assert.False(t, SessionCookieSecure)
 }
