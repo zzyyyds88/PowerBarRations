@@ -52,7 +52,8 @@ providers:
 
 ## 3. `<hermes-lane>` 车道语义
 
-- 车道必须显式创建并启用；渠道声明模型只提供候选成员，不会自动成为 Hermes 的路由。
+- 车道必须显式创建并启用；渠道声明模型只提供成员目录，**绝不会自动成为 Hermes 的路由**（[ADR 0006](adr/0006-lane-free-member-composition.md)）。
+- 车道成员可任选任意渠道的任意模型，无需同名，同一渠道可多次出现（去重键 = `(渠道, 上游真名)`）；这条自由度不影响 Hermes 的固定档案形态。
 - 成员顺序以成员 `priority` 为权威口径：`priority` 数字大者先试，故障转移即按 `priority` 降序进行（数组顺序与 `priority` 降序一致，见 [`api-spec-v1.md`](api-spec-v1.md) §4.2）。成员可使用不同渠道、不同上游真名，解析优先级仍遵循
   成员 `upstream_model` > 渠道 `model_mapping` > `<hermes-lane>`。
 - 故障转移只发生在 `<hermes-lane>` 车道内部；请求不得跨到其他车道或隐式选择其他模型。
