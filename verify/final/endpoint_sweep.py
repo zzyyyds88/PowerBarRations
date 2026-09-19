@@ -37,6 +37,7 @@ EXPECTED_MISSING = {
     ("delete", "/lanes/{name}"),
     ("delete", "/keys/{name}"),
     ("get", "/logs/{id}"),
+    ("get", "/system-tasks/{id}"),
 }
 
 SUBSTITUTIONS = {"{name}": "sweep-probe", "{id}": "999999", "{model}": "sweep-model"}
