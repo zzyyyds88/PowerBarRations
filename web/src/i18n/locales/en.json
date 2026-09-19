@@ -2973,6 +2973,21 @@
     "Pick the active member for manual mode before saving.": "Pick the active member for manual mode before saving.",
     "Add members": "Add members",
     "Add member channels from the candidates below.": "Add member channels from the candidates below.",
-    "All candidate channels are already added.": "All candidate channels are already added."
+    "All candidate channels are already added.": "All candidate channels are already added.",
+    "Members (order)": "Members (order)",
+    "Search channels or models": "Search channels or models",
+    "No channels declare models yet.": "No channels declare models yet.",
+    "Pick models from the left to add them to this lane.": "Pick models from the left to add them to this lane.",
+    "Create lane": "Create lane",
+    "Delete lane": "Delete lane",
+    "Edit lane": "Edit lane",
+    "Pick member channels and models from any channel, then order them. The order is the failover order.": "Pick member channels and models from any channel, then order them. The order is the failover order.",
+    "Max attempts": "Max attempts",
+    "Retry interval (s)": "Retry interval (s)",
+    "Non-stream timeout (s)": "Non-stream timeout (s)",
+    "Stream first event timeout (s)": "Stream first event timeout (s)",
+    "Cooldown (s)": "Cooldown (s)",
+    "Affinity (s)": "Affinity (s)",
+    "Create a lane by hand and pick members from any channel to make a route key callable.": "Create a lane by hand and pick members from any channel to make a route key callable."
   }
 }

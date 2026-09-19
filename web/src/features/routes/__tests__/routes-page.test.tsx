@@ -17,10 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /*
-「路由与故障切换」独立页（ui-spec §6.3）：
-- 集中列出全部路由键（explicit 可调用 / unconfigured 不可调用）与成员顺序摘要；
-- 行内「编辑成员链」打开居中弹窗（固定模型模式，只显示该车道成员）。
-测试资源为空表，i18n 文案即 key 本身。
+「路由与故障切换」独立页（ui-spec §6.3、ADR 0006）：octopus 式卡片网格。
+- 集中列出全部路由键（explicit 可调用 / unconfigured 不可调用）与成员顺序；
+- 卡片操作「编辑成员链」打开两栏编排器；未配车道时显示「新建车道」入口；
+- 渠道声明/新增模型不会自动建车道。测试资源为空表，i18n 文案即 key 本身。
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, within } from '@testing-library/react'
@@ -49,6 +49,7 @@ vi.mock('@/lib/route-events', async (importOriginal) => {
 })
 
 const mockedGet = vi.mocked(api.get)
+const mockedDelete = vi.mocked(api.delete)
 
 function renderPage() {
   const client = new QueryClient({
@@ -114,6 +115,9 @@ function mockRouteKeys() {
         },
       } as never
     }
+    if (url === '/api/v1/channels') {
+      return { data: { items: [] } } as never
+    }
     throw new Error(`Unexpected GET ${url}`)
   })
 }
@@ -127,7 +131,7 @@ afterEach(() => {
 })
 
 describe('路由与故障切换页', () => {
-  test('列出全部路由键：状态徽章、成员数与顺序摘要', async () => {
+  test('以卡片网格列出全部路由键：状态徽章、成员数与顺序', async () => {
     mockRouteKeys()
     renderPage()
 
@@ -136,14 +140,14 @@ describe('路由与故障切换页', () => {
     // 状态语义：explicit 可调用 / unconfigured 不可调用。
     expect(screen.getByText('Callable')).toBeInTheDocument()
     expect(screen.getByText('Not callable')).toBeInTheDocument()
-    // 成员数与顺序摘要（车道成员数组顺序即故障切换顺序）。
+    // 成员数与顺序（车道成员数组顺序即故障转移顺序）。
     expect(screen.getByText('2 members')).toBeInTheDocument()
-    expect(screen.getByText('channel-a → channel-b')).toBeInTheDocument()
-    // 未配车道：只有候选渠道数，无顺序。
-    expect(screen.getByText('1 candidate channels')).toBeInTheDocument()
+    expect(screen.getByText(/1\. channel-a/)).toBeInTheDocument()
+    // 未配车道：候选渠道数 + 不可调用提示（同一 span 内拼接）。
+    expect(screen.getByText(/1 candidate channels/)).toBeInTheDocument()
   })
 
-  test('行内「编辑成员链」打开居中弹窗，只显示该车道成员', async () => {
+  test('卡片「编辑成员链」打开两栏编排器并载入该车道成员', async () => {
     mockRouteKeys()
     renderPage()
 
@@ -155,48 +159,33 @@ describe('路由与故障切换页', () => {
 
     const dialog = await screen.findByRole('dialog')
     expect(dialog).toBeVisible()
-    // 固定模型模式：隐藏模型选择器，只渲染该模型成员链。
-    expect(
-      within(dialog).queryByText(/Routable models/)
-    ).not.toBeInTheDocument()
-    // 一键固化入口已整体移除（成员链只支持手工添加/删除）。
-    expect(
-      screen.queryByRole('button', { name: 'Generate missing lanes' })
-    ).not.toBeInTheDocument()
-    // 弹窗标题与成员链编辑只含点中的模型（model-1），不含其他车道。
-    expect(within(dialog).getAllByText('model-1').length).toBeGreaterThan(0)
-    expect(within(dialog).queryByText('model-2')).not.toBeInTheDocument()
     expect(await within(dialog).findByText('channel-a')).toBeVisible()
     expect(within(dialog).getByText('channel-b')).toBeVisible()
+    // 编辑既有车道：路由键只读。
+    expect(within(dialog).getByLabelText('Route key')).toBeDisabled()
   })
 
-  test('关闭成员链弹窗时若有草稿先确认放弃', async () => {
+  test('未配车道的卡片显示「新建车道」入口', async () => {
+    mockRouteKeys()
+    renderPage()
+
+    expect(await screen.findByText('model-2')).toBeInTheDocument()
+    // model-2 未配车道 → 卡片操作是「新建车道」而不是「编辑成员链」。
+    expect(
+      screen.getAllByRole('button', { name: 'Create lane' }).length
+    ).toBeGreaterThan(0)
+  })
+
+  test('页头「新建车道」打开可编辑路由键的编排器', async () => {
     mockRouteKeys()
     renderPage()
 
     const user = userEvent.setup()
-    const editButtons = await screen.findAllByRole('button', {
-      name: 'Edit members',
-    })
-    await user.click(editButtons[0])
-
+    await user.click(await screen.findByRole('button', { name: 'New lane' }))
     const dialog = await screen.findByRole('dialog')
-    expect(await within(dialog).findByText('channel-a')).toBeVisible()
-    // 制造草稿：下移第一个成员。
-    await user.click(
-      within(dialog).getAllByRole('button', { name: 'Move down' })[0]
-    )
-    // 点关闭（X）应先弹放弃确认，而不是直接丢弃草稿。
-    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
-
-    const confirm = await screen.findByRole('alertdialog')
-    expect(within(confirm).getByText('Discard unsaved changes?')).toBeVisible()
-    // 取消后主弹窗回到前台，草稿仍在。
-    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
-    expect(await screen.findByRole('dialog')).toBeVisible()
-    expect(
-      within(screen.getByRole('dialog')).getByText('channel-b')
-    ).toBeVisible()
+    const routeKey = within(dialog).getByLabelText('Route key')
+    expect(routeKey).toBeEnabled()
+    expect(routeKey).toHaveValue('')
   })
 
   test('空态：没有路由键时给出引导文案', async () => {
@@ -214,7 +203,7 @@ describe('路由与故障切换页', () => {
     expect(await screen.findByText('No route keys yet')).toBeVisible()
     expect(
       screen.getByText(
-        'Declare models on channels to see them here, then add members and save to create a lane.'
+        'Create a lane by hand and pick members from any channel to make a route key callable.'
       )
     ).toBeVisible()
   })
@@ -250,13 +239,16 @@ describe('路由与故障切换页', () => {
           },
         } as never
       }
+      if (url === '/api/v1/channels') {
+        return { data: { items: [] } } as never
+      }
       throw new Error(`Unexpected GET ${url}`)
     })
     renderPage()
 
     // 主列表仍然可用。
     expect(await screen.findByText('model-1')).toBeInTheDocument()
-    // 成员顺序列有独立的内联错误与重试入口。
+    // 成员顺序有独立的内联错误与重试入口。
     expect(
       await screen.findByText('Failed to load lane member order')
     ).toBeVisible()
@@ -279,7 +271,6 @@ describe('路由与故障切换页', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
   })
 
-  // 成员总数含悬空/停用成员时，要标出「可用」与「不可用」（P3-1）。
   test('成员列标注不可用成员数', async () => {
     mockRouteKeys()
     renderPage()
@@ -288,7 +279,6 @@ describe('路由与故障切换页', () => {
     expect(screen.getByText('(1 unavailable)')).toBeVisible()
   })
 
-  // 车道存在但成员全不可用时要显示「全部成员不可用」，而不是绿色 Callable。
   test('成员全不可用时状态显示全部不可用', async () => {
     mockedGet.mockImplementation(async (url: string) => {
       if (url === '/api/v1/models') {
@@ -320,7 +310,6 @@ describe('路由与故障切换页', () => {
     expect(screen.queryByText('Callable')).not.toBeInTheDocument()
   })
 
-  // 存在悬空成员（渠道已删）时给出清理入口与受影响车道清单。
   test('悬空成员给出清理入口', async () => {
     mockedGet.mockImplementation(async (url: string) => {
       if (url === '/api/v1/models') {
@@ -362,5 +351,22 @@ describe('路由与故障切换页', () => {
     )
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText(/model-1/)).toBeVisible()
+  })
+
+  test('删除车道走二次确认', async () => {
+    mockRouteKeys()
+    mockedDelete.mockResolvedValue({ data: {} } as never)
+    const user = userEvent.setup()
+    renderPage()
+
+    const deleteButtons = await screen.findAllByRole('button', {
+      name: 'Delete lane',
+    })
+    await user.click(deleteButtons[0])
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(within(dialog).getByText('Remove this lane?')).toBeVisible()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(mockedDelete).not.toHaveBeenCalled()
   })
 })

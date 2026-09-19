@@ -17,52 +17,48 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /*
-PowerBarRations —— 「路由与故障切换」独立页（ui-spec §6.3）
+PowerBarRations —— 「路由与故障切换」独立页（ui-spec §6.3、ADR 0006）
 
-集中列出全部路由键（已配车道 + 未配车道，GET /api/v1/models）：每行展示模型名、
-状态（explicit 可调用 / unconfigured 不可调用）、成员数与顺序摘要；行内
-「编辑成员链」打开该模型的成员链抽屉。模型管理页专注模型目录，行内路由入口已移除。
+以 **octopus 式卡片网格**列出全部路由键（已配车道 + 未配车道）：每张卡片展示路由键、
+状态徽章、成员顺序与运行态；操作 = 编辑成员链 / 删除车道。页头「新建车道」进入两栏
+编排器；未配车道的路由键点开即可组链。渠道声明/新增模型不会自动建车道。
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GitBranch, Loader2, Plus, Waypoints } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Loader2, Plus, Waypoints } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { CopyButton } from '@/components/copy-button'
-import {
-  StaticDataTable,
-  staticDataTableClassNames as tableStyles,
-} from '@/components/data-table'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
-import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 
 import {
   cleanupPBROrphanMembers,
+  deletePBRFailover,
   listPBRLaneSummaries,
   listPBRModels,
   pbrModelsQueryKey,
   type PBRModelSummary,
 } from './api'
-import { LaneRuntimeCell } from './components/lane-runtime-cell'
-import { ModelRoutingDrawer } from './components/model-routing-drawer'
-import { NewLaneDialog } from './components/new-lane-dialog'
+import { LaneCard } from './components/lane-card'
+import { LaneEditorDialog } from './components/lane-editor-dialog'
 import { useLaneRuntime } from './hooks/use-lane-runtime'
 
-// 车道顺序摘要挂在同一前缀 queryKey 下：抽屉里保存/删除成员链后，
-// 面板 invalidate ['pbr-routable-models'] 会连同本键一起刷新。
+// 车道顺序摘要挂在同一前缀 queryKey 下：编排器保存/删除后 invalidate 会一并刷新。
 const laneSummariesKey = [...pbrModelsQueryKey, 'lane-summaries'] as const
 
 export function Routes() {
   const { t } = useTranslation()
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [currentRow, setCurrentRow] = useState<{ model_name: string } | null>(
+  const queryClient = useQueryClient()
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorModel, setEditorModel] = useState<string | undefined>(undefined)
+  const [pendingDelete, setPendingDelete] = useState<PBRModelSummary | null>(
     null
   )
+  const [cleanupOpen, setCleanupOpen] = useState(false)
 
   const modelsQuery = useQuery({
     queryKey: pbrModelsQueryKey,
@@ -73,24 +69,19 @@ export function Routes() {
     queryFn: listPBRLaneSummaries,
   })
 
-  const queryClient = useQueryClient()
-  const [cleanupOpen, setCleanupOpen] = useState(false)
-  const [newLaneOpen, setNewLaneOpen] = useState(false)
-
   const models = modelsQuery.data ?? []
   // 车道运行态（ui-spec §4）：SSE 主源 + 30s 轮询兜底；只对已配车道的路由键订阅。
   const laneNames = models
     .filter((m) => m.source === 'explicit')
     .map((m) => m.model)
   const { runtime: laneRuntime, nowMs } = useLaneRuntime(laneNames)
-  // 车道名 = 模型名：用车道列表补出每行的成员顺序（GET /api/v1/models 只有数量）。
   const laneOrders = new Map(
     (lanesQuery.data ?? []).map((lane) => [lane.name, lane.members])
   )
-  // 悬空成员：渠道已删除、车道仍留着该成员（历史数据），提供一键清理。
   const orphanLanes = (lanesQuery.data ?? []).filter(
     (lane) => lane.orphan_member_count > 0
   )
+
   const cleanup = useMutation({
     mutationFn: cleanupPBROrphanMembers,
     onSuccess: async (result) => {
@@ -105,20 +96,44 @@ export function Routes() {
     },
   })
 
-  const openEditor = (row: PBRModelSummary) => {
-    setCurrentRow({ model_name: row.model })
-    setDrawerOpen(true)
+  const removeLane = useMutation({
+    mutationFn: (model: string) => deletePBRFailover(model),
+    onSuccess: async () => {
+      toast.success(
+        t('Lane removed; configure this model again to make it callable')
+      )
+      setPendingDelete(null)
+      await queryClient.invalidateQueries({ queryKey: pbrModelsQueryKey })
+      await queryClient.invalidateQueries({ queryKey: laneSummariesKey })
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : String(error))
+    },
+  })
+
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: pbrModelsQueryKey })
+    await queryClient.invalidateQueries({ queryKey: laneSummariesKey })
   }
 
-  let tableContent: ReactNode
+  const openNewLane = () => {
+    setEditorModel(undefined)
+    setEditorOpen(true)
+  }
+  const openEditLane = (model: string) => {
+    setEditorModel(model)
+    setEditorOpen(true)
+  }
+
+  let content
   if (modelsQuery.isLoading) {
-    tableContent = (
+    content = (
       <div className='text-muted-foreground flex items-center gap-2 p-3 text-sm'>
         <Loader2 className='size-4 animate-spin' /> {t('Loading...')}
       </div>
     )
   } else if (modelsQuery.isError) {
-    tableContent = (
+    content = (
       <ErrorState
         description={
           modelsQuery.error instanceof Error
@@ -128,172 +143,31 @@ export function Routes() {
         onRetry={() => void modelsQuery.refetch()}
       />
     )
-  } else {
-    tableContent = (
-      <StaticDataTable
-        className={tableStyles.sectionContainer}
-        headerRowClassName={tableStyles.mutedHeaderRow}
-        data={models}
-        getRowKey={(row) => row.model}
-        getRowClassName={() => 'hover:bg-muted/20'}
-        emptyContent={
-          <EmptyState
-            icon={Waypoints}
-            title={t('No route keys yet')}
-            description={t(
-              'Declare models on channels to see them here, then add members and save to create a lane.'
-            )}
-          />
-        }
-        columns={[
-          {
-            id: 'model',
-            header: t('Model'),
-            className: 'h-9 w-[min(360px,40%)]',
-            cellClassName: tableStyles.topCell,
-            cell: (row) => (
-              <div className='flex min-w-0 items-center gap-1'>
-                <span
-                  className='truncate font-mono text-sm font-medium'
-                  title={row.model}
-                >
-                  {row.model}
-                </span>
-                <CopyButton value={row.model} className='size-6 shrink-0' />
-              </div>
-            ),
-          },
-          {
-            id: 'status',
-            header: t('Status'),
-            className: 'h-9 w-32',
-            cellClassName: tableStyles.topCell,
-            cell: (row) => {
-              if (row.source === 'explicit') {
-                // 车道存在 ≠ 现在可用：成员全冷却/熔断时给出"全部不可用"（routing-spec §7）。
-                if (row.degraded) {
-                  return (
-                    <StatusBadge
-                      label={t('All members unavailable')}
-                      variant='danger'
-                      size='sm'
-                    />
-                  )
-                }
-                const partiallyDegraded =
-                  typeof row.healthy_member_count === 'number' &&
-                  typeof row.health_member_count === 'number' &&
-                  row.health_member_count > 0 &&
-                  row.healthy_member_count < row.health_member_count
-                if (partiallyDegraded) {
-                  return (
-                    <StatusBadge
-                      label={t('Degraded')}
-                      variant='warning'
-                      size='sm'
-                    />
-                  )
-                }
-                return (
-                  <StatusBadge
-                    label={t('Callable')}
-                    variant='success'
-                    size='sm'
-                  />
-                )
-              }
-              if (row.source === 'disabled') {
-                return (
-                  <StatusBadge
-                    label={t('Lane disabled')}
-                    variant='warning'
-                    size='sm'
-                  />
-                )
-              }
-              return (
-                <StatusBadge
-                  label={t('Not callable')}
-                  variant='danger'
-                  size='sm'
-                />
-              )
-            },
-          },
-          {
-            id: 'members',
-            header: t('Members & order'),
-            className: 'h-9 min-w-0',
-            cellClassName: tableStyles.topCell,
-            cell: (row) => {
-              if (row.source !== 'explicit') {
-                return (
-                  <span className='text-muted-foreground text-xs'>
-                    {t('{{count}} candidate channels', {
-                      count: row.member_count,
-                    })}
-                  </span>
-                )
-              }
-              const members = laneOrders.get(row.model) ?? []
-              // 成员总数可能含渠道已删/停用的悬空成员，可用数才是真正可路由的（P3-1）。
-              const unavailable =
-                row.member_count - (row.available_member_count ?? 0)
-              return (
-                <div className='min-w-0'>
-                  <div className='text-sm'>
-                    {t('{{count}} members', { count: row.member_count })}
-                    {unavailable > 0 && (
-                      <span className='text-destructive ml-1 text-xs'>
-                        {t('({{count}} unavailable)', { count: unavailable })}
-                      </span>
-                    )}
-                  </div>
-                  {members.length > 0 && (
-                    <div
-                      className='text-muted-foreground truncate text-xs'
-                      title={members.map((m) => m.channel).join(' → ')}
-                    >
-                      {members.map((m) => m.channel).join(' → ')}
-                    </div>
-                  )}
-                </div>
-              )
-            },
-          },
-          {
-            id: 'runtime',
-            header: t('Runtime'),
-            className: 'h-9 w-56',
-            cellClassName: tableStyles.topCell,
-            cell: (row) =>
-              row.source === 'explicit' ? (
-                <LaneRuntimeCell
-                  snapshot={laneRuntime.byLane.get(row.model)}
-                  now={nowMs}
-                />
-              ) : (
-                <span className='text-muted-foreground text-xs'>—</span>
-              ),
-          },
-          {
-            id: 'actions',
-            header: t('Actions'),
-            className: `h-9 w-36 ${tableStyles.actionHeaderCell}`,
-            cellClassName: tableStyles.actionCell,
-            cell: (row) => (
-              <Button
-                size='sm'
-                variant='outline'
-                onClick={() => openEditor(row)}
-              >
-                <GitBranch className='size-4' />
-                {t('Edit members')}
-              </Button>
-            ),
-          },
-        ]}
+  } else if (models.length === 0) {
+    content = (
+      <EmptyState
+        icon={Waypoints}
+        title={t('No route keys yet')}
+        description={t(
+          'Create a lane by hand and pick members from any channel to make a route key callable.'
+        )}
       />
+    )
+  } else {
+    content = (
+      <div className='grid grid-cols-1 gap-3 pb-4 md:grid-cols-2 xl:grid-cols-3'>
+        {models.map((row) => (
+          <LaneCard
+            key={row.model}
+            summary={row}
+            members={laneOrders.get(row.model) ?? []}
+            snapshot={laneRuntime.byLane.get(row.model)}
+            now={nowMs}
+            onEdit={() => openEditLane(row.model)}
+            onDelete={() => setPendingDelete(row)}
+          />
+        ))}
+      </div>
     )
   }
 
@@ -304,7 +178,7 @@ export function Routes() {
           {t('Routing & Failover')}
         </SectionPageLayout.Title>
         <SectionPageLayout.Actions>
-          <Button size='sm' onClick={() => setNewLaneOpen(true)}>
+          <Button size='sm' onClick={openNewLane}>
             <Plus className='size-4' />
             {t('New lane')}
           </Button>
@@ -340,20 +214,37 @@ export function Routes() {
                 </Button>
               </div>
             )}
-            <div className='min-h-0 flex-1 overflow-auto pb-4'>
-              {tableContent}
-            </div>
+            <div className='min-h-0 flex-1 overflow-auto'>{content}</div>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
 
-      <ModelRoutingDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        currentRow={currentRow}
-      />
+      {editorOpen && (
+        <LaneEditorDialog
+          open
+          onOpenChange={setEditorOpen}
+          model={editorModel}
+          onSaved={refresh}
+        />
+      )}
 
-      <NewLaneDialog open={newLaneOpen} onOpenChange={setNewLaneOpen} />
+      <ConfirmDialog
+        destructive
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+        title={t('Remove this lane?')}
+        desc={t(
+          'Removing the lane makes {{model}} unavailable immediately (requests return 503) until you configure a lane again.',
+          { model: pendingDelete?.model ?? '' }
+        )}
+        confirmText={t('Remove lane')}
+        isLoading={removeLane.isPending}
+        handleConfirm={() => {
+          if (pendingDelete) removeLane.mutate(pendingDelete.model)
+        }}
+      />
 
       <ConfirmDialog
         open={cleanupOpen}

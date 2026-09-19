@@ -2973,6 +2973,21 @@
     "Pick the active member for manual mode before saving.": "手動指定模式下請先選擇目前成員再儲存。",
     "Add members": "新增成員",
     "Add member channels from the candidates below.": "從下方候選中新增成員渠道。",
-    "All candidate channels are already added.": "所有候選渠道都已新增。"
+    "All candidate channels are already added.": "所有候選渠道都已新增。",
+    "Members (order)": "成員（順序）",
+    "Search channels or models": "搜尋渠道或模型",
+    "No channels declare models yet.": "還沒有渠道宣告模型。",
+    "Pick models from the left to add them to this lane.": "從左側挑選模型加入這條車道。",
+    "Create lane": "新增車道",
+    "Delete lane": "刪除車道",
+    "Edit lane": "編輯車道",
+    "Pick member channels and models from any channel, then order them. The order is the failover order.": "從任意渠道挑選成員渠道與模型，然後排序。順序即容錯移轉順序。",
+    "Max attempts": "最大嘗試次數",
+    "Retry interval (s)": "重試間隔（秒）",
+    "Non-stream timeout (s)": "非串流逾時（秒）",
+    "Stream first event timeout (s)": "串流首事件逾時（秒）",
+    "Cooldown (s)": "冷卻（秒）",
+    "Affinity (s)": "親和（秒）",
+    "Create a lane by hand and pick members from any channel to make a route key callable.": "手動新增車道，並從任意渠道挑選成員，路由鍵才可呼叫。"
   }
 }
