@@ -98,9 +98,9 @@ control '{"model":"fi-model","status":200,"delay_ms":3000}'
 CODE=$(chat '{"model":"fi-model","messages":[{"role":"user","content":"hi"}]}')
 echo "  HTTP $CODE"
 H1=$(health fi-model)
-echo "  health: $(echo "$H1" | python3 -c 'import sys,json;d=json.load(sys.stdin);print([(m["channel"],m["last_error_kind"],m["cooldown_until"]>0) for m in d["members"]])')"
+echo "  health: $(echo "$H1" | python3 -c 'import sys,json;d=json.load(sys.stdin);print([(m["channel"],m["last_error_kind"],m["cooldown_until"] is not None) for m in d["members"]])')"
 check "超时后无可用成员（503 快抛）" "$CODE" "503"
-assert_json "超时归类为 soft_transient 且进入冷却" "$H1" "any(m['last_error_kind']=='soft_transient' and m['cooldown_until']>0 for m in d['members'])"
+assert_json "超时归类为 soft_transient 且进入冷却" "$H1" "any(m['last_error_kind']=='soft_transient' and m['cooldown_until'] is not None for m in d['members'])"
 control '{"model":"fi-model","status":200}'
 
 echo
@@ -154,7 +154,7 @@ CODE=$(chat '{"model":"dead-model","messages":[{"role":"user","content":"hi"}]}'
 H6=$(health dead-model)
 echo "  HTTP $CODE；health: $(echo "$H6" | python3 -c 'import sys,json;d=json.load(sys.stdin);print([(m["channel"],m["last_error_kind"]) for m in d["members"]])')"
 check "死渠道失败后由健康成员兜底（200）" "$CODE" "200"
-assert_json "连接失败归类为软故障并冷却死渠道" "$H6" "any(m['channel']=='channel-dead' and m['last_error_kind'] in ('soft_transient','bad_response') and m['cooldown_until']>0 for m in d['members'])"
+assert_json "连接失败归类为软故障并冷却死渠道" "$H6" "any(m['channel']=='channel-dead' and m['last_error_kind'] in ('soft_transient','bad_response') and m['cooldown_until'] is not None for m in d['members'])"
 
 echo
 echo "=== C7 流中途断流：已提交后不再故障转移（routing-spec §4.3）==="

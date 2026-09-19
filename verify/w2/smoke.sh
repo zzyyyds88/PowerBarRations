@@ -286,7 +286,7 @@ H_HANG=$(health hang-model)
 echo "  hang health: $(echo "$H_HANG" | jq1 "json.dumps({m['member']:{'kind':m.get('last_error_kind'),'cooldown_until':m['cooldown_until'],'circuit':m['circuit']} for m in d['members']},ensure_ascii=False)")"
 check "超时归类为 soft_transient（不是 canceled）" "$H_HANG" '"soft_transient"'
 check_not "超时不得被标成 canceled" "$H_HANG" '"last_error_kind":"canceled"'
-assert_json "挂起成员进入冷却/熔断（未被静默放过）" "$H_HANG" "any(m['member'].startswith('channel-a') and (m['cooldown_until']>0 or m['circuit']!='closed') for m in d['members'])"
+assert_json "挂起成员进入冷却/熔断（未被静默放过）" "$H_HANG" "any(m['member'].startswith('channel-a') and (m['cooldown_until'] is not None or m['circuit']!='closed') for m in d['members'])"
 control '{"model":"hang-a","status":200,"delay_ms":0}'
 
 echo
@@ -303,7 +303,7 @@ CODE=$(chat bad-model); echo "  client_error: HTTP $CODE $(head -c 120 "$WORK/bo
 check "client_error 原样返回 400（不是 503）" "$CODE" "400"
 H_BAD=$(health bad-model)
 echo "  client_error health: $H_BAD"
-assert_json "client_error 不触发冷却" "$H_BAD" "all(m['cooldown_until']==0 for m in d['members'])"
+assert_json "client_error 不触发冷却" "$H_BAD" "all(m['cooldown_until'] is None for m in d['members'])"
 assert_json "client_error 不记熔断计分" "$H_BAD" "all(m['failure_score']==0 for m in d['members'])"
 
 control '{"model":"quota-model","status":400,"body":"{\"error\":{\"message\":\"Your credit balance is too low\"}}"}'

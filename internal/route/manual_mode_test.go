@@ -107,7 +107,7 @@ func TestRollingSuccessRateInHealthSnapshot(t *testing.T) {
 
 	// 成功 + 失败 → 0.5
 	state.Runtime.withLock(func() {
-		state.Runtime.recordFailure(key, KindSoftTransient, 0, CurrentCircuitSettings())
+		state.Runtime.recordFailure(key, KindSoftTransient, 0, true, CurrentCircuitSettings())
 	})
 	snapshot = state.Runtime.Health(resolved, CurrentCircuitSettings())
 	assert.InDelta(t, 0.5, snapshot.Members[0].RollingSuccessRate, 0.001)

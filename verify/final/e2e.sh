@@ -141,7 +141,8 @@ assert_json_health() {
     echo "  FAIL: $desc（$payload）"; FAIL=$((FAIL+1))
   fi
 }
-assert_json_health "client_error 不冷却不换人" "all(m['cooldown_until']==0 and m['failure_score']==0 for m in d['members'])" "$HEALTH_AFTER_400"
+# api-spec §6.5：cooldown_until 为 RFC3339 字符串，无冷却为 null（不再是 unix 毫秒 0）。
+assert_json_health "client_error 不冷却不换人" "all(m['cooldown_until'] is None and m['failure_score']==0 for m in d['members'])" "$HEALTH_AFTER_400"
 control '{"model":"e2e-model","status":200}'
 
 echo
@@ -241,7 +242,7 @@ check "重启后密钥前缀不变" "$AFTER_KEY" "$BEFORE_KEY"
 AFTER_MODELS=$(curl -s "${A[@]}" "$BASE/api/v1/models")
 check "重启后模型路由仍在" "$AFTER_MODELS" '"model":"e2e-model"'
 AFTER_HEALTH=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/e2e-model/health")
-assert_json_health "重启后运行态清空（无残留冷却）" "all(m['cooldown_until']==0 for m in d['members'])" "$AFTER_HEALTH"
+assert_json_health "重启后运行态清空（无残留冷却）" "all(m['cooldown_until'] is None for m in d['members'])" "$AFTER_HEALTH"
 RESP_AFTER=$(curl -s -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' -d '{"model":"e2e-model","messages":[{"role":"user","content":"hi"}]}')
 check "重启后原密钥仍可转发" "$RESP_AFTER" 'pong from fake upstream'
 

@@ -456,7 +456,11 @@ func (r *Runtime) releaseProbe(key string) {
 }
 
 // recordFailure 记一次失败：更新熔断计分，必要时打开熔断；尝试预算耗尽则进入冷却。
-func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSeconds int, settings CircuitSettings) {
+//
+// applyCooldown=false 表示"该车道不参与冷却"（routing-spec §2.1：manual 模式只过
+// 熔断、不写冷却——冷却对唯一指定成员没有可换的替代者，只会把请求变成 503，
+// 而且残留冷却会在切回 failover 后继续误伤）。熔断计分与亲和收敛照常。
+func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSeconds int, applyCooldown bool, settings CircuitSettings) {
 	now := nowMs()
 	// routing-spec §4.1：hard_auth / hard_quota 冷却取较长档。
 	memberCooldownSeconds = cooldownSecondsFor(kind, memberCooldownSeconds)
@@ -480,7 +484,7 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 	circuit.ConsecutiveFailures++
 	circuit.recordOutcome(false)
 
-	if memberCooldownSeconds > 0 {
+	if applyCooldown && memberCooldownSeconds > 0 {
 		until := now + int64(memberCooldownSeconds)*1000
 		r.Cooldowns[key] = until
 		r.appendEvent(EventCooldown, key, "cooldown_until="+strconv.FormatInt(until, 10))
@@ -702,6 +706,9 @@ func (r *Runtime) pruneStaleLocked(valid map[string]bool) {
 }
 
 // MemberHealth 单个成员的运行态快照。
+//
+// 时间字段按 api-spec §2.6 输出 RFC3339 UTC 字符串；无冷却/无退避时为 null
+// （api-spec §6.5 示例 `"cooldown_until": null`）。
 type MemberHealth struct {
 	Member              string    `json:"member"`
 	Channel             string    `json:"channel"`
@@ -710,38 +717,80 @@ type MemberHealth struct {
 	ConsecutiveFailures int       `json:"consecutive_failures"`
 	FailureScore        float64   `json:"failure_score"`
 	RollingSuccessRate  float64   `json:"rolling_success_rate"`
-	CooldownUntil       int64     `json:"cooldown_until"`
-	CircuitOpenUntil    int64     `json:"circuit_open_until"`
+	CooldownUntil       *string   `json:"cooldown_until"`
+	CircuitOpenUntil    *string   `json:"circuit_open_until"`
 	LastErrorKind       ErrorKind `json:"last_error_kind,omitempty"`
 	Current             bool      `json:"current"`
 	Probing             bool      `json:"probing"`
 	Available           bool      `json:"available"`
 }
 
-// HealthSnapshot 车道运行态快照（GET /lanes/{name}/health）。
+// AffinityState 车道当前亲和（api-spec §6.5：affinity 为对象，无亲和时 null）。
+type AffinityState struct {
+	Channel       string  `json:"channel"`
+	UpstreamModel string  `json:"upstream_model"`
+	Until         *string `json:"until"`
+}
+
+// HealthSnapshot 车道运行态快照（GET /lanes/{name}/health，api-spec §6.5）。
 type HealthSnapshot struct {
 	Lane          string         `json:"lane"`
 	Source        string         `json:"source"`
 	Mode          string         `json:"mode"`
 	CurrentMember string         `json:"current_member"`
 	ProbeMember   string         `json:"probe_member"`
-	AffinityUntil int64          `json:"affinity_until"`
+	Affinity      *AffinityState `json:"affinity"`
 	Members       []MemberHealth `json:"members"`
 	Events        []Event        `json:"events"`
+}
+
+// msToRFC3339 Unix 毫秒 → RFC3339 UTC 字符串（api-spec §2.6）；0（无截止时间）
+// 返回 nil，JSON 输出 null（§6.5 的 "cooldown_until": null）。
+func msToRFC3339(ms int64) *string {
+	if ms <= 0 {
+		return nil
+	}
+	out := time.UnixMilli(ms).UTC().Format(time.RFC3339)
+	return &out
+}
+
+// circuitBlocksManual 熔断是否正在阻止 manual 成员（open 且退避未到）。
+// manual 不参与冷却（routing-spec §2.1），其可用性只由熔断决定。
+func (r *Runtime) circuitBlocksManual(key string) bool {
+	circuit := r.Circuits[key]
+	return circuit != nil && circuit.State == CircuitOpen && nowMs() < circuit.OpenUntil
 }
 
 // Health 生成快照；不复位的只读操作。
 func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings) HealthSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// §2.1：manual 不参与冷却/亲和——快照按 mode 过滤残留冷却，展示与实际选路一致。
+	manual := resolved.Mode == model.LaneModeManual
 	snapshot := HealthSnapshot{
 		Lane:          resolved.Model,
 		Source:        resolved.Source,
 		Mode:          resolved.Mode,
 		CurrentMember: r.currentLabel(resolved),
 		ProbeMember:   r.probeLabel(resolved),
-		AffinityUntil: r.AffinityUntil,
 		Events:        append([]Event(nil), r.Events...),
+	}
+	if !manual && r.AffinityUntil != 0 {
+		affinity := &AffinityState{Until: msToRFC3339(r.AffinityUntil)}
+		for i := range resolved.Members {
+			if memberKeyOf(&resolved.Members[i]) == r.CurrentMember {
+				affinity.Channel = resolved.Members[i].Channel
+				affinity.UpstreamModel = resolved.Members[i].UpstreamModel
+				break
+			}
+		}
+		if affinity.Channel == "" {
+			// 当前成员已不在链里（并发编辑竞态）：退回从运行态键解析上游名。
+			if _, upstream, ok := strings.Cut(r.CurrentMember, ":"); ok {
+				affinity.UpstreamModel = upstream
+			}
+		}
+		snapshot.Affinity = affinity
 	}
 	for i := range resolved.Members {
 		member := &resolved.Members[i]
@@ -759,11 +808,15 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 			item.ConsecutiveFailures = circuit.ConsecutiveFailures
 			item.FailureScore = circuit.Score
 			item.RollingSuccessRate = circuit.RollingSuccessRate()
-			item.CircuitOpenUntil = circuit.OpenUntil
+			item.CircuitOpenUntil = msToRFC3339(r.circuitOpenUntil(key))
 			item.LastErrorKind = circuit.LastErrorKind
 		}
-		item.CooldownUntil = r.Cooldowns[key]
-		item.Available = r.availabilityOf(key, settings) != availSkip
+		if manual {
+			item.Available = !r.circuitBlocksManual(key)
+		} else {
+			item.CooldownUntil = msToRFC3339(r.Cooldowns[key])
+			item.Available = r.availabilityOf(key, settings) != availSkip
+		}
 		snapshot.Members = append(snapshot.Members, item)
 	}
 	return snapshot

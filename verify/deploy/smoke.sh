@@ -137,7 +137,7 @@ check "重启后模型路由仍在" "$AFTER_CH" '"model":"deploy-model"'
 
 echo "--- 8) 冷却/熔断状态按设计重启清空（进程内运行态）"
 HEALTH_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/deploy-model/health" 2>/dev/null)
-assert_json "重启后运行态无残留冷却" "$HEALTH_AFTER" "all(m['cooldown_until']==0 for m in d['members'])"
+assert_json "重启后运行态无残留冷却" "$HEALTH_AFTER" "all(m['cooldown_until'] is None for m in d['members'])"
 
 echo "--- 9) 现网容器未被触碰"
 AFTER_PS=$(live_containers)
