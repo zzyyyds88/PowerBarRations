@@ -10,6 +10,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relay"
 	"github.com/zzyyyds88/PowerBarRations/relay/channel/ai360"
@@ -17,11 +18,8 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/relay/channel/minimax"
 	"github.com/zzyyyds88/PowerBarRations/relay/channel/moonshot"
 	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
-	"github.com/zzyyyds88/PowerBarRations/relay/helper"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
-	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 )
 
 // https://platform.openai.com/docs/api-reference/models/list
@@ -120,28 +118,6 @@ func channelOwnerName(channelType int) string {
 	return strings.ToLower(constant.GetChannelTypeName(channelType))
 }
 
-func getPreferredModelOwners(modelNames []string, groups []string) map[string]string {
-	channelTypes, err := model.GetPreferredModelOwnerChannelTypes(modelNames, groups)
-	if err != nil {
-		common.SysLog(fmt.Sprintf("GetPreferredModelOwnerChannelTypes error: %v", err))
-		return map[string]string{}
-	}
-
-	ownerByChannelType := make(map[int]string)
-	owners := make(map[string]string, len(channelTypes))
-	for modelName, channelType := range channelTypes {
-		owner, ok := ownerByChannelType[channelType]
-		if !ok {
-			owner = channelOwnerName(channelType)
-			ownerByChannelType[channelType] = owner
-		}
-		if owner != "" {
-			owners[modelName] = owner
-		}
-	}
-	return owners
-}
-
 func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.OpenAIModels {
 	var oaiModel dto.OpenAIModels
 	if staticModel, ok := openAIModelsMap[modelName]; ok {
@@ -161,102 +137,90 @@ func buildOpenAIModel(modelName string, ownerByModel map[string]string) dto.Open
 	return oaiModel
 }
 
-type modelListGroups struct {
-	userGroup   string
-	tokenGroup  string
-	ownerGroups []string
+// visibleLane 一条对当前客户端密钥可见的车道（design-v1 §4：GET /v1/models 列出
+// 当前密钥可见的车道）。routing key 即车道名，preferredMember 是车道内优先级最高的
+// 成员（ListLanes 已按 priority desc, id asc 排好成员），用于给 owned_by 标注首选归属。
+type visibleLane struct {
+	name            string
+	preferredMember *model.LaneMember
 }
 
-func getModelListGroups(c *gin.Context) (modelListGroups, error) {
-	tokenGroup := common.GetContextKeyString(c, constant.ContextKeyTokenGroup)
-	userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
-	if userGroup == "" && (tokenGroup == "" || tokenGroup == "auto") {
-		var err error
-		userGroup, err = model.GetUserGroup(c.GetInt("id"), false)
-		if err != nil {
-			return modelListGroups{}, err
+// visibleLanesFor 从车道注册表枚举密钥可见的模型清单：
+//
+//   - 身份只认 PBR 客户端密钥（W7 后模型面唯一凭据）；取不到身份 → 空清单，
+//     **不回退 group/abilities 枚举**；
+//   - LanePolicy（token-spec §3.2）：Mode=all（含脏值/未配置，ParseLanePolicy 宽容回落）
+//     枚举全部车道；Mode=allow 时候选 = AllowLanes，再减去 DenyLanes；
+//   - 只计入"启用车道且有成员"的路由键：停用车道与空成员车道在运行期必然 503
+//     （ResolveRoute 返回空链），列出来只会误导客户端；
+//   - manual 车道同样是车道名的唯一路由入口且可调用（routing-spec §2.1），
+//     与 failover 一并计入。
+func visibleLanesFor(c *gin.Context) ([]visibleLane, error) {
+	key := middleware.PBRClientKeyFrom(c)
+	if key == nil {
+		return nil, nil
+	}
+	policy := model.ParseLanePolicy(key.LanePolicy)
+	lanes, err := model.ListLanes()
+	if err != nil {
+		return nil, err
+	}
+	visible := make([]visibleLane, 0, len(lanes))
+	for i := range lanes {
+		lane := &lanes[i]
+		if !lane.Enabled || len(lane.Members) == 0 {
+			continue
+		}
+		if !policy.AllowsLane(lane.Name) {
+			continue
+		}
+		visible = append(visible, visibleLane{
+			name:            lane.Name,
+			preferredMember: &lane.Members[0],
+		})
+	}
+	return visible, nil
+}
+
+// laneOwnerNames 计算"车道名 → owned_by"：取首选成员的渠道类型对应的适配器渠道名。
+// 渠道已删/查询失败时留空，由 buildOpenAIModel 回落静态表或 "custom"。
+func laneOwnerNames(lanes []visibleLane) map[string]string {
+	ownerByChannelType := make(map[int]string)
+	owners := make(map[string]string, len(lanes))
+	for _, lane := range lanes {
+		if lane.preferredMember == nil {
+			continue
+		}
+		channel, err := model.ChannelOrNil(lane.preferredMember.ChannelId)
+		if err != nil || channel == nil {
+			continue
+		}
+		owner, ok := ownerByChannelType[channel.Type]
+		if !ok {
+			owner = channelOwnerName(channel.Type)
+			ownerByChannelType[channel.Type] = owner
+		}
+		if owner != "" {
+			owners[lane.name] = owner
 		}
 	}
-
-	if tokenGroup == "auto" {
-		// W7（design-v1 §10.2.1）：用户分组/auto group 已随多用户面删除，
-		// "auto" 退化为"当前分组"。
-		ownerGroups := []string{}
-		if userGroup != "" {
-			ownerGroups = append(ownerGroups, userGroup)
-		}
-		return modelListGroups{
-			userGroup:   userGroup,
-			tokenGroup:  tokenGroup,
-			ownerGroups: ownerGroups,
-		}, nil
-	}
-
-	group := userGroup
-	if tokenGroup != "" {
-		group = tokenGroup
-	}
-	return modelListGroups{
-		userGroup:   userGroup,
-		tokenGroup:  tokenGroup,
-		ownerGroups: []string{group},
-	}, nil
+	return owners
 }
 
 func ListModels(c *gin.Context, modelType int) {
-	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
-	if !acceptUnsetRatioModel {
-		userId := c.GetInt("id")
-		if userId > 0 {
-			userSettings, _ := model.GetUserSetting(userId, false)
-			if userSettings.AcceptUnsetRatioModel {
-				acceptUnsetRatioModel = true
-			}
-		}
-	}
-
-	userModelNames := make([]string, 0)
-	groups, err := getModelListGroups(c)
+	lanes, err := visibleLanesFor(c)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
-			"message": "get user group failed",
+			"message": "get lanes failed",
 		})
 		return
 	}
-	ownerGroups := groups.ownerGroups
-	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
-	var tokenModelLimit map[string]bool
-	if modelLimitEnable {
-		s, ok := common.GetContextKey(c, constant.ContextKeyTokenModelLimit)
-		if ok {
-			tokenModelLimit, _ = s.(map[string]bool)
-		}
-		if tokenModelLimit == nil {
-			tokenModelLimit = map[string]bool{}
-		}
-	}
-	models := groupsEnabledModels(ownerGroups)
-	for _, modelName := range models {
-		if modelLimitEnable {
-			matchingName := ratio_setting.RoutingMatchModelName(modelName)
-			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
-				continue
-			}
-		}
-		if !acceptUnsetRatioModel && !helper.HasModelBillingConfig(modelName) {
-			continue
-		}
-		userModelNames = append(userModelNames, modelName)
-	}
 
-	ownerByModel := map[string]string{}
-	if len(ownerGroups) > 0 {
-		ownerByModel = getPreferredModelOwners(userModelNames, ownerGroups)
-	}
-	userOpenAiModels := make([]dto.OpenAIModels, 0, len(userModelNames))
-	for _, modelName := range userModelNames {
-		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(modelName, ownerByModel))
+	ownerByModel := laneOwnerNames(lanes)
+	userOpenAiModels := make([]dto.OpenAIModels, 0, len(lanes))
+	for _, lane := range lanes {
+		userOpenAiModels = append(userOpenAiModels, buildOpenAIModel(lane.name, ownerByModel))
 	}
 
 	switch modelType {
@@ -353,22 +317,4 @@ func RetrieveModel(c *gin.Context, modelType int) {
 			"error": openAIError,
 		})
 	}
-}
-
-// groupsEnabledModels 返回这些分组下已启用的模型名（去重、保持首次出现顺序）。
-//
-// W7 之前这层逻辑在 service.GetGroupsEnabledModels；用户分组随多用户面删除后，
-// 这里只按 model.GetGroupEnabledModels 聚合，语义不变（PBR 实际只有一个分组）。
-func groupsEnabledModels(groups []string) []string {
-	seen := make(map[string]struct{})
-	models := make([]string, 0)
-	for _, group := range groups {
-		for _, modelName := range model.GetGroupEnabledModels(group) {
-			if _, ok := seen[modelName]; !ok {
-				seen[modelName] = struct{}{}
-				models = append(models, modelName)
-			}
-		}
-	}
-	return models
 }

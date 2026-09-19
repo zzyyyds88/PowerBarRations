@@ -2,7 +2,6 @@ package model
 
 import (
 	"errors"
-	"math"
 	"sync"
 	"sync/atomic"
 
@@ -56,10 +55,6 @@ func EnsurePBRSystemUser() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	affCode, err := common.GenerateRandomCharsKey(8)
-	if err != nil {
-		return 0, err
-	}
 	accessToken, err := common.GenerateRandomCharsKey(32)
 	if err != nil {
 		return 0, err
@@ -70,8 +65,6 @@ func EnsurePBRSystemUser() (int, error) {
 		Role:        common.RoleRootUser,
 		Status:      common.UserStatusEnabled,
 		Group:       "default",
-		Quota:       math.MaxInt32,
-		AffCode:     affCode,
 		AccessToken: &accessToken,
 	}
 	if err := DB.Create(&user).Error; err != nil {
