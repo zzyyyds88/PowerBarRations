@@ -23,6 +23,7 @@
 - **人机分离**：浏览器只持有 HttpOnly 会话 Cookie，**不在 localStorage 存放管理密钥**；AI/脚本拿到登录口令后自行计算管理密钥（§2.1），无需人工复制。
 - 管理密钥与客户端密钥**分属两套表/来源**，互不混用：管理密钥不入库（口令的函数），客户端密钥在库里。
 - 两条管理面通道**等价**：`PBRAuth` 同时接受会话 Cookie 与 `Authorization: Bearer <管理密钥>`。
+- **管理面前缀**：router 同时注册 `/api` 与 `/api/v1` 两个前缀、映射完全相同的处理器（`router/pbr-router.go` 的 `pbrAPIPrefixes`）；本文统一写规范前缀 `/api`，`/api/v1` 仅为兼容别名。
 
 ---
 
@@ -67,7 +68,7 @@
 
 - 无用户名、无注册、无找回、无 OAuth/2FA/passkey。
 - 登录响应形如 `{"token":"<管理密钥>","admin_key":"<管理密钥>"}`：`admin_key` 供 AI/脚本直接取用；浏览器**不使用它**，只用 Cookie。
-- 登录接口做**本地退避**（连续失败指数延迟，上限 ~30s），避免口令被离线爆破；不退避成"锁号"（个人系统不锁自己）。
+- 登录接口做**本地退避**（按来源 ClientIP 隔离；连续失败后指数延迟 `2^(n-1)` 秒，上限 30s），避免口令被离线爆破；命中退避时直接返回 **429 + `Retry-After`**，不再以 `sleep` 占住 goroutine，**不退避成"锁号"**（个人系统不锁自己）。
 - **`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时不允许改口令**：环境变量优先于库内派生值，改口令不会改变实际生效的密钥，也不会废掉旧会话。此时 `POST /api/auth/password` 返回 `409 conflict` 并说明原因（该端点不得返回 `updated: true` 制造"旧密钥已失效"的错觉）。
 
 ### 2.4 口令丢失的恢复
@@ -99,7 +100,7 @@
 
 **契约（前后端都必须遵守）**：
 
-1. `GET /api/v1/auth/session` 不仅返回布尔 `authenticated`，还须区分"**带了 Cookie 但已失效**"：
+1. `GET /api/auth/session` 不仅返回布尔 `authenticated`，还须区分"**带了 Cookie 但已失效**"：
    此时额外返回 `stale: true`（无 Cookie 时 `stale: false`）。前端据此给出**明确原因**
    （"凭据已变更，请重新登录"），而不是笼统的"未登录"。
 2. **失效 Cookie 必须由服务端主动清除**（对齐上游 new-api 的 `RefreshAuth`：失败即
@@ -108,7 +109,7 @@
    - `PBRAuth` 因会话 Cookie 无效而返回 401 时，同样顺手作废它。
 
    **不得**把清理责任推给用户手动清浏览器数据。前端自己再清一次只作兜底：登录/初始化前
-   先调 `POST /api/v1/auth/logout`（幂等）。
+   先调 `POST /api/auth/logout`（幂等）。
 3. **任何管理面请求返回 401 且刷新会话失败时**，前端必须**清除本地会话态并跳转登录页**。
    **禁止**停留在"看起来已登录、实际每个请求都 401"的状态。
 4. 登录/初始化成功响应必须**覆盖写入新 Cookie**（同名同路径），使旧值立即作废。
@@ -122,11 +123,14 @@
 
 ### 3.1 字段
 
+> 以下为**逻辑模型**（字段语义示意；落库列名与类型以 `model/clientkey.go` 的 GORM 实体为准）。
+
 ```go
 type ClientKey struct {
     ID            int
     Name          string    // 唯一；分账与日志归属标识
     KeyHash       string    // hex(sha256(明文))
+    KeyPlain      string    // 明文入库（列 key_plain）；鉴权仍走 KeyHash 索引
     KeyPrefix     string    // 前 12 字符，用于界面展示与人工识别
     Enabled       bool
     LanePolicy    LanePolicy // 见 3.2
@@ -151,6 +155,10 @@ type LanePolicy struct {
 > （`SUM(cost_sum) WHERE group_kind='key' AND group_key=key_name`，单位元），
 > 与看板/日志同源，故明细 `logs/prune` 后不变。见 §3.7 与 api-spec §5.4。
 
+> **存储类型**：客户端密钥明文入 `client_keys.key_plain`（另存 `key_hash` 作鉴权索引）；管理密钥不入库，库里只存 `pbr_admin_credentials.admin_key_sha256 = hex(SHA256(管理密钥))`（§2.1）。
+>
+> **系统用户锚点（无额度语义）**：基座转发管道仍需要一个用户行作记账/归属，由 `model/pbr_system.go` 懒建一个不可登录的 `pbr-system` 内部用户（`users` 表仅此一行）；该行是纯锚点，`quota`/`used_quota`/`aff_code` 三列已随批次2 物理删除（`model/user_quota_migration.go`），准入不查余额。
+
 ### 3.2 车道权限解析（消歧义）
 
 ```
@@ -173,7 +181,7 @@ type LanePolicy struct {
 ### 3.4 校验路径
 
 ```
-1. 取 Authorization: Bearer <k>（或 X-Api-Key: <k>，两种都收，与线上兼容）
+1. 取 Authorization: Bearer <k>（或 X-Api-Key: <k>、x-goog-api-key: <k>，三种都收；?key= 查询串已废弃，不再作为凭据来源）
 2. 命中客户端密钥表？ sha256(k) 查哈希索引，O(1)
    - 不存在 → 401
 3. Enabled? 否则 401

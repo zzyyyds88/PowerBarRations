@@ -48,10 +48,12 @@ providers:
 - ClientKey 默认可设为只允许 `<hermes-lane>`，避免 Hermes 意外调用其他车道。
 - `<hermes-lane>` 同时是 Hermes 的模型名、PBR 的路由键和 Lane 名；不使用隐式车道。
 
+本档案已由 `verify/final/hermes_acceptance.sh` 按上表形态实跑验收（独立端口 + 独立 SQLite + 内置假上游，逐条覆盖 §6 的 5 项闭环），最近一次结果 **PASS=17 FAIL=0**（证据 `verify/final/hermes-20260919-080430.log`）。改动本档案形态后应重跑该脚本。
+
 ## 3. `<hermes-lane>` 车道语义
 
 - 车道必须显式创建并启用；渠道声明模型只提供候选成员，不会自动成为 Hermes 的路由。
-- 成员顺序就是故障转移顺序。成员可使用不同渠道、不同上游真名，解析优先级仍遵循
+- 成员顺序以成员 `priority` 为权威口径：`priority` 数字大者先试，故障转移即按 `priority` 降序进行（数组顺序与 `priority` 降序一致，见 [`api-spec-v1.md`](api-spec-v1.md) §4.2）。成员可使用不同渠道、不同上游真名，解析优先级仍遵循
   成员 `upstream_model` > 渠道 `model_mapping` > `<hermes-lane>`。
 - 故障转移只发生在 `<hermes-lane>` 车道内部；请求不得跨到其他车道或隐式选择其他模型。
 - 429/限流等软故障不得误触发硬故障熔断；超时、连接失败和上游硬错误按

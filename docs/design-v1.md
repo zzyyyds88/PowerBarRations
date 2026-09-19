@@ -126,7 +126,7 @@
 | 厂商层 `channels` | **Channel 渠道** | 厂商 base_url + key + param_override + 协议类型 + `model_mapping`（路由键→上游真名） |
 | 厂商层 `model_mapping` | **`Channel.ModelMapping` + `LaneMember.UpstreamModel`** | 改名默认在渠道配置一次；成员级 `UpstreamModel` 作为覆盖 |
 | 厂商层 `tokens` / 路由层 `api_keys` | **ClientKey 客户端密钥** | 瘦身，见 §9 |
-| 厂商层 `users` | 无 | 单用户系统，管理员身份只由管理密钥承载 |
+| 厂商层 `users` | **User 纯锚点行（保留）** | 多用户面已删，仅保留内部系统用户一行作记账/归属锚点（§3.4）；管理员身份只由管理密钥承载，该行不可登录 |
 | 厂商层 `logs` | **RequestLog 元数据日志** | 只存元数据，见 §8 |
 
 ### 3.4 数据模型（SQLite，GORM）
@@ -186,12 +186,25 @@ type ClientKey struct {               // 客户端准入
     LastUsedAt *time.Time
 }
 
+type User struct {                    // 多用户面删除后保留的纯锚点行（内部系统用户 pbr-system）
+    ID           int
+    Username     string   // 唯一
+    Password     string   // 不可逆 HMAC，不可登录
+    Role         int
+    Status       int
+    Group        string
+    Setting      string
+    RequestCount int      // 保留列但已无写方（不再承载多用户统计语义）
+    CreatedAt    time.Time
+    // quota / used_quota / aff_code 三列已随多用户面物理删除（model/user_quota_migration.go）
+}
+
 type RequestLog struct { /* 见 §8 */ }
 type AuditLog   struct { /* 见 §5 */ }
 type Option     struct { Key, Value string }
 ```
 
-**约束**：不允许出现 `users` 表外键；不允许出现配额字段（`quota`/`remain_quota`/`used_quota`）；不允许出现"余额不足拒服务"逻辑。
+**约束**：不允许出现指向 `users` 表的外键（`users` 表只保留纯锚点行，见上）；不允许出现配额字段（`quota`/`remain_quota`/`used_quota`）；不允许出现"余额不足拒服务"逻辑。
 
 ---
 
@@ -369,7 +382,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 ### 10.1 保留什么（来自 new-api）
 
 - `relay/channel/**`：40 家厂商适配器**原样复用**。
-- `relay/` 转发管道：协议转换、SSE 流式、`relay/helper`（价格相关函数除外）、`relaykit/`、`dto/`、`constant/`、`common/`（必要部分）、`i18n/`。
+- `relay/` 转发管道：协议转换、SSE 流式、`relay/helper`（价格相关函数除外）、`relaykit/`（含原上游 `dto/`，现为 `relaykit/dto/`）、`constant/`、`common/`（必要部分）、`i18n/`。
 - `web/**`：**直接搬迁 new-api 上游前端**（见 §6 / ui-spec-v1.md），全量替换品牌；删除计费/多用户页面，其余保留。
 - WS 池代码：保留，不删。任务插件/异步任务子系统、JS 插件基座与 Midjourney 全链路已删除（§1.3，个人自用不接文生视频/文生图服务）。
 
@@ -391,13 +404,13 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 ### 10.4 工程骨架
 
-> 立项期的"待建"骨架树已归档（[`archive/design-v1-history.md`](archive/design-v1-history.md)）；**实际目录以仓库为准**。唯一仍有效的取向：新写的路由核心放 `internal/`，新档案进 `docs/`，上游只读参考放 `reference/`（不入仓库）。
+> 立项期的"待建"骨架树已归档（[`archive/design-v1-history.md`](archive/design-v1-history.md)）；**实际目录以仓库为准**。唯一仍有效的取向：上游包布局保留（含 `types/`），新写的路由核心放 `internal/`，新档案进 `docs/`，分波次验收证据进 `verify/`，上游只读参考放 `reference/`（不入仓库）。
 
 ### 10.5 工程基座：复用 new-api 转发与适配能力
 
 适配器与 `service` / `setting` / `model` 深度绑定，净室剥离会破坏转发能力。因此工程基座固定为：
 
-1. **复用**：把 `reference/new-api` 的 Go 源码纳入本仓库实现，**保留其包布局**（`relay/ relaykit/ dto/ common/ constant/ setting/ service/ model/ controller/ middleware/ router/ logger/ pkg/ i18n/`），改 module path 为 `pbr`、全量替换 import 路径。
+1. **复用**：把 `reference/new-api` 的 Go 源码纳入本仓库实现，**保留其包布局**（`relay/ relaykit/ common/ constant/ setting/ service/ model/ controller/ middleware/ router/ logger/ pkg/ i18n/ types/`；上游 `dto/` 已并入 `relaykit/dto/`），改 module path 为 `pbr`、全量替换 import 路径。其中 `relaykit/` 是**独立 Go module**（自带 `relaykit/go.mod`），主模块通过 `require` + `replace … => ./relaykit` 引用。
 2. **不迁**：`electron/`、`docs/`、`e2e/` 等非代码资产（`web/` **要迁**，见 §6）。
 3. **目标目录布局是演进终点，不是起点**（历史骨架树见归档 §10.4）：新写的路由核心放 `internal/`；旧包逐步改造或删除，不要求一次性重排目录。
 4. **许可证**：保留 new-api 的 AGPL 头、`LICENSE`、`NOTICE`、`THIRD-PARTY-LICENSES.md`（前端既然只来自 new-api 一家上游，无需再另附其他蓝本清单）。品牌可替换，版权不可替换。
@@ -463,7 +476,7 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 ### 16.2 测试用假上游（failover / 熔断验收的基础设施）
 
-- 仓库内置 `internal/testutil/fakeupstream`：可编程 HTTP server，支持按路径/模型名返回预设响应、可控延迟、可控 429/500、流式首包延迟与中途断流。
+- 仓库内置 `internal/testutil/fakeupstream`：可编程假上游，进程内用 `New`（Go 测试）、独立进程见其 `cmd/fakeupstream`（verify 脚本）。按请求里的 `model` + `Authorization` 决定行为并记录每次请求体；可按模型注入 `status`（任意状态码，如 429/500）、`body`（原样返回，用于坏响应/欠费关键词）、`delay`（首包延迟）与 `mode`（`bad_json` / `empty` / `disconnect_stream`），并支持 `RequireKey`（不匹配 401）与 `Models`（清单外 404）。正常回包时：带 `tools` 回 `tool_calls`、`/embeddings` 回确定性向量、`/models` 回模型清单（供 sync-models 验收）、`stream=true` 回 SSE；运行中可 `POST /__control {"model","status","body","delay_ms","mode"}` 动态注入/修复（`model:"*"` 为全部）。
 - 车道与容错的验收（"唯一成员指向必然 500 的假端点""半开窗口内自动复通""429 不被误判硬故障"）**一律用该 fixture，不打真实厂商**。
 - fixture 需记录收到的请求体，用于断言 param_override 与思考参数的合并结果。
 

@@ -224,9 +224,9 @@ type LaneRuntime struct {
 
 ## 7. 运行态对外的暴露
 
-- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind`，以及 `current_member` / `probe_member` / `affinity_until`。
-- `GET /api/route-events`（SSE）→ 推送车道运行态增量（形状对齐线上 `RouteState`），供控制台的"成员状态"实时显示；连接拥塞时服务端断开由客户端重连取快照。
-- 控制台另有 30s 轮询兜底（对齐线上 `refetchInterval`），SSE 仅作加速，不作为唯一数据源。
+- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind`，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无退避/无亲和为 `null`。
+- `GET /api/route-events`（SSE）→ 建连即推全量快照，之后每 ~1s 推一帧（形状对齐线上 `RouteState`），供控制台的"成员状态"实时显示；断线由客户端指数退避重连（1s 起翻倍、封顶 30s、带抖动），重连即收到全量快照。
+- 控制台另有 30s 轮询兜底（`GET /api/lanes/{name}/health`，对齐线上 `refetchInterval`）：SSE 快照新鲜（10s 窗口）时 SSE 主导渲染、轮询结果只对账补齐 SSE 缺失的车道；SSE 断开或过期时轮询主导。SSE 仅作加速，不作为唯一数据源。
 
 ---
 
@@ -252,6 +252,8 @@ type LaneRuntime struct {
 ```
 
 `status ∈ success | failed | cooldown | circuit_break | skipped`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）。
+
+`canceled`（客户端断开/上下文取消）按 §4.1 **不换人、不冷却**，但该次尝试仍会在 attempts 链留一条 `failed(canceled)` 记录（`error_kind="canceled"`），用于解释"请求为什么在这里结束"。
 
 ---
 
