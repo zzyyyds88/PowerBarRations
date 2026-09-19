@@ -43,6 +43,13 @@ PBR 是单二进制 + 单 SQLite 的本机网关，模型面 `/v1/*` 与管理�
 
 L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 API 运维"。
 
+**L3 有两种运行方式**：
+
+- **L3-auto**（`verify/e2e-ui/user_journey.py`）：无头 Chromium + CDP 脚本驱动，可回归、可 CI。
+- **L3-manual**（`verify/e2e-ui/live_browser.sh`）：**可见的真实图形浏览器**（Xvfb + openbox + 有头
+  Chromium），经 x11vnc + noVNC 暴露成网页，供**人用真实鼠标键盘亲手操作**。用于探索性测试、
+  验收演示、以及脚本覆盖不到的视觉/交互判断。两者都跑真实浏览器引擎，区别只在"谁在操作"。
+
 ## 4. 真实用户操作测试（L3）
 
 **方法**：`chromium --headless` + CDP（DevTools 协议）驱动真实页面，用登录口令在页面内登录
@@ -140,6 +147,7 @@ L3（`user_journey.py`）会先 `pnpm build`，构建过程会**清空并重写*
 | `chromium` | L3 | SKIP 退出 2 |
 | `curl` / `jq` / `openssl` | L2 | 失败（必需） |
 | `docker` | `deploy/smoke.sh` | SKIP 退出 2 |
+| `Xvfb` `openbox` `x11vnc` `websockify` `novnc` `xdotool` `imagemagick` | L3-manual | SKIP（该方式不可用） |
 
 ## 10. 失败判定与豁免
 
