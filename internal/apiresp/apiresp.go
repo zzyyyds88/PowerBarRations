@@ -376,12 +376,39 @@ func (w *bufferedWriter) finish(c *gin.Context) {
 		return
 	}
 
-	var env envelope
-	if err := json.Unmarshal(body, &env); err != nil || env.Success == nil {
-		// 不是基座信封（已是裸资源或非 JSON）：原样透传。
+	// 区分"基座信封"与"恰好含 success 字段的裸资源"：基座信封固定为
+	// {success, message, data}（message/data 至少有一个），而日志条目等裸资源
+	// 可以合法地带顶层 success 布尔（api-spec §5.5 的 RequestLog）。只凭
+	// "有 success 键"判定会把裸资源误当信封——`GET /logs/{id}` 曾因此被改写成
+	// 204 空体（成功）或错误包络（失败）。
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		// 非 JSON 对象（数组/标量/非法）：原样透传。
 		w.ResponseWriter.WriteHeader(status)
 		_, _ = w.ResponseWriter.Write(body)
 		return
+	}
+	rawSuccess, hasSuccess := fields["success"]
+	_, hasMessage := fields["message"]
+	_, hasData := fields["data"]
+	var env envelope
+	if !hasSuccess || (!hasMessage && !hasData) || json.Unmarshal(rawSuccess, &env.Success) != nil {
+		// 不是基座信封（已是裸资源）：原样透传。
+		w.ResponseWriter.WriteHeader(status)
+		_, _ = w.ResponseWriter.Write(body)
+		return
+	}
+	if rawMessage, ok := fields["message"]; ok {
+		_ = json.Unmarshal(rawMessage, &env.Message)
+	}
+	if rawCode, ok := fields["code"]; ok {
+		_ = json.Unmarshal(rawCode, &env.Code)
+	}
+	if rawData, ok := fields["data"]; ok {
+		env.Data = rawData
+	}
+	if rawStatus, ok := fields["upstream_status"]; ok {
+		_ = json.Unmarshal(rawStatus, &env.UpstreamStatus)
 	}
 
 	base := Base{Success: *env.Success, Code: env.Code, Message: env.Message, Data: env.Data, Status: status, UpstreamStatus: env.UpstreamStatus}

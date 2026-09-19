@@ -26,10 +26,10 @@ SSE 连接器与 axios 实例是可控边界：openRouteEventStream 桩捕获回
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, render, screen } from '@testing-library/react'
-import dayjs from '@/lib/dayjs'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import dayjs from '@/lib/dayjs'
 import type {
   LaneHealthSnapshot,
   LaneMemberHealth,
@@ -52,8 +52,7 @@ const sseCaptured: { opts: RouteEventStreamOptions | null; close: () => void } =
   { opts: null, close: vi.fn() }
 
 vi.mock('@/lib/route-events', async (importOriginal) => {
-  const mod =
-    (await importOriginal()) as typeof import('@/lib/route-events')
+  const mod = (await importOriginal()) as typeof import('@/lib/route-events')
   return {
     ...mod,
     openRouteEventStream: vi.fn((opts: RouteEventStreamOptions) => {
@@ -148,7 +147,9 @@ describe('车道运行态列（轮询兜底）', () => {
     })
     renderPage()
 
-    expect(await screen.findByText('Waiting for runtime data')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Waiting for runtime data')
+    ).toBeInTheDocument()
   })
 
   test('轮询快照渲染成员冷却徽章与车道 degraded 汇总', async () => {
@@ -194,9 +195,7 @@ describe('车道运行态列（轮询兜底）', () => {
         return {
           data: laneSnapshot('model-1', [
             member('channel-a', {
-              cooldown_until: dayjs()
-                .subtract(1, 'minute')
-                .toISOString(),
+              cooldown_until: dayjs().subtract(1, 'minute').toISOString(),
             }),
             member('channel-b'),
           ]),

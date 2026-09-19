@@ -88,6 +88,17 @@ TOKEN=$(curl -s "${H_ADMIN[@]}" -X POST -d '{"name":"w0-key"}' "http://127.0.0.1
 [[ -n "$TOKEN" ]] || { echo "FAIL: 未取得客户端密钥"; exit 1; }
 echo "client key: 已取得"
 
+# ADR 0005：渠道声明只提供候选，模型可调用必须存在同名启用车道；W0 原脚本未建车道，
+# 在单层化路由（车道为唯一入口）之后必然 503。这里显式固化 test-model 车道。
+echo "--- 9) 固化 test-model 车道（车道为唯一路由入口）"
+curl -s "${H_ADMIN[@]}" -X PUT -d '{
+  "enabled":true,"mode":"failover",
+  "config":{"member_max_attempts":1,"member_retry_interval_seconds":0,
+            "member_non_stream_response_timeout_seconds":60,"member_stream_first_event_timeout_seconds":30,
+            "member_cooldown_seconds":1,"member_affinity_seconds":0},
+  "members":[{"channel":"w0-fake","upstream_model":"test-model","priority":1}]
+}' "http://127.0.0.1:$PORT/api/v1/lanes/test-model" | head -c 200; echo
+
 echo "--- 10) 经网关转发一发 chat 请求"
 RESP=$(curl -s -X POST "http://127.0.0.1:$PORT/v1/chat/completions" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \

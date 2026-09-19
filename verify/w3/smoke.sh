@@ -151,7 +151,7 @@ LANE_W3=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/w3-model")
 check "w3-model 车道已固化" "$LANE_W3" '"name":"w3-model"'
 
 echo
-echo "=== 客户端密钥：创建回显一次；此后只有前缀 ==="
+echo "=== 客户端密钥：明文入库、管理 API 可回读（token-spec §3.3）==="
 CREATE=$(curl -s "${A[@]}" -X POST -d '{"name":"client-a","lane_policy":{"mode":"all","allow_lanes":[],"deny_lanes":[]}}' "$BASE/api/v1/keys")
 echo "  $(echo "$CREATE" | head -c 300)"
 CLIENT_PLAIN=$(echo "$CREATE" | jget 'd["key"]')
@@ -160,7 +160,9 @@ echo "  明文已取得（${#CLIENT_PLAIN} 字节，不打印；前缀 ${CLIENT_
 check "明文以 pbr- 开头" "$CLIENT_PLAIN" "pbr-"
 KEY_GET=$(curl -s "${A[@]}" "$BASE/api/v1/keys/client-a")
 echo "  $KEY_GET"
-check_not "再次读取不含明文" "$KEY_GET" "$CLIENT_PLAIN"
+# 现行契约（token-spec §3.3，commit 03a91f）：客户端密钥明文入库、列表/详情可回读，
+# 与创建响应一致；旧断言"再次读取不含明文"已过时。
+check "回读明文与创建响应一致" "$KEY_GET" "$CLIENT_PLAIN"
 check "读取含 key_prefix" "$KEY_GET" '"key_prefix":"'"${CLIENT_PLAIN:0:12}"'"'
 check "默认放行全部车道" "$KEY_GET" '"mode":"all"'
 

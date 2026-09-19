@@ -27,7 +27,10 @@ import { useTranslation } from 'react-i18next'
 import { StatusBadge } from '@/components/status-badge'
 import type { LaneHealthSnapshot } from '@/lib/route-events'
 
-import { laneMemberStates, laneRuntimeHealth } from '../lib/lane-runtime-display'
+import {
+  laneMemberStates,
+  laneRuntimeHealth,
+} from '../lib/lane-runtime-display'
 
 export interface LaneRuntimeCellProps {
   snapshot?: LaneHealthSnapshot
