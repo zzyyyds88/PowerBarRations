@@ -114,7 +114,9 @@ describe('security sidebar visibility', () => {
     const titles = result.current
       .flatMap((group) => group.items)
       .map((item) => item.title)
-    expect(titles).toContain('Overview')
+    // 数据看板入口合并为一条（ui-spec §6.2）：标题为 Dashboard，落地概览。
+    expect(titles).toContain('Dashboard')
+    expect(titles).not.toContain('Overview')
     expect(titles).toContain('API Keys')
     expect(titles).toContain('Channel management')
   })

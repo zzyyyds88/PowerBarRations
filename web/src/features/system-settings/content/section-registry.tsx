@@ -18,20 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { ContentSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
-import { ApiInfoSection } from './api-info-section'
 import { ChatSettingsSection } from './chat-settings-section'
 
+// 「API 地址」分节随 API 信息面板一并删除（ADR 0007 / ui-spec §6.2）。
 const CONTENT_SECTIONS = [
-  {
-    id: 'api-info',
-    titleKey: 'API Addresses',
-    build: (settings: ContentSettings) => (
-      <ApiInfoSection
-        enabled={settings['console_setting.api_info_enabled']}
-        data={settings['console_setting.api_info']}
-      />
-    ),
-  },
   {
     id: 'chat',
     titleKey: 'Chat Presets',
@@ -48,7 +38,7 @@ const contentRegistry = createSectionRegistry<
   ContentSettings
 >({
   sections: CONTENT_SECTIONS,
-  defaultSection: 'api-info',
+  defaultSection: 'chat',
   basePath: '/system-settings/content',
   urlStyle: 'path',
 })

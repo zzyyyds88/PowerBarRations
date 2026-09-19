@@ -8,7 +8,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/middleware"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/setting"
-	"github.com/zzyyyds88/PowerBarRations/setting/console_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/system_setting"
 
@@ -36,7 +35,6 @@ func TestStatus(c *gin.Context) {
 
 func GetStatus(c *gin.Context) {
 
-	cs := console_setting.GetConsoleSetting()
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
 
@@ -65,9 +63,6 @@ func GetStatus(c *gin.Context) {
 		"usd_exchange_rate": operation_setting.USDExchangeRate,
 		"price":             operation_setting.Price,
 
-		// 面板启用开关
-		"api_info_enabled": cs.ApiInfoEnabled,
-
 		// 模块管理配置
 		"HeaderNavModules":    common.OptionMap["HeaderNavModules"],
 		"SidebarModulesAdmin": common.OptionMap["SidebarModulesAdmin"],
@@ -75,11 +70,6 @@ func GetStatus(c *gin.Context) {
 		"setup":                  constant.Setup,
 		"user_agreement_enabled": legalSetting.UserAgreement != "",
 		"privacy_policy_enabled": legalSetting.PrivacyPolicy != "",
-	}
-
-	// 根据启用状态注入可选内容
-	if cs.ApiInfoEnabled {
-		data["api_info"] = console_setting.GetApiInfo()
 	}
 
 	c.JSON(http.StatusOK, gin.H{

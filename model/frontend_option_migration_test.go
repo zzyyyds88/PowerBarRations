@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -40,21 +39,24 @@ func requireOptionMissing(t *testing.T, db *gorm.DB, key string) {
 	assert.ErrorIs(t, db.Where(&Option{Key: key}).First(&option).Error, gorm.ErrRecordNotFound)
 }
 
-func TestMigrateRetiredFrontendOptionsMigratesValidValuesIdempotently(t *testing.T) {
+// API 信息面板已整体删除：历史遗留的旧键与新键都必须被幂等清理。
+func TestMigrateRetiredFrontendOptionsRemovesAPIInfoOptions(t *testing.T) {
 	db := useFrontendOptionMigrationDB(t)
 	legacy := []Option{
 		{Key: retiredThemeOptionKey, Value: "classic"},
 		{Key: "ApiInfo", Value: `[{"url":"https://api.example.com","route":"primary","description":"API","color":"blue"}]`},
+		{Key: "console_setting.api_info", Value: `[{"url":"https://new.example.com"}]`},
+		{Key: "console_setting.api_info_enabled", Value: "true"},
 	}
 	require.NoError(t, db.Create(&legacy).Error)
 
 	require.NoError(t, MigrateRetiredFrontendOptions())
 	assert.Equal(t, "default", requireOptionValue(t, db, retiredThemeOptionKey))
-	assert.JSONEq(t, legacy[1].Value, requireOptionValue(t, db, "console_setting.api_info"))
-	for _, key := range []string{"ApiInfo"} {
+	for _, key := range []string{"ApiInfo", "console_setting.api_info", "console_setting.api_info_enabled"} {
 		requireOptionMissing(t, db, key)
 	}
 
+	// 幂等：再跑一次结果不变。
 	before, err := AllOption()
 	require.NoError(t, err)
 	require.NoError(t, MigrateRetiredFrontendOptions())
@@ -63,64 +65,12 @@ func TestMigrateRetiredFrontendOptionsMigratesValidValuesIdempotently(t *testing
 	assert.ElementsMatch(t, before, after)
 }
 
-func TestLegacyConsoleListMigrationCapsAPIInfo(t *testing.T) {
-	apiInfo := make([]map[string]any, 51)
-	for i := range apiInfo {
-		apiInfo[i] = map[string]any{
-			"url":         fmt.Sprintf("https://api-%d.example.com", i),
-			"route":       fmt.Sprintf("route-%d", i),
-			"description": "API",
-			"color":       "blue",
-		}
-	}
-	apiBytes, err := common.Marshal(apiInfo)
-	require.NoError(t, err)
-
-	migratedAPI, err := transformLegacyAPIInfo(string(apiBytes))
-	require.NoError(t, err)
-	var apiResult []map[string]any
-	require.NoError(t, common.UnmarshalJsonStr(migratedAPI, &apiResult))
-	assert.Len(t, apiResult, 50)
-}
-
-func TestMigrateRetiredFrontendOptionsPreservesMalformedValuesAndContinues(t *testing.T) {
+// 退役键不存在时清理必须是 no-op，不得报错。
+func TestMigrateRetiredFrontendOptionsIsNoopWhenOptionsAbsent(t *testing.T) {
 	db := useFrontendOptionMigrationDB(t)
-	legacy := []Option{
-		{Key: "ApiInfo", Value: `{invalid`},
-	}
-	require.NoError(t, db.Create(&legacy).Error)
-
 	require.NoError(t, MigrateRetiredFrontendOptions())
-	assert.Equal(t, `{invalid`, requireOptionValue(t, db, "ApiInfo"))
-	requireOptionMissing(t, db, "console_setting.api_info")
-}
-
-func TestMigrateRetiredFrontendOptionsKeepsAuthoritativeTargets(t *testing.T) {
-	db := useFrontendOptionMigrationDB(t)
-	options := []Option{
-		{Key: "ApiInfo", Value: `{invalid`},
-		{Key: "console_setting.api_info", Value: `[{"url":"https://new.example.com"}]`},
-	}
-	require.NoError(t, db.Create(&options).Error)
-
-	require.NoError(t, MigrateRetiredFrontendOptions())
-	assert.Equal(t, options[1].Value, requireOptionValue(t, db, "console_setting.api_info"))
-	for _, key := range []string{"ApiInfo"} {
-		requireOptionMissing(t, db, key)
-	}
-}
-
-func TestMigrateRetiredFrontendOptionsKeepsEmptyAuthoritativeTargets(t *testing.T) {
-	db := useFrontendOptionMigrationDB(t)
-	options := []Option{
-		{Key: "ApiInfo", Value: `[{"url":"https://old.example.com"}]`},
-		{Key: "console_setting.api_info", Value: ""},
-	}
-	require.NoError(t, db.Create(&options).Error)
-
-	require.NoError(t, MigrateRetiredFrontendOptions())
-	assert.Empty(t, requireOptionValue(t, db, "console_setting.api_info"))
-	for _, key := range []string{"ApiInfo"} {
+	assert.Equal(t, "default", requireOptionValue(t, db, retiredThemeOptionKey))
+	for _, key := range retiredOptionKeys {
 		requireOptionMissing(t, db, key)
 	}
 }

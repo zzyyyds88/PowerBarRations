@@ -64,3 +64,22 @@ it('replaces the system info entry with an ungated system tasks page', () => {
   expect(tasksEntry?.title).toBe('System Tasks')
   expect(tasksEntry).not.toHaveProperty('requiredRole')
 })
+
+// ui-spec §6.2：侧边栏只保留一个「数据看板」入口，落地 /dashboard/overview；
+// 模型调用分析与成本统计是页内 Tab，不再各自占用侧边栏条目。
+it('exposes a single dashboard entry that lands on the overview tab', () => {
+  const { result } = renderHook(() => useSidebarData())
+  const generalItems =
+    result.current.navGroups.find((group) => group.id === 'general')?.items ??
+    []
+
+  const dashboardUrls = generalItems
+    .map((item) => item.url)
+    .filter((url) => url?.startsWith('/dashboard'))
+  expect(dashboardUrls).toEqual(['/dashboard/overview'])
+
+  const dashboardEntry = generalItems.find((item) =>
+    item.url?.startsWith('/dashboard')
+  )
+  expect(dashboardEntry?.title).toBe('Dashboard')
+})

@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
-  Activity,
   Box,
   ClipboardList,
   FileText,
@@ -70,13 +69,10 @@ export function useSidebarData(): SidebarData {
         title: t('General'),
         items: [
           {
-            title: t('Overview'),
-            url: '/dashboard/overview',
-            icon: Activity,
-          },
-          {
+            // 单一「数据看板」入口，落地概览；模型调用分析与成本统计为页内 Tab
+            // （ui-spec §6.2）。
             title: t('Dashboard'),
-            url: '/dashboard/models',
+            url: '/dashboard/overview',
             icon: LayoutDashboard,
           },
           {

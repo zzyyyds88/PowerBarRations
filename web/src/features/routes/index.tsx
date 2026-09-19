@@ -55,9 +55,6 @@ export function Routes() {
   const queryClient = useQueryClient()
   const [editorOpen, setEditorOpen] = useState(false)
   const [editorModel, setEditorModel] = useState<string | undefined>(undefined)
-  const [editorPrefill, setEditorPrefill] = useState<string | undefined>(
-    undefined
-  )
   const [pendingDelete, setPendingDelete] = useState<PBRModelSummary | null>(
     null
   )
@@ -72,7 +69,12 @@ export function Routes() {
     queryFn: listPBRLaneSummaries,
   })
 
-  const models = modelsQuery.data ?? []
+  // 路由页只列真实车道（explicit/disabled）：渠道声明但未配车道的路由键
+  // （unconfigured）不在本页出现——渠道声明与车道彻底分列（ADR 0007）。
+  // GET /api/models 契约不变，仍返回 unconfigured（模型管理页与 /v1/models 消费）。
+  const models = (modelsQuery.data ?? []).filter(
+    (m) => m.source !== 'unconfigured'
+  )
   // 车道运行态（ui-spec §4）：SSE 主源 + 30s 轮询兜底；只对已配车道的路由键订阅。
   const laneNames = models
     .filter((m) => m.source === 'explicit')
@@ -119,19 +121,13 @@ export function Routes() {
     await queryClient.invalidateQueries({ queryKey: laneSummariesKey })
   }
 
-  const openNewLane = (prefill?: string) => {
+  const openNewLane = () => {
     setEditorModel(undefined)
-    setEditorPrefill(prefill)
     setEditorOpen(true)
   }
-  // 未配车道：新建模式（路由键可编辑，预填该模型名）；已配车道：编辑模式。
+  // 卡片一定是真实车道，点开即编辑模式（ADR 0007）。
   const openCard = (row: PBRModelSummary) => {
-    if (row.source === 'unconfigured') {
-      openNewLane(row.model)
-      return
-    }
     setEditorModel(row.model)
-    setEditorPrefill(undefined)
     setEditorOpen(true)
   }
 
@@ -157,9 +153,9 @@ export function Routes() {
     content = (
       <EmptyState
         icon={Waypoints}
-        title={t('No route keys yet')}
+        title={t('No lanes yet')}
         description={t(
-          'Create a lane by hand and pick members from any channel to make a route key callable.'
+          'Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.'
         )}
       />
     )
@@ -234,7 +230,6 @@ export function Routes() {
           open
           onOpenChange={setEditorOpen}
           model={editorModel}
-          prefillName={editorPrefill}
           onSaved={refresh}
         />
       )}

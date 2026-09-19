@@ -41,6 +41,11 @@ import {
 
 // 模型/成本分析（PBR 口径）。请求数、token、成功率与上游花费全部来自
 // GET /api/stats 的聚合；上游单价在渠道里配置（渠道价 > 全局默认 > 不折算）。
+//
+// 分节口径（ui-spec §6.2）：
+// - 模型调用分析（metric='requests'）：以**调用次数**为主——数字卡以调用次数打头，
+//   分组表格默认按调用次数倒序；
+// - 成本统计（metric='cost'）：以**上游花费**为主——表格默认按花费倒序。
 
 const RANGE_OPTIONS = [
   {
@@ -114,6 +119,8 @@ function statCard(label: string, value: string) {
 export function PbrAnalyticsDashboard(props: {
   defaultGroupBy?: PBRStatsGroupBy
   groupByOptions?: PBRStatsGroupBy[]
+  /** 分节主指标：决定数字卡顺序与分组表格的默认排序。 */
+  primaryMetric?: 'requests' | 'cost'
 }) {
   const { t } = useTranslation()
   const [rangeKey, setRangeKey] =
@@ -150,6 +157,7 @@ export function PbrAnalyticsDashboard(props: {
     refetchOnWindowFocus: false,
   })
 
+  const primaryMetric = props.primaryMetric ?? 'cost'
   const items = query.data?.items ?? EMPTY_BUCKETS
 
   const totals = useMemo(
@@ -200,10 +208,13 @@ export function PbrAnalyticsDashboard(props: {
         (item.prompt_tokens || 0) + (item.completion_tokens || 0)
       byGroup.set(key, current)
     }
+    // 默认排序按分节主指标：调用分析按调用次数倒序，成本统计按花费倒序。
     return [...byGroup.entries()]
       .map(([key, value]) => ({ key, ...value }))
-      .sort((a, b) => b.cost - a.cost)
-  }, [items, t])
+      .sort((a, b) =>
+        primaryMetric === 'requests' ? b.requests - a.requests : b.cost - a.cost
+      )
+  }, [items, t, primaryMetric])
 
   // 「渠道 × 模型」模式把 group 拆成渠道与模型两列；distribution 已按成本倒序。
   const channelModelRows = useMemo(() => {
@@ -239,10 +250,20 @@ export function PbrAnalyticsDashboard(props: {
   } else if (items.length === 0) {
     body = (
       <EmptyState
-        title={t('No cost data yet')}
-        description={t(
-          'Configure upstream unit prices in the channel to see cost accounting here.'
-        )}
+        title={
+          primaryMetric === 'requests'
+            ? t('No call data yet')
+            : t('No cost data yet')
+        }
+        description={
+          primaryMetric === 'requests'
+            ? t(
+                'Once requests flow through lanes, call counts, success rate and token usage appear here.'
+              )
+            : t(
+                'Configure upstream unit prices in the channel to see cost accounting here.'
+              )
+        }
       />
     )
   } else {
@@ -293,7 +314,7 @@ export function PbrAnalyticsDashboard(props: {
                   <th className='px-4 py-2 font-medium'>{t('Channel')}</th>
                   <th className='px-4 py-2 font-medium'>{t('Model')}</th>
                   <th className='px-4 py-2 text-right font-medium'>
-                    {t('Requests')}
+                    {t('Call count')}
                   </th>
                   <th className='px-4 py-2 text-right font-medium'>
                     {t('Token count')}
@@ -335,7 +356,7 @@ export function PbrAnalyticsDashboard(props: {
                     {t('Upstream spend')}
                   </th>
                   <th className='px-4 py-2 text-right font-medium'>
-                    {t('Requests')}
+                    {t('Call count')}
                   </th>
                   <th className='px-4 py-2 text-right font-medium'>
                     {t('Token count')}
@@ -402,10 +423,21 @@ export function PbrAnalyticsDashboard(props: {
       </div>
 
       <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
-        {statCard(t('Upstream spend'), formatCost(totals.cost))}
-        {statCard(t('Requests'), formatNumber(totals.requests))}
-        {statCard(t('Success rate'), `${successRate.toFixed(1)}%`)}
-        {statCard(t('Token count'), formatNumber(totals.tokens))}
+        {primaryMetric === 'requests' ? (
+          <>
+            {statCard(t('Call count'), formatNumber(totals.requests))}
+            {statCard(t('Success rate'), `${successRate.toFixed(1)}%`)}
+            {statCard(t('Token count'), formatNumber(totals.tokens))}
+            {statCard(t('Upstream spend'), formatCost(totals.cost))}
+          </>
+        ) : (
+          <>
+            {statCard(t('Upstream spend'), formatCost(totals.cost))}
+            {statCard(t('Call count'), formatNumber(totals.requests))}
+            {statCard(t('Success rate'), `${successRate.toFixed(1)}%`)}
+            {statCard(t('Token count'), formatNumber(totals.tokens))}
+          </>
+        )}
       </div>
 
       {body}
@@ -418,12 +450,13 @@ export function CostDashboard() {
   return <PbrAnalyticsDashboard />
 }
 
-// 模型分析分节：按模型看请求/token/花费。
+// 模型调用分析分节：以调用次数为主，按模型看调用/token/花费。
 export function ModelAnalytics() {
   return (
     <PbrAnalyticsDashboard
       defaultGroupBy='model'
       groupByOptions={['model', 'channel', 'lane']}
+      primaryMetric='requests'
     />
   )
 }
