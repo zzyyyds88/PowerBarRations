@@ -410,7 +410,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 适配器与 `service` / `setting` / `model` 深度绑定，净室剥离会破坏转发能力。因此工程基座固定为：
 
-1. **复用**：把 `reference/new-api` 的 Go 源码纳入本仓库实现，**保留其包布局**（`relay/ relaykit/ common/ constant/ setting/ service/ model/ controller/ middleware/ router/ logger/ pkg/ i18n/ types/`；上游 `dto/` 已并入 `relaykit/dto/`），改 module path 为 `pbr`、全量替换 import 路径。其中 `relaykit/` 是**独立 Go module**（自带 `relaykit/go.mod`），主模块通过 `require` + `replace … => ./relaykit` 引用。
+1. **复用**：把 `reference/new-api` 的 Go 源码纳入本仓库实现，**保留其包布局**（`relay/ relaykit/ common/ constant/ setting/ service/ model/ controller/ middleware/ router/ logger/ pkg/ i18n/ types/`；上游 `dto/` 已并入 `relaykit/dto/`），改 module path 为 `github.com/zzyyyds88/PowerBarRations`（与公开仓库 URL 一致；二进制名仍为 `pbr`）、全量替换 import 路径。其中 `relaykit/` 是**独立 Go module**（自带 `relaykit/go.mod`，路径 `github.com/zzyyyds88/PowerBarRations/relaykit`），主模块通过 `require` + `replace … => ./relaykit` 引用。
 2. **不迁**：`electron/`、`docs/`、`e2e/` 等非代码资产（`web/` **要迁**，见 §6）。
 3. **目标目录布局是演进终点，不是起点**（历史骨架树见归档 §10.4）：新写的路由核心放 `internal/`；旧包逐步改造或删除，不要求一次性重排目录。
 4. **许可证**：保留 new-api 的 AGPL 头、`LICENSE`、`NOTICE`、`THIRD-PARTY-LICENSES.md`（前端既然只来自 new-api 一家上游，无需再另附其他蓝本清单）。品牌可替换，版权不可替换。
@@ -551,7 +551,7 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 ## 17. 品牌与命名
 
 - **产品名统一为 PowerBarRations**，全量替换为自有品牌：界面标题、logo/favicon、i18n 文案、`/version` 与 OpenAPI `info.title`、错误页、空态文案。
-- 工程标识：二进制 `pbr`、Go module `pbr`、Docker 镜像/容器名 `pbr`、环境变量前缀 `PBR_`、本地存储键前缀 `pbr_`、日志前缀 `[pbr]`。
+- 工程标识：二进制 `pbr`、Go module `github.com/zzyyyds88/PowerBarRations`、Docker 镜像/容器名 `pbr`、环境变量前缀 `PBR_`、本地存储键前缀 `pbr_`、日志前缀 `[pbr]`。
 - **规则**：面向用户的文案与标识中不得出现任何第三方品牌名（含蓝本的中文别称）；代码注释中标注"移植自某上游文件"属于溯源，允许保留。
 - **许可证义务（不可随品牌一起替换）**：保留 AGPL-3.0 版权头、`LICENSE`、`NOTICE`、`THIRD-PARTY` 许可清单；不得声称重新授权或变更许可。
 - 替换清单（实现时逐项过）：① 前端标题/logo/favicon ② i18n 三语文案 ③ `index.html` 与构建注入的应用名 ④ 后端 `/version`、健康检查、OpenAPI ⑤ Dockerfile/镜像标签 ⑥ compose 样例 ⑦ README 与 docs ⑧ 环境变量与存储键 ⑨ 日志与错误消息中的产品名 ⑩ 数据库文件默认名（`pbr.db`）。
