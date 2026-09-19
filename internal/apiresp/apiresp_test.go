@@ -109,6 +109,31 @@ func TestBareResourcePassesThrough(t *testing.T) {
 	assert.JSONEq(t, `{"items":[],"next_cursor":null}`, rec.Body.String())
 }
 
+// 裸资源带顶层 success 字段时必须原样透传，不能被误判为基座信封。
+// 回归：`GET /api/logs/{id}` 的 RequestLog 天然含 success（api-spec §5.5），
+// 旧判定只看"有 success 键"，导致成功日志被改写成 204 空体、失败日志被改写成错误包络。
+func TestBareResourceWithSuccessFieldPassesThrough(t *testing.T) {
+	engine := newEngine(t, Policy{}, func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"id": 7, "success": true, "http_status": 200,
+			"attempts": []any{}, "total_attempts": 1,
+		})
+	})
+	rec := doRequest(engine)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"id":7,"success":true,"http_status":200,"attempts":[],"total_attempts":1}`, rec.Body.String())
+}
+
+// 失败日志（success:false）同样不得被改写成错误包络。
+func TestBareResourceWithFalseSuccessPassesThrough(t *testing.T) {
+	engine := newEngine(t, Policy{}, func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"id": 8, "success": false, "error_kind": "soft_transient"})
+	})
+	rec := doRequest(engine)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"id":8,"success":false,"error_kind":"soft_transient"}`, rec.Body.String())
+}
+
 // SSE 不缓冲、不改写。
 func TestSSEPassesThrough(t *testing.T) {
 	engine := newEngine(t, Policy{}, func(c *gin.Context) {
