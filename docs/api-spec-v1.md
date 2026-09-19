@@ -274,7 +274,7 @@
 | POST | `/api/channels/batch/status` | 批量启用/停用：body `{channels:[name], status:1\|2}` 或 `{ids:[int], status}`（**二者只能给一个**）；成功 `{"changed":n}`；空目标或 status 非法 → 400；名字不存在 → 404 `channel_not_found`（`details.unknown`） |
 | POST | `/api/channels/batch/tag` | 批量设置标签：body `{channels:[name], tag:string\|null}` 或 `{ids, tag}`；成功 `{"changed":n}`；错误同上 |
 | POST | `/api/channels/batch/copy` | 复制渠道：body `{channel:name, suffix?, reset_balance?}`；成功 = **写后回读的渠道对象**（与 §4.1 同形）；名字不存在 → 404 |
-| POST | `/api/channels/batch/fetch-models` | 拉取上游模型清单（不落库）：body `{channel:name}`、`{channel_id:int}` 或 `{base_url, key, type}`；成功 `{"models":[...]}`；上游失败 → 502 `upstream_error` |
+| POST | `/api/channels/batch/fetch-models` | 拉取上游模型清单（不落库）：body `{channel:name}`、`{channel_id:int}` 或 `{base_url, key, type}`；成功 `{"models":[...]}`；上游失败 → 502 `upstream_error`。**注意**：`{channel_id}`/`{channel}` 目前仅支持 Advanced Custom 渠道（`buildAdvancedCustomModelPreviewChannel`），普通渠道请用 `GET /api/channel/fetch_models/{id}`；控制台已不再调用本端点（ui-spec §6.4） |
 | PUT | `/api/channels/by-tag` | 按标签批量改配置（改 `models` 时同样受车道引用守卫）；成功 `{"tag":"t","updated":true}`；被引用 → 409 + `details.blocked` |
 | POST | `/api/channels/by-tag/status` | 按标签批量启停：body `{tag, status}`；成功 `{"tag":"t","enabled":bool}`；tag 空或 status 非法 → 400 |
 | GET | `/api/channels/by-tag/models` | 按标签取模型清单：`?tag=`；成功 `{"tag":"t","models":[...]}`；tag 空 → 400 |
