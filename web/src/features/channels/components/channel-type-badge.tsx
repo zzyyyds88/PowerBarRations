@@ -21,8 +21,7 @@ import { Server } from 'lucide-react'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
-import { CHANNEL_TYPE_OPTIONS } from '../constants'
-import { getChannelTypeIcon } from '../lib/channel-utils'
+import { getChannelTypeIcon, hasChannelTypeIcon } from '../lib/channel-utils'
 
 export function ChannelTypeLogo(props: {
   type: number
@@ -30,10 +29,7 @@ export function ChannelTypeLogo(props: {
   className?: string
 }) {
   const size = props.size ?? 16
-  const isKnownType = CHANNEL_TYPE_OPTIONS.some(
-    (option) => option.value === props.type
-  )
-  if (!isKnownType) {
+  if (!hasChannelTypeIcon(props.type)) {
     return (
       <Server
         className={cn('text-muted-foreground shrink-0', props.className)}

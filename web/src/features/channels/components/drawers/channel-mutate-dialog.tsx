@@ -120,7 +120,6 @@ import {
   CHANNEL_PROTOCOL_PRESENTATION,
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
-  CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_WARNINGS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -625,12 +624,9 @@ export function ChannelMutateDialog({
       icon: <ChannelTypeLogo type={option.type} size={16} />,
     }))
     if (currentProtocol === '' && currentType > 0) {
-      const legacyLabel =
-        CHANNEL_TYPE_OPTIONS.find((option) => option.value === currentType)
-          ?.label ?? `#${currentType}`
       options.unshift({
         value: `type:${currentType}`,
-        label: `${t(legacyLabel)} (${t('Current')})`,
+        label: `#${currentType} (${t('Current')})`,
         icon: <ChannelTypeLogo type={currentType} size={16} />,
       })
     }

@@ -17,16 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { StatusBadgeProps } from '@/components/status-badge'
+
+import type { UsageLog } from '../data/schema'
+import type { LogOtherData } from '../types'
 import {
   BILLING_PRICING_VARS,
   normalizeTierLabel,
   parseTiersFromExpr,
   splitBillingExprAndRequestRules,
   type ParsedTier,
-} from '@/features/pricing/lib/billing-expr'
-
-import type { UsageLog } from '../data/schema'
-import type { LogOtherData } from '../types'
+} from './billing-expr'
 import { buildQuotaAuditOperation } from './quota-audit-operation'
 
 export { normalizeTierLabel }

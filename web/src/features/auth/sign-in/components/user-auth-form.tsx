@@ -47,7 +47,6 @@ import { cn } from '@/lib/utils'
  *
  * PBR 无账号体系、无二次验证、无 passkey/第三方登录（/api/status 不返回这些开关），
  * 因此这里只保留口令字段；服务端校验后签发 HttpOnly 会话 Cookie。
- * schema 里保留 username 仅为兼容上游类型，界面不渲染该字段。
  */
 export function UserAuthForm({
   className,
@@ -61,7 +60,7 @@ export function UserAuthForm({
 
   const form = useForm<z.infer<typeof loginFormSchema>>({
     resolver: zodResolver(loginFormSchema),
-    defaultValues: { username: 'admin', password: '' },
+    defaultValues: { password: '' },
   })
 
   async function onSubmit(data: z.infer<typeof loginFormSchema>) {

@@ -246,13 +246,3 @@ export interface AnnouncementItem {
   type?: 'default' | 'ongoing' | 'success' | 'warning' | 'error'
   extra?: string
 }
-
-// ============================================================================
-// FAQ Types
-// ============================================================================
-
-export interface FAQItem {
-  id?: number
-  question: string
-  answer: string
-}
