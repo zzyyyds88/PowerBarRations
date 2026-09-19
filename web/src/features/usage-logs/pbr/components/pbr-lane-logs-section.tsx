@@ -138,6 +138,11 @@ export function PBRLaneLogsSection() {
           value={filters.model ?? ''}
         />
         <Select
+          items={[
+            { value: 'all', label: t('All') },
+            { value: 'true', label: t('Success') },
+            { value: 'false', label: t('Failed') },
+          ]}
           onValueChange={(value) => {
             setCursors([])
             setCursor(undefined)

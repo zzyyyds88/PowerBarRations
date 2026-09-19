@@ -381,6 +381,10 @@ export function PbrAnalyticsDashboard(props: {
           </TabsList>
         </Tabs>
         <Select
+          items={visibleGroupOptions.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+          }))}
           value={groupBy}
           onValueChange={(value) => setGroupBy(value as PBRStatsGroupBy)}
         >

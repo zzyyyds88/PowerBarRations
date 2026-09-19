@@ -131,6 +131,18 @@ describe('cost dashboard channel x model dimension', () => {
     expect(screen.getByRole('columnheader', { name: 'Model' })).toBeVisible()
   })
 
+  // 回归：分组下拉的触发框必须显示选中项的标签（"By channel"），
+  // 而不是原始值（"channel"）。Base UI 的 SelectValue 只有在 Select 根拿到
+  // items 时才能解析标签，否则回显原始值。
+  it('shows the selected group label in the trigger, not the raw value', async () => {
+    mockStats(ITEMS)
+    renderDashboard(<CostDashboard />)
+
+    const trigger = await screen.findByRole('combobox')
+    expect(trigger).toHaveTextContent('By channel')
+    expect(trigger).not.toHaveTextContent(/^channel$/)
+  })
+
   it('shows the empty-state copy when there is no channel-model data', async () => {
     mockStats([])
     renderDashboard(
