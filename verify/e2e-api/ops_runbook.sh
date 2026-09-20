@@ -101,6 +101,25 @@ MODELS=$(curl -s "${A[@]}" "$BASE/api/v1/models")
 assert_json "models 列出 ops-model 且 explicit" "$MODELS" "any(m['model']=='ops-model' and m['source']=='explicit' and m['routable'] for m in d['items'])"
 
 echo
+echo "=== 运维 4b：池化车道（跨渠道跨模型，ADR 0006）==="
+# 成员可来自任意启用渠道的任意已声明模型：这里让 ops-b 同时贡献两个不同上游名，
+# 并让同一渠道在一条车道内出现两次（去重键 = 渠道 + 上游真名）。
+curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["ops-model","ops-alt"],"enabled":true}' "$BASE/api/v1/channels/ops-b" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"ops-b","upstream_model":"ops-model","priority":30},{"channel":"ops-b","upstream_model":"ops-alt","priority":20},{"channel":"ops-a","upstream_model":"ops-model","priority":10}]}' "$BASE/api/v1/lanes/ops-pool" > /dev/null
+POOL=$(curl -s "${A[@]}" "$BASE/api/v1/routes/ops-pool")
+assert_json "池化车道成员 = 提交的 (渠道, 上游真名) 列表（含同渠道两次）" "$POOL" "[(m['channel'],m['upstream_model']) for m in d['members']][:3]==[('ops-b','ops-model'),('ops-b','ops-alt'),('ops-a','ops-model')]"
+assert_json "池化车道可路由" "$POOL" "d['routable'] is True"
+
+echo
+echo "=== 运维 4c：声明模型不自动建车道（ADR 0005/0007）==="
+# ops-b 新声明了 ops-alt，但没有任何同名车道：必须是 unconfigured 且不可调用，
+# 且 GET /lanes 不得凭空多出车道（渠道声明绝不自动建/改车道）。
+MODELS_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/models")
+assert_json "新声明模型 source=unconfigured 且 routable=false" "$MODELS_AFTER" "any(m['model']=='ops-alt' and m['source']=='unconfigured' and not m['routable'] for m in d['items'])"
+LANES_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/lanes")
+assert_json "渠道声明模型不自动新增车道" "$LANES_AFTER" "not any(l['name']=='ops-alt' for l in d['items'])"
+
+echo
 echo "=== 运维 5：建客户端密钥并端到端调用 ==="
 CLIENT_PLAIN=$(curl -s "${A[@]}" -X POST -d '{"name":"ops-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')
 [[ -n "$CLIENT_PLAIN" ]] || { echo "FAIL: 未取得客户端密钥"; exit 1; }
