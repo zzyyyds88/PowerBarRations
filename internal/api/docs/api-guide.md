@@ -144,11 +144,13 @@ Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).
   管理面 `details` 用于机器可判定明细：车道引用守卫的 `blocked`（渠道名 → 车道名）、`lanes`（引用被移除模型的车道名）、`unknown`（不存在的名字）、`failed_files`（日志清理失败文件）。
 - 模型面 `503` = `No available channel for model <X>`（没有可用渠道，或该键未配车道）；
   本机繁忙是 `529`，两者不要混。
-- **PUT 语义**：渠道 PUT 是**部分合并**（字段缺席 = 保持原值）；车道 PUT 对 `members` 是**整体替换**，
-  省略成员会 `422 lane_has_no_members`。
+- **PUT 语义**：渠道 PUT 是**部分合并**（字段缺席 = 保持原值）；车道 PUT 的 `enabled`/`mode`/`config`
+  也是部分合并，但 **`members` 是整体替换且省略即空**——`{"enabled":false}` 会 200 并**清空成员链**，
+  结果仍为启用且没带 `members` 才报 `422 lane_has_no_members`。改开关/六键要保留成员时，务必带上完整数组。
 - `hard_auth` / `hard_quota` 类失败的成员冷却 = **2 × `member_cooldown_seconds`**。
-- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `source:"unconfigured"` + `routable:false`（**不是 404**）；
-  推荐成员在 `candidates[]`，`members[]` 永远是真实成员链。
+- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `source:"unconfigured"` + `routable:false`（**不是 404**）。
+  **无同名车道时推荐链在 `members[]`、`candidates` 为空**；有显式车道时 `members` 才是真实成员链、
+  `candidates` 是"已启用、声明该键、非成员"的渠道。
 - 日志 `attempts[].status` 取值含 **`cooldown`**（成员正在冷却、本轮未打上游），与 `failed`（上游失败）要区分。
 - `sync-models` 上游返回空清单默认 `409`（需 `?force=1`）；被显式车道引用的模型移除也 `409`。
 - 渠道删除被显式车道引用时 `409`，message 给出车道名。
