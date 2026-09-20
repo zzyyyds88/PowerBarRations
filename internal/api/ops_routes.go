@@ -19,11 +19,18 @@ import (
 // 非法枚举）挡在基座 handler 之前，因此剩余失败以 409 conflict 与 400 兜底为主。
 
 // OpsRoute 是一条运维端点的完整声明。
+//
+// DryRun 是**强制字段**：任何写方法（POST/PUT/DELETE）都必须声明它，否则
+// TestEveryOpsWriteRouteDeclaresDryRun 失败——这是"不允许静默写入"的构建期约束。
 type OpsRoute struct {
 	Method  string
 	Path    string
 	Handler gin.HandlerFunc
 	Policy  apiresp.Policy
+	// DryRun 声明该端点对 ?dry_run=true 的处理（api-spec §2.4/§5.9）。
+	DryRun DryRunMode
+	// DryRunReason 说明 reject/irrelevant 的理由，或 preview 的替代预览入口。
+	DryRunReason string
 }
 
 // opsConflictFirst 是通用失败规则：显式 conflict 优先，其余 200 业务失败兜底 400。
@@ -133,27 +140,33 @@ func opsRoutes() []OpsRoute {
 		// —— 渠道批量运维（api-spec §5.3.1）——
 		{
 			Method: http.MethodPost, Path: "/channels/batch/status", Handler: BatchChannelStatusByName,
+			DryRun: DryRunPreview, DryRunReason: "将变更的渠道名",
 			Policy: opsPolicyWith(changedCountSuccess),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/batch/tag", Handler: BatchChannelTagByName,
+			DryRun: DryRunPreview, DryRunReason: "将变更的渠道名",
 			Policy: opsPolicyWith(changedCountSuccess),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/batch/copy", Handler: CopyChannelByBodyName,
+			DryRun: DryRunPreview, DryRunReason: "新渠道名",
 			Policy: opsPolicyWith(copyChannelSuccess),
 		},
 		{
 			// 会真实访问上游：剩余失败按上游错误 502。
 			Method: http.MethodPost, Path: "/channels/batch/fetch-models", Handler: FetchModelsByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "只读拉取上游模型清单，不落库",
 			Policy: opsPolicyUpstreamWith(modelsSuccess),
 		},
 		{
 			Method: http.MethodPut, Path: "/channels/by-tag", Handler: EditChannelsByTag,
+			DryRun: DryRunPreview, DryRunReason: "将变更的渠道名；被引用时仍返回 409",
 			Policy: opsPolicyWith(tagUpdatedSuccess),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/by-tag/status", Handler: BatchChannelTagStatus,
+			DryRun: DryRunPreview, DryRunReason: "将变更的渠道名",
 			Policy: opsPolicyWith(tagEnabledSuccess),
 		},
 		{
@@ -162,14 +175,17 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodDelete, Path: "/channels/disabled", Handler: DeleteDisabledChannels,
+			DryRun: DryRunPreview, DryRunReason: "将删除的渠道名；被引用时仍返回 409",
 			Policy: opsPolicyWith(deletedCountSuccess),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/upstream-updates/detect-all", Handler: DetectAllUpstream,
+			DryRun: DryRunIrrelevant, DryRunReason: "触发探测任务，不改配置；应用变更走 apply",
 			Policy: opsPolicy(),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/upstream-updates/apply-all", Handler: ApplyAllUpstream,
+			DryRun: DryRunPreview, DryRunReason: "逐渠道将新增/移除的模型",
 			Policy: opsPolicy(),
 		},
 		{
@@ -178,19 +194,23 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/multi-keys", Handler: ManageMultiKeysByName,
+			DryRun: DryRunPreview, DryRunReason: "将变更的渠道；get_key_status 是读动作",
 			Policy: opsPolicyWith(multiKeySuccess),
 		},
 		{
 			// 会真实访问上游：剩余失败按上游错误 502。
 			Method: http.MethodPost, Path: "/channels/:name/upstream-updates/detect", Handler: DetectUpstreamByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "触发探测，不改配置",
 			Policy: opsPolicyUpstream(),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/upstream-updates/apply", Handler: ApplyUpstreamByName,
+			DryRun: DryRunPreview, DryRunReason: "将新增/移除的模型",
 			Policy: opsPolicy(),
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/codex/refresh", Handler: CodexRefreshByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "上游凭据动作，非配置",
 			Policy: opsPolicyUpstream(),
 		},
 		{
@@ -203,21 +223,25 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/codex/reset", Handler: CodexResetUsageByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "上游用量动作，非配置",
 			Policy: opsPolicyCodex(),
 		},
 		{
 			// 上游失败（基座给 200/500）→ 502 upstream_error（api-spec §5.3.1）。
 			Method: http.MethodPost, Path: "/channels/:name/ollama/pull", Handler: OllamaPullByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "上游动作，会真的拉取模型",
 			Policy: opsPolicyUpstreamWith(ollamaPullSuccess),
 		},
 		{
 			// SSE 流式端点：不套信封（design-v1 §5.1）。进入流之前的参数/渠道错误
 			// 由适配层直接写成 §3 错误包络。
 			Method: http.MethodPost, Path: "/channels/:name/ollama/pull/stream", Handler: OllamaPullStreamByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "上游动作（SSE 进度）",
 			Policy: apiresp.Policy{Passthrough: true},
 		},
 		{
 			Method: http.MethodDelete, Path: "/channels/:name/ollama/models", Handler: OllamaDeleteByName,
+			DryRun: DryRunIrrelevant, DryRunReason: "上游动作",
 			Policy: opsPolicyUpstreamWith(ollamaDeleteSuccess),
 		},
 		{
@@ -232,6 +256,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPut, Path: "/system/options/all", Handler: UpdateSystemOptionsByName,
+			DryRun: DryRunPreview, DryRunReason: "将变更的选项键",
 			Policy: opsPolicyOptionWrite(),
 		},
 		{
@@ -248,6 +273,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/system-tasks/log-cleanup", Handler: CreateLogCleanupTask,
+			DryRun: DryRunPreview, DryRunReason: "将创建的任务",
 			Policy: opsPolicy(),
 		},
 		{
@@ -256,14 +282,17 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/system/performance/reset", Handler: ResetPerformanceStats,
+			DryRun: DryRunIrrelevant, DryRunReason: "运行态统计，非配置",
 			Policy: opsPolicyWith(flagSuccess("reset")),
 		},
 		{
 			Method: http.MethodPost, Path: "/system/performance/gc", Handler: ForceGarbageCollection,
+			DryRun: DryRunIrrelevant, DryRunReason: "运行态动作，非配置",
 			Policy: opsPolicyWith(flagSuccess("collected")),
 		},
 		{
 			Method: http.MethodDelete, Path: "/system/performance/disk-cache", Handler: ClearDiskCacheHandler,
+			DryRun: DryRunIrrelevant, DryRunReason: "运行态缓存，非配置",
 			Policy: opsPolicyWith(flagSuccess("cleared")),
 		},
 		{
@@ -274,6 +303,7 @@ func opsRoutes() []OpsRoute {
 			// 部分删除失败：基座给 success:false + code=partial_failure + data.failed_files，
 			// 映射为 500 并把 failed_files 透进 error.details（api-spec §5.3.2）。
 			Method: http.MethodDelete, Path: "/system/log-files", Handler: CleanupLogFilesHandler,
+			DryRun: DryRunPreview, DryRunReason: "将删除的日志文件名",
 			Policy: opsPolicyLogFilesCleanup(),
 		},
 
@@ -284,14 +314,17 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/prefill-groups", Handler: CreatePrefillGroup,
+			DryRun: DryRunPreview, DryRunReason: "将创建的组",
 			Policy: opsPolicy(),
 		},
 		{
 			Method: http.MethodPut, Path: "/prefill-groups/:id", Handler: UpdatePrefillGroupByID,
+			DryRun: DryRunPreview, DryRunReason: "将更新的组",
 			Policy: opsPolicy(),
 		},
 		{
 			Method: http.MethodDelete, Path: "/prefill-groups/:id", Handler: DeletePrefillGroupByID,
+			DryRun: DryRunPreview, DryRunReason: "将删除的组",
 			Policy: opsPolicyWith(deletedTrueSuccess),
 		},
 
@@ -302,6 +335,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/model-catalog/sync-upstream", Handler: SyncUpstreamApplyH,
+			DryRun: DryRunPreview, DryRunReason: "将新增/更新/移除的目录记录",
 			Policy: opsPolicy(),
 		},
 		{
@@ -310,6 +344,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/model-catalog/batch-delete", Handler: BatchDeleteModelMetaByName,
+			DryRun: DryRunPreview, DryRunReason: "将删除的目录记录；被引用时仍返回 409",
 			Policy: opsPolicy(),
 		},
 	}
@@ -318,10 +353,17 @@ func opsRoutes() []OpsRoute {
 // RegisterOpsRoutes 按声明表注册运维端点，并把响应策略登记进 apiresp。
 //
 // 路由与策略同源：注册即登记，不可能出现"注册了却没策略"。
+// reject 类端点额外挂上强制中间件——它必须在 handler 之前 abort，
+// 否则"声明了不支持"就会退回成"静默写入"（api-spec §2.4 铁律）。
 func RegisterOpsRoutes(group *gin.RouterGroup) {
 	for _, route := range opsRoutes() {
 		apiresp.Register(route.Method, route.Path, route.Policy)
-		group.Handle(route.Method, route.Path, route.Handler)
+		handlers := []gin.HandlerFunc{}
+		if route.DryRun == DryRunReject {
+			handlers = append(handlers, dryRunRejectMiddleware(route.DryRunReason))
+		}
+		handlers = append(handlers, route.Handler)
+		group.Handle(route.Method, route.Path, handlers...)
 	}
 }
 
