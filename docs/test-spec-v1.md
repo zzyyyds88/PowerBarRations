@@ -67,7 +67,7 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 4c | 路由页只列真实车道 | 路由页 + 模型管理页 | 渠道声明但未配车道的路由键**不在路由页出现**；删除车道后该卡片立即消失（[ADR 0007](adr/0007-routes-lists-lanes-only.md)）；模型管理页仍以「不可调用」徽章表达 |
 | 5 | 新建客户端密钥 | 令牌页 → 新建（表单） | 一次性明文可见；回读一致 |
 | 6 | 试打台对话 | 试打台 | 页面显示回复与 `X-Served-By` |
-| 7 | 查看请求日志 | 请求日志页 | 该请求出现且含车道/渠道 |
+| 7 | 查看请求日志 | 请求日志页 | 该请求出现且含车道/渠道；Cost 列显示元（非额度）；详情弹窗含 attempts 链；偏移跳页可用且总数正确 |
 | 8 | 修改系统设置 | 系统设置页 | 保存后回读一致 |
 
 **断言口径**：优先用用户可见文本/角色定位（按钮、标签、表格行）；不用内部 state 或 class 快照。
@@ -94,6 +94,7 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 4 | 路由总览 | `GET /models`、`GET /routes/{model}` | `routable=true` |
 | 5 | 端到端调用 | `POST /v1/chat/completions`（客户端密钥） | 200；日志出现 |
 | 6 | 排障 | `GET /lanes/{name}/health`、`GET /logs?success=false` | 冷却/熔断/attempts 可读 |
+| 6b | 日志分页双模式 | `GET /logs?page=2&page_size=10`；`GET /logs?cursor=<base64>` | 偏移返回 `total`+`page`+`page_size`+正确切片；游标返回 `next_cursor`；偏移响应含 `type`/`channel_id`/`token_id`/`user_id`/`ip`（对齐 UsageLog 形状） |
 | 7 | 逐成员探活 | `POST /lanes/{name}/probe` | `probed` 与成员级 `status` |
 | 8 | 故障注入与转移 | 假上游 `/__control` | 首成员失败逃逸到次成员 |
 | 9 | 重置熔断 | `POST /lanes/{name}/circuits/reset` | `reset` 计数 |

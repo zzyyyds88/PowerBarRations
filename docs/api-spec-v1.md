@@ -216,8 +216,10 @@
   "request_model": "lane-alpha",
   "route_source": "explicit",
   "channel": "channel-b",
+  "channel_id": 7,
   "upstream_model": "model-x",
   "key_name": "client-a",
+  "token_id": 3,
   "user_id": 0,
   "username": "",
   "type": 2,
@@ -396,7 +398,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/logs` | 过滤：`lane` `channel` `key` `model` `success` `since` `until` `cursor` `limit` |
+| GET | `/api/logs` | 过滤：`lane` `channel` `key` `model` `success` `since` `until`。**分页双模式**：传 `page`+`page_size` 走偏移分页（响应 `{items, total, page, page_size}`，供控制台跳页/总数）；传 `cursor`+`limit` 走游标分页（响应 `{items, next_cursor}`，向后兼容）。两种模式由"是否传 `page`"判定，`page_size` 上限 100。 |
 | GET | `/api/logs/{id}` | 单条（含 attempts 链） |
 | POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变** |
 | GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。`channel_model` 的 `group` 形如 `渠道␟模型` |
