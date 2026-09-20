@@ -36,7 +36,7 @@ bash verify/deploy/smoke.sh              # 独立 compose 项目从零部署 + �
 
 | 项 | 检查项 | 命令 / 依据 | 结论 | 证据 |
 |---|---|---|---|---|
-| **A1** 功能完整性：端点无 5xx、无未实现桩 | openapi 登记的全部 path×method 实跑 | `verify/final/e2e.sh` | ✅ PASS=33（2026-09-17 复跑） | `verify/final/run-*.log`（日志不入库） |
+| **A1** 功能完整性：端点无 5xx、无未实现桩 | openapi 登记的**全部** path×method 实跑（含全部 DELETE） | `verify/final/e2e.sh` | ✅ PASS=35（2026-09-20 复跑；实跑 93/93 端点，DELETE 全量覆盖） | `verify/final/run-*.log`（日志不入库） |
 | **A2** 两种模式 + 冷却 + 亲和 + 熔断半开 | failover/manual 各跑通；已删模式返回 422；熔断打开→半开→复通留时间戳 | `verify/w2/smoke.sh` | ✅ PASS=37（2026-09-17 复跑） | `verify/w2/run-*.log`、`verify/w2/README.md` |
 | **A3** 控制台逐页走查（ui-spec §8） | 无头 Chromium + CDP 注入管理密钥，逐页导航/断言渲染与 console 无报错/三态组件/品牌残留；随后跑 `console_flow.py` 完整使用流程（自包含假上游 + 后端强断言） | `verify/final/a3_console.sh` | ✅ **PASS=10 FAIL=0**（2026-09-17 复跑；页面清单已改为 /routes 与 /system-tasks，完整流程 12/12 断言） | `verify/final/a3-*.log` 中的 console_flow JSON（日志不入库） |
 | **A4** 导入幂等 | `/api/v1/import` 的导入幂等与对账规则 | `verify/final/a4_import_idempotent.sh` | **PASS=16**（2026-09-17 复跑；探针字段已从删除的 priority 改为 models）。原"真实迁移"子项（`pbr migrate` 跑两次，PASS=11，2026-09-15 实测）已随迁移机制整体移除，证据仅存 Git 历史 | `verify/final/a4-*.log` |
@@ -80,7 +80,7 @@ cd web && pnpm copyright:check   # 通过（added=0 / updated=0）
 | W4 控制台（构建 + 内嵌 + 契约一致性） | `verify/w4/smoke.sh` | **PASS=19 FAIL=0** |
 | W5 日志与记账 | `verify/w5/smoke.sh` | **PASS=29 FAIL=0** |
 | 部署 | `verify/deploy/smoke.sh` | **PASS**（2026-09-17 复跑） |
-| W8 自验收（自动化部分） | `verify/final/{e2e,a3,a4_import,fault,rollback}` | 全 PASS（PASS=33/10/16/23/16，见逐项索引；longrun 见下方残余说明） |
+| W8 自验收（自动化部分） | `verify/final/{e2e,a3,a4_import,fault,rollback}` | 全 PASS（PASS=35/10/16/23/16，见逐项索引；longrun 见下方残余说明） |
 
 ## 本轮验收发现并修掉的真问题
 

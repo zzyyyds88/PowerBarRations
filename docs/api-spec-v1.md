@@ -231,9 +231,8 @@
 | POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签）。**`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时返回 409 `conflict`**：环境变量管理密钥优先，口令变更不影响实际生效的密钥 |
 | GET | `/api/capabilities` | 适配器、模式、能力枚举 |
 | GET | `/api/openapi.json` | OpenAPI 3 文档（**免鉴权**） |
-| GET | `/doc` | 面向 AI 的管理 API 手册（`text/markdown`；浏览器 `Accept: text/html` 时返回说明页。**免鉴权**） |
-| GET | `/llms.txt` | 与 `/doc` 同源的纯文本手册（**免鉴权**） |
-| GET | `/doc/ui` | 交互式 OpenAPI 文档（复用 Scalar，指向 `/api/openapi.json`。**免鉴权**） |
+
+> **根路径文档页不属于 OpenAPI 契约面**：`GET /doc`（面向 AI 的管理 API 手册，`text/markdown`；浏览器 `Accept: text/html` 时返回说明页）、`GET /llms.txt`（与 `/doc` 同源的纯文本手册）、`GET /doc/ui`（复用 Scalar 的交互式文档，指向 `/api/openapi.json`）三者**免鉴权**、返回手册/UI 页面而非可被工具解析的资源，因此**刻意不登记进 `openapi.json`**（其 `servers` 只声明 `/api`）。该边界由 `router/openapi_coverage_test.go` 的 `TestDocRoutesAreOutsideOpenAPI` 固化：三者必须已注册、且不得出现在 openapi 中。
 | GET | `/api/system/options` | 全局选项 |
 | PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
 

@@ -42,7 +42,8 @@
 - 模型路由：`GET /api/models`（全部路由键）、`GET /api/routes/{model}`（成员链；
   未配车道时返回候选建议链，只作"可添加成员"，不参与运行期路由）
 - 客户端密钥：`GET|POST /api/keys`、`GET|PUT|DELETE /api/keys/{name}`、
-  `POST /api/keys/{name}/rotate`
+  `POST /api/keys/{name}/rotate`（权限用 `lane_policy:{mode:"all"|"allow",allow_lanes,deny_lanes}`，
+  **没有 `allowed_models` 字段**；allow/deny 里的键必须是真实存在的路由键，否则 422）
 - 观测：`GET /api/logs`、`GET /api/logs/{id}`、`POST /api/logs/prune`、
   `GET /api/stats`（`group_by=lane|channel|key|model|channel_model`）、`GET /api/route-events`（SSE）
 - Webhook 事件通知：`GET|PUT /api/webhooks`、`POST /api/webhooks/test`、`GET /api/webhooks/deliveries`（见 §5）
@@ -75,7 +76,8 @@ curl -s "${A[@]}" -X PUT "$BASE/api/lanes/lane-a" -d '{
   "members":[{"channel":"ch-a","upstream_model":"model-1","priority":10}]}'
 
 KEY=$(curl -s "${A[@]}" -X POST "$BASE/api/keys" \
-  -d '{"name":"my-key","allowed_models":["model-1"]}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["key"])')
+  -d '{"name":"my-key","lane_policy":{"mode":"allow","allow_lanes":["model-1"]}}' \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["key"])')
 
 curl -s -H "Authorization: Bearer $KEY" "$BASE/v1/chat/completions" \
   -d '{"model":"model-1","messages":[{"role":"user","content":"ping"}]}'
@@ -136,11 +138,18 @@ Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).
 
 ## 6. 错误模型与硬规则
 
-- 成功体是**裸资源**（无信封）；动作类端点是 `{"changed":n}` / `{"deleted":true}` 这类语义化最小对象。
-- 错误体：`{"error":{"code":"...","message":"...","hint":"...","details":{...}}}`，**带真实 HTTP 状态码**；**按状态码 + `code` 分支**，不要解析 message。`details` 当前用于车道引用守卫的 `blocked`（渠道名 → 车道名列表）。
-- 模型面 `503` = `No available channel for model <X>`（没有可用渠道）；
+- 成功体是**裸资源**（无信封）；动作类端点是 `{"changed":n}` / `{"deleted":true}` / `{"reset":n}` 这类语义化最小对象。
+- **两个面的错误体不同**：管理面 `/api/*` 是 `{"error":{"code","message","hint"?,"details"?}}`，**按 `code` 分支**；
+  模型面 `/v1/*` 是 OpenAI 兼容体（`{"error":{"message":"..."}}`），通常**没有** PBR `code`，按状态码判定。
+  管理面 `details` 用于机器可判定明细：车道引用守卫的 `blocked`（渠道名 → 车道名）、`lanes`（引用被移除模型的车道名）、`unknown`（不存在的名字）、`failed_files`（日志清理失败文件）。
+- 模型面 `503` = `No available channel for model <X>`（没有可用渠道，或该键未配车道）；
   本机繁忙是 `529`，两者不要混。
-- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `members: []`。
+- **PUT 语义**：渠道 PUT 是**部分合并**（字段缺席 = 保持原值）；车道 PUT 对 `members` 是**整体替换**，
+  省略成员会 `422 lane_has_no_members`。
+- `hard_auth` / `hard_quota` 类失败的成员冷却 = **2 × `member_cooldown_seconds`**。
+- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `source:"unconfigured"` + `routable:false`（**不是 404**）；
+  推荐成员在 `candidates[]`，`members[]` 永远是真实成员链。
+- 日志 `attempts[].status` 取值含 **`cooldown`**（成员正在冷却、本轮未打上游），与 `failed`（上游失败）要区分。
 - `sync-models` 上游返回空清单默认 `409`（需 `?force=1`）；被显式车道引用的模型移除也 `409`。
 - 渠道删除被显式车道引用时 `409`，message 给出车道名。
 - 写操作响应前服务端已回读，但跨请求仍应 `GET` 校验最终状态。
