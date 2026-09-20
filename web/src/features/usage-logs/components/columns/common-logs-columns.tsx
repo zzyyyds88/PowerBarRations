@@ -82,6 +82,7 @@ export function useCommonLogsColumns(
         return value.includes(String(row.original.type))
       },
       enableHiding: false,
+      meta: { contentSized: true },
       size: 180,
     },
   ]
@@ -198,6 +199,7 @@ export function useCommonLogsColumns(
           </TooltipProvider>
         )
       },
+      meta: { contentSized: true },
     })
   }
 
@@ -239,6 +241,7 @@ export function useCommonLogsColumns(
           </div>
         )
       },
+      meta: { contentSized: true },
       size: 160,
     },
     {
@@ -259,7 +262,7 @@ export function useCommonLogsColumns(
           </div>
         )
       },
-      meta: { mobileTitle: true },
+      meta: { mobileTitle: true, contentSized: true },
     },
     {
       accessorKey: 'is_stream',
@@ -283,7 +286,7 @@ export function useCommonLogsColumns(
           />
         )
       },
-      meta: { label: t('Stream') },
+      meta: { label: t('Stream'), contentSized: true },
     },
     {
       accessorKey: 'prompt_tokens',
@@ -331,6 +334,7 @@ export function useCommonLogsColumns(
           </div>
         )
       },
+      meta: { contentSized: true },
     },
     {
       accessorKey: 'quota',
@@ -352,6 +356,7 @@ export function useCommonLogsColumns(
           </span>
         )
       },
+      meta: { contentSized: true },
     },
     {
       accessorKey: 'use_time',
@@ -372,6 +377,7 @@ export function useCommonLogsColumns(
           />
         )
       },
+      meta: { contentSized: true },
     },
     {
       id: 'content',
@@ -404,6 +410,7 @@ export function useCommonLogsColumns(
           </button>
         )
       },
+      meta: { contentSized: true },
       size: 48,
     }
   )
@@ -427,6 +434,7 @@ export function useCommonLogsColumns(
           if (!lane) return null
           return <span className='font-mono text-xs'>{lane}</span>
         },
+        meta: { contentSized: true },
         size: 120,
       })
     }

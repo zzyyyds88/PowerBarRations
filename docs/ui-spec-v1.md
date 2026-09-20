@@ -227,7 +227,7 @@
 ### 6.6 请求日志 `/logs`、`/logs/$id`
 
 - 保留上游 `usage-logs` 外壳：**单一日志分节**（数据源 `GET /api/logs`，`request_logs` 一张表——模型面请求、渠道测试、错误统一写这张，基座 `logs` 停写）。Drawing 分节随 Midjourney 全链路移除；**任务日志不在此页**，落在独立的「系统任务」页（§6.10）。
-- **统一日志视图采用上游的详细列形态**（New API `common-logs-columns` + PBR 车道列）：时间、类型（消耗/错误徽章）、渠道、令牌、模型、车道/成员、流、提示/补全 token、花费、耗时（用时+首字）、详情。PBR 单用户不设"用户"列。列布局紧凑（小字号、窄 padding）。
+- **统一日志视图采用上游的详细列形态**（New API `common-logs-columns` + PBR 车道列）：时间、类型（消耗/错误徽章）、渠道、令牌、模型、车道/成员、流、提示/补全 token、花费、耗时（用时+首字）、详情。PBR 单用户不设"用户"列。列布局紧凑（小字号、窄 padding）。**全部列经 `meta.contentSized` 贴内容宽**（colgroup `1%` + `tableLayout: auto` 均匀分摊剩余空间），消除按比例分宽造成的列间大段空白。
 - **移动端卡片视图**：≤1024px 切卡片（`UsageLogsMobileList`），不再显示横向滚动的宽表格（10 列合计约 1408px，在 ≤1024px 视口均溢出）。`common` 分支用 `CommonLogMobileCard`；**`pbr` 分支用 `PBRLogMobileCard`**（模型 `ModelBadge`、时间+类型徽章、流 `StreamTpsCell`+耗时 `TimingMetricsCell`、车道、渠道、令牌、Tokens、费用 `estimated_cost`，点击就地展开 `PBRLogDetailsContent` 逐尝试时间线，不开弹窗）。卡片断点经 `DataTablePage.mobileBreakpoint` 提升至 1024px（覆盖手机+平板竖/横屏），**仅作用于本页**，不改变其他列表页 640px 的默认断点；`UsageLogsTable` 内的翻页/紧凑分页 `useMediaQuery` 同步用 1024px。
 - **前端映射层**：PBR 日志字段与上游 `UsageLog` 形状不同（`key_name`≠`token_name`、`request_model`≠`model_name`、`total_ms`(毫秒)≠`use_time`(秒)、`estimated_cost`(元)≠`quota`、cache token/首字耗时/attempts 在顶层而非 `other` JSON）。前端加 `mapPBRLogToUsageLog`，把 `PBRRequestLog` 塑成 `UsageLog` 形状并构造 `other` JSON（`cache_tokens`/`frt`/`admin_info.use_channel` 重试链），PBR 独有字段（车道/route_source/upstream_model/error_summary/http_status/total_ms/estimated_cost/attempts）收进 `other.pbr` 扩展块，供花费列与详情弹窗读取。
 - **花费列读 `estimated_cost`（元）**，不读上游的 `quota`/额度换算——PBR 无额度语义（design-v1 §1.3）。耗时列 `use_time` 由 `total_ms/1000` 派生，首字耗时从 `other.frt`（=`ttft_ms`）读。
