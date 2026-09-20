@@ -220,12 +220,12 @@ export function PBRLogsFilterBar<TData>(props: PBRLogsFilterBarProps<TData>) {
         <>
           {dateRangeFilter}
           {laneFilter}
-          {modelFilter}
           {successFilter}
         </>
       }
       advancedFilters={
         <>
+          {modelFilter}
           {channelFilter}
           {keyFilter}
         </>
@@ -234,8 +234,8 @@ export function PBRLogsFilterBar<TData>(props: PBRLogsFilterBarProps<TData>) {
       mobileFilters={
         <>
           {laneFilter}
-          {modelFilter}
           {successFilter}
+          {modelFilter}
           {channelFilter}
           {keyFilter}
         </>
@@ -243,14 +243,16 @@ export function PBRLogsFilterBar<TData>(props: PBRLogsFilterBarProps<TData>) {
       mobileFilterCount={
         [
           draft.lane,
-          draft.model,
           draft.success !== 'all',
+          draft.model,
           draft.channel,
           draft.key,
         ].filter(Boolean).length
       }
-      hasAdvancedActiveFilters={!!draft.channel || !!draft.key}
-      advancedFilterCount={[draft.channel, draft.key].filter(Boolean).length}
+      hasAdvancedActiveFilters={!!draft.model || !!draft.channel || !!draft.key}
+      advancedFilterCount={
+        [draft.model, draft.channel, draft.key].filter(Boolean).length
+      }
       hasActiveFilters={hasActiveFilters}
       onSearch={() => applyWith()}
       searchLoading={fetchingLogs > 0}
