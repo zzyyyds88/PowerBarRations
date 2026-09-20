@@ -44,3 +44,6 @@ verify/**/shots/
 __pycache__/
 *.pyc
 *.pyo
+
+# zcode CLI session artifacts
+.zcode/
