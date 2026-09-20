@@ -1,7 +1,10 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/internal/api"
 	"github.com/zzyyyds88/PowerBarRations/internal/apiresp"
 	"github.com/zzyyyds88/PowerBarRations/middleware"
 
@@ -31,7 +34,17 @@ func SetApiRouter(router *gin.Engine) {
 	// 全管理面统一响应信封（design-v1 §5.1）：基座遗留的 {success,message,data}
 	// 由 apiresp 按逐路由策略机械改写为裸资源 + §3 错误包络 + 真实状态码。
 	apiRouter.Use(apiresp.Middleware())
+	// dry-run 安全网（api-spec §2.4）：控制台内部面同样适用——写方法 + ?dry_run=true
+	// 且未声明 preview ⇒ 400 且不执行。内部面当前一律声明 reject（无预览实现），
+	// 调用方要用预览能力请走稳定面（api-spec §5）。
+	apiRouter.Use(api.DryRunMiddleware())
 	{
+		// —— dry-run 声明：控制台内部写路由一律 reject（无预览实现） ——
+		// 稳定面已有等价且支持 preview 的端点（api-spec §5.3.1–§5.3.4）。
+		for _, def := range consoleInternalWriteRoutes {
+			api.RegisterDryRun(def.method, def.path, api.DryRunReject, def.hint)
+		}
+
 		apiRouter.GET("/status", controller.GetStatus)
 		// 控制台内部接口统一收进 /api/console/*，把 /api/* 让给 PBR 管理面（api-spec §2）。
 		apiRouter.GET("/console/models", middleware.PBRAuth(), controller.DashboardListModels)
@@ -107,4 +120,57 @@ func SetApiRouter(router *gin.Engine) {
 		}
 
 	}
+}
+
+// consoleInternalWriteRoute 描述一条控制台内部写路由的 dry-run 声明。
+type consoleInternalWriteRoute struct {
+	method string
+	path   string
+	hint   string
+}
+
+// consoleInternalWriteRoutes 是控制台内部面的**全部**写路由。
+//
+// 它们一律声明 reject：内部面没有实现预览，而"有副作用却不拒绝 ?dry_run=true"
+// 就是静默写入。调用方要预览能力请用稳定面（api-spec §5.3.1–§5.3.4）。
+//
+// 新增内部写路由时必须在此登记，否则 TestEveryManagementWriteRouteDeclaresDryRun 失败。
+var consoleInternalWriteRoutes = []consoleInternalWriteRoute{
+	{http.MethodPut, "/api/option/", "改用稳定面 PUT /api/system/options"},
+	{http.MethodDelete, "/api/performance/disk_cache", "稳定面无等价预览；直接执行即可"},
+	{http.MethodPost, "/api/performance/reset_stats", "运行态统计重置；直接执行即可"},
+	{http.MethodPost, "/api/performance/gc", "运行态 GC；直接执行即可"},
+	{http.MethodDelete, "/api/performance/logs", "改用稳定面 DELETE /api/system/log-files?dry_run=true"},
+	{http.MethodPost, "/api/channel/", "改用稳定面 PUT /api/channels/{name}?dry_run=true"},
+	{http.MethodPut, "/api/channel/", "改用稳定面 PUT /api/channels/{name}?dry_run=true"},
+	{http.MethodPost, "/api/channel/status/batch", "改用稳定面 POST /api/channels/batch/status?dry_run=true"},
+	{http.MethodPost, "/api/channel/:id/status", "改用稳定面 POST /api/channels/batch/status?dry_run=true"},
+	{http.MethodDelete, "/api/channel/disabled", "改用稳定面 DELETE /api/channels/disabled?dry_run=true"},
+	{http.MethodPost, "/api/channel/tag/disabled", "改用稳定面 POST /api/channels/by-tag/status?dry_run=true"},
+	{http.MethodPost, "/api/channel/tag/enabled", "改用稳定面 POST /api/channels/by-tag/status?dry_run=true"},
+	{http.MethodPut, "/api/channel/tag", "改用稳定面 PUT /api/channels/by-tag?dry_run=true"},
+	{http.MethodDelete, "/api/channel/:id", "改用稳定面 DELETE /api/channels/{name}?dry_run=true"},
+	{http.MethodPost, "/api/channel/batch", "改用稳定面 DELETE /api/channels/{name}"},
+	{http.MethodPost, "/api/channel/:id/key", "读取密钥明文，无副作用；去掉 ?dry_run=true 即可"},
+	{http.MethodPost, "/api/channel/:id/codex/refresh", "上游凭据动作；直接执行即可"},
+	{http.MethodPost, "/api/channel/:id/codex/usage/reset", "上游用量动作；直接执行即可"},
+	{http.MethodPost, "/api/channel/ollama/pull", "上游动作（会真的拉模型）；直接执行即可"},
+	{http.MethodPost, "/api/channel/ollama/pull/stream", "上游动作（SSE）；直接执行即可"},
+	{http.MethodDelete, "/api/channel/ollama/delete", "上游动作；直接执行即可"},
+	{http.MethodPost, "/api/channel/batch/tag", "改用稳定面 POST /api/channels/batch/tag?dry_run=true"},
+	{http.MethodPost, "/api/channel/copy/:id", "改用稳定面 POST /api/channels/batch/copy?dry_run=true"},
+	{http.MethodPost, "/api/channel/multi_key/manage", "改用稳定面 POST /api/channels/{name}/multi-keys?dry_run=true"},
+	{http.MethodPost, "/api/channel/upstream_updates/apply", "改用稳定面 POST /api/channels/{name}/upstream-updates/apply?dry_run=true"},
+	{http.MethodPost, "/api/channel/upstream_updates/apply_all", "改用稳定面 POST /api/channels/upstream-updates/apply-all?dry_run=true"},
+	{http.MethodPost, "/api/channel/upstream_updates/detect", "探测任务；直接执行即可"},
+	{http.MethodPost, "/api/channel/upstream_updates/detect_all", "探测任务；直接执行即可"},
+	{http.MethodPost, "/api/system-task/log-cleanup", "改用稳定面 POST /api/system-tasks/log-cleanup?dry_run=true"},
+	{http.MethodPost, "/api/prefill_group/", "改用稳定面 POST /api/prefill-groups?dry_run=true"},
+	{http.MethodPut, "/api/prefill_group/", "改用稳定面 PUT /api/prefill-groups/{id}?dry_run=true"},
+	{http.MethodDelete, "/api/prefill_group/:id", "改用稳定面 DELETE /api/prefill-groups/{id}?dry_run=true"},
+	{http.MethodPost, "/api/console/models/sync_upstream", "改用稳定面 POST /api/model-catalog/sync-upstream?dry_run=true"},
+	{http.MethodPost, "/api/console/models/delete", "改用稳定面 POST /api/model-catalog/batch-delete?dry_run=true"},
+	{http.MethodPost, "/api/console/models/", "模型目录写入；直接执行即可"},
+	{http.MethodPut, "/api/console/models/", "模型目录写入；直接执行即可"},
+	{http.MethodDelete, "/api/console/models/:id", "改用稳定面 DELETE /api/model-metadata/{model}?dry_run=true"},
 }

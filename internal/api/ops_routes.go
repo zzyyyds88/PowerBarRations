@@ -29,7 +29,7 @@ type OpsRoute struct {
 	Policy  apiresp.Policy
 	// DryRun 声明该端点对 ?dry_run=true 的处理（api-spec §2.4/§5.9）。
 	DryRun DryRunMode
-	// DryRunReason 说明 reject/irrelevant 的理由，或 preview 的替代预览入口。
+	// DryRunReason 说明 reject 的替代做法/理由（preview 时是预览体要点）。
 	DryRunReason string
 }
 
@@ -156,7 +156,7 @@ func opsRoutes() []OpsRoute {
 		{
 			// 会真实访问上游：剩余失败按上游错误 502。
 			Method: http.MethodPost, Path: "/channels/batch/fetch-models", Handler: FetchModelsByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "只读拉取上游模型清单，不落库",
+			DryRun: DryRunReject, DryRunReason: "只读拉取上游模型清单，不落库",
 			Policy: opsPolicyUpstreamWith(modelsSuccess),
 		},
 		{
@@ -180,7 +180,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/upstream-updates/detect-all", Handler: DetectAllUpstream,
-			DryRun: DryRunIrrelevant, DryRunReason: "触发探测任务，不改配置；应用变更走 apply",
+			DryRun: DryRunReject, DryRunReason: "触发探测任务，不改配置；应用变更走 apply",
 			Policy: opsPolicy(),
 		},
 		{
@@ -200,7 +200,7 @@ func opsRoutes() []OpsRoute {
 		{
 			// 会真实访问上游：剩余失败按上游错误 502。
 			Method: http.MethodPost, Path: "/channels/:name/upstream-updates/detect", Handler: DetectUpstreamByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "触发探测，不改配置",
+			DryRun: DryRunReject, DryRunReason: "触发探测，不改配置",
 			Policy: opsPolicyUpstream(),
 		},
 		{
@@ -210,7 +210,7 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/codex/refresh", Handler: CodexRefreshByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "上游凭据动作，非配置",
+			DryRun: DryRunReject, DryRunReason: "上游凭据动作，非配置",
 			Policy: opsPolicyUpstream(),
 		},
 		{
@@ -223,25 +223,25 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/channels/:name/codex/reset", Handler: CodexResetUsageByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "上游用量动作，非配置",
+			DryRun: DryRunReject, DryRunReason: "上游用量动作，非配置",
 			Policy: opsPolicyCodex(),
 		},
 		{
 			// 上游失败（基座给 200/500）→ 502 upstream_error（api-spec §5.3.1）。
 			Method: http.MethodPost, Path: "/channels/:name/ollama/pull", Handler: OllamaPullByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "上游动作，会真的拉取模型",
+			DryRun: DryRunReject, DryRunReason: "上游动作，会真的拉取模型",
 			Policy: opsPolicyUpstreamWith(ollamaPullSuccess),
 		},
 		{
 			// SSE 流式端点：不套信封（design-v1 §5.1）。进入流之前的参数/渠道错误
 			// 由适配层直接写成 §3 错误包络。
 			Method: http.MethodPost, Path: "/channels/:name/ollama/pull/stream", Handler: OllamaPullStreamByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "上游动作（SSE 进度）",
+			DryRun: DryRunReject, DryRunReason: "上游动作（SSE 进度）",
 			Policy: apiresp.Policy{Passthrough: true},
 		},
 		{
 			Method: http.MethodDelete, Path: "/channels/:name/ollama/models", Handler: OllamaDeleteByName,
-			DryRun: DryRunIrrelevant, DryRunReason: "上游动作",
+			DryRun: DryRunReject, DryRunReason: "上游动作",
 			Policy: opsPolicyUpstreamWith(ollamaDeleteSuccess),
 		},
 		{
@@ -282,17 +282,17 @@ func opsRoutes() []OpsRoute {
 		},
 		{
 			Method: http.MethodPost, Path: "/system/performance/reset", Handler: ResetPerformanceStats,
-			DryRun: DryRunIrrelevant, DryRunReason: "运行态统计，非配置",
+			DryRun: DryRunReject, DryRunReason: "运行态统计，非配置",
 			Policy: opsPolicyWith(flagSuccess("reset")),
 		},
 		{
 			Method: http.MethodPost, Path: "/system/performance/gc", Handler: ForceGarbageCollection,
-			DryRun: DryRunIrrelevant, DryRunReason: "运行态动作，非配置",
+			DryRun: DryRunReject, DryRunReason: "运行态动作，非配置",
 			Policy: opsPolicyWith(flagSuccess("collected")),
 		},
 		{
 			Method: http.MethodDelete, Path: "/system/performance/disk-cache", Handler: ClearDiskCacheHandler,
-			DryRun: DryRunIrrelevant, DryRunReason: "运行态缓存，非配置",
+			DryRun: DryRunReject, DryRunReason: "运行态缓存，非配置",
 			Policy: opsPolicyWith(flagSuccess("cleared")),
 		},
 		{
@@ -358,12 +358,9 @@ func opsRoutes() []OpsRoute {
 func RegisterOpsRoutes(group *gin.RouterGroup) {
 	for _, route := range opsRoutes() {
 		apiresp.Register(route.Method, route.Path, route.Policy)
-		handlers := []gin.HandlerFunc{}
-		if route.DryRun == DryRunReject {
-			handlers = append(handlers, dryRunRejectMiddleware(route.DryRunReason))
-		}
-		handlers = append(handlers, route.Handler)
-		group.Handle(route.Method, route.Path, handlers...)
+		// 声明进 dry-run 登记表；安全网由整个管理面的 DryRunMiddleware 统一执行。
+		RegisterDryRun(route.Method, route.Path, route.DryRun, route.DryRunReason)
+		group.Handle(route.Method, route.Path, route.Handler)
 	}
 }
 
