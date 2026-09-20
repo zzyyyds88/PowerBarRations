@@ -119,6 +119,7 @@ PBR 把路由运行态的故障事件（熔断/冷却/恢复）异步 POST 到�
 `event.type`：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、
 `circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。
 `ts` 毫秒时间戳，`member` = `channelId:upstreamModel`。
+`member` 为空（车道级事件 `reset`）时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
 
 ### 5.3 验签（接收端必做）
 

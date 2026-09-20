@@ -482,7 +482,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 }
 ```
 
-- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`。
+- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`；`member` 为空时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
 
 投递记录响应（cursor 分页，按 ts 倒序）：
 
