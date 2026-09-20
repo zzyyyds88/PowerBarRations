@@ -47,6 +47,7 @@ import {
   renderAuditContent,
 } from '../../lib/format'
 import { getLogTypeConfig, isTimingLogType } from '../../lib/utils'
+import { PBRAttemptTimeline } from '../../pbr/components/pbr-attempt-timeline'
 import type { LogOtherData } from '../../types'
 import { DetailRow, DetailSection } from './log-detail-layout'
 
@@ -356,6 +357,68 @@ export function DetailsDialog(props: DetailsDialogProps) {
             />
           )}
         </div>
+
+        {/* PBR 请求详情：车道/route_source/upstream_model/http_status/耗时/折算成本 + attempts 链 */}
+        {other?.pbr && (
+          <>
+            <DetailSection label={t('Request Details')}>
+              {other.pbr.lane && (
+                <DetailRow label={t('Lane')} value={other.pbr.lane} mono />
+              )}
+              {other.pbr.route_source && (
+                <DetailRow
+                  label={t('Route Source')}
+                  value={other.pbr.route_source}
+                  mono
+                />
+              )}
+              {other.pbr.upstream_model && (
+                <DetailRow
+                  label={t('Upstream Model')}
+                  value={other.pbr.upstream_model}
+                  mono
+                />
+              )}
+              {other.pbr.inbound_format && (
+                <DetailRow
+                  label={t('Inbound Format')}
+                  value={other.pbr.inbound_format}
+                  mono
+                />
+              )}
+              <DetailRow
+                label={t('HTTP Status')}
+                value={String(other.pbr.http_status)}
+                mono
+              />
+              {other.pbr.total_ms > 0 && (
+                <DetailRow
+                  label={t('Total Time')}
+                  value={`${other.pbr.total_ms} ms`}
+                  mono
+                />
+              )}
+              {other.pbr.estimated_cost > 0 && (
+                <DetailRow
+                  label={t('Estimated Cost')}
+                  value={other.pbr.estimated_cost.toFixed(4)}
+                  mono
+                />
+              )}
+              {other.pbr.error_summary && (
+                <DetailRow
+                  label={t('Error Summary')}
+                  value={other.pbr.error_summary}
+                />
+              )}
+            </DetailSection>
+            {other.pbr.attempts.length > 0 && (
+              <DetailSection label={t('Attempt Chain')}>
+                <PBRAttemptTimeline attempts={other.pbr.attempts} />
+              </DetailSection>
+            )}
+          </>
+        )}
 
         {/* Request conversion (admin only, not for refund) */}
         {showConversion && (
