@@ -26,8 +26,10 @@ export interface PBRRequestLogListItem {
   request_model: string
   route_source: string
   channel: string
+  channel_id: number
   upstream_model: string
   key_name: string
+  token_id: number
   /** 统一日志表（design-v1 §8）：管理动作（渠道测试等）记录管理员，模型面请求为空。 */
   user_id: number
   username: string
@@ -106,4 +108,46 @@ export async function getPBRRequestLog(
 ): Promise<PBRRequestLogListItem> {
   const res = await api.get<PBRRequestLogListItem>(`/api/v1/logs/${id}`)
   return res.data
+}
+
+/** GET /api/logs 偏移分页（api-spec §5.5）：响应含 total/page/page_size，供控制台跳页/总数。 */
+export interface PBRPagedLogsResponse {
+  items: PBRRequestLogListItem[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export async function listPBRRequestLogsPaged(params: {
+  page: number
+  page_size: number
+  lane?: string
+  channel?: string
+  key?: string
+  model?: string
+  success?: boolean
+  since?: number
+  until?: number
+}): Promise<PBRPagedLogsResponse> {
+  const res = await api.get<PBRPagedLogsResponse>('/api/v1/logs', {
+    params: {
+      page: params.page,
+      page_size: params.page_size,
+      ...(params.lane ? { lane: params.lane } : {}),
+      ...(params.channel ? { channel: params.channel } : {}),
+      ...(params.key ? { key: params.key } : {}),
+      ...(params.model ? { model: params.model } : {}),
+      ...(params.success === undefined
+        ? {}
+        : { success: params.success ? 'true' : 'false' }),
+      ...(params.since ? { since: params.since } : {}),
+      ...(params.until ? { until: params.until } : {}),
+    },
+  })
+  return {
+    items: res.data.items ?? [],
+    total: res.data.total ?? 0,
+    page: res.data.page ?? params.page,
+    page_size: res.data.page_size ?? params.page_size,
+  }
 }

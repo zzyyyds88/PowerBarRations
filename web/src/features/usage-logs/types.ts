@@ -21,6 +21,7 @@ For commercial licensing, please contact support@quantumnous.com
  */
 import type { UsageLog } from './data/schema'
 import type { RequestRuleTrace } from './lib/billing-expr'
+import type { PBRAttempt } from './pbr/pbr-logs-api'
 
 // ============================================================================
 // Log Category Types
@@ -29,7 +30,7 @@ import type { RequestRuleTrace } from './lib/billing-expr'
 /**
  * Log category for different log types
  */
-export type LogCategory = 'common'
+export type LogCategory = 'common' | 'pbr'
 
 // ============================================================================
 // Filter Types
@@ -222,6 +223,23 @@ export interface LogOtherData {
   subscription_consumed?: number
   subscription_remain?: number
   subscription_total?: number
+  // PBR 日志扩展块：由前端 mapPBRLogToUsageLog 构造，承载 PBR 独有字段
+  // （车道/route_source/upstream_model/error_summary/http_status/total_ms/
+  // estimated_cost/attempts），供 common-logs-columns 花费列与 DetailsDialog 读取。
+  pbr?: {
+    lane: string
+    route_source: string
+    upstream_model: string
+    error_kind: string
+    error_summary: string
+    http_status: number
+    total_ms: number
+    estimated_cost: number
+    attempts: PBRAttempt[]
+    total_attempts: number
+    inbound_format: string
+    success: boolean
+  }
 }
 
 /**
