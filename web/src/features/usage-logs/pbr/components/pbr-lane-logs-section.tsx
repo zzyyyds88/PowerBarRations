@@ -180,7 +180,9 @@ export function PBRLaneLogsSection() {
                 <TableHead>{t('Key')}</TableHead>
                 <TableHead>{t('Result')}</TableHead>
                 <TableHead>{t('Attempts')}</TableHead>
-                <TableHead className='text-right'>{t('Total ms')}</TableHead>
+                <TableHead>{t('Tokens')}</TableHead>
+                <TableHead>{t('Timing')}</TableHead>
+                <TableHead>{t('Details')}</TableHead>
                 <TableHead className='text-right'>
                   {t('Cost (converted)')}
                 </TableHead>
@@ -236,8 +238,30 @@ export function PBRLaneLogsSection() {
                   <TableCell className='font-mono text-[11px] break-all'>
                     {summarizeAttempts(item.attempts)}
                   </TableCell>
-                  <TableCell className='text-right text-xs tabular-nums'>
-                    {item.total_ms}
+                  <TableCell className='font-mono text-[11px] tabular-nums'>
+                    {(item.prompt_tokens || 0).toLocaleString()} /{' '}
+                    {(item.completion_tokens || 0).toLocaleString()}
+                  </TableCell>
+                  <TableCell className='text-[11px] tabular-nums'>
+                    <div className='flex flex-col gap-0.5'>
+                      <span>
+                        {t('Duration')}:{(item.total_ms / 1000).toFixed(1)}s
+                      </span>
+                      {item.ttft_ms > 0 && (
+                        <span className='text-muted-foreground'>
+                          {t('First token')}:{(item.ttft_ms / 1000).toFixed(1)}s
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className='max-w-[240px] text-xs'>
+                    {item.error_summary ? (
+                      <p className='text-destructive break-words'>
+                        {item.error_summary}
+                      </p>
+                    ) : (
+                      <span className='text-muted-foreground'>-</span>
+                    )}
                   </TableCell>
                   <TableCell className='text-right text-xs tabular-nums'>
                     {item.estimated_cost.toFixed(4)}
