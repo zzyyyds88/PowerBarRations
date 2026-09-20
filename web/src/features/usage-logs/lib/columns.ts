@@ -34,12 +34,7 @@ export function useColumnsByCategory(
   isRoot: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ColumnDef<any>[] {
-  const commonColumns = useCommonLogsColumns(isAdmin, isRoot)
-
-  switch (logCategory) {
-    case 'common':
-      return commonColumns
-    default:
-      return commonColumns
-  }
+  // PBR 分节用 common-logs-columns + 车道列（ui-spec §6.6）。
+  const showLane = logCategory === 'pbr'
+  return useCommonLogsColumns(isAdmin, isRoot, showLane)
 }

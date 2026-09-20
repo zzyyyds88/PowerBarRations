@@ -40,6 +40,7 @@ import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
+import { PBRLogsFilterBar } from './pbr-logs-filter-bar'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 import { useLogsViewScope, type LogsViewAccess } from './usage-logs-provider'
 
@@ -96,31 +97,64 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     navigate: route.useNavigate(),
     pagination: { defaultPage: 1, defaultPageSize: isMobile ? 20 : 100 },
     globalFilter: { enabled: false },
-    columnFilters: [
-      {
-        columnId: 'created_at',
-        searchKey: 'type',
-        type: 'array' as const,
-        deserialize: deserializeLogTypeFilter,
-      },
-      { columnId: 'model_name', searchKey: 'model', type: 'string' as const },
-      { columnId: 'token_name', searchKey: 'token', type: 'string' as const },
-      { columnId: 'group', searchKey: 'group', type: 'string' as const },
-      ...(isAdmin
+    columnFilters:
+      logCategory === 'pbr'
         ? [
+            {
+              columnId: 'model_name',
+              searchKey: 'model',
+              type: 'string' as const,
+            },
+            {
+              columnId: 'token_name',
+              searchKey: 'key',
+              type: 'string' as const,
+            },
+            { columnId: 'lane', searchKey: 'lane', type: 'string' as const },
             {
               columnId: 'channel',
               searchKey: 'channel',
               type: 'string' as const,
             },
             {
-              columnId: 'username',
-              searchKey: 'username',
+              columnId: 'success',
+              searchKey: 'success',
               type: 'string' as const,
             },
           ]
-        : []),
-    ],
+        : [
+            {
+              columnId: 'created_at',
+              searchKey: 'type',
+              type: 'array' as const,
+              deserialize: deserializeLogTypeFilter,
+            },
+            {
+              columnId: 'model_name',
+              searchKey: 'model',
+              type: 'string' as const,
+            },
+            {
+              columnId: 'token_name',
+              searchKey: 'token',
+              type: 'string' as const,
+            },
+            { columnId: 'group', searchKey: 'group', type: 'string' as const },
+            ...(isAdmin
+              ? [
+                  {
+                    columnId: 'channel',
+                    searchKey: 'channel',
+                    type: 'string' as const,
+                  },
+                  {
+                    columnId: 'username',
+                    searchKey: 'username',
+                    type: 'string' as const,
+                  },
+                ]
+              : []),
+          ],
   })
 
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
@@ -180,7 +214,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     ensurePageInRange,
   })
 
-  const isCommon = logCategory === 'common'
+  const isCommon = logCategory === 'common' || logCategory === 'pbr'
 
   return (
     <DataTablePage
@@ -208,7 +242,13 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           logCategory={logCategory}
         />
       }
-      toolbar={<CommonLogsFilterBar table={table} />}
+      toolbar={
+        logCategory === 'pbr' ? (
+          <PBRLogsFilterBar table={table} />
+        ) : (
+          <CommonLogsFilterBar table={table} />
+        )
+      }
       renderRow={(row) => {
         const logType = (row.original as Record<string, unknown>).type as
           | number

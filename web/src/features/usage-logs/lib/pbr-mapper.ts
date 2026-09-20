@@ -28,11 +28,11 @@ For commercial licensing, please contact support@quantumnous.com
  * attempts），供花费列与详情弹窗读取。
  */
 import type { UsageLog } from '../data/schema'
-import type { GetLogsResponse } from '../types'
 import type {
   PBRPagedLogsResponse,
   PBRRequestLogListItem,
 } from '../pbr/pbr-logs-api'
+import type { GetLogsResponse } from '../types'
 
 interface PBRLogOther {
   cache_tokens?: number
@@ -62,8 +62,7 @@ interface PBRLogOther {
 
 export function mapPBRLogToUsageLog(log: PBRRequestLogListItem): UsageLog {
   const isMapped = !!(
-    log.upstream_model &&
-    log.upstream_model !== log.request_model
+    log.upstream_model && log.upstream_model !== log.request_model
   )
   const other: PBRLogOther = {
     cache_tokens: log.cache_read_tokens || 0,
@@ -72,9 +71,7 @@ export function mapPBRLogToUsageLog(log: PBRRequestLogListItem): UsageLog {
     is_model_mapped: isMapped,
     upstream_model_name: log.upstream_model || undefined,
     admin_info: {
-      use_channel: (log.attempts ?? [])
-        .map((a) => a.member)
-        .filter(Boolean),
+      use_channel: (log.attempts ?? []).map((a) => a.member).filter(Boolean),
     },
     pbr: {
       lane: log.lane,

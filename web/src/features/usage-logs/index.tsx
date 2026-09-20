@@ -33,7 +33,6 @@ import {
   useUsageLogsContext,
 } from './components/usage-logs-provider'
 import { UsageLogsTable } from './components/usage-logs-table'
-import { PBRLaneLogsSection } from './pbr/components/pbr-lane-logs-section'
 import {
   isUsageLogsSectionId,
   USAGE_LOGS_DEFAULT_SECTION,
@@ -140,11 +139,7 @@ function UsageLogsContent() {
               </Tabs>
             )}
             <div className='min-h-0 flex-1'>
-              {activeCategory === 'pbr' ? (
-                <PBRLaneLogsSection />
-              ) : (
-                <UsageLogsTable logCategory={activeCategory} />
-              )}
+              <UsageLogsTable logCategory={activeCategory} />
             </div>
           </div>
         </SectionPageLayout.Content>

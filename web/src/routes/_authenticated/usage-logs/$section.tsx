@@ -47,6 +47,10 @@ const usageLogsSearchSchema = z.object({
   upstreamRequestId: z.string().optional().catch(''),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
+  // PBR 维度（ui-spec §6.6）：车道/令牌/成功与否。
+  lane: z.string().optional().catch(''),
+  key: z.string().optional().catch(''),
+  success: z.enum(['true', 'false']).optional().catch(undefined),
 })
 
 export const Route = createFileRoute('/_authenticated/usage-logs/$section')({
