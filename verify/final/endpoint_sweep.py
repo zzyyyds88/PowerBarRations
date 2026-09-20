@@ -188,7 +188,51 @@ def main() -> int:
             results.append({"method": "delete", "path": path, "status": 0,
                             "expected_missing": False, "note": "DELETE 未纳入实跑（覆盖缺口）"})
 
-    print(json.dumps({"results": results, "delete_paths": sorted(deferred_deletes)}, ensure_ascii=False))
+    # —— dry-run 无副作用探针（api-spec §2.4/§5.9）——
+    # 对每个破坏性端点带 ?dry_run=true 调一次，再回读：状态必须不变。
+    # 这是"禁止静默写入"的实跑保证，覆盖历史上 15 个会静默落库的端点。
+    dry_before = {
+        "channels": status_of("GET", base + "/api/v1/channels"),
+        "lanes": status_of("GET", base + "/api/v1/lanes"),
+        "keys": status_of("GET", base + "/api/v1/keys"),
+        "prefill": status_of("GET", base + "/api/v1/prefill-groups"),
+        "meta": status_of("GET", base + "/api/v1/model-metadata"),
+    }
+    dry_probes = [
+        ("POST", "/api/v1/channels/batch/status?dry_run=true",
+         {"channels": ["sweep-probe"], "status": 2}),
+        ("POST", "/api/v1/channels/batch/tag?dry_run=true",
+         {"channels": ["sweep-probe"], "tag": "sweep-dry"}),
+        ("POST", "/api/v1/channels/batch/copy?dry_run=true",
+         {"channel": "sweep-probe", "suffix": "-dry"}),
+        ("PUT", "/api/v1/channels/by-tag?dry_run=true", {"tag": "sweep-dry", "models": "x"}),
+        ("POST", "/api/v1/channels/by-tag/status?dry_run=true", {"tag": "sweep-dry", "status": 2}),
+        ("DELETE", "/api/v1/channels/disabled?dry_run=true", None),
+        ("POST", "/api/v1/prefill-groups?dry_run=true",
+         {"name": "sweep-dry-pg", "type": "model", "items": []}),
+        ("POST", "/api/v1/model-catalog/batch-delete?dry_run=true",
+         {"models": ["sweep-dry-meta"]}),
+        ("POST", "/api/v1/system-tasks/log-cleanup?dry_run=true&target_timestamp=1", None),
+        ("PUT", "/api/v1/system/options/all?dry_run=true",
+         {"key": "log_retention_days", "value": 99}),
+    ]
+    for method, url, body in dry_probes:
+        status_of(method, base + url, body)
+    dry_after = {
+        "channels": status_of("GET", base + "/api/v1/channels"),
+        "lanes": status_of("GET", base + "/api/v1/lanes"),
+        "keys": status_of("GET", base + "/api/v1/keys"),
+        "prefill": status_of("GET", base + "/api/v1/prefill-groups"),
+        "meta": status_of("GET", base + "/api/v1/model-metadata"),
+    }
+    dry_ok = dry_before == dry_after
+    results.append({"method": "dry-run", "path": "/__dry_run_no_side_effects",
+                    "status": 200 if dry_ok else 500,
+                    "expected_missing": False,
+                    "note": "全部 dry-run 探针无副作用" if dry_ok else f"状态被改变：{dry_before} -> {dry_after}"})
+
+    print(json.dumps({"results": results, "delete_paths": sorted(deferred_deletes),
+                      "dry_run_clean": dry_ok}, ensure_ascii=False))
     return 0
 
 

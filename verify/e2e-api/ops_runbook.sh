@@ -189,6 +189,22 @@ echo "=== 运维 13：审计（上述写操作均有记录）==="
 AUDIT=$(curl -s "${A[@]}" "$BASE/api/v1/audit?limit=50")
 assert_json "审计含渠道与车道变更" "$AUDIT" "any('channel' in json.dumps(i).lower() for i in d['items']) and any('lane' in json.dumps(i).lower() for i in d['items'])"
 
+
+echo
+echo "=== 运维 14：dry-run 不落库（api-spec §2.4/§5.9）==="
+# 对破坏性端点带 ?dry_run=true 调一次，再回读：状态必须与调用前一致。
+curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["ops-dry-model"],"enabled":true}' "$BASE/api/v1/channels/ops-dry" > /dev/null
+DRY_BEFORE=$(curl -s "${A[@]}" "$BASE/api/v1/channels/ops-dry")
+DRY_RESP=$(curl -s "${A[@]}" -X POST "$BASE/api/v1/channels/batch/status?dry_run=true" -d '{"channels":["ops-dry"],"status":2}')
+DRY_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/channels/ops-dry")
+assert_json "dry-run 响应含 dry_run:true 与 diff" "$DRY_RESP" "d['dry_run'] is True and 'diff' in d"
+assert_json "dry-run 后渠道状态未变（禁止静默写入）" "$DRY_AFTER" "d['enabled'] is True"
+
+# 删除全部已停用渠道也必须不落库
+DRY_DEL=$(curl -s "${A[@]}" -X DELETE "$BASE/api/v1/channels/disabled?dry_run=true")
+assert_json "DELETE /channels/disabled?dry_run=true 返回将删清单" "$DRY_DEL" "d['dry_run'] is True"
+curl -s -o /dev/null -w "" "${A[@]}" -X DELETE "$BASE/api/v1/channels/ops-dry"
+
 echo
 echo "=== 结果：PASS=$PASS FAIL=$FAIL ==="
 if [[ $FAIL -eq 0 ]]; then echo "PASS: L2 真实 API 运维全部通过"; else

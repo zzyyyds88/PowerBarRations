@@ -70,8 +70,14 @@ version: 2.0.0
   也表示"**该路由键还没配车道**"；本机资源过载用 **529**（非权威码），两者不要混。
 6. **不猜端点**：完整机器可读契约看 `GET /api/openapi.json`（免鉴权），能力枚举看 `GET /api/capabilities`。
 7. **管理密钥不落日志**；不要把口令写进命令历史（用变量或 env）。
-8. **`?dry_run=true`**：配置类 PUT/POST/DELETE 支持，返回将发生的 diff 而不落库。
-   **例外（不支持）**：`POST /channels/{name}/test`、`POST /lanes/{name}/probe`、`POST /auth/*`。
+8. **`?dry_run=true`（强制声明，禁止静默写入）**：配置类写端点三分类——
+   `preview`（返回 `{dry_run:true,valid:true,diff:{...}}`，**绝不落库**）、
+   `reject`（**400 `dry_run_not_supported`** 且不执行）、
+   `irrelevant`（非配置类：只读/运行态/上游动作/任务触发，参数被忽略）。
+   **批量/破坏性操作先 `?dry_run=true` 看 diff**；若某端点返回 `dry_run_not_supported`，说明它不支持预览，
+   必须改用它的专用 preview 端点（如 `GET /api/model-catalog/sync-upstream/preview`）或直接执行。
+   **例外（不适用本约定）**：`POST /channels/{name}/test`、`POST /lanes/{name}/probe`（探活即结论）、
+   `POST /auth/*`、`POST /setup`（无预览语义）。
 9. **分页**：`?limit=`（**默认 50，上限 200**）`&cursor=<opaque>`；`next_cursor` 是不透明串
    （如 `"MTA"`），原样回传即可。**非法 cursor 返回 400 `validation_failed`**，不会静默回退第一页。
    列表默认按 name 升序；**要拿全量请显式给 `?limit=200` 并翻页到 `next_cursor=null`**。
