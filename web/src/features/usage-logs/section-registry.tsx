@@ -23,13 +23,8 @@ import { createSectionRegistry } from '@/features/system-settings/utils/section-
  */
 const USAGE_LOGS_SECTIONS = [
   {
-    id: 'common',
-    titleKey: 'Common Logs',
-    build: () => null, // Content is rendered directly in the page component
-  },
-  {
     id: 'pbr',
-    titleKey: 'PBR Requests',
+    titleKey: 'Usage Logs',
     build: () => null, // Content is rendered directly in the page component
   },
 ] as const
@@ -42,7 +37,7 @@ const usageLogsRegistry = createSectionRegistry<
   []
 >({
   sections: USAGE_LOGS_SECTIONS,
-  defaultSection: 'common',
+  defaultSection: 'pbr',
   basePath: '/usage-logs',
   urlStyle: 'path',
 })

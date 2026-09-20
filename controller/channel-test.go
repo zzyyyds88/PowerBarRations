@@ -477,7 +477,20 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
-	other := service.GenerateTextOtherInfo(c, info, usage.PromptTokensDetails.CachedTokens)
+	// 统一日志表（design-v1 §8）：测试日志写 request_logs，不再写基座 logs。
+	// 测试上下文没有转发收尾，这里显式构造载体并落库；RecordConsumeLog 只
+	// 回填用量与折算到载体。
+	carrier := model.EnsurePBRLogCarrier(c)
+	carrier.RouteSource = "test"
+	carrier.ChannelId = channel.Id
+	carrier.ChannelName = channel.Name
+	carrier.RequestModel = info.OriginModelName
+	carrier.KeyName = "模型测试"
+	carrier.UserId = testUserID
+	carrier.Username = c.GetString("username")
+	carrier.Ip = c.ClientIP()
+	carrier.Success = true
+	carrier.TotalMs = milliseconds
 	model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,
@@ -488,8 +501,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		UseTimeSeconds:   int(consumedTime),
 		IsStream:         info.IsStream,
 		Group:            info.UsingGroup,
-		Other:            other,
 	})
+	model.WritePBRLog(c)
 	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
 	return testResult{
 		context:     c,
@@ -806,17 +819,25 @@ func TestChannel(c *gin.Context) {
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
 	if result.localErr != nil {
-		// 失败测试也落一条日志（LogTypeError）：探活失败是"测试结论"，不落库
-		// 运维就在日志页看不到失败原因；前端类型列显示红色"错误"徽章、详情
-		// 可展开，与 new-api 的失败展示一致（消耗/错误二分）。tokens 全 0，
-		// 不影响用量统计。
-		consumedTime := float64(time.Since(tik).Milliseconds()) / 1000.0
+		// 失败测试也落一条（type=error）：统一写 request_logs（design-v1 §8），
+		// 不再写基座 logs。tokens 全 0，不影响用量统计；错误摘要在 error_summary。
 		logModel := testModel
 		if logModel == "" && len(channel.GetModels()) > 0 {
 			logModel = channel.GetModels()[0]
 		}
-		model.RecordErrorLog(c, testUserID, channel.Id, logModel, "模型测试",
-			"模型测试失败: "+result.localErr.Error(), 0, int(consumedTime), false, "", &model.LogOther{})
+		carrier := model.EnsurePBRLogCarrier(c)
+		carrier.RouteSource = "test"
+		carrier.ChannelId = channel.Id
+		carrier.ChannelName = channel.Name
+		carrier.RequestModel = logModel
+		carrier.KeyName = "模型测试"
+		carrier.UserId = testUserID
+		carrier.Username = c.GetString("username")
+		carrier.Ip = c.ClientIP()
+		carrier.Success = false
+		carrier.ErrorSummary = "模型测试失败: " + result.localErr.Error()
+		carrier.TotalMs = time.Since(tik).Milliseconds()
+		model.WritePBRLogWithUsage(c, nil)
 		common.SysError(fmt.Sprintf(
 			"channel test failed: channel_id=%d name=%s type=%d model=%s endpoint_type=%s err=%v",
 			channel.Id, channel.Name, channel.Type, logModel, endpointType, result.localErr,
