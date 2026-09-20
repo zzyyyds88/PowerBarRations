@@ -16,6 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export function isContentSizedColumn(columnId: string): boolean {
-  return columnId === 'actions'
+/**
+ * Columns that hug their content width (colgroup `1%`) instead of taking a
+ * proportional share of the table width. Opt in per column via
+ * `meta.contentSized`; the row-action column (`actions`) is content-sized
+ * unconditionally.
+ */
+interface ContentSizedCandidate {
+  id: string
+  columnDef?: { meta?: { contentSized?: boolean } }
+}
+
+export function isContentSizedColumn(column: ContentSizedCandidate): boolean {
+  if (column.columnDef?.meta?.contentSized === true) {
+    return true
+  }
+  return column.id === 'actions'
 }
