@@ -33,16 +33,18 @@ function columnIds(isAdmin: boolean): string[] {
 }
 
 describe('common logs column shape', () => {
-  // ui-spec §6.6：保留上游详细列形态（时间/类型/模型/渠道/令牌/token/耗时/详情）。
+  // ui-spec §6.6：保留上游详细列形态（时间/类型/渠道/用户/令牌/模型/流/输入输出/花费/耗时/详情）。
   test('exposes the localized PBR metadata columns', () => {
     const ids = columnIds(true)
     for (const expected of [
       'created_at',
       'channel',
+      'user',
       'token_name',
       'model_name',
       'is_stream',
       'prompt_tokens',
+      'quota',
       'use_time',
       'content',
     ]) {
@@ -50,10 +52,11 @@ describe('common logs column shape', () => {
     }
   })
 
-  // PBR 无计费/额度/分组/用户：这些上游列必须整列消失，而不是渲染空值。
-  test('omits billing, quota, group and user columns', () => {
+  // PBR 无分组/订阅语义：这些上游列仍须整列消失，而不是渲染空值。
+  // 用户与花费列已按 new-api 形态恢复（用户明确要求对齐）。
+  test('omits group and subscription columns', () => {
     const ids = columnIds(true)
-    for (const removed of ['user', 'group', 'quota', 'cost', 'subscription']) {
+    for (const removed of ['group', 'subscription']) {
       expect(ids).not.toContain(removed)
     }
   })
