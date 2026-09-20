@@ -20,12 +20,14 @@ For commercial licensing, please contact support@quantumnous.com
  * Utility functions for usage logs feature
  */
 import { getAllLogs, getUserLogs } from '../api'
+import { listPBRRequestLogsPaged } from '../pbr/pbr-logs-api'
 import {
   LOG_TYPES,
   DISPLAYABLE_LOG_TYPES,
   TIMING_LOG_TYPES,
 } from '../constants'
 import type { GetLogsParams, GetLogsResponse, FetchLogsConfig } from '../types'
+import { mapPBRLogsResponse } from './pbr-mapper'
 
 export { buildQueryParams } from './query-params'
 
@@ -203,6 +205,30 @@ export async function fetchLogsByCategory(
   const { logCategory, isAdmin, page, pageSize, searchParams, columnFilters } =
     config
 
+  // PBR 统一日志表（ui-spec §6.6）：经 mapPBRLogToUsageLog 塑成 UsageLog 形状，
+  // 复用 common-logs-columns。筛选维度是车道/渠道(名)/令牌/模型/成功与否 + 时间范围。
+  if (logCategory === 'pbr') {
+    const timeRange = buildTimeRangeParams(searchParams, false)
+    const success =
+      searchParams.success === 'true'
+        ? true
+        : searchParams.success === 'false'
+          ? false
+          : undefined
+    const res = await listPBRRequestLogsPaged({
+      page,
+      page_size: pageSize,
+      lane: String(searchParams.lane ?? ''),
+      channel: String(searchParams.channel ?? ''),
+      key: String(searchParams.key ?? ''),
+      model: String(searchParams.model ?? ''),
+      success,
+      since: timeRange.start_timestamp,
+      until: timeRange.end_timestamp,
+    })
+    return mapPBRLogsResponse(res)
+  }
+
   if (logCategory === 'common') {
     const params = buildApiParams({
       page,
@@ -214,7 +240,7 @@ export async function fetchLogsByCategory(
     return isAdmin ? await getAllLogs(params) : await getUserLogs(params)
   }
 
-  // PBR 车道日志走 pbr/ 目录的独立数据源；此处仅剩 common。
+  // 兜底（当前 PBR 是唯一分节，common 无数据源）。
   const params = buildApiParams({
     page,
     pageSize,

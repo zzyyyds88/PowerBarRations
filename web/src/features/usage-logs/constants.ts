@@ -139,6 +139,7 @@ export interface StatusMapping {
  */
 export const LOG_CATEGORY_LABELS: Record<LogCategory, string> = {
   common: 'Common',
+  pbr: 'PBR',
 }
 
 // ============================================================================
