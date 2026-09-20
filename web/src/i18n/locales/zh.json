@@ -571,7 +571,7 @@
     "Comma-separated model names, e.g., gpt-4,gpt-3.5-turbo": "逗号分隔的模型名称，例如 gpt-4,gpt-3.5-turbo",
     "Command": "命令",
     "Common": "通用",
-    "Common Logs": "通用日志",
+    "Common Logs": "使用日志",
     "Common ports include 25, 465, and 587": "常用端口包括 25、465 和 587",
     "Compact": "紧凑",
     "Completed": "已完成",
