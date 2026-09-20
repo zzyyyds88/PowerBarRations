@@ -441,6 +441,10 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		return fmt.Errorf("channel cannot be empty")
 	}
 
+	// 渠道名统一 trim：车道成员按渠道名精确匹配（且解析前先 trim），名字里
+	// 存进前后空格会让该渠道对车道成员永远不可达（统一入口，add/update 共用）。
+	channel.Name = strings.TrimSpace(channel.Name)
+
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
@@ -1515,7 +1519,7 @@ func CopyChannel(c *gin.Context) {
 	clone := *origin // shallow copy is sufficient as we will overwrite primitives
 	clone.Id = 0     // let DB auto-generate
 	clone.CreatedTime = common.GetTimestamp()
-	clone.Name = origin.Name + suffix
+	clone.Name = strings.TrimSpace(origin.Name) + suffix
 	clone.TestTime = 0
 	clone.ResponseTime = 0
 	if resetBalance {
