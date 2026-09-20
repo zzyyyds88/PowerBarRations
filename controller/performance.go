@@ -264,6 +264,35 @@ func GetLogFiles(c *gin.Context) {
 	common.ApiSuccess(c, resp)
 }
 
+// LogFileForDryRun 是日志文件预览条目（供 internal/api 的 dry-run 复用）。
+type LogFileForDryRun struct {
+	Name    string
+	Path    string
+	ModTime time.Time
+}
+
+// LogFileInfosForDryRun 返回当前日志目录下的日志文件（降序，最新在前）。
+//
+// 供 internal/api 计算"清理将删除哪些文件"，避免把 os 读取逻辑复制两份。
+func LogFileInfosForDryRun() ([]LogFileForDryRun, error) {
+	files, err := getLogFiles()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]LogFileForDryRun, 0, len(files))
+	for _, f := range files {
+		out = append(out, LogFileForDryRun{
+			Name:    f.Name,
+			Path:    filepath.Join(*common.LogDir, f.Name),
+			ModTime: f.ModTime,
+		})
+	}
+	return out, nil
+}
+
+// ActiveLogPathForDryRun 返回当前活跃日志文件路径（清理时必须跳过它）。
+func ActiveLogPathForDryRun() string { return logger.GetCurrentLogPath() }
+
 // CleanupLogFiles 清理过期日志文件
 func CleanupLogFiles(c *gin.Context) {
 	mode := c.Query("mode")

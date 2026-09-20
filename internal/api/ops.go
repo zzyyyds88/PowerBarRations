@@ -6,9 +6,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/controller"
 	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
@@ -131,6 +134,191 @@ func resolveModelNames(c *gin.Context, names []string) ([]int, bool) {
 	return ids, true
 }
 
+// channelNamesByIDs 把渠道 id 列表解析成名字列表（供 dry-run 预览）。
+// 未知 id 返回 404 channel_not_found（与真实写入同口径）。
+func channelNamesByIDs(ids []int) ([]string, error) {
+	names := make([]string, 0, len(ids))
+	unknown := make([]int, 0)
+	for _, id := range ids {
+		channel, err := model.GetChannelById(id, false)
+		if err != nil || channel == nil {
+			unknown = append(unknown, id)
+			continue
+		}
+		names = append(names, channel.Name)
+	}
+	if len(unknown) > 0 {
+		return nil, &apiError{
+			status:  http.StatusNotFound,
+			code:    apierr.CodeChannelNotFound,
+			message: "unknown channel id(s): " + intsToStrings(unknown),
+			hint:    "GET /api/channels",
+		}
+	}
+	return names, nil
+}
+
+// intsToStrings 把 int 列表格式化成逗号分隔串（仅用于错误 message）。
+func intsToStrings(ids []int) string {
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, strconv.Itoa(id))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// previewUpstreamApply 计算"应用上游变更"将新增/移除的模型（不落库）。
+//
+// 与 controller.applyChannelUpstreamModelUpdates 同口径：把请求里的
+// add/remove 与渠道暂存的 last-detected/last-removed 求交，再对"将移除的模型"
+// 跑车道引用守卫。
+func previewUpstreamApply(channel *model.Channel, payload map[string]any) (add, remove []string, blocked map[string][]string, err error) {
+	settings := channel.GetOtherSettings()
+	pendingAdd := settings.UpstreamModelUpdateLastDetectedModels
+	pendingRemove := settings.UpstreamModelUpdateLastRemovedModels
+	reqAdd := intersectStrings(stringSliceOf(payload["add_models"]), pendingAdd)
+	reqRemove := intersectStrings(stringSliceOf(payload["remove_models"]), pendingRemove)
+	reqRemove = subtractStrings(reqRemove, reqAdd)
+	if len(reqRemove) > 0 {
+		refs, refErr := model.RemovedModelLaneRefs(channel.Id, reqRemove)
+		if refErr != nil {
+			return nil, nil, nil, refErr
+		}
+		if len(refs) > 0 {
+			blocked = map[string][]string{channel.Name: refs}
+		}
+	}
+	return reqAdd, reqRemove, blocked, nil
+}
+
+// stringSliceOf 把 payload 字段转成 []string（容忍 null/缺失）。
+func stringSliceOf(value any) []string {
+	list, _ := stringSlice(value)
+	return list
+}
+
+// intersectStrings 求交集，保留 a 的顺序（与 controller.intersectModelNames 同语义）。
+func intersectStrings(a, b []string) []string {
+	seen := map[string]bool{}
+	for _, v := range b {
+		seen[v] = true
+	}
+	out := make([]string, 0, len(a))
+	for _, v := range a {
+		if seen[v] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// subtractStrings 返回 a 中不在 b 里的元素。
+func subtractStrings(a, b []string) []string {
+	drop := map[string]bool{}
+	for _, v := range b {
+		drop[v] = true
+	}
+	out := make([]string, 0, len(a))
+	for _, v := range a {
+		if !drop[v] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// previewUpstreamApplyAll 汇总"应用全部渠道上游变更"将新增/移除的模型（不落库）。
+func previewUpstreamApplyAll() (add, remove []string, err error) {
+	var channels []*model.Channel
+	if err = model.DB.Where("status = ?", common.ChannelStatusEnabled).Order("id asc").Find(&channels).Error; err != nil {
+		return nil, nil, err
+	}
+	addSet, removeSet := map[string]bool{}, map[string]bool{}
+	for _, ch := range channels {
+		settings := ch.GetOtherSettings()
+		if !settings.UpstreamModelUpdateCheckEnabled {
+			continue
+		}
+		for _, m := range settings.UpstreamModelUpdateLastDetectedModels {
+			addSet[m] = true
+		}
+		for _, m := range settings.UpstreamModelUpdateLastRemovedModels {
+			removeSet[m] = true
+		}
+	}
+	return sortedBoolKeys(addSet), sortedBoolKeys(removeSet), nil
+}
+
+// sortedBoolKeys 返回排序后的 map 键（保证预览稳定可断言）。
+func sortedBoolKeys(in map[string]bool) []string {
+	out := make([]string, 0, len(in))
+	for k := range in {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// previewLogFilesCleanup 列出日志文件清理将删除的文件名（不落库）。
+// 与 controller.CleanupLogFiles 同口径：by_count 保留最新 value 个，by_days 按天。
+func previewLogFilesCleanup(mode, valueStr string) ([]string, error) {
+	if mode != "by_count" && mode != "by_days" {
+		return nil, &apiError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
+			message: "invalid mode, must be by_count or by_days"}
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil || value < 1 {
+		return nil, &apiError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
+			message: "invalid value, must be a positive integer"}
+	}
+	files, err := controller.LogFileInfosForDryRun()
+	if err != nil {
+		return nil, err
+	}
+	active := controller.ActiveLogPathForDryRun()
+	names := make([]string, 0)
+	if mode == "by_count" {
+		for i, f := range files {
+			if i < value {
+				continue
+			}
+			if f.Path == active {
+				continue
+			}
+			names = append(names, f.Name)
+		}
+		return names, nil
+	}
+	cutoff := time.Now().AddDate(0, 0, -value)
+	for _, f := range files {
+		if f.ModTime.Before(cutoff) && f.Path != active {
+			names = append(names, f.Name)
+		}
+	}
+	return names, nil
+}
+
+// toAnySlice 把 payload 字段转成 []any（容忍 null/缺失）。
+func toAnySlice(value any) []any {
+	if list, ok := value.([]any); ok {
+		return list
+	}
+	return nil
+}
+
+// channelNamesByTag 返回某标签下的渠道名（供 by-tag 预览）。
+func channelNamesByTag(tag string) ([]string, error) {
+	channels, err := model.GetChannelsByTag(tag, true, false)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(channels))
+	for _, ch := range channels {
+		names = append(names, ch.Name)
+	}
+	return names, nil
+}
+
 // —— body 读写 ——
 
 // readJSONBody 读并复位请求体（基座 handler 还要再读一次，必须重建）。
@@ -230,6 +418,16 @@ func BatchChannelStatusByName(c *gin.Context) {
 		apierr.Validation(c, "status must be 1 (enabled) or 2 (disabled)")
 		return
 	}
+	// dry-run：返回将变更的渠道名，不落库（api-spec §2.4/§5.9）。
+	if dryRun(c) {
+		names, err := channelNamesByIDs(ids)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		previewOpsNames(c, "channels", "update", nil, names, nil, nil)
+		return
+	}
 	payload["ids"] = ids
 	payload["status"] = status
 	writeJSONBody(c, payload)
@@ -244,6 +442,15 @@ func BatchChannelTagByName(c *gin.Context) {
 	}
 	ids, ok := batchIDs(c, payload)
 	if !ok {
+		return
+	}
+	if dryRun(c) {
+		names, err := channelNamesByIDs(ids)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		previewOpsNames(c, "channels", "update", nil, names, nil, nil)
 		return
 	}
 	payload["ids"] = ids
@@ -262,6 +469,14 @@ func CopyChannelByBodyName(c *gin.Context) {
 	name, _ := payload["channel"].(string)
 	channel, ok := resolveChannelByName(c, name)
 	if !ok {
+		return
+	}
+	if dryRun(c) {
+		suffix := "_复制"
+		if s, ok := payload["suffix"].(string); ok && s != "" {
+			suffix = s
+		}
+		previewOpsNames(c, "channels", "add", []string{channel.Name + suffix}, nil, nil, nil)
 		return
 	}
 	c.Params = append(c.Params, gin.Param{Key: "id", Value: strconv.Itoa(channel.Id)})
@@ -315,9 +530,55 @@ func BatchDeleteModelMetaByName(c *gin.Context) {
 	if !ok {
 		return
 	}
+	// dry-run：只列出将删除的目录记录，并跑车道引用守卫（与真实调用同口径）。
+	if dryRun(c) {
+		names, blocked, err := previewModelCatalogDelete(resolved)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		if len(blocked) > 0 {
+			apierr.ConflictDetails(c, apierr.CodeConflict,
+				"模型仍被车道引用，已取消删除",
+				"先 PUT /api/lanes/{name} 移除成员，或改用 ?force=1", gin.H{"blocked": blocked})
+			return
+		}
+		previewOpsNames(c, "model_metadata", "remove", nil, nil, names, nil)
+		return
+	}
 	payload["model_ids"] = resolved
 	writeJSONBody(c, payload)
 	controller.BatchDeleteModelMeta(c)
+}
+
+// previewModelCatalogDelete 列出将删除的目录记录名，并返回车道引用明细。
+func previewModelCatalogDelete(ids []int) (names []string, blocked map[string][]string, err error) {
+	blocked = map[string][]string{}
+	for _, id := range ids {
+		var record model.Model
+		if findErr := model.DB.Where("id = ?", id).First(&record).Error; findErr != nil {
+			if errors.Is(findErr, gorm.ErrRecordNotFound) {
+				return nil, nil, &apiError{status: http.StatusNotFound, code: apierr.CodeModelNotFound,
+					message: "model id " + strconv.Itoa(id) + " not found", hint: "GET /api/model-metadata"}
+			}
+			return nil, nil, findErr
+		}
+		channels, chErr := model.GetChannelsDeclaringModel(record.ModelName)
+		if chErr != nil {
+			return nil, nil, chErr
+		}
+		for _, ch := range channels {
+			refs, refErr := model.RemovedModelLaneRefs(ch.Id, []string{record.ModelName})
+			if refErr != nil {
+				return nil, nil, refErr
+			}
+			if len(refs) > 0 {
+				blocked[ch.Name] = refs
+			}
+		}
+		names = append(names, record.ModelName)
+	}
+	return names, blocked, nil
 }
 
 // —— 按名寻址的单渠道端点 ——
@@ -339,6 +600,12 @@ func ManageMultiKeysByName(c *gin.Context) {
 	}
 	if !channel.ChannelInfo.IsMultiKey {
 		apierr.Conflict(c, apierr.CodeConflict, "channel is not in multi-key mode", "")
+		return
+	}
+	// dry-run：get_key_status 是读动作，照常执行；其余动作只预览、不落库。
+	if dryRun(c) && action != "get_key_status" {
+		previewOpsNames(c, "channels", "update", nil, []string{channel.Name}, nil,
+			gin.H{"action": action})
 		return
 	}
 	c.Set(opsMultiKeyActionKey, action)
@@ -367,10 +634,33 @@ func DetectUpstreamByName(c *gin.Context) {
 }
 
 func ApplyUpstreamByName(c *gin.Context) {
-	withChannelIDByName("id")(c)
-	if c.IsAborted() {
+	channel, ok := resolveChannelByName(c, c.Param("name"))
+	if !ok {
 		return
 	}
+	payload, _, ok := readJSONBody(c)
+	if !ok {
+		return
+	}
+	// dry-run：只算出将新增/移除的模型与车道引用守卫结果，不落库。
+	if dryRun(c) {
+		add, remove, blocked, err := previewUpstreamApply(channel, payload)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		if len(blocked) > 0 {
+			apierr.ConflictDetails(c, apierr.CodeConflict,
+				"上游同步会移除仍被车道引用的模型，已取消",
+				"先 PUT /api/lanes/{name} 移除成员，或改用 ?force=1", gin.H{"blocked": blocked})
+			return
+		}
+		previewOpsNames(c, "channels", "update", nil, add, remove,
+			gin.H{"channel": channel.Name})
+		return
+	}
+	payload["id"] = channel.Id
+	writeJSONBody(c, payload)
 	controller.ApplyChannelUpstreamModelUpdates(c)
 }
 
@@ -522,6 +812,15 @@ func EditChannelsByTag(c *gin.Context) {
 		apierr.Validation(c, "tag is required")
 		return
 	}
+	if dryRun(c) {
+		names, err := channelNamesByTag(tag)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		previewOpsNames(c, "channels", "update", nil, names, nil, gin.H{"tag": tag})
+		return
+	}
 	c.Set(opsTagKey, tag)
 	writeJSONBody(c, payload)
 	controller.EditTagChannels(c)
@@ -541,6 +840,16 @@ func BatchChannelTagStatus(c *gin.Context) {
 	status := intOf(payload["status"])
 	if status != 1 && status != 2 {
 		apierr.Validation(c, "status must be 1 (enabled) or 2 (disabled)")
+		return
+	}
+	if dryRun(c) {
+		names, err := channelNamesByTag(tag)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		previewOpsNames(c, "channels", "update", nil, names, nil,
+			gin.H{"tag": tag, "enabled": status == 1})
 		return
 	}
 	c.Set(opsTagKey, tag)
@@ -576,6 +885,10 @@ func UpdateSystemOptionsByName(c *gin.Context) {
 		apierr.Validation(c, "key is required")
 		return
 	}
+	if dryRun(c) {
+		previewOpsNames(c, "system_options", "update", nil, []string{key}, nil, nil)
+		return
+	}
 	c.Set(opsOptionKey, key)
 	writeJSONBody(c, payload)
 	controller.UpdateOption(c)
@@ -596,6 +909,10 @@ func UpdatePrefillGroupByID(c *gin.Context) {
 	}
 	payload, _, ok := readJSONBody(c)
 	if !ok {
+		return
+	}
+	if dryRun(c) {
+		previewOps(c, "prefill_groups", "update", c.Param("id"))
 		return
 	}
 	payload["id"] = id
@@ -619,31 +936,169 @@ func DeletePrefillGroupByID(c *gin.Context) {
 		apierr.Internal(c, err.Error())
 		return
 	}
+	if dryRun(c) {
+		previewOps(c, "prefill_groups", "remove", record.Name)
+		return
+	}
 	controller.DeletePrefillGroup(c)
+}
+
+// DeleteDisabledChannels DELETE /api/channels/disabled。
+//
+// 基座 handler 是"先做引用守卫、再整批删除"；dry-run 时必须先返回将删清单，
+// 且仍保留引用守卫（被引用时返回 409 + details.blocked，与真实调用同口径）。
+func DeleteDisabledChannels(c *gin.Context) {
+	if !dryRun(c) {
+		controller.DeleteDisabledChannel(c)
+		return
+	}
+	var disabled []model.Channel
+	if err := model.DB.Where("status <> ?", common.ChannelStatusEnabled).Find(&disabled).Error; err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	names := make([]string, 0, len(disabled))
+	blocked := map[string][]string{}
+	for _, ch := range disabled {
+		refs, refErr := model.LanesReferencingChannel(ch.Id)
+		if refErr != nil {
+			writeAPIError(c, refErr)
+			return
+		}
+		if len(refs) > 0 {
+			blocked[ch.Name] = refs
+			continue
+		}
+		names = append(names, ch.Name)
+	}
+	if len(blocked) > 0 {
+		apierr.ConflictDetails(c, apierr.CodeConflict,
+			"部分已禁用渠道被车道引用，已取消删除",
+			"先 PUT /api/lanes/{name} 移除成员", gin.H{"blocked": blocked})
+		return
+	}
+	previewOpsNames(c, "channels", "remove", nil, nil, names, nil)
 }
 
 // —— 基座 handler 的直接复用（签名一致、无需注入） ——
 
 var (
-	DeleteDisabledChannels = controller.DeleteDisabledChannel
 	DetectAllUpstream      = controller.DetectAllChannelUpstreamModelUpdates
-	ApplyAllUpstream       = controller.ApplyAllChannelUpstreamModelUpdates
 	GetAllSystemOptions    = controller.GetOptions
 	ListSystemTasksHandler = controller.ListSystemTasks
 	CurrentSystemTask      = controller.GetCurrentSystemTask
-	CreateLogCleanupTask   = controller.CreateLogCleanupSystemTask
 	PerformanceStats       = controller.GetPerformanceStats
 	ResetPerformanceStats  = controller.ResetPerformanceStats
 	ForceGarbageCollection = controller.ForceGC
 	ClearDiskCacheHandler  = controller.ClearDiskCache
 	ListLogFilesHandler    = controller.GetLogFiles
-	CleanupLogFilesHandler = controller.CleanupLogFiles
 	ListPrefillGroups      = controller.GetPrefillGroups
-	CreatePrefillGroup     = controller.CreatePrefillGroup
 	SyncUpstreamPreviewH   = controller.SyncUpstreamPreview
-	SyncUpstreamApplyH     = controller.SyncUpstreamModels
 	MissingModelsHandler   = controller.GetMissingModels
 )
+
+// —— dry-run 适配层：这些端点复用基座 handler，但必须先拦截 ?dry_run=true ——
+
+// ApplyAllUpstream POST /api/channels/upstream-updates/apply-all
+func ApplyAllUpstream(c *gin.Context) {
+	if !dryRun(c) {
+		controller.ApplyAllChannelUpstreamModelUpdates(c)
+		return
+	}
+	add, remove, err := previewUpstreamApplyAll()
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	previewOpsNames(c, "channels", "update", nil, add, remove, nil)
+}
+
+// CreateLogCleanupTask POST /api/system-tasks/log-cleanup
+func CreateLogCleanupTask(c *gin.Context) {
+	if !dryRun(c) {
+		controller.CreateLogCleanupSystemTask(c)
+		return
+	}
+	target := strings.TrimSpace(c.Query("target_timestamp"))
+	if target == "" || target == "0" {
+		apierr.Validation(c, "target timestamp is required")
+		return
+	}
+	previewOpsNames(c, "system_tasks", "add", []string{"log_cleanup"}, nil, nil,
+		gin.H{"target_timestamp": target})
+}
+
+// CleanupLogFilesHandler DELETE /api/system/log-files
+//
+// 非 dry-run 时复用基座 handler（含 partial_failure → 500 的映射）；
+// dry-run 时只列出将删除的文件名。
+func CleanupLogFilesHandler(c *gin.Context) {
+	if !dryRun(c) {
+		controller.CleanupLogFiles(c)
+		return
+	}
+	names, err := previewLogFilesCleanup(c.Query("mode"), c.Query("value"))
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	previewOpsNames(c, "log_files", "remove", nil, nil, names, nil)
+}
+
+// CreatePrefillGroup POST /api/prefill-groups
+func CreatePrefillGroup(c *gin.Context) {
+	if !dryRun(c) {
+		controller.CreatePrefillGroup(c)
+		return
+	}
+	payload, _, ok := readJSONBody(c)
+	if !ok {
+		return
+	}
+	name, _ := payload["name"].(string)
+	if strings.TrimSpace(name) == "" {
+		apierr.Validation(c, "name is required")
+		return
+	}
+	// 重名检查与真实写入同口径（409）。
+	if dup, err := model.IsPrefillGroupNameDuplicated(0, name); err != nil {
+		writeAPIError(c, err)
+		return
+	} else if dup {
+		apierr.Conflict(c, apierr.CodeConflict, "组名称已存在", "")
+		return
+	}
+	previewOpsNames(c, "prefill_groups", "add", []string{name}, nil, nil, nil)
+}
+
+// SyncUpstreamApplyH POST /api/model-catalog/sync-upstream
+func SyncUpstreamApplyH(c *gin.Context) {
+	if !dryRun(c) {
+		controller.SyncUpstreamModels(c)
+		return
+	}
+	payload, _, ok := readJSONBody(c)
+	if !ok {
+		return
+	}
+	if payload["source_version"] == nil || len(stringSliceOf(payload["selections"])) == 0 {
+		apierr.BadRequest(c, "Preview and select metadata changes before applying")
+		return
+	}
+	// 选择项即"将写入/更新"的目录记录；真实应用前的版本/存在性校验留给 apply。
+	names := make([]string, 0)
+	for _, raw := range toAnySlice(payload["selections"]) {
+		if obj, ok := raw.(map[string]any); ok {
+			if n, ok := obj["model_name"].(string); ok && strings.TrimSpace(n) != "" {
+				names = append(names, n)
+			}
+		}
+	}
+	previewOpsNames(c, "model_metadata", "update", nil, names, nil,
+		gin.H{"source_version": payload["source_version"]})
+}
+
+// —— 基座 handler 的直接复用（签名一致、无需注入） ——
 
 // —— 小工具 ——
 
