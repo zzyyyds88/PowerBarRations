@@ -806,21 +806,17 @@ func TestChannel(c *gin.Context) {
 	}
 	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
 	if result.localErr != nil {
-		// 失败测试也落一条记账日志（带错误信息）：探活失败是"测试结论"，
-		// 不落库运维在日志页就看不到失败原因。tokens 全 0，不影响用量统计。
+		// 失败测试也落一条日志（LogTypeError）：探活失败是"测试结论"，不落库
+		// 运维就在日志页看不到失败原因；前端类型列显示红色"错误"徽章、详情
+		// 可展开，与 new-api 的失败展示一致（消耗/错误二分）。tokens 全 0，
+		// 不影响用量统计。
 		consumedTime := float64(time.Since(tik).Milliseconds()) / 1000.0
 		logModel := testModel
 		if logModel == "" && len(channel.GetModels()) > 0 {
 			logModel = channel.GetModels()[0]
 		}
-		model.RecordConsumeLog(c, testUserID, model.RecordConsumeLogParams{
-			ChannelId:      channel.Id,
-			ModelName:      logModel,
-			TokenName:      "模型测试",
-			Content:        "模型测试失败: " + result.localErr.Error(),
-			UseTimeSeconds: int(consumedTime),
-			Other:          &model.LogOther{},
-		})
+		model.RecordErrorLog(c, testUserID, channel.Id, logModel, "模型测试",
+			"模型测试失败: "+result.localErr.Error(), 0, int(consumedTime), false, "", &model.LogOther{})
 		common.SysError(fmt.Sprintf(
 			"channel test failed: channel_id=%d name=%s type=%d model=%s endpoint_type=%s err=%v",
 			channel.Id, channel.Name, channel.Type, logModel, endpointType, result.localErr,
