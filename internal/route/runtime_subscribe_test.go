@@ -50,3 +50,26 @@ func TestEventSubscriberCanBeUnset(t *testing.T) {
 	})
 	assert.False(t, called)
 }
+
+// reset 事件（手动复通 circuits/reset）经订阅钩子转发，为车道级（member 空）。
+func TestResetNotifiesSubscriber(t *testing.T) {
+	withFakeClock(t)
+
+	var events []Event
+	SetEventSubscriber(func(ev Event) { events = append(events, ev) })
+	t.Cleanup(func() { SetEventSubscriber(nil) })
+
+	runtime := Default.For("lane-reset-test")
+	runtime.withLock(func() {
+		runtime.recordFailure("7:model-x", KindHardAuth, 60, true, DefaultCircuitSettings())
+	})
+	require.NotEmpty(t, events)
+	runtime.Reset()
+
+	require.NotEmpty(t, events)
+	last := events[len(events)-1]
+	assert.Equal(t, EventReset, last.Type)
+	assert.Equal(t, "lane-reset-test", last.Lane, "reset 事件必须携带车道键")
+	assert.Equal(t, "", last.Member, "reset 是车道级事件，member 为空")
+	assert.NotZero(t, last.Ts)
+}
