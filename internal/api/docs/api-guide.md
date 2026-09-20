@@ -139,12 +139,13 @@ Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).
 ## 6. 错误模型与硬规则
 
 - 成功体是**裸资源**（无信封）；动作类端点是 `{"changed":n}` / `{"deleted":true}` / `{"reset":n}` 这类语义化最小对象。
-- **`?dry_run=true`（强制声明）**：每个配置类写端点必须显式声明三分类之一——
-  `preview`（返回 `{dry_run:true,valid:true,diff:{...}}`，**绝不落库**）、
-  `reject`（**400 `dry_run_not_supported`** 且不执行）、
-  `irrelevant`（非配置类：只读/运行态/上游动作/任务触发，参数被忽略）。
+- **`?dry_run=true`（强制声明）**：每个管理面写端点必须显式声明二分类之一——
+  `preview`（返回 `{dry_run:true,valid:true,diff:{...}}`，**绝不落库**）或
+  `reject`（**400 `dry_run_not_supported`** 且不执行）。
+  **没有第三个类别**：有副作用但无预览实现的写端点（运行态重置/GC、上游动作、任务触发、探活、改口令）
+  一律 `reject`——让调用方明确知道"要预览就得换做法"，而不是收到 200 却已改库、发请求、建任务。
   **不存在"声明不支持却仍按真实请求执行"的端点**。批量/破坏性操作请先 `?dry_run=true` 看 diff。
-  注意：探活（`test`/`probe`）与 `/auth/*`、`/setup` 不适用本约定。
+  注意：免鉴权写端点（`/setup`、`/auth/login`、`/auth/logout`）在鉴权之前，不适用本约定。
 - **两个面的错误体不同**：管理面 `/api/*` 是 `{"error":{"code","message","hint"?,"details"?}}`，**按 `code` 分支**；
   模型面 `/v1/*` 是 OpenAI 兼容体（`{"error":{"message":"..."}}`），通常**没有** PBR `code`，按状态码判定。
   管理面 `details` 用于机器可判定明细：车道引用守卫的 `blocked`（渠道名 → 车道名）、`lanes`（引用被移除模型的车道名）、`unknown`（不存在的名字）、`failed_files`（日志清理失败文件）。

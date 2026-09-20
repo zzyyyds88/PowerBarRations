@@ -80,18 +80,23 @@ func TestOpsDryRunPreviewHasNoSideEffects(t *testing.T) {
 	}
 }
 
-// reject 类端点（当前稳定面没有，但契约允许）：带 ?dry_run=true 必须 400 且不执行。
-// 这里用中间件直接验证语义，保证将来新增 reject 端点时行为正确。
-func TestDryRunRejectMiddlewareBlocksHandler(t *testing.T) {
+// 安全网：写方法 + ?dry_run=true + 未声明 preview ⇒ 400 且 handler 不执行。
+// 这保证"有副作用但没实现预览"的端点只会被明确拒绝，不可能静默执行。
+func TestDryRunSafetyNetBlocksUnpreviewedWrites(t *testing.T) {
 	apiresp.ResetForTest()
 	t.Cleanup(apiresp.ResetForTest)
+	ResetDryRunRegistryForTest()
+	t.Cleanup(ResetDryRunRegistryForTest)
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	group := engine.Group("/api/v1")
 	group.Use(apiresp.Middleware())
+	group.Use(DryRunMiddleware())
 	apiresp.Register(http.MethodDelete, "/api/v1/guarded", opsPolicy())
+	// 声明为 reject：带 ?dry_run=true 必须被安全网拦下。
+	RegisterDryRun(http.MethodDelete, "/api/v1/guarded", DryRunReject, "no preview here")
 	executed := false
-	group.DELETE("/guarded", dryRunRejectMiddleware("no preview here"), func(c *gin.Context) {
+	group.DELETE("/guarded", func(c *gin.Context) {
 		executed = true
 		c.JSON(http.StatusOK, gin.H{"success": true})
 	})

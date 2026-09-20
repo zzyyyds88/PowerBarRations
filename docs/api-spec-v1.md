@@ -24,13 +24,14 @@
 1. **全量幂等写**：`PUT /api/{resource}/{name}`，body 为完整对象，upsert 语义；同名重复提交结果一致。
 2. **写后回读**：响应体是**落库后重新读取**的最终状态。实现必须在 handler 内 re-read 再返回。
 3. **成功响应无信封**：成功一律返回**裸资源**——单对象就是该对象本身（如 `GET /api/channels/{name}` 直接返回渠道对象），列表是 `{"items":[...],"next_cursor":...}`，动作类端点返回**语义化最小对象**（如 `{"changed":3}`、`{"deleted":true,"name":"..."}`、`{"reset":true}`）。**没有 `{success,message,data}` 包装，也没有"HTTP 200 + 业务失败"**；失败一律见 §3。字段名由各端点表逐条固定，不额外套壳。
-4. **dry-run（强制声明，禁止静默写入）**：任何配置类写端点都必须**显式声明**它对 `?dry_run=true` 的处理方式，三选一：
+4. **dry-run（强制声明，禁止静默写入）**：任何管理面写端点都必须**显式声明**它对 `?dry_run=true` 的处理方式，二选一：
 
    | 类别 | 语义 | `?dry_run=true` 时的行为 |
    |---|---|---|
    | `preview` | 支持预览 | 返回 `{"dry_run":true,"valid":true,"diff":{...}}`，**绝不落库** |
    | `reject` | 不支持预览 | **400 `dry_run_not_supported`**，且**绝不落库**、绝不执行 |
-   | `irrelevant` | 非配置类（只读 / 运行态 / 上游动作 / 任务触发） | 忽略该参数，照常执行（本身不写配置） |
+
+   **没有第三个类别**。有副作用但无预览实现的写端点（运行态重置/GC、上游动作、任务触发、探活、改口令等）一律声明 `reject`——让调用方明确知道"要预览就得换端点/换做法"，而不是收到 200 却发现已改库、发请求、建任务。只读端点（GET）不参与声明。
 
    **铁律**：**不存在"声明了不支持、却仍按真实请求执行"的端点**。声明为 `reject` 的端点在带 `?dry_run=true` 时必须在任何写操作之前返回 400——这是安全边界，不是建议。
 
@@ -50,15 +51,18 @@
    ```
 
    **声明是可执行的**：稳定面在 `internal/api/ops_routes.go` 的 `opsRoutes` 表逐条声明
-   （`DryRunPreview` / `DryRunReject` / `DryRunIrrelevant`）；注册时统一挂中间件，
-   `reject` 在 handler 之前被拦下，**handler 不可能绕过**。守卫测试要求每个写方法
-   （POST/PUT/DELETE）都必须声明，`reject`/`irrelevant` 必须给出理由；`preview`
-   必须通过行为测试（带 `?dry_run=true` 无副作用且返回 diff）。非稳定面（控制台内部接口）
-   不在本契约内。
+   （`DryRunPreview` / `DryRunReject`）；安全网中间件 `DryRunMiddleware` 挂在**整个管理面**
+   （稳定面 + 控制台内部面），写方法 + `?dry_run=true` + 未声明 `preview` ⇒ 400 且
+   **handler 不可能绕过**。守卫测试 `TestEveryManagementWriteRouteDeclaresDryRun` 遍历
+   `engine.Routes()` 要求每个写方法（POST/PUT/DELETE/PATCH）都必须声明，`reject` 必须
+   给出替代做法；`preview` 必须通过行为测试（带 `?dry_run=true` 无副作用且返回 diff）。
+   控制台内部面同样适用（一律 `reject`，无预览实现）。
 
-   **免鉴权端点**（`POST /api/setup`、`/api/auth/*`）与**探活端点**
-   （`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`）不适用本约定：
-   前者无"预览"语义，后者本身就是只读的真实请求（探活即结论）。
+   **免鉴权写端点**（`POST /api/setup`、`POST /api/auth/login`、`POST /api/auth/logout`）
+   不适用本约定：它们在鉴权之前，且无"预览"语义。**探活端点**
+   （`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`）与
+   `POST /api/auth/password` 均声明 `reject`：探活是只读的真实上游请求、改口令即变更
+   管理密钥，本就无预览语义，带 `?dry_run=true` 时拒绝以免误打上游或误改密钥。
 5. **分页**：列表用 cursor。请求 `?limit=50&cursor=<opaque>`，响应 `{"items":[...], "next_cursor":"<opaque|null>"}`；`limit` 上限 200，默认 50。**非法/损坏的 cursor 返回 400 `validation_failed`**（不得静默回退到第一页，否则调用方会陷入翻页死循环）。
 6. **时间**：RFC3339 UTC（`2026-09-14T12:00:00Z`）。
 7. **审计**：所有变更写 `audit_logs`（`ts, actor, action, resource, name, before_digest, after_digest, dry_run`），只记元数据，不记密钥与请求正文。
@@ -526,23 +530,32 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 | DELETE | `/api/system/log-files` | `diff.log_files.remove`（将删的文件名） |
 | POST | `/api/system-tasks/log-cleanup` | `diff.system_tasks.add`（将建的任务） |
 
-**`irrelevant`（非配置类：只读 / 运行态 / 上游动作 / 任务触发；带 `?dry_run=true` 照常执行）**
+**`reject`（不支持预览：带 `?dry_run=true` 时 400 且不执行）**
+
+这些端点有副作用但不支持预览。调用方去掉 `?dry_run=true` 直接执行，或改用对应的
+`preview` 端点（如 `GET /api/model-catalog/sync-upstream/preview`）。只读端点（GET，
+如 `GET /api/channels/{name}/key`、`GET /api/model-catalog/sync-upstream/preview`）不参与声明。
 
 | 方法 | 路径 | 理由 |
 |---|---|---|
-| POST | `/api/channels/batch/fetch-models` | 只读拉取上游清单，不落库 |
-| GET | `/api/channels/{name}/key` | 只读 |
-| POST | `/api/channels/upstream-updates/detect-all` | 触发探测任务；不改配置（应用变更走 apply） |
-| POST | `/api/channels/{name}/upstream-updates/detect` | 同上 |
-| POST | `/api/channels/{name}/codex/*` | 上游凭据动作（refresh/reset/usage） |
-| POST/DELETE | `/api/channels/{name}/ollama/*` | 上游动作（pull 会真的拉模型） |
-| POST | `/api/system/performance/{reset,gc}` | 运行态指标，非配置 |
+| POST | `/api/auth/password` | 改口令即变更管理密钥与会话，无预览语义 |
+| POST | `/api/channels/{name}/test` | 探活是只读的真实上游请求；直接调用即可 |
+| POST | `/api/lanes/{name}/probe` | 同上 |
+| POST | `/api/webhooks/test` | 真实投递一条测试事件；要预检用 `GET /api/webhooks` |
+| POST | `/api/channels/batch/fetch-models` | 只读拉取上游模型清单，不落库 |
+| POST | `/api/channels/upstream-updates/detect-all` | 触发探测任务，不改配置；应用变更走 apply |
+| POST | `/api/channels/{name}/upstream-updates/detect` | 触发探测，不改配置 |
+| POST | `/api/channels/{name}/codex/refresh` | 上游凭据动作，非配置 |
+| POST | `/api/channels/{name}/codex/reset` | 上游用量动作，非配置 |
+| POST | `/api/channels/{name}/ollama/pull` | 上游动作，会真的拉取模型 |
+| POST | `/api/channels/{name}/ollama/pull/stream` | 上游动作（SSE 进度） |
+| DELETE | `/api/channels/{name}/ollama/models` | 上游动作 |
+| POST | `/api/system/performance/reset` | 运行态统计，非配置 |
+| POST | `/api/system/performance/gc` | 运行态动作，非配置 |
 | DELETE | `/api/system/performance/disk-cache` | 运行态缓存，非配置 |
-| POST | `/api/webhooks/test` | 真实投递一条测试事件（动作本身即结果） |
-| GET | `/api/model-catalog/sync-upstream/preview` | 它**就是**预览端点 |
 
-> 免鉴权端点（`POST /api/setup`、`/api/auth/*`）与探活端点
-> （`POST /api/channels/{name}/test`、`POST /api/lanes/{name}/probe`）不列入本表，理由见 §2.4。
+> 免鉴权写端点（`POST /api/setup`、`POST /api/auth/login`、`POST /api/auth/logout`）
+> 在鉴权之前，不列入本表，理由见 §2.4。
 
 ---
 

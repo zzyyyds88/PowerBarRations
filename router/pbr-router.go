@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/zzyyyds88/PowerBarRations/internal/api"
 	"github.com/zzyyyds88/PowerBarRations/internal/apiresp"
 	"github.com/zzyyyds88/PowerBarRations/middleware"
@@ -53,7 +55,47 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 	authed.Use(middleware.PBRAuth())
 	// 稳定面统一响应信封（design-v1 §5.1）：成功裸资源、失败错误包络 + 真实状态码。
 	authed.Use(apiresp.Middleware())
+	// dry-run 安全网（api-spec §2.4）：写方法 + ?dry_run=true + 未声明 preview
+	// ⇒ 400 且不执行。它覆盖**整个管理面**，因此漏声明/漏实现只会变成"明确拒绝"。
+	authed.Use(api.DryRunMiddleware())
 	{
+		// —— dry-run 声明：非 opsRoutes 表的稳定面写路由 ——
+		// preview：已实现预览、绝不落库。
+		api.RegisterDryRun(http.MethodPost, "/api/v1/import", api.DryRunPreview,
+			"完整 diff 见响应 diff 字段")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/logs/prune", api.DryRunPreview,
+			"预览清理前后计数")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/channels/:name", api.DryRunPreview, "diff.channels")
+		api.RegisterDryRun(http.MethodDelete, "/api/v1/channels/:name", api.DryRunPreview, "diff.channels")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/channels/:name/sync-models", api.DryRunPreview,
+			"diff.models + referenced_by")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/lanes/:name", api.DryRunPreview, "diff.lanes")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/lanes/:name/members", api.DryRunPreview, "diff.lanes")
+		api.RegisterDryRun(http.MethodDelete, "/api/v1/lanes/:name", api.DryRunPreview, "diff.lanes")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/lanes/cleanup-members", api.DryRunPreview,
+			"{dry_run, lanes:[受影响车道]} ")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/lanes/:name/circuits/reset", api.DryRunPreview,
+			"运行态重置的预览计数")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/system/options", api.DryRunPreview, "diff.system_options")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/webhooks", api.DryRunPreview, "diff.webhooks")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/keys", api.DryRunPreview, "diff.keys")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/keys/:name", api.DryRunPreview, "diff.keys")
+		api.RegisterDryRun(http.MethodDelete, "/api/v1/keys/:name", api.DryRunPreview, "diff.keys")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/keys/:name/rotate", api.DryRunPreview, "diff.keys")
+		api.RegisterDryRun(http.MethodPut, "/api/v1/model-metadata/*model", api.DryRunPreview,
+			"diff.model_metadata")
+		api.RegisterDryRun(http.MethodDelete, "/api/v1/model-metadata/*model", api.DryRunPreview,
+			"diff.model_metadata")
+		// reject：有副作用但不支持预览——带 ?dry_run=true 必须明确拒绝，绝不执行。
+		api.RegisterDryRun(http.MethodPost, "/api/v1/auth/password", api.DryRunReject,
+			"改口令会同时变更管理密钥与会话，没有预览语义")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/channels/:name/test", api.DryRunReject,
+			"探活本身就是只读的真实上游请求；直接调用即可")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/lanes/:name/probe", api.DryRunReject,
+			"探活本身就是只读的真实上游请求；直接调用即可")
+		api.RegisterDryRun(http.MethodPost, "/api/v1/webhooks/test", api.DryRunReject,
+			"测试投递会真的向目标发一条事件；要预检请用 GET /api/webhooks 检查配置")
+
 		authed.POST("/auth/password", api.ChangePassword)
 		authed.GET("/capabilities", api.GetCapabilities)
 		authed.GET("/export", api.GetExport)
