@@ -61,7 +61,6 @@ import {
   formatResponseTime,
   getBalanceVariant,
   getChannelProtocolFromChannel,
-  getChannelProtocolIconType,
   getChannelProtocolLabelKey,
   getResponseTimeConfig,
   isMultiKeyChannel,
@@ -73,7 +72,6 @@ import {
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
-import { ChannelTypeLogo } from './channel-type-badge'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
@@ -172,13 +170,6 @@ export function ProtocolCell({ channel }: { channel: Channel }) {
 
   return (
     <div className='flex min-w-0 items-center gap-1.5'>
-      {/* 相邻文本已承载协议名；图标纯属装饰，其 SVG <title> 不得让读屏念两遍。 */}
-      <span aria-hidden='true' className='contents'>
-        <ChannelTypeLogo
-          type={getChannelProtocolIconType(protocol, channel.type)}
-          size={16}
-        />
-      </span>
       <TruncatedText text={t(labelKey)} maxWidth='max-w-full' />
     </div>
   )
@@ -521,13 +512,6 @@ export function useChannelsColumns(
           const settings = parseChannelSettings(channel.setting)
           const isPassThrough = settings.pass_through_body_enabled === true
           const hasParamOverride = Boolean(channel.param_override?.trim())
-          // 协议图标（ui-spec §6.4）：与「协议」列共用同一套归一化判定，名称单元格
-          // 只放图标、文字留给协议列。
-          const protocol = getChannelProtocolFromChannel(channel)
-          const protocolIconType = getChannelProtocolIconType(
-            protocol,
-            channel.type
-          )
           // 多密钥轮询模式标记：原在「类型」列，该列移除后移到名称单元格，
           // 避免丢掉"随机/轮询"这一运维信号。
           const isMultiKey = isMultiKeyChannel(channel)
@@ -543,7 +527,6 @@ export function useChannelsColumns(
             <div className='flex max-w-full min-w-0 items-center gap-2'>
               <div className='flex max-w-full min-w-0 flex-col gap-1'>
                 <div className='flex max-w-full min-w-0 items-center gap-1.5'>
-                  <ChannelTypeLogo type={protocolIconType} size={16} />
                   <TruncatedText
                     text={sensitiveVisible ? name : SENSITIVE_MASK}
                     className='font-medium'
