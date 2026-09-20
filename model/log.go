@@ -304,6 +304,7 @@ type RecordConsumeLogParams struct {
 	CompletionTokens int       `json:"completion_tokens"`
 	CacheReadTokens  int       `json:"cache_read_tokens"`
 	CacheWriteTokens int       `json:"cache_write_tokens"`
+	ReasoningTokens  int       `json:"reasoning_tokens"`
 	ModelName        string    `json:"model_name"`
 	TokenName        string    `json:"token_name"`
 	Content          string    `json:"content"`
@@ -359,6 +360,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 				CompletionTokens: params.CompletionTokens,
 				CacheReadTokens:  params.CacheReadTokens,
 				CacheWriteTokens: params.CacheWriteTokens,
+				ReasoningTokens:  params.ReasoningTokens,
 				IsStream:         params.IsStream,
 				TotalMs:          int64(params.UseTimeSeconds) * 1000,
 				EstimatedCost: estimateRequestCost(params.ChannelId, priceModel,
