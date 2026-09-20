@@ -47,11 +47,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
@@ -175,91 +170,64 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   return (
     <div className='-ml-1.5 flex items-center gap-1'>
       {layout !== 'card' && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='ghost'
-                size='icon-sm'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleEdit()
-                }}
-                aria-label={t('Edit')}
-              />
-            }
-          >
-            <Pencil className='size-4' />
-          </TooltipTrigger>
-          <TooltipContent>{t('Edit')}</TooltipContent>
-        </Tooltip>
+        <Button
+          variant='ghost'
+          size='sm'
+          className='gap-1.5'
+          onClick={(e) => {
+            e.stopPropagation()
+            handleEdit()
+          }}
+        >
+          <Pencil className='size-3.5' />
+          {t('Edit')}
+        </Button>
       )}
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={handleDirectTest}
-              disabled={isTesting}
-              aria-label={t('Test Connection')}
-            />
-          }
-        >
-          {isTesting ? (
-            <Loader2 className='size-4 animate-spin' />
-          ) : (
-            <Gauge className='size-4' />
-          )}
-        </TooltipTrigger>
-        <TooltipContent>{t('Test Connection')}</TooltipContent>
-      </Tooltip>
+      <Button
+        variant='ghost'
+        size='sm'
+        className='gap-1.5'
+        onClick={handleDirectTest}
+        disabled={isTesting}
+      >
+        {isTesting ? (
+          <Loader2 className='size-3.5 animate-spin' />
+        ) : (
+          <Gauge className='size-3.5' />
+        )}
+        {t('Test Connection')}
+      </Button>
 
       {layout === 'card' && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='ghost'
-                size='icon-sm'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleTest()
-                }}
-                aria-label={t('Test Channel Connection')}
-              />
-            }
-          >
-            <PlugZap className='size-4' />
-          </TooltipTrigger>
-          <TooltipContent>{t('Test Channel Connection')}</TooltipContent>
-        </Tooltip>
+        <Button
+          variant='ghost'
+          size='sm'
+          className='gap-1.5'
+          onClick={(e) => {
+            e.stopPropagation()
+            handleTest()
+          }}
+        >
+          <PlugZap className='size-3.5' />
+          {t('Test Channel Connection')}
+        </Button>
       )}
 
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon-sm'
-              onClick={handleToggleStatus}
-              disabled={isTogglingStatus}
-              aria-label={isEnabled ? t('Disable') : t('Enable')}
-              className={
-                isEnabled
-                  ? 'text-destructive hover:text-destructive'
-                  : 'text-success hover:text-success'
-              }
-            />
-          }
-        >
-          {statusIcon}
-        </TooltipTrigger>
-        <TooltipContent>
-          {isEnabled ? t('Disable') : t('Enable')}
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        variant='ghost'
+        size='sm'
+        className={`gap-1.5 ${
+          isEnabled
+            ? 'text-destructive hover:text-destructive'
+            : 'text-success hover:text-success'
+        }`}
+        onClick={handleToggleStatus}
+        disabled={isTogglingStatus}
+      >
+        {statusIcon}
+        {isEnabled ? t('Disable') : t('Enable')}
+      </Button>
 
       <DropdownMenu>
         <DropdownMenuTrigger
