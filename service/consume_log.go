@@ -60,7 +60,7 @@ func PostTextUsageLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 	isClaude := usageSemantic(relayInfo, billingUsage) == "anthropic"
 
-	var promptTokens, completionTokens, cacheTokens, cacheCreationTokens, cacheCreation5m, cacheCreation1h, imageTokens int
+	var promptTokens, completionTokens, cacheTokens, cacheCreationTokens, cacheCreation5m, cacheCreation1h, imageTokens, reasoningTokens int
 	if billingUsage != nil {
 		promptTokens = billingUsage.PromptTokens
 		completionTokens = billingUsage.CompletionTokens
@@ -69,6 +69,7 @@ func PostTextUsageLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		cacheCreation5m = billingUsage.ClaudeCacheCreation5mTokens
 		cacheCreation1h = billingUsage.ClaudeCacheCreation1hTokens
 		imageTokens = billingUsage.PromptTokensDetails.ImageTokens
+		reasoningTokens = billingUsage.CompletionTokenDetails.ReasoningTokens
 	}
 
 	logModel := modelName
@@ -119,6 +120,7 @@ func PostTextUsageLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		CompletionTokens: completionTokens,
 		CacheReadTokens:  cacheTokens,
 		CacheWriteTokens: cacheWriteTokensTotal(cacheCreationTokens, cacheCreation5m, cacheCreation1h),
+		ReasoningTokens:  reasoningTokens,
 		ModelName:        logModel,
 		TokenName:        tokenName,
 		Content:          strings.Join(extraContent, ", "),
