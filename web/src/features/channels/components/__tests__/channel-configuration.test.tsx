@@ -837,9 +837,11 @@ test('an invalid edit switches categories and replaces configured styling with t
   ).not.toBeInTheDocument()
 })
 
-test('ordinary edits discover models with saved settings and keep removed draft models available for reselection', async () => {
+test('ordinary edits probe the draft connection when a fresh key is typed and keep removed draft models available for reselection', async () => {
   const user = userEvent.setup()
-  const post = vi.spyOn(api, 'post')
+  const post = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue({ data: ['upstream-model'] })
   const put = vi.spyOn(api, 'put')
   render(<ConfigurationHarness currentRow={editingChannel} />)
   await screen.findByDisplayValue('Existing channel')
@@ -853,7 +855,19 @@ test('ordinary edits discover models with saved settings and keep removed draft 
     await screen.findByRole('button', { name: /Probe upstream models/ })
   )
   const dialog = await openDiscoveryDialog()
-  expect(api.get).toHaveBeenCalledWith(
+  // A freshly typed key routes the probe through the preview endpoint with the
+  // draft connection, not the saved-credential endpoint.
+  expect(post).toHaveBeenCalledWith(
+    '/api/channel/fetch_models',
+    expect.objectContaining({
+      type: 1,
+      channel_id: 42,
+      base_url: 'https://draft.example',
+      key: 'new-key',
+    }),
+    expect.anything()
+  )
+  expect(api.get).not.toHaveBeenCalledWith(
     '/api/channel/fetch_models/42',
     expect.anything()
   )
@@ -872,9 +886,29 @@ test('ordinary edits discover models with saved settings and keep removed draft 
   await addManualModel(user, 'manual-draft')
   expect(modelsGroup().getByText('manual-draft')).toBeVisible()
 
-  // Applying and editing the draft must not hit the network.
-  expect(post).not.toHaveBeenCalled()
+  // Applying and editing the draft must not hit the network beyond the probe.
+  expect(post).toHaveBeenCalledTimes(1)
   expect(put).not.toHaveBeenCalled()
+})
+
+test('ordinary edits without a fresh key reuse the saved credential for discovery', async () => {
+  const post = vi.spyOn(api, 'post')
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(
+    await screen.findByRole('button', { name: /Probe upstream models/ })
+  )
+  await openDiscoveryDialog()
+  // No fresh key typed → the probe reuses the stored credential.
+  expect(api.get).toHaveBeenCalledWith(
+    '/api/channel/fetch_models/42',
+    expect.anything()
+  )
+  expect(post).not.toHaveBeenCalledWith(
+    '/api/channel/fetch_models',
+    expect.anything()
+  )
 })
 
 test('the Models area keeps no always-on combobox and focuses the manual input without opening candidates', async () => {
