@@ -346,25 +346,31 @@ func estimateRequestCost(channelId int, priceModel string, prompt, completion, c
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	// PBR 元数据日志：把 token 用量与折算金额回填到请求载体，
 	// 由转发收尾统一落库（design-v1 §8：日志只存元数据，成本只折算）。
-	if carrier := GetPBRLogCarrier(c); carrier != nil && carrier.Usage == nil {
-		// 折算按 PBR 单价表（design-v1 §16.9#7：人民币/百万 token，未配置则不折算）。
-		// 计价键是**请求模型名**（运营者按自己声明的模型名定价），而不是可能被改写的上游名。
-		priceModel := params.ModelName
-		if carrier.RequestModel != "" {
-			priceModel = carrier.RequestModel
+	if carrier := GetPBRLogCarrier(c); carrier != nil {
+		if carrier.Usage == nil {
+			// 折算按 PBR 单价表（design-v1 §16.9#7：人民币/百万 token，未配置则不折算）。
+			// 计价键是**请求模型名**（运营者按自己声明的模型名定价），而不是可能被改写的上游名。
+			priceModel := params.ModelName
+			if carrier.RequestModel != "" {
+				priceModel = carrier.RequestModel
+			}
+			carrier.Usage = &PBRTokenUsage{
+				PromptTokens:     params.PromptTokens,
+				CompletionTokens: params.CompletionTokens,
+				CacheReadTokens:  params.CacheReadTokens,
+				CacheWriteTokens: params.CacheWriteTokens,
+				IsStream:         params.IsStream,
+				TotalMs:          int64(params.UseTimeSeconds) * 1000,
+				EstimatedCost: estimateRequestCost(params.ChannelId, priceModel,
+					params.PromptTokens, params.CompletionTokens,
+					params.CacheReadTokens, params.CacheWriteTokens),
+			}
 		}
-		carrier.Usage = &PBRTokenUsage{
-			PromptTokens:     params.PromptTokens,
-			CompletionTokens: params.CompletionTokens,
-			CacheReadTokens:  params.CacheReadTokens,
-			CacheWriteTokens: params.CacheWriteTokens,
-			IsStream:         params.IsStream,
-			TotalMs:          int64(params.UseTimeSeconds) * 1000,
-			EstimatedCost: estimateRequestCost(params.ChannelId, priceModel,
-				params.PromptTokens, params.CompletionTokens,
-				params.CacheReadTokens, params.CacheWriteTokens),
-		}
+		// 统一日志表（design-v1 §8）：模型面请求只写 request_logs（转发收尾落库），
+		// 不再写基座 logs——同一请求不再记两遍。
+		return
 	}
+	// 无载体（遗留路径）：仍写基座 logs 兼容。
 	if !common.LogConsumeEnabled {
 		return
 	}

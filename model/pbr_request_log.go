@@ -61,6 +61,11 @@ type PBRLogCarrier struct {
 	KeyId         int
 	KeyName       string
 
+	// 统一日志表：管理动作（渠道测试等）记录管理员与来源 IP；模型面请求为空。
+	UserId   int
+	Username string
+	Ip       string
+
 	Success       bool
 	HTTPStatus    int
 	ErrorKind     string
@@ -91,6 +96,14 @@ type PBRRequestLog struct {
 
 	TokenId   int    `json:"token_id"`
 	TokenName string `json:"key_name" gorm:"type:varchar(191);index"`
+
+	// 统一日志表（design-v1 §8）：管理动作（渠道测试等）记录管理员与来源 IP，
+	// 模型面请求为空（PBR 无用户体系，调用方身份是客户端密钥 key_name）。
+	UserId   int    `json:"user_id"`
+	Username string `json:"username" gorm:"type:varchar(191);index"`
+	Ip       string `json:"ip" gorm:"type:varchar(64)"`
+	// Type 区分消耗（2）与错误（5）——控制台一个日志视图按类型渲染徽章。
+	Type int `json:"type"`
 
 	InboundFormat string `json:"inbound_format" gorm:"type:varchar(32)"`
 	Success       bool   `json:"success" gorm:"index"`
@@ -185,15 +198,23 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 		UpstreamModel:     carrier.UpstreamModel,
 		TokenId:           carrier.KeyId,
 		TokenName:         carrier.KeyName,
-		InboundFormat:     carrier.InboundFormat,
-		Success:           carrier.Success,
-		HTTPStatus:        carrier.HTTPStatus,
-		ErrorKind:         carrier.ErrorKind,
-		ErrorSummary:      summary,
-		TTFTMs:            carrier.TTFTMs,
-		TotalMs:           totalMs,
-		Attempts:          string(encoded),
-		TotalAttempts:     carrier.TotalAttempts,
+		UserId:            carrier.UserId,
+		Username:          carrier.Username,
+		Ip:                carrier.Ip,
+		// 消耗（2）/错误（5）按成功与否判定，前端一个视图按类型渲染徽章。
+		Type:           LogTypeConsume,
+		InboundFormat:  carrier.InboundFormat,
+		Success:        carrier.Success,
+		HTTPStatus:     carrier.HTTPStatus,
+		ErrorKind:      carrier.ErrorKind,
+		ErrorSummary:   summary,
+		TTFTMs:         carrier.TTFTMs,
+		TotalMs:        totalMs,
+		Attempts:       string(encoded),
+		TotalAttempts:  carrier.TotalAttempts,
+	}
+	if !entry.Success {
+		entry.Type = LogTypeError
 	}
 	if tokenUsage != nil {
 		entry.PromptTokens = tokenUsage.PromptTokens

@@ -28,6 +28,12 @@ export interface PBRRequestLogListItem {
   channel: string
   upstream_model: string
   key_name: string
+  /** 统一日志表（design-v1 §8）：管理动作（渠道测试等）记录管理员，模型面请求为空。 */
+  user_id: number
+  username: string
+  /** 消耗（2）/错误（5）。 */
+  type: number
+  ip: string
   inbound_format: string
   success: boolean
   http_status: number

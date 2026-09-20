@@ -55,11 +55,9 @@ import { PBRAttemptTimeline } from './pbr-attempt-timeline'
 const PAGE_SIZE = 50
 
 /**
- * PBR 元数据日志分节（ui-spec §6.6）。
- *
- * 数据源是 PBR 自己的 `/api/v1/logs`：基座 `/api/log/**` 没有车道/成员/attempts 链，
- * 排障时看不到"为什么没用 P1、为什么最后 503"。明细可被保留策略清理，
- * 历史聚合请看数据看板（读小时聚合表）。
+ * 统一日志分节（ui-spec §6.6）：所有日志（模型面请求、渠道测试、错误）统一写
+ * request_logs 一张表，数据源 `/api/v1/logs`。车道/成员/attempts 链排障用，
+ * 明细可被保留策略清理，历史聚合请看数据看板（读小时聚合表）。
  */
 export function PBRLaneLogsSection() {
   const { t } = useTranslation()
@@ -174,6 +172,8 @@ export function PBRLaneLogsSection() {
             <TableHeader>
               <TableRow>
                 <TableHead>{t('Time')}</TableHead>
+                <TableHead>{t('Type')}</TableHead>
+                <TableHead>{t('User')}</TableHead>
                 <TableHead>{t('Lane')}</TableHead>
                 <TableHead>{t('Channel')}</TableHead>
                 <TableHead>{t('Upstream model')}</TableHead>
@@ -195,6 +195,22 @@ export function PBRLaneLogsSection() {
                 >
                   <TableCell className='text-xs whitespace-nowrap'>
                     {item.ts}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={cn(
+                        'text-[11px]',
+                        item.type === 5
+                          ? 'bg-destructive/15 text-destructive'
+                          : 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                      )}
+                      variant='secondary'
+                    >
+                      {item.type === 5 ? t('Error') : t('Consume')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className='text-xs'>
+                    {item.username || '-'}
                   </TableCell>
                   <TableCell className='text-xs'>{item.lane}</TableCell>
                   <TableCell className='text-xs'>{item.channel}</TableCell>
