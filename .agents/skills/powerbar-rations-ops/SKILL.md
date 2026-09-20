@@ -149,8 +149,13 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
 `channel` / `channel_enabled` / `upstream_model` / `priority`，成员级显式改名给 `upstream_override`，
 设了别名给 `public_alias`。**无车道时返回 200 + 推荐成员链 + `routable:false`（不是 404）**；
 停用车道返回真实成员链 + `source:disabled`。
-**推荐项只在 `candidates[]`**（声明或映射了该键的渠道；已配车道时通常为空数组），
-`members[]` 永远是真实成员链——两者不要混，推荐项只是界面排序用，**不限制成员可选范围**。
+**`members` 与 `candidates` 的实测语义**（两者容易记反）：
+
+- **没有同名车道**（`source:unconfigured`）：推荐链就在 **`members[]`**，`candidates` 恒为 `[]`；
+- **已有同名车道**（`source:explicit`/`disabled`）：`members[]` 是真实成员链，`candidates[]` 是
+  "**已启用、声明/映射了该键、但不在成员链里**"的渠道（全部是成员时为空数组）。
+
+推荐项只供界面排序/高亮，**不限制成员可选范围**（成员可任选任意启用渠道的任意已声明模型）。
 
 ### 4.5 客户端密钥
 
@@ -185,10 +190,17 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
 
 ### 5.1 渠道（PUT body）
 
-> **PUT 语义**：`PUT /api/channels/{name}` 是**部分合并**——只给 `enabled` 会保留原有
-> `models` / `key` / `model_mapping` 等（字段缺席 = 保持原值，不是清空）。
-> **但 `PUT /api/lanes/{name}` 对 `members` 是整体替换**：省略 `members` 会报
-> `422 lane_has_no_members`（车道不允许没有成员）。改车道务必带上完整成员数组。
+> **PUT 语义（务必看清，否则会丢成员）**：
+> `PUT /api/channels/{name}` 是**部分合并**——只给 `enabled` 会保留原有 `models` / `key` /
+> `model_mapping` 等（字段缺席 = 保持原值，不是清空）。
+>
+> `PUT /api/lanes/{name}` 的 `enabled` / `mode` / `config` 也是部分合并，但 **`members` 是
+> 整体替换、且省略即视为空**：
+> - `{"enabled":false}` → **200，并静默清空整条成员链**（数据丢失路径！）；
+> - `{"enabled":true}` / `{"mode":"manual"}` / `{"config":{...}}` 等**结果仍为启用**且没带
+>   `members` → `422 lane_has_no_members`；
+> - 想只改开关或六键、又想保留成员：**必须把完整 `members` 数组一并带上**；
+> - 只改成员用 `PUT /api/lanes/{name}/members`（body `{"members":[...]}`，同样整体替换）。
 
 ```json
 {
@@ -272,10 +284,13 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
   `soft_rate_limit` / `client_error` / `network_error`。
 - `rolling_success_rate` **冷启动为 0**（无样本），不要把它当成"上游有问题"。
 - **`events[]`** 是近期运行态事件（`type` = `cooldown` / `reset` / 熔断三态；`ts` 毫秒；
-  `member` = `<渠道id>:<上游真名>`；`detail` 如 `cooldown_until=<毫秒>`），排障价值高。
+  `member` = `<渠道id>:<上游真名>`；`detail` 如 `cooldown_until=<毫秒>`），排障价值高；
+  **无事件时是 `null`（不是 `[]`）**。
 - **判定"不可用/降级"的规则**：成员 `available=false`（或 `cooldown_until` 非 null、
   `circuit=open`）即不可选；全部成员不可选时 `GET /api/models` 的 `degraded=true`、
   `healthy_member_count=0`，但 **`routable` 仍为 true**（车道存在 ≠ 现在可用）。
+  停用车道（`source:disabled`）在 `GET /api/models` 里 `available_member_count=0`，
+  但 `health_member_count` 仍等于成员数（运行态统计照常给出）。
 - **运行态是进程内的**（冷却/熔断/亲和），**重启即清空**，不持久化。
 
 ### 5.4 请求日志与 attempts 链
@@ -395,9 +410,11 @@ curl -s "${A[@]}" -X POST --data-binary @backup.json "$BASE/api/import"         
 - **`/export` 不含密钥明文/哈希**；导入只用于**同版本 PBR 实例间还原配置**，不是旧系统迁移工具。
 - 字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`）= 清空。只有"bundle 与库里都没有"的成员才跳过，
   在 `warnings` / `diff.skipped` 列出。
-- **形状提醒**：`/export` 顶层是 `{version, exported_at, channels, lanes, client_keys, system_options}`；
-  而 `/import` 的 `diff` 按资源分组（`channels` / **`keys`** / `lanes` / `options`），
-  每组形如 `{add:[], update:[], unchanged:[], remove:[], skipped:[]}`。**导出叫 `client_keys`，diff 里叫 `keys`**。
+- **形状提醒**：`/export` 顶层是 `{version, exported_at, channels, lanes, client_keys, system_options}`
+  （`system_options` 是扁平标量 map，`lane_defaults` 是其中的对象）；
+  而 `/import` 的 `diff` 按资源分组：`channels` / **`keys`** / `lanes` 三组是
+  `{add:[], update:[], unchanged:[], remove:[], skipped:[]}`，但 **`options` 组是
+  `{"changed":[...]}`**（不是五数组）。**导出叫 `client_keys`，diff 里叫 `keys`**。
 - **最稳妥的备份是直接拷 `pbr.db`（连同 `-wal` / `-shm`）**；DB 文件是 `600`，渠道 key 明文落库属预期。
 
 ### 6.5 Webhook 事件通知（PBR → 你的接收端）
@@ -425,7 +442,8 @@ PBR 把路由运行态事件（熔断/冷却/恢复）异步 POST 到你配置�
    - 删渠道前：`GET /api/channels/{name}`（若 409 会给出 `details.lanes`）；
    - 删车道前：`GET /api/routes/{name}`；
    - 删密钥前：确认没有消费者还在用它（`GET /api/keys/{name}` 看 `last_used_at`）。
-3. 破坏性操作优先 `?dry_run=true` 预览；`DELETE /api/channels/disabled` 是**整批**操作，
+3. 破坏性操作优先 `?dry_run=true` 预览（注意：`DELETE /api/channels/disabled?dry_run=true`
+   仍会走引用检查并返回同样的 409，**它没有真正的预览分支**）；该端点是**整批**操作，
    任一被引用即整批 409（`details.blocked` 列出 渠道名 → 车道名），不会部分删除。
 4. **不要假设只有你在改**：写前 `GET` 复核、写后立刻回读；出现"删了却 200 / 该存在却 404"
    先查 `GET /api/audit` 对账（可能被其他操作者并发改动）。
@@ -467,7 +485,8 @@ PBR 把路由运行态事件（熔断/冷却/恢复）异步 POST 到你配置�
 1. **没车道 = 不可调用**：渠道声明 `models` **绝不**自动建/改车道；删车道会立刻让该键 503。
    `POST /api/lanes/seed` 与"一键固化"**已按 ADR 0005/0006 整体移除**，不要调用。
 2. **`GET /api/routes/{model}` 未配车道返回 200 + 推荐成员链 + `routable:false`**（不是 404）；
-   模型面请求才是 503。**推荐链不代表已可调用**，也不限制成员可选范围。
+   模型面请求才是 503。**推荐链不代表已可调用**，也不限制成员可选范围；
+   **没有同名车道时推荐链在 `members[]`、`candidates` 为空**（别记反，见 §4.4）。
 3. **`sync-models` 有保护**：上游返回空清单默认 409（需 `?force=1`）；要移除的键仍被车道引用也 409。
    `?dry_run=true` 只预览。
 4. **渠道删除**：被车道引用时 409，引用它的车道名在 `error.details.lanes`（不解析 message）。
