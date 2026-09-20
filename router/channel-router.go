@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/internal/apiresp"
 	"github.com/zzyyyds88/PowerBarRations/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -22,6 +23,12 @@ type channelRouteDef struct {
 }
 
 func registerChannelRoutes(apiRouter *gin.RouterGroup) {
+	// 探活端点不套信封（design-v1 §16.3）：响应是 {success,message,time} 探活
+	// 结论（success:false 是"测试失败"的结论，不是请求失败——apiresp 的 Default
+	// 会把 200+success:false 映射成 400、并把 success 字段从成功体里剥掉，前端
+	// 就把成功的测试误判成失败）。原样直通。
+	apiresp.Register(http.MethodGet, "/api/channel/test/:id", apiresp.Policy{Passthrough: true})
+	apiresp.Register(http.MethodGet, "/api/channel/test", apiresp.Policy{Passthrough: true})
 	channelRoute := apiRouter.Group("/channel")
 	channelRoute.Use(middleware.PBRAuth())
 
