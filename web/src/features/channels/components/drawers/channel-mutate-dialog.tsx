@@ -892,13 +892,30 @@ export function ChannelMutateDialog({
     [currentModelsArray, form]
   )
 
-  // Ordinary edits use the saved channel. Advanced Custom retains its existing
-  // preview path, which reuses the saved credential on the server.
+  // Discovery source (ui-spec §6.4):
+  //  - unsaved channel → preview with the draft connection (form key).
+  //  - saved channel + operator with sensitive write + a freshly typed key →
+  //    preview with the draft key, so a copied channel can be probed with its
+  //    new key without saving first.
+  //  - saved channel otherwise → reuse the stored credential (saved request):
+  //    the form never repopulates the key, so a preview without a key would
+  //    always 401.
+  // Advanced Custom keeps its own preview path, which reuses the saved key on
+  // the server via channel_id (the probe never sends the form key).
+  const draftKeyProbing =
+    isEditing &&
+    canEditSensitive &&
+    currentType !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
+    Boolean(currentKey?.trim())
   const previewModels =
     !isEditing ||
-    (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive)
+    (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive) ||
+    draftKeyProbing
   const canDiscoverModels = previewModels ? canEditSensitive : canOperateChannel
-  const previewKey = isEditing ? undefined : currentKey
+  const previewKey =
+    isEditing && currentType === CHANNEL_TYPE_ADVANCED_CUSTOM
+      ? undefined
+      : currentKey
   const previewRequest = useMemo<ChannelModelDiscoveryRequest>(
     () => ({
       kind: 'preview',
