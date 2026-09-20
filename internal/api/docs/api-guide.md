@@ -138,11 +138,18 @@ Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).
 
 ## 6. 错误模型与硬规则
 
-- 成功体是**裸资源**（无信封）；动作类端点是 `{"changed":n}` / `{"deleted":true}` 这类语义化最小对象。
-- 错误体：`{"error":{"code":"...","message":"...","hint":"...","details":{...}}}`，**带真实 HTTP 状态码**；**按状态码 + `code` 分支**，不要解析 message。`details` 当前用于车道引用守卫的 `blocked`（渠道名 → 车道名列表）。
-- 模型面 `503` = `No available channel for model <X>`（没有可用渠道）；
+- 成功体是**裸资源**（无信封）；动作类端点是 `{"changed":n}` / `{"deleted":true}` / `{"reset":n}` 这类语义化最小对象。
+- **两个面的错误体不同**：管理面 `/api/*` 是 `{"error":{"code","message","hint"?,"details"?}}`，**按 `code` 分支**；
+  模型面 `/v1/*` 是 OpenAI 兼容体（`{"error":{"message":"..."}}`），通常**没有** PBR `code`，按状态码判定。
+  管理面 `details` 用于机器可判定明细：车道引用守卫的 `blocked`（渠道名 → 车道名）、`lanes`（引用被移除模型的车道名）、`unknown`（不存在的名字）、`failed_files`（日志清理失败文件）。
+- 模型面 `503` = `No available channel for model <X>`（没有可用渠道，或该键未配车道）；
   本机繁忙是 `529`，两者不要混。
-- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `source:"unconfigured"` + `routable:false` + 空/推荐 `members`（**不是 404**）。
+- **PUT 语义**：渠道 PUT 是**部分合并**（字段缺席 = 保持原值）；车道 PUT 对 `members` 是**整体替换**，
+  省略成员会 `422 lane_has_no_members`。
+- `hard_auth` / `hard_quota` 类失败的成员冷却 = **2 × `member_cooldown_seconds`**。
+- `GET /api/routes/{model}` 对不存在的模型返回 `200` + `source:"unconfigured"` + `routable:false`（**不是 404**）；
+  推荐成员在 `candidates[]`，`members[]` 永远是真实成员链。
+- 日志 `attempts[].status` 取值含 **`cooldown`**（成员正在冷却、本轮未打上游），与 `failed`（上游失败）要区分。
 - `sync-models` 上游返回空清单默认 `409`（需 `?force=1`）；被显式车道引用的模型移除也 `409`。
 - 渠道删除被显式车道引用时 `409`，message 给出车道名。
 - 写操作响应前服务端已回读，但跨请求仍应 `GET` 校验最终状态。
