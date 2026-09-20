@@ -175,6 +175,14 @@ export type DataTablePageProps<TData> = {
   hideMobile?: boolean
 
   /**
+   * Pixel viewport width at/below which the mobile card layout is shown
+   * instead of the desktop table. Defaults to 640 (Tailwind `sm`); raise it
+   * for pages whose wide tables overflow below a larger width
+   * (e.g. usage-logs' 10-column table uses 768).
+   */
+  mobileBreakpoint?: number
+
+  /**
    * Row className resolver — applied to both desktop `TableRow` and mobile card.
    * Composes with the default `data-state="selected"` styling on desktop.
    * The `ctx.isMobile` flag is provided so consumers can return the
@@ -334,7 +342,9 @@ export type DataTablePageProps<TData> = {
  * `toolbar` / `mobile` / `renderRow` slots instead of the `*Props` variants.
  */
 export function DataTablePage<TData>(props: DataTablePageProps<TData>) {
-  const isMobile = useMediaQuery('(max-width: 640px)')
+  const isMobile = useMediaQuery(
+    `(max-width: ${props.mobileBreakpoint ?? 640}px)`
+  )
   const showMobile = isMobile && !props.hideMobile
 
   const [internalViewMode, setInternalViewMode] = useDataTableViewMode({

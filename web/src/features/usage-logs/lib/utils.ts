@@ -209,12 +209,12 @@ export async function fetchLogsByCategory(
   // 复用 common-logs-columns。筛选维度是车道/渠道(名)/令牌/模型/成功与否 + 时间范围。
   if (logCategory === 'pbr') {
     const timeRange = buildTimeRangeParams(searchParams, false)
-    const success =
-      searchParams.success === 'true'
-        ? true
-        : searchParams.success === 'false'
-          ? false
-          : undefined
+    let success: boolean | undefined
+    if (searchParams.success === 'true') {
+      success = true
+    } else if (searchParams.success === 'false') {
+      success = false
+    }
     const res = await listPBRRequestLogsPaged({
       page,
       page_size: pageSize,

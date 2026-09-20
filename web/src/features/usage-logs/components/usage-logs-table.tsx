@@ -83,7 +83,7 @@ interface UsageLogsTableProps {
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
   const { isAdminView: isAdmin, viewAccess } = useLogsViewScope()
-  const isMobile = useMediaQuery('(max-width: 640px)')
+  const isMobile = useMediaQuery('(max-width: 1024px)')
   const searchParams = route.useSearch()
 
   const {
@@ -219,6 +219,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   return (
     <DataTablePage
       table={table}
+      mobileBreakpoint={1024}
       compactPagination={isMobile && isCommon}
       columns={columns as ColumnDef<Record<string, unknown>>[]}
       isLoading={isLoadingData}
