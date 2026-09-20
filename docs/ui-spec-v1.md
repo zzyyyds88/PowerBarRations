@@ -227,7 +227,7 @@
 ### 6.6 请求日志 `/logs`、`/logs/$id`
 
 - 保留上游 `usage-logs` 外壳：**Common 与 PBR 两个分节**（Common 数据源为基座 `/api/log/**`；PBR 分节走 `GET /api/logs`）。Drawing 分节随 Midjourney 全链路移除；**任务日志不在此页**，落在独立的「系统任务」页（§6.10）。
-- **Common 分节采用上游的详细列形态**（New API `common-logs-columns`）：时间、类型、模型、渠道、令牌、提示/补全 token、耗时、状态、详情；**删除 PBR 无关列**（额度/剩余/已用、分组、用户、邀请码、订阅）。成本列按 PBR 口径只显示**折算花费**并标注"折算"。
+- **Common 分节采用上游的详细列形态**（New API `common-logs-columns`）：时间、类型、渠道、**用户**、令牌、模型、流、提示/补全 token、**花费**、耗时、详情；**删除 PBR 无关列**（额度/剩余/已用、分组、邀请码、订阅）。**用户列按 new-api 形态保留**（头像 + 用户名，点击打开用户信息弹窗）；花费列按 `quota` 显示（PBR 无额度语义时为 `-`）。
 - **详情弹窗**：沿用上游 `details-dialog` 形态，展示该条日志的 `other` 明细与 attempts 链（见下），不再跳裸 JSON。
 - **PBR 分节的数据源是 `GET /api/logs`**：筛选车道 / 渠道 / 令牌 / 请求模型 / 成功与否 + 游标翻页；列表展示时间、车道、渠道、上游真名、密钥名、结果、attempts 摘要、总耗时、折算成本。
 - **详情**：`GET /api/logs/{id}` 的 `attempts` 逐尝试时间线（成员、状态、`duration_ms`、`error_kind`、`msg`），区分 `cooldown`/`circuit_break`/`skipped` 状态色；另展示 `lane`/`route_source`/`upstream_model`/`http_status`/token 用量/`total_ms`/`estimated_cost`。
