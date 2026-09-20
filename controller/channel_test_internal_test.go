@@ -81,6 +81,19 @@ func TestValidateChannelProxy(t *testing.T) {
 	}
 }
 
+// 渠道名统一 trim（车道成员按渠道名精确匹配且解析前先 trim，名字带前后
+// 空格会让该渠道对车道成员永远不可达）。
+func TestValidateChannelTrimsName(t *testing.T) {
+	channel := &model.Channel{
+		Type: constant.ChannelTypeOpenAI,
+		Name: " GcmodAi ",
+		Key:  "test-key",
+	}
+
+	require.NoError(t, validateChannel(channel, true))
+	assert.Equal(t, "GcmodAi", channel.Name)
+}
+
 func TestValidateChannelRequiresNewAPIBaseURL(t *testing.T) {
 	tests := []struct {
 		name    string

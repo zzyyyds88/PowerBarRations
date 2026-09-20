@@ -164,7 +164,8 @@ func PutChannel(c *gin.Context) {
 		apierr.BadRequest(c, "invalid json body")
 		return
 	}
-	if payload.Name != "" && payload.Name != name {
+	// body name 与 path 一致性校验前先 trim（与车道成员解析、legacy 入口同口径）。
+	if trimmedBodyName := strings.TrimSpace(payload.Name); trimmedBodyName != "" && trimmedBodyName != name {
 		apierr.Validation(c, "body name does not match path")
 		return
 	}
