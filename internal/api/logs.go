@@ -16,16 +16,10 @@ import (
 //
 // 只读元数据：没有请求/响应正文，没有余额与扣费。成本是"折算"，不参与准入。
 
-// ListLogs GET /api/v1/logs
-//
-// 过滤：lane、channel、key、model、success、since、until、cursor、limit。
-func ListLogs(c *gin.Context) {
-	limit, cursor, err := pageParams(c)
-	if err != nil {
-		writeAPIError(c, err)
-		return
-	}
-	filter := model.PBRRequestLogFilter{Limit: limit}
+// parseLogFilter 解析日志过滤条件（偏移与游标分支共用，避免口径分叉）。
+// 不解析分页参数（page/page_size/cursor/limit）——由各分支自行处理。
+func parseLogFilter(c *gin.Context) (model.PBRRequestLogFilter, error) {
+	filter := model.PBRRequestLogFilter{}
 	filter.Lane = strings.TrimSpace(c.Query("lane"))
 	filter.Channel = strings.TrimSpace(c.Query("channel"))
 	filter.Key = strings.TrimSpace(c.Query("key"))
@@ -36,15 +30,42 @@ func ListLogs(c *gin.Context) {
 	}
 	since, err := parseTimeQuery(c.Query("since"))
 	if err != nil {
-		apierr.Validation(c, "since must be RFC3339 or unix seconds")
-		return
+		return filter, &apiError{code: apierr.CodeValidationFailed, message: "since must be RFC3339 or unix seconds"}
 	}
 	until, err := parseTimeQuery(c.Query("until"))
 	if err != nil {
-		apierr.Validation(c, "until must be RFC3339 or unix seconds")
-		return
+		return filter, &apiError{code: apierr.CodeValidationFailed, message: "until must be RFC3339 or unix seconds"}
 	}
 	filter.Since, filter.Until = since, until
+	return filter, nil
+}
+
+// ListLogs GET /api/v1/logs
+//
+// 过滤：lane、channel、key、model、success、since、until。
+// 分页双模式（api-spec §5.5）：传 page+page_size 走偏移（响应 items/total/page/page_size）；
+// 传 cursor+limit 走游标（响应 items/next_cursor，向后兼容）。由是否传 page 判定。
+func ListLogs(c *gin.Context) {
+	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
+		listLogsPaged(c, rawPage)
+		return
+	}
+	listLogsCursor(c)
+}
+
+// listLogsCursor 游标分页（向后兼容）。
+func listLogsCursor(c *gin.Context) {
+	limit, cursor, err := pageParams(c)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	filter, err := parseLogFilter(c)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	filter.Limit = limit
 	if cursor != "" {
 		id, convErr := strconv.Atoi(cursor)
 		if convErr != nil {
@@ -71,6 +92,55 @@ func ListLogs(c *gin.Context) {
 		items = append(items, logResponse(&entries[i]))
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "next_cursor": nextCursor})
+}
+
+// listLogsPaged 偏移分页（供控制台跳页/总数）。page_size 上限 100。
+func listLogsPaged(c *gin.Context, rawPage string) {
+	page, convErr := strconv.Atoi(rawPage)
+	if convErr != nil || page <= 0 {
+		apierr.Validation(c, "page must be a positive integer")
+		return
+	}
+	pageSize := 50
+	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
+		parsed, convErr := strconv.Atoi(raw)
+		if convErr != nil || parsed <= 0 {
+			apierr.Validation(c, "page_size must be a positive integer")
+			return
+		}
+		pageSize = parsed
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	filter, err := parseLogFilter(c)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	filter.Page = page
+	filter.PageSize = pageSize
+
+	total, err := model.CountPBRRequestLogs(filter)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	entries, err := model.ListPBRRequestLogs(filter)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	items := make([]gin.H, 0, len(entries))
+	for i := range entries {
+		items = append(items, logResponse(&entries[i]))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":     items,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
 }
 
 // GetLog GET /api/v1/logs/{id}：含 attempts 链。
@@ -143,8 +213,14 @@ func logResponse(entry *model.PBRRequestLog) gin.H {
 		"request_model":      entry.RequestModel,
 		"route_source":       entry.RouteSource,
 		"channel":            entry.MemberChannelName,
+		"channel_id":         entry.MemberChannelId,
 		"upstream_model":     entry.UpstreamModel,
 		"key_name":           entry.TokenName,
+		"token_id":           entry.TokenId,
+		"user_id":            entry.UserId,
+		"username":           entry.Username,
+		"type":               entry.Type,
+		"ip":                 entry.Ip,
 		"inbound_format":     entry.InboundFormat,
 		"success":            entry.Success,
 		"http_status":        entry.HTTPStatus,

@@ -202,16 +202,16 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 		Username:          carrier.Username,
 		Ip:                carrier.Ip,
 		// 消耗（2）/错误（5）按成功与否判定，前端一个视图按类型渲染徽章。
-		Type:           LogTypeConsume,
-		InboundFormat:  carrier.InboundFormat,
-		Success:        carrier.Success,
-		HTTPStatus:     carrier.HTTPStatus,
-		ErrorKind:      carrier.ErrorKind,
-		ErrorSummary:   summary,
-		TTFTMs:         carrier.TTFTMs,
-		TotalMs:        totalMs,
-		Attempts:       string(encoded),
-		TotalAttempts:  carrier.TotalAttempts,
+		Type:          LogTypeConsume,
+		InboundFormat: carrier.InboundFormat,
+		Success:       carrier.Success,
+		HTTPStatus:    carrier.HTTPStatus,
+		ErrorKind:     carrier.ErrorKind,
+		ErrorSummary:  summary,
+		TTFTMs:        carrier.TTFTMs,
+		TotalMs:       totalMs,
+		Attempts:      string(encoded),
+		TotalAttempts: carrier.TotalAttempts,
 	}
 	if !entry.Success {
 		entry.Type = LogTypeError
@@ -314,7 +314,8 @@ type PBRTokenUsage struct {
 	EstimatedCost    float64
 }
 
-// PBRRequestLogFilter 查询过滤条件。
+// PBRRequestLogFilter 查询过滤条件。偏移分页（Page>0）与游标分页（BeforeId）
+// 二选一：传 Page 走偏移（供控制台跳页/总数），传 BeforeId 走游标（向后兼容）。
 type PBRRequestLogFilter struct {
 	Lane     string
 	Channel  string
@@ -325,11 +326,13 @@ type PBRRequestLogFilter struct {
 	Until    int64
 	BeforeId int
 	Limit    int
+	Page     int
+	PageSize int
 }
 
-// ListPBRRequestLogs 按 id 倒序分页。
-func ListPBRRequestLogs(filter PBRRequestLogFilter) ([]PBRRequestLog, error) {
-	query := DB.Model(&PBRRequestLog{}).Order("id desc").Limit(filter.Limit + 1)
+// applyPBRLogFilter 把过滤条件收口到一处，列表与计数共用，避免口径分叉。
+// BeforeId 是游标分页专属条件，不在此处（Count 不应带它）。
+func applyPBRLogFilter(query *gorm.DB, filter PBRRequestLogFilter) *gorm.DB {
 	if filter.Lane != "" {
 		query = query.Where("lane_name = ?", filter.Lane)
 	}
@@ -351,14 +354,47 @@ func ListPBRRequestLogs(filter PBRRequestLogFilter) ([]PBRRequestLog, error) {
 	if filter.Until > 0 {
 		query = query.Where("ts <= ?", filter.Until)
 	}
-	if filter.BeforeId > 0 {
-		query = query.Where("id < ?", filter.BeforeId)
+	return query
+}
+
+// ListPBRRequestLogs 按 id 倒序分页。偏移模式（Page>0）用 Offset/Limit 返回精确切片，
+// total 由 CountPBRRequestLogs 单独查；游标模式（BeforeId）用 Limit+1 探测下一页，
+// 由调用方解析 next_cursor。两种模式由是否传 Page 判定（api-spec §5.5）。
+func ListPBRRequestLogs(filter PBRRequestLogFilter) ([]PBRRequestLog, error) {
+	query := DB.Model(&PBRRequestLog{}).Order("id desc")
+	query = applyPBRLogFilter(query, filter)
+	if filter.Page > 0 {
+		pageSize := filter.PageSize
+		if pageSize <= 0 {
+			pageSize = 50
+		}
+		offset := (filter.Page - 1) * pageSize
+		if offset < 0 {
+			offset = 0
+		}
+		query = query.Limit(pageSize).Offset(offset)
+	} else {
+		if filter.BeforeId > 0 {
+			query = query.Where("id < ?", filter.BeforeId)
+		}
+		query = query.Limit(filter.Limit + 1)
 	}
 	var entries []PBRRequestLog
 	if err := query.Find(&entries).Error; err != nil {
 		return nil, err
 	}
 	return entries, nil
+}
+
+// CountPBRRequestLogs 按过滤条件统计总数（偏移分页的 total）。
+func CountPBRRequestLogs(filter PBRRequestLogFilter) (int64, error) {
+	var count int64
+	query := DB.Model(&PBRRequestLog{})
+	query = applyPBRLogFilter(query, filter)
+	if err := query.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // GetPBRRequestLogById 单条（含 attempts 链）。
