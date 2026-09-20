@@ -354,15 +354,17 @@ type LaneRelayConfig struct {
 
 ## 8. 日志与记账（元数据 only）
 
-单表 `request_logs`：
+单表 `request_logs`（**所有日志统一写这张表**：模型面请求、渠道测试等管理动作、错误——基座 `logs` 表停写，历史数据保留只读）：
 
 ```
 id, ts, lane_name, request_model, route_source, member_channel_id, member_channel_name, upstream_model,
-token_id, key_name, inbound_format, success, http_status, error_kind,
+token_id, key_name, user_id, username, type, ip, inbound_format, success, http_status, error_kind,
 error_summary(≤2KB 截断), prompt_tokens, completion_tokens, cache_read_tokens,
 cache_write_tokens, reasoning_tokens, ttft_ms, total_ms, is_stream,
 attempts(JSON), total_attempts, estimated_cost(仅折算)
 ```
+
+模型面请求的 `user_id/username/ip` 为空（PBR 无用户体系，调用方身份是客户端密钥 `key_name`）；渠道测试等管理动作记录管理员（`user_id/username/ip`）。`type` 区分消耗（2）与错误（5）——控制台一个日志视图按类型渲染徽章，**不再分两个分节两张表**。
 
 `attempts` 元素：`attempt_num`、`member`、`status ∈ success|failed|cooldown|circuit_break|skipped`、`duration_ms`、`error_kind`、`msg`。另建每日/每小时聚合表供 `/stats` 与 UI 图表。
 
