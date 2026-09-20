@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
+import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -26,6 +27,7 @@ import {
   DataTableRow,
   useDataTable,
 } from '@/components/data-table'
+import { TableRow, TableCell } from '@/components/ui/table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { cn } from '@/lib/utils'
@@ -35,11 +37,13 @@ import {
   LOG_TYPE_ALL_VALUE,
   LOG_TYPE_ENUM,
 } from '../constants'
+import type { UsageLog } from '../data/schema'
 import { useColumnsByCategory } from '../lib/columns'
 import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
+import { PBRLogDetailsContent } from './pbr-log-details'
 import { PBRLogsFilterBar } from './pbr-logs-filter-bar'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 import { useLogsViewScope, type LogsViewAccess } from './usage-logs-provider'
@@ -78,11 +82,7 @@ interface UsageLogsTableProps {
 
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
-  const {
-    isAdminView: isAdmin,
-    isRootView: isRoot,
-    viewAccess,
-  } = useLogsViewScope()
+  const { isAdminView: isAdmin, viewAccess } = useLogsViewScope()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
 
@@ -193,7 +193,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const logs = data?.items || []
-  const columns = useColumnsByCategory(logCategory, isAdmin, isRoot)
+  const columns = useColumnsByCategory(logCategory, isAdmin)
   const isLoadingData = isLoading || (isFetching && !data)
 
   const { table } = useDataTable({
@@ -233,7 +233,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       skeletonKeyPrefix='usage-log-skeleton'
       applyHeaderSize
       tableClassName={cn(
-        '[&_[data-slot=table]]:text-[13px] [&_[data-slot=table]_td]:text-[13px] [&_[data-slot=table]_td_*]:text-[13px] [&_[data-slot=table]_th]:text-[13px] [&_[data-slot=table]_th_*]:text-[13px]'
+        '[&_[data-slot=table]]:text-[12px] [&_[data-slot=table]_td]:text-[12px] [&_[data-slot=table]_td_*]:text-[12px] [&_[data-slot=table]_th]:text-[12px] [&_[data-slot=table]_th_*]:text-[12px] [&_[data-slot=table]_td]:py-1 [&_[data-slot=table]_th]:py-1.5'
       )}
       mobile={
         <UsageLogsMobileList
@@ -250,27 +250,32 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         )
       }
       renderRow={(row) => {
-        const logType = (row.original as Record<string, unknown>).type as
-          | number
-          | undefined
+        const log = row.original
+        const logType = log.type as number | undefined
         let tintClass =
           isCommon && logType != null ? (logTypeRowTint[logType] ?? '') : ''
         if (isCommon && isAdmin) {
-          const other = parseLogOther(
-            ((row.original as Record<string, unknown>).other as string) ?? ''
-          )
+          const other = parseLogOther((log.other as string) ?? '')
           if (other?.admin_info?.quota_saturation) {
             tintClass = quotaSaturationRowTint
           }
         }
 
         return (
-          <DataTableRow
-            key={row.id}
-            row={row}
-            className={cn('transition-colors', tintClass)}
-            getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
-          />
+          <Fragment key={row.id}>
+            <DataTableRow
+              row={row}
+              className={cn('transition-colors', tintClass)}
+              getColumnClassName={() => (isCommon ? 'py-1.5' : 'py-3.5')}
+            />
+            {row.getIsExpanded() && (
+              <TableRow className={cn('bg-muted/40 border-b', tintClass)}>
+                <TableCell colSpan={columns.length} className='p-3'>
+                  <PBRLogDetailsContent log={log as unknown as UsageLog} />
+                </TableCell>
+              </TableRow>
+            )}
+          </Fragment>
         )
       }}
     />

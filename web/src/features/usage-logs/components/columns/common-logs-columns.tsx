@@ -17,12 +17,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { GitBranch, KeyRound } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, GitBranch, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Popover,
   PopoverContent,
@@ -34,91 +32,23 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { getUserAvatarStyle, getUserAvatarFallback } from '@/lib/avatar'
 import { formatTimestampToDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
-import {
-  formatModelName,
-  parseLogOther,
-  renderAuditContent,
-} from '../../lib/format'
+import { formatModelName, parseLogOther } from '../../lib/format'
 import {
   isDisplayableLogType,
   isTimingLogType,
   getLogTypeConfig,
 } from '../../lib/utils'
-import type { LogOtherData } from '../../types'
-import { DetailsDialog } from '../dialogs/details-dialog'
 import { ModelBadge } from '../model-badge'
 import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
 import { useUsageLogsContext } from '../usage-logs-provider'
 
-interface DetailSegment {
-  text: string
-  muted?: boolean
-  danger?: boolean
-}
-
-/**
- * 通用日志（基座 /api/log/**）只存元数据：时间/类型/模型/渠道/令牌/
- * token/耗时/状态/内容。PBR 没有用户、分组、额度与计费语义，因此详情预览
- * 只挑排障相关的信息，不再渲染倍率/价格/分组/额度。
- */
-function buildDetailSegments(
-  log: UsageLog,
-  other: LogOtherData | null,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-  isAdmin: boolean
-): DetailSegment[] {
-  const segments: DetailSegment[] = []
-
-  // 额度钳制是罕见的后端异常标记（admin-only），优先并高亮展示。
-  if (isAdmin && other?.admin_info?.quota_saturation) {
-    segments.push({ text: t('Quota clamped'), danger: true })
-  }
-
-  // PBR 错误日志（type=5）的 error_summary 在 other.pbr，优先展示（红色）。
-  if (other?.pbr?.error_summary) {
-    segments.push({ text: other.pbr.error_summary, danger: true })
-  }
-
-  // 充值/管理/登录日志带本地化的操作描述。
-  if (log.type === 1 || log.type === 3 || log.type === 7) {
-    const text = renderAuditContent(other, t)
-    if (text) segments.push({ text })
-    return segments
-  }
-
-  // 退款（type=6）：展示原因。
-  if (log.type === 6) {
-    if (other?.reason) segments.push({ text: other.reason })
-    return segments
-  }
-
-  if (log.type === 2 && other) {
-    if (other.is_system_prompt_overwritten) {
-      segments.push({ text: t('System Prompt Override'), danger: true })
-    }
-    if (other.stream_status && other.stream_status.status !== 'ok') {
-      segments.push({
-        text:
-          t('Stream Status') +
-          ': ' +
-          (other.stream_status.end_reason || t('Error')),
-        danger: true,
-      })
-    }
-  }
-
-  return segments
-}
-
 export function useCommonLogsColumns(
   isAdmin: boolean,
-  isRoot: boolean,
   showLane = false
 ): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
@@ -157,180 +87,118 @@ export function useCommonLogsColumns(
   ]
 
   if (isAdmin) {
-    columns.push(
-      {
-        id: 'channel',
-        header: t('Channel'),
-        accessorFn: (row) => row.channel,
-        cell: function ChannelCell({ row }) {
-          const { sensitiveVisible } = useUsageLogsContext()
-          const log = row.original
+    columns.push({
+      id: 'channel',
+      header: t('Channel'),
+      accessorFn: (row) => row.channel,
+      cell: function ChannelCell({ row }) {
+        const { sensitiveVisible } = useUsageLogsContext()
+        const log = row.original
 
-          if (!isDisplayableLogType(log.type)) return null
+        if (!isDisplayableLogType(log.type)) return null
 
-          const other = parseLogOther(log.other)
-          const rawUseChannel = other?.admin_info?.use_channel ?? []
-          const useChannel = Array.isArray(rawUseChannel)
-            ? rawUseChannel.map(String).filter(Boolean)
-            : []
-          const hasRetryChain = useChannel.length > 1
-          const channelChain = hasRetryChain
-            ? useChannel.join(' → ')
-            : undefined
-          const channelDisplay = log.channel_name
-            ? log.channel_name + ' #' + log.channel
-            : '#' + log.channel
-          const channelIdDisplay = '#' + log.channel
-          const channelName = sensitiveVisible ? log.channel_name : '••••'
-          const multiKeyIndex = other?.admin_info?.multi_key_index
-          const showMultiKeyIndex =
-            other?.admin_info?.is_multi_key === true &&
-            typeof multiKeyIndex === 'number' &&
-            Number.isFinite(multiKeyIndex)
+        const other = parseLogOther(log.other)
+        const rawUseChannel = other?.admin_info?.use_channel ?? []
+        const useChannel = Array.isArray(rawUseChannel)
+          ? rawUseChannel.map(String).filter(Boolean)
+          : []
+        const hasRetryChain = useChannel.length > 1
+        const channelChain = hasRetryChain ? useChannel.join(' → ') : undefined
+        const channelDisplay = log.channel_name
+          ? log.channel_name + ' #' + log.channel
+          : '#' + log.channel
+        const channelIdDisplay = '#' + log.channel
+        const channelName = sensitiveVisible ? log.channel_name : '••••'
+        const multiKeyIndex = other?.admin_info?.multi_key_index
+        const showMultiKeyIndex =
+          other?.admin_info?.is_multi_key === true &&
+          typeof multiKeyIndex === 'number' &&
+          Number.isFinite(multiKeyIndex)
 
-          return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <div className='flex max-w-[160px] flex-col gap-0.5' />
-                  }
-                >
-                  <div className='relative inline-flex w-fit items-center gap-1'>
+        return (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={<div className='flex max-w-[160px] flex-col gap-0.5' />}
+              >
+                <div className='relative inline-flex w-fit items-center gap-1'>
+                  <StatusBadge
+                    label={channelIdDisplay}
+                    autoColor={String(log.channel)}
+                    copyText={String(log.channel)}
+                    size='sm'
+                    showDot={false}
+                    className='font-mono'
+                  />
+                  {showMultiKeyIndex && (
                     <StatusBadge
-                      label={channelIdDisplay}
-                      autoColor={String(log.channel)}
-                      copyText={String(log.channel)}
+                      label={String(multiKeyIndex)}
                       size='sm'
                       showDot={false}
-                      className='font-mono'
+                      copyable={false}
+                      variant='neutral'
+                      className='h-5 min-w-5 justify-center rounded-full px-1 font-mono text-xs'
+                      aria-label={t('Key') + ' ' + multiKeyIndex}
                     />
-                    {showMultiKeyIndex && (
-                      <StatusBadge
-                        label={String(multiKeyIndex)}
-                        size='sm'
-                        showDot={false}
-                        copyable={false}
-                        variant='neutral'
-                        className='h-5 min-w-5 justify-center rounded-full px-1 font-mono text-xs'
-                        aria-label={t('Key') + ' ' + multiKeyIndex}
-                      />
-                    )}
-                    {hasRetryChain && (
-                      <Popover>
-                        <PopoverTrigger
-                          render={
-                            <button
-                              type='button'
-                              className='text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex size-5 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none'
-                              aria-label={t('Retry Chain')}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          }
-                        >
-                          <GitBranch
-                            className='size-3.5 text-amber-500'
-                            aria-hidden='true'
+                  )}
+                  {hasRetryChain && (
+                    <Popover>
+                      <PopoverTrigger
+                        render={
+                          <button
+                            type='button'
+                            className='text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex size-5 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none'
+                            aria-label={t('Retry Chain')}
+                            onClick={(e) => e.stopPropagation()}
                           />
-                        </PopoverTrigger>
-                        <PopoverContent
-                          side='top'
-                          align='start'
-                          className='w-64 text-xs'
-                        >
-                          <div className='flex flex-col gap-1'>
-                            <p className='font-medium'>{t('Retry Chain')}</p>
-                            <p className='text-muted-foreground font-mono break-all'>
-                              {channelChain}
-                            </p>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                  </div>
-                  {log.channel_name && (
-                    <span className='text-muted-foreground/70 truncate [font-family:var(--font-body)] !text-xs'>
-                      {channelName}
-                    </span>
+                        }
+                      >
+                        <GitBranch
+                          className='size-3.5 text-amber-500'
+                          aria-hidden='true'
+                        />
+                      </PopoverTrigger>
+                      <PopoverContent
+                        side='top'
+                        align='start'
+                        className='w-64 text-xs'
+                      >
+                        <div className='flex flex-col gap-1'>
+                          <p className='font-medium'>{t('Retry Chain')}</p>
+                          <p className='text-muted-foreground font-mono break-all'>
+                            {channelChain}
+                          </p>
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   )}
-                </TooltipTrigger>
-                <TooltipContent>
-                  <div className='space-y-1'>
-                    <p>
-                      {sensitiveVisible ? channelDisplay : channelIdDisplay}
+                </div>
+                {log.channel_name && (
+                  <span className='text-muted-foreground/70 truncate [font-family:var(--font-body)] !text-xs'>
+                    {channelName}
+                  </span>
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                <div className='space-y-1'>
+                  <p>{sensitiveVisible ? channelDisplay : channelIdDisplay}</p>
+                  {channelChain && (
+                    <p className='text-muted-foreground text-xs'>
+                      {t('Chain')}: {channelChain}
                     </p>
-                    {channelChain && (
-                      <p className='text-muted-foreground text-xs'>
-                        {t('Chain')}: {channelChain}
-                      </p>
-                    )}
-                    {showMultiKeyIndex && (
-                      <p className='text-muted-foreground text-xs'>
-                        {t('Key')}: {multiKeyIndex}
-                      </p>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )
-        },
+                  )}
+                  {showMultiKeyIndex && (
+                    <p className='text-muted-foreground text-xs'>
+                      {t('Key')}: {multiKeyIndex}
+                    </p>
+                  )}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )
       },
-      {
-        id: 'user',
-        header: t('User'),
-        accessorFn: (row) => row.username,
-        cell: function UserCell({ row }) {
-          const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
-            useUsageLogsContext()
-          const log = row.original
-
-          if (!log.username) return null
-
-          return (
-            <button
-              type='button'
-              className='flex items-center gap-1.5 text-left'
-              onClick={(e) => {
-                e.stopPropagation()
-                setSelectedUserId(log.user_id)
-                setUserInfoDialogOpen(true)
-              }}
-            >
-              <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
-                <AvatarFallback
-                  className={cn(
-                    'text-[11px] font-semibold',
-                    !sensitiveVisible && 'bg-muted text-muted-foreground'
-                  )}
-                  style={
-                    sensitiveVisible
-                      ? getUserAvatarStyle(log.username)
-                      : undefined
-                  }
-                >
-                  {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
-                </AvatarFallback>
-              </Avatar>
-              <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className='text-muted-foreground max-w-[100px] truncate text-sm hover:underline' />
-                    }
-                  >
-                    {sensitiveVisible ? log.username : '••••'}
-                  </TooltipTrigger>
-                  {sensitiveVisible && log.username.length > 12 && (
-                    <TooltipContent side='top'>{log.username}</TooltipContent>
-                  )}
-                </Tooltip>
-              </TooltipProvider>
-            </button>
-          )
-        },
-      }
-    )
+    })
   }
 
   columns.push(
@@ -506,70 +374,37 @@ export function useCommonLogsColumns(
       },
     },
     {
-      accessorKey: 'content',
+      id: 'content',
       header: t('Details'),
       cell: function DetailsCell({ row }) {
         const { t } = useTranslation()
-        const [dialogOpen, setDialogOpen] = useState(false)
         const log = row.original
         const other = parseLogOther(log.other)
-
-        const segments = buildDetailSegments(log, other, t, isAdmin)
-        const primary = segments[0]
-        const hasMore = segments.length > 1
-        let primaryTextClass = 'text-foreground'
-        if (primary?.muted) {
-          primaryTextClass = 'text-muted-foreground/60'
-        } else if (primary?.danger) {
-          primaryTextClass = 'text-red-600 dark:text-red-400'
+        if (!other?.pbr) {
+          return <span className='text-muted-foreground/40 text-xs'>—</span>
         }
-        let detailPreview = <span className='text-muted-foreground/40'>—</span>
-        if (primary) {
-          detailPreview = (
-            <span
-              className={cn(
-                'truncate leading-snug group-hover:underline',
-                primaryTextClass
-              )}
-            >
-              {primary.text}
-              {hasMore && (
-                <span className='text-muted-foreground/40 ml-0.5'>
-                  +{segments.length - 1}
-                </span>
-              )}
-            </span>
-          )
-        } else if (log.content) {
-          detailPreview = (
-            <span className='text-muted-foreground truncate group-hover:underline'>
-              {log.content}
-            </span>
-          )
-        }
-
+        const expanded = row.getIsExpanded()
         return (
-          <>
-            <button
-              type='button'
-              className='group flex max-w-[200px] items-center gap-1 text-left text-xs'
-              onClick={() => setDialogOpen(true)}
-              title={t('Click to view full details')}
-            >
-              {detailPreview}
-            </button>
-            <DetailsDialog
-              log={log}
-              isAdmin={isAdmin}
-              isRoot={isRoot}
-              open={dialogOpen}
-              onOpenChange={setDialogOpen}
+          <button
+            type='button'
+            className='text-muted-foreground hover:text-foreground inline-flex size-6 items-center justify-center rounded'
+            onClick={(e) => {
+              e.stopPropagation()
+              row.toggleExpanded()
+            }}
+            aria-label={expanded ? t('Collapse') : t('Expand')}
+          >
+            <ChevronDown
+              className={cn(
+                'size-4 transition-transform',
+                expanded && 'rotate-180'
+              )}
+              aria-hidden='true'
             />
-          </>
+          </button>
         )
       },
-      size: 180,
-      maxSize: 200,
+      size: 48,
     }
   )
 

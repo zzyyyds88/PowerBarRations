@@ -30,11 +30,10 @@ import type { LogCategory } from '../types'
  */
 export function useColumnsByCategory(
   logCategory: LogCategory,
-  isAdmin: boolean,
-  isRoot: boolean
+  isAdmin: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): ColumnDef<any>[] {
   // PBR 分节用 common-logs-columns + 车道列（ui-spec §6.6）。
   const showLane = logCategory === 'pbr'
-  return useCommonLogsColumns(isAdmin, isRoot, showLane)
+  return useCommonLogsColumns(isAdmin, showLane)
 }
