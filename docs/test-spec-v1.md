@@ -101,6 +101,8 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 11 | 导出/导入幂等 | `GET /export`、`POST /import?dry_run=true` | dry_run 无变更；审计有记录 |
 | 12 | 日志保留 | `POST /logs/prune` | 明细清空、聚合不变 |
 | 13 | 审计 | `GET /audit` | 上述写操作均有记录 |
+| 14 | dry-run 不落库 | 每个 `preview` 端点带 `?dry_run=true` 调一次，再 `GET` 回读 | **状态与调用前一致**（无副作用），且响应含 `dry_run:true` |
+| 15 | dry-run 拒绝式端点不执行 | 每个 `reject` 端点带 `?dry_run=true` | 400 `dry_run_not_supported`，且**回读无变化** |
 
 **故障注入**一律用内置假上游 `internal/testutil/fakeupstream` 的 `POST /__control`。
 
@@ -125,6 +127,7 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 路由/故障转移（`internal/route`、`relay/channel/api_request.go`） | L1 + L2 + L4（`e2e`/`fault_injection`/`w2`） |
 | 车道成员编排（`internal/api/lanes.go`、`model/lane.go`、`web/src/features/routes`） | L0（pnpm）+ L1 + L2（建车道/池化）+ L3（自由编排）+ L4（`a3`） |
 | 管理 API / 契约（`internal/api`、`controller`、`apiresp`） | L1 + L2 + L4（`e2e`/`a4`） |
+| **dry-run 语义**（`internal/api/ops_routes.go` 的 dry-run 声明、任何写端点） | L1（守卫 + 行为测试）+ L2（runbook）+ L4（`e2e` 的 dry-run 专项） |
 | 控制台（`web/`） | L0（pnpm）+ L3 + L4（`a3`） |
 | 会话/认证（`common/session_cookie.go`、`middleware/pbr_auth.go`） | L1 + L3 + L4（`w3`） |
 | 日志/记账（`model/pbr_request_log.go`、`internal/api/logs.go`） | L1 + L4（`w5`） |

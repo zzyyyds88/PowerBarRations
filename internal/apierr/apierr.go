@@ -16,6 +16,9 @@ import (
 const (
 	CodeInvalidRequest        = "invalid_request"
 	CodeValidationFailed      = "validation_failed"
+	// CodeDryRunNotSupported：该端点声明 dry-run 为 reject，带 ?dry_run=true 时
+	// 必须返回 400 且**不执行任何写操作**（api-spec §2.4）。
+	CodeDryRunNotSupported = "dry_run_not_supported"
 	CodeUnauthorized          = "unauthorized"
 	CodeForbiddenScope        = "forbidden_scope"
 	CodeLaneNotFound          = "lane_not_found"
