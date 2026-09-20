@@ -34,6 +34,7 @@ import { LOG_TYPE_ENUM } from '../constants'
 import type { UsageLog } from '../data/schema'
 import type { LogCategory } from '../types'
 import { CommonLogMobileCard } from './common-log-mobile-card'
+import { PBRLogMobileCard } from './pbr-log-mobile-card'
 
 const logTypeRowTint: Record<number, string> = {
   [LOG_TYPE_ENUM.ERROR]:
@@ -148,6 +149,12 @@ export function UsageLogsMobileList<TData>({
           >
             {logCategory === 'common' && (
               <CommonLogMobileCard
+                log={row.original as UsageLog}
+                cells={cells}
+              />
+            )}
+            {logCategory === 'pbr' && (
+              <PBRLogMobileCard
                 log={row.original as UsageLog}
                 cells={cells}
               />
