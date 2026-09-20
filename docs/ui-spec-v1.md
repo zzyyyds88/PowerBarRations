@@ -228,8 +228,10 @@
 
 - 保留上游 `usage-logs` 外壳：**单一日志分节**（数据源 `GET /api/logs`，`request_logs` 一张表——模型面请求、渠道测试、错误统一写这张，基座 `logs` 停写）。Drawing 分节随 Midjourney 全链路移除；**任务日志不在此页**，落在独立的「系统任务」页（§6.10）。
 - **统一日志视图采用上游的详细列形态**（New API `common-logs-columns` + PBR 车道列）：时间、类型（消耗/错误徽章）、渠道、用户（管理动作记录管理员，模型面请求为空）、令牌、模型、车道/成员、流、提示/补全 token、花费、耗时（用时+首字）、详情（错误时显示 `error_summary`，详情弹窗含 attempts 链）。
-- **详情弹窗**：沿用上游 `details-dialog` 形态，展示该条日志的 `other` 明细与 attempts 链（见下），不再跳裸 JSON。
-- **数据源统一是 `GET /api/logs`**：筛选车道 / 渠道 / 令牌 / 请求模型 / 成功与否 + 游标翻页。
+- **前端映射层**：PBR 日志字段与上游 `UsageLog` 形状不同（`key_name`≠`token_name`、`request_model`≠`model_name`、`total_ms`(毫秒)≠`use_time`(秒)、`estimated_cost`(元)≠`quota`、cache token/首字耗时/attempts 在顶层而非 `other` JSON）。前端加 `mapPBRLogToUsageLog`，把 `PBRRequestLog` 塑成 `UsageLog` 形状并构造 `other` JSON（`cache_tokens`/`frt`/`admin_info.use_channel` 重试链），PBR 独有字段（车道/route_source/upstream_model/error_summary/http_status/total_ms/estimated_cost/attempts）收进 `other.pbr` 扩展块，供花费列与详情弹窗读取。
+- **花费列读 `estimated_cost`（元）**，不读上游的 `quota`/额度换算——PBR 无额度语义（design-v1 §1.3）。耗时列 `use_time` 由 `total_ms/1000` 派生，首字耗时从 `other.frt`（=`ttft_ms`）读。
+- **详情弹窗**：沿用上游 `details-dialog` 形态，识别 `other.pbr` 时渲染 PBR 区块（车道/route_source/upstream_model/http_status/total_ms/estimated_cost 字段网格 + `PBRAttemptTimeline` 逐尝试时间线 + `error_summary`），不再跳裸 JSON。
+- **数据源统一是 `GET /api/logs`**：筛选车道 / 渠道 / 令牌 / 请求模型 / 成功与否 + **偏移翻页**（跳页 + 总数，供控制台 `UsageLogsTable`）；游标模式保留给外部 consumer。
 - **详情**：`GET /api/logs/{id}` 的 `attempts` 逐尝试时间线（成员、状态、`duration_ms`、`error_kind`、`msg`），区分 `cooldown`/`circuit_break`/`skipped` 状态色；另展示 `lane`/`route_source`/`upstream_model`/`http_status`/token 用量/`total_ms`/`estimated_cost`。
 - **验收**：一次含逃逸的请求能完整复现 `failed → success`；被跳过的成员有原因说明。
 
