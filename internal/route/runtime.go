@@ -31,6 +31,7 @@ const (
 	EventCircuitHalfOpen = "circuit_half_open"
 	EventCircuitClosed   = "circuit_closed"
 	EventCooldown        = "cooldown"
+	EventReset           = "reset"
 	EventSkip            = "skip"
 )
 
@@ -600,7 +601,6 @@ func (r *Runtime) appendEvent(eventType, member, detail string) {
 	}
 }
 
-// Reset 清空该车道的全部熔断与冷却（POST /lanes/{name}/circuits/reset）。
 // Reset 清空该车道的全部运行态（冷却/熔断/探测槽/亲和），返回被清除的
 // 熔断器条目数（api-spec §6.6 的响应体 `{"reset": <int>}`）。
 func (r *Runtime) Reset() int {
@@ -613,7 +613,7 @@ func (r *Runtime) Reset() int {
 	r.ProbeMember = ""
 	r.AffinityArmed = false
 	r.AffinityUntil = 0
-	r.appendEvent("reset", "", "circuits cleared")
+	r.appendEvent(EventReset, "", "circuits cleared")
 	return cleared
 }
 

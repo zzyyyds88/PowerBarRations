@@ -541,20 +541,25 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 **定位**：把路由运行态的故障事件推送给**任意外部消费方**，**只推事件、不承载指令**。这是管理 API 的一部分：PBR 只负责**定义推送契约并投递**，接收方的验签、路由、呈现一律由消费方自行实现（本机对接——如推给某 agent 的通知通道——由该 agent 侧做，PBR 不内置任何针对特定接收者的集成）。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
 
-**事件源**：`internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown`）。经订阅钩子**异步旁路**投递，绝不阻塞请求路径。v1 不含探活启停事件。
+**事件源**：`internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / `reset`）。`reset` 为**车道级**事件（`POST /lanes/{name}/circuits/reset` 手动复通时产生，`member` 为空）。经订阅钩子**异步旁路**投递，绝不阻塞请求路径。v1 不含探活启停事件。
 
 **配置**（system/options 键 `PBRWebhookTargets`，JSON 数组）：`[{name, url, secret, enabled, events[]}]`；`events` 为事件类型白名单（空 = 全部）。管理面读配置时 `secret` 只回显掩码。
 
 **投递语义**：
 - 请求体 JSON：`{"type":"pbr","text":"<人类可读摘要>","event":{ts,type,lane,member,detail}}`——带 `text` 字段使"只展示文本"的消费方（通知中心红色档）零改造接入。
 - 签名采用**通用 HMAC-SHA256 方案**：头 `X-Webhook-Timestamp`（Unix 秒）+ `X-Webhook-Signature-V2`（`HMAC-SHA256(secret, "{ts}.{raw_body}")`，hex）。验签步骤与偏差窗口写入 api-spec §5.8 与 /doc 手册，消费方照文档实现即可，不依赖任何具体接收端。
-- 单次投递超时 8s；失败按 5s/30s/120s 退避重试 3 次，耗尽记入投递日志（`webhook_deliveries` 表：ts、target、event、status、http_status、error、attempt）。
+- 单次投递超时 8s；失败按 5s/30s/120s 退避重试 3 次，耗尽记入投递日志（`webhook_deliveries` 表：ts、target、event、status、http_status、error、attempt）。**投递含重试按 (target, event) 各自独立进行**——一个不可达目标的重试不阻塞其他目标或其他事件的投递。
 - **防风暴**：同一 (target, lane, member, event) 在 60s 窗口内只发一条（合并计数），避免抖动上游刷屏。
+- **观测**：事件缓冲满被丢弃的累计计数经 `GET /api/webhooks/deliveries` 响应外层 `dropped_events` 暴露（进程重启清零）。
 - 投递日志随 `PBRLogRetentionDays` 由 prune 一并清理。
+
+**部署注意（容器化）**：webhook 投递从 PBR 进程所在网络发起——容器化部署时，目标 URL 里的 `127.0.0.1` 指**容器自身**而非宿主机；推给宿主机上的接收端须写宿主可达地址（docker 网关 IP 或宿主 LAN IP），且接收端须监听非 loopback 接口。
+
+**已知局限**：运行态（冷却/熔断）是进程内的，重启即清空且**不发**恢复类事件——消费方不能靠 webhook 感知 PBR 重启；防风暴窗口内的同类事件直接丢弃（v1 不做合并计数文本）。
 
 **管理面**：`GET/PUT /api/webhooks`、`POST /api/webhooks/test`、`GET /api/webhooks/deliveries`（规范前缀 `/api`，`/api/v1` 为兼容别名；契约见 api-spec §5.8）。
 
-**验收**：手动熔断一个成员 → 目标秒级收到签名正确的 JSON；目标不可达时重试与死信符合上表；投递日志可查；控制台可编辑并回读。
+**验收**：手动熔断一个成员 → 目标秒级收到签名正确的 JSON；`circuits/reset` → 目标收到 `reset` 事件；一个目标不可达时不影响其他目标的投递；重试与死信符合上表；投递日志与 `dropped_events` 可查；控制台可编辑并回读。
 
 ---
 

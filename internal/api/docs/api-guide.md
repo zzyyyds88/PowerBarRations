@@ -103,7 +103,7 @@ PBR 把路由运行态的故障事件（熔断/冷却/恢复）异步 POST 到�
   `{"name":"notify","url":"http://127.0.0.1:8645/webhooks/xxx","secret":"<随机长串>","enabled":true,"events":[]}`
   （`events` 为事件白名单，空 = 全部；`secret` 留空 = 保留原值。）
 - `POST /api/webhooks/test`：向指定 target 同步发一条测试事件，响应即投递结果。
-- `GET /api/webhooks/deliveries`：投递记录（cursor 分页，按 ts 倒序），排障用。
+- `GET /api/webhooks/deliveries`：投递记录（cursor 分页，按 ts 倒序），排障用；响应外层含 `dropped_events`（事件缓冲满丢弃的累计计数，重启清零）。
 
 ### 5.2 请求体
 
@@ -117,7 +117,9 @@ PBR 把路由运行态的故障事件（熔断/冷却/恢复）异步 POST 到�
 ```
 
 `event.type`：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、
-`circuit_closed`（恢复）、`cooldown`（进入冷却）。`ts` 毫秒时间戳，`member` = `channelId:upstreamModel`。
+`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。
+`ts` 毫秒时间戳，`member` = `channelId:upstreamModel`。
+`member` 为空（车道级事件 `reset`）时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
 
 ### 5.3 验签（接收端必做）
 
@@ -133,8 +135,13 @@ Python：`hmac.new(secret.encode(), f"{ts}.".encode()+raw_body, hashlib.sha256).
 ### 5.4 投递语义
 
 - 超时 8s；非 2xx/超时按 5s/30s/120s 退避重试 3 次，耗尽记 `deliveries` 死信。
+- 投递含重试按 (target, event) 独立进行：一个目标不可达不阻塞其他目标或其他事件的投递。
 - 防风暴：同一 (target, lane, member, event) 60s 窗口只发一条。
 - `2xx` 即送达，响应体不参与语义。
+
+### 5.5 容器化部署下的目标地址
+
+webhook 投递从 PBR 进程所在网络发起。**容器化部署时，目标 URL 里的 `127.0.0.1` 指容器自身而非宿主机**：推给宿主机上的接收端须写宿主可达地址（如 docker 网关 IP `172.17.0.1` 或宿主 LAN IP），且接收端须监听非 loopback 接口。
 
 ## 6. 错误模型与硬规则
 

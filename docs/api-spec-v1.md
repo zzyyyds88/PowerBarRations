@@ -462,7 +462,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 | GET | `/api/webhooks` | 读配置：targets 数组（`secret` 回显掩码 `****+末4位`） |
 | PUT | `/api/webhooks` | 写配置（同形状；`secret` 留空 = 保留原值） |
 | POST | `/api/webhooks/test` | 向指定 target 同步发一条测试事件，返回投递结果 |
-| GET | `/api/webhooks/deliveries` | 投递记录（cursor 分页，按 ts 倒序） |
+| GET | `/api/webhooks/deliveries` | 投递记录（cursor 分页，按 ts 倒序）；响应外层含 `dropped_events`（事件缓冲满丢弃累计，重启清零） |
 
 **这是通用推送接口，PBR 只定义契约并投递；接收方的验签、路由、呈现由消费方自行实现**（PBR 不内置针对特定接收端的集成）。
 
@@ -482,14 +482,39 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 }
 ```
 
-- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`。
+- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`；`member` 为空时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
+
+投递记录响应（cursor 分页，按 ts 倒序）：
+
+```json
+{
+  "items": [
+    {
+      "id": 123,
+      "ts": "2026-09-20T04:00:00Z",
+      "target": "notify",
+      "event_type": "circuit_open",
+      "lane": "model-1",
+      "member": "ch-a:model-1",
+      "status": "success",
+      "http_status": 200,
+      "error": "",
+      "attempt": 1
+    }
+  ],
+  "next_cursor": null,
+  "dropped_events": 0
+}
+```
+
+- `items[].status` 取值 `success | failed`（`failed` 即重试耗尽的死信）；`attempt` 为最终尝试次数（1–4）；`http_status` 在传输层失败（无响应）时为 0；`dropped_events` 为事件缓冲满被丢弃的累计计数（进程重启清零）。
 
 **验签（消费方必做）**：
 1. 读头 `X-Webhook-Timestamp`（Unix 秒）与 `X-Webhook-Signature-V2`；
 2. 对**原始请求体字节**计算 `HMAC-SHA256(secret, "{ts}.{body}")` 的 hex，与其比较（常数时间比较）；
 3. `ts` 与本地时间偏差超过 ±300s 拒收（防重放）。
 
-失败语义见 design-v1 §16.10（8s 超时、5s/30s/120s 三次退避、60s 防风暴合并、投递日志随日志保留期清理）。`2xx` 视为送达；其他状态码/超时进入重试。
+失败语义见 design-v1 §16.10（8s 超时、5s/30s/120s 三次退避、60s 防风暴合并、投递日志随日志保留期清理）。`2xx` 视为送达；其他状态码/超时进入重试。投递含重试按 (target, event) 独立进行，一个目标不可达不阻塞其他投递。
 
 ### 5.9 dry-run 声明总表（强制，见 §2.4）
 

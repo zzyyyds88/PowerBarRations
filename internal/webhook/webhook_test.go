@@ -210,6 +210,7 @@ func TestDeliverDeadLetterAfterRetriesExhausted(t *testing.T) {
 }
 
 // dispatch：enabled + 白名单匹配 + 防风暴合并共同决定投递。
+// 投递为独立 goroutine，断言前用 WaitPendingDeliveries 等待排空。
 func TestDispatchFiltersAndMerges(t *testing.T) {
 	restoreConfig(t)
 
@@ -237,18 +238,23 @@ func TestDispatchFiltersAndMerges(t *testing.T) {
 
 	// 白名单只含 circuit_open：cooldown 事件不投递。
 	dispatch(route.Event{Ts: 1, Type: route.EventCooldown, Lane: "l", Member: "1:m"})
+	WaitPendingDeliveries()
 	assert.Equal(t, 0, requests)
 
 	// 同一 (target, lane, member, event) 60s 内第二条被合并。
 	dispatch(route.Event{Ts: 2, Type: route.EventCircuitOpen, Lane: "l", Member: "1:m"})
+	WaitPendingDeliveries()
 	assert.Equal(t, 1, requests)
 	dispatch(route.Event{Ts: 3, Type: route.EventCircuitOpen, Lane: "l", Member: "1:m"})
+	WaitPendingDeliveries()
 	assert.Equal(t, 1, requests, "防风暴窗口内同类事件必须被丢弃")
 
 	// 不同 member / 不同 lane 是新 key。
 	dispatch(route.Event{Ts: 4, Type: route.EventCircuitOpen, Lane: "l", Member: "2:m"})
+	WaitPendingDeliveries()
 	assert.Equal(t, 2, requests)
 	dispatch(route.Event{Ts: 5, Type: route.EventCircuitOpen, Lane: "other", Member: "1:m"})
+	WaitPendingDeliveries()
 	assert.Equal(t, 3, requests)
 }
 
@@ -272,6 +278,7 @@ func TestEnqueueEventFiltersAndDropsWhenFull(t *testing.T) {
 	enqueueEvent(route.Event{Type: route.EventCooldown}) // 队列已满 → 丢弃并计数
 
 	assert.EqualValues(t, 1, droppedEvents.Load(), "缓冲满必须丢弃并计数")
+	assert.EqualValues(t, 1, DroppedEvents(), "DroppedEvents 出口与内部计数一致")
 	assert.Len(t, eventQueue, 2)
 }
 
@@ -335,6 +342,94 @@ func TestDeliverTestSendsMarkedPayload(t *testing.T) {
 	require.Len(t, entries, 1, "测试投递也要记 deliveries")
 	assert.Equal(t, "success", entries[0].Status)
 	assert.Equal(t, 1, entries[0].Attempt)
+}
+
+// 投递隔离（design-v1 §16.10）：一个 target 挂起（首个响应悬挂直到放行）
+// 不影响另一个 target 收到事件——慢目标的重试不阻塞快目标的投递。
+func TestDispatchIsolatesSlowTarget(t *testing.T) {
+	restoreConfig(t)
+	setupDeliveryDB(t)
+
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var fastRequests int
+	fastServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		fastRequests++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer fastServer.Close()
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release // 挂起：慢目标进入重试周期
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slowServer.Close()
+	defer close(release) // LIFO：先放行慢目标，慢目标 goroutine 结束后 httptest 才能关服
+
+	configLoader = func() string {
+		raw, _ := json.Marshal([]Target{
+			{Name: "slow", URL: slowServer.URL, Enabled: true},
+			{Name: "fast", URL: fastServer.URL, Enabled: true},
+		})
+		return string(raw)
+	}
+	configCache.mu.Lock()
+	configCache.raw = ""
+	configCache.targets = nil
+	configCache.mu.Unlock()
+
+	dispatch(route.Event{Ts: 1, Type: route.EventCircuitOpen, Lane: "iso", Member: "1:m"})
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return fastRequests >= 1
+	}, 2*time.Second, 10*time.Millisecond, "慢目标挂起时快目标必须仍收到投递")
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, fastRequests)
+}
+
+// reset 事件（手动复通 circuits/reset）在推送白名单内；摘要为车道级
+// （member 为空，退化为 [PBR] {title}：{detail}）。
+func TestResetEventWhitelisted(t *testing.T) {
+	restoreConfig(t)
+	setupDeliveryDB(t)
+
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	configLoader = func() string {
+		raw, _ := json.Marshal([]Target{{Name: "notify", URL: server.URL, Enabled: true}})
+		return string(raw)
+	}
+	configCache.mu.Lock()
+	configCache.raw = ""
+	configCache.targets = nil
+	configCache.mu.Unlock()
+
+	assert.Equal(t, "[PBR] model-1 熔断与冷却已清空：circuits cleared",
+		summaryText(route.Event{Type: route.EventReset, Lane: "model-1", Detail: "circuits cleared"}))
+	assert.NoError(t, ValidateTargets([]Target{{Name: "n", URL: server.URL, Events: []string{route.EventReset}}}))
+
+	dispatch(route.Event{Ts: 1, Type: route.EventReset, Lane: "model-1", Member: "", Detail: "circuits cleared"})
+	WaitPendingDeliveries()
+
+	var payload webhookPayload
+	require.NoError(t, json.Unmarshal(body, &payload))
+	assert.Equal(t, "reset", payload.Event.Type)
+	assert.Equal(t, "model-1", payload.Event.Lane)
+	assert.Equal(t, "", payload.Event.Member)
+	assert.Equal(t, "[PBR] model-1 熔断与冷却已清空：circuits cleared", payload.Text)
+
+	entries, err := model.ListWebhookDeliveries(10, 0)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "reset", entries[0].EventType)
 }
 
 // setOf 去重集合大小。

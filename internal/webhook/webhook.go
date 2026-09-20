@@ -7,7 +7,8 @@
 // 事件流：internal/route 的 appendEvent（运行态事件唯一出口）→ 进程级订阅
 // 钩子 → 带缓冲 channel（非阻塞，缓冲满丢弃并计数）→ worker 读配置
 // （system/options 键 PBRWebhookTargets，进程内缓存、配置 PUT 即热更新）
-// → 对每个 enabled 且命中 events 白名单的 target 投递。
+// → 对每个 enabled 且命中 events 白名单的 target 独立投递（各自含重试，
+// 一个不可达目标不阻塞其他目标或其他事件）。
 //
 // 投递语义：8s 超时；非 2xx/超时按 5s/30s/120s 退避重试 3 次（同一请求体
 // 同一签名）；耗尽记 webhook_deliveries 死信；同一 (target, lane, member,
@@ -55,6 +56,7 @@ var allowedEventTypes = map[string]bool{
 	route.EventCircuitHalfOpen: true,
 	route.EventCircuitClosed:   true,
 	route.EventCooldown:        true,
+	route.EventReset:           true,
 }
 
 // ValidateTargets 校验目标列表：name 非空且唯一、url 必须是 http(s)、
@@ -162,17 +164,21 @@ var eventTitles = map[string]string{
 	route.EventCircuitHalfOpen: "半开探测开始",
 	route.EventCircuitClosed:   "熔断恢复",
 	route.EventCooldown:        "进入冷却",
+	route.EventReset:           "熔断与冷却已清空",
 }
 
 // summaryText 生成 text 摘要：`[PBR] {lane}/{member} {中文摘要}：{detail}`；
-// lane 缺失时退化为 `[PBR] {member} ...`（/doc §5.2 示例格式）。
+// lane 缺失时退化为 `[PBR] {member} ...`，member 缺失（车道级事件如 reset）
+// 退化为 `[PBR] {lane} ...`（/doc §5.2 示例格式）。
 func summaryText(ev route.Event) string {
 	title := eventTitles[ev.Type]
 	if title == "" {
 		title = ev.Type
 	}
 	subject := ev.Member
-	if ev.Lane != "" {
+	if ev.Member == "" {
+		subject = ev.Lane
+	} else if ev.Lane != "" {
 		subject = ev.Lane + "/" + ev.Member
 	}
 	switch {
@@ -232,6 +238,20 @@ var eventQueue chan route.Event
 // droppedEvents 缓冲满被丢弃的事件计数（排障观测）。
 var droppedEvents atomic.Int64
 
+// DroppedEvents 事件缓冲满被丢弃的累计计数（观测出口，进程重启清零；
+// 经 GET /api/webhooks/deliveries 响应外层暴露）。
+func DroppedEvents() int64 {
+	return droppedEvents.Load()
+}
+
+// deliverWG 进行中的独立投递 goroutine 计数（含重试）；供测试等待排空。
+var deliverWG sync.WaitGroup
+
+// WaitPendingDeliveries 等待全部进行中的独立投递结束（测试与收尾用）。
+func WaitPendingDeliveries() {
+	deliverWG.Wait()
+}
+
 var (
 	startOnce sync.Once
 )
@@ -279,7 +299,10 @@ func runSafely(fn func()) {
 	fn()
 }
 
-// dispatch 把事件投递给所有 enabled 且命中白名单的 target。
+// dispatch 把事件投递给所有 enabled 且命中白名单的 target。每个命中
+// target 独立 goroutine 投递（含重试）：一个不可达目标的重试（最长约
+// 3 分钟）不阻塞其他目标或其他事件的投递。风暴窗口检查保持同步——
+// 持锁便宜，且放行后再异步投递，保证同一窗口只出一条。
 func dispatch(ev route.Event) {
 	for _, target := range CurrentTargets() {
 		if !target.Enabled || !targetMatches(target, ev) {
@@ -288,7 +311,11 @@ func dispatch(ev route.Event) {
 		if !stormAllow(stormKey(target.Name, ev), nowFunc()) {
 			continue
 		}
-		deliver(target, ev, summaryText(ev))
+		deliverWG.Add(1)
+		go func(target Target, ev route.Event) {
+			defer deliverWG.Done()
+			deliver(target, ev, summaryText(ev))
+		}(target, ev)
 	}
 }
 

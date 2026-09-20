@@ -179,5 +179,9 @@ func ListWebhookDeliveries(c *gin.Context) {
 			"attempt":     entry.Attempt,
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "next_cursor": nextCursor})
+	c.JSON(http.StatusOK, gin.H{
+		"items":          items,
+		"next_cursor":    nextCursor,
+		"dropped_events": webhook.DroppedEvents(),
+	})
 }
