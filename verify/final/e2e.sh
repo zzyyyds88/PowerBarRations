@@ -100,7 +100,9 @@ assert_ep "没有 5xx" "all(r['status']<500 for r in d['results'])"
 assert_ep "没有 501/未实现" "all(r['status']!=501 for r in d['results'])"
 assert_ep "没有 404（除按设计不存在的对象）" "all(r['status']!=404 or r.get('expected_missing') for r in d['results'])"
 assert_ep "sync-models 能真的同步（探针渠道指向假上游）" "any(r['path']=='/channels/{name}/sync-models' and r['status']==200 for r in d['results'])"
-assert_ep "DELETE 三类资源都删得掉" "len([r for r in d['results'] if r['method']=='delete' and r['status']==200])==3"
+# DELETE 全量：每个已登记的 DELETE 端点都造一次性对象再删，全部必须 2xx。
+assert_ep "所有 DELETE 端点都真的删得掉（2xx）" "len([r for r in d['results'] if r['method']=='delete'])>0 and all(200<=r['status']<300 for r in d['results'] if r['method']=='delete')"
+assert_ep "DELETE 覆盖 openapi 全部 delete 路径" "set(d.get('delete_paths',[]))==set(r['path'] for r in d['results'] if r['method']=='delete')"
 
 echo
 echo "=== B① 工具调用透传 ==="
