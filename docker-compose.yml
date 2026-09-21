@@ -11,6 +11,11 @@
 #   3) 建客户端密钥：POST /api/v1/keys（响应含一次性明文）
 #   4) 下游把 base_url 指到 http://<host>:5700/v1（明文 HTTP 基线；需要 HTTPS 请在外部
 #      反向代理终结 TLS 后转发到本端口，见 README §5.1）。
+# 项目名钉死：命名卷带项目名前缀（<project>_pbr-data），项目名漂移会落到新空卷
+# 造成数据面"丢失"（2026-09-21 实际踩到：旧部署 powerbarration vs 目录名
+# powerbar-rations）。钉死后无论从哪个目录跑 compose 都用同一项目名与卷。
+name: powerbar-rations
+
 services:
   pbr:
     build:
