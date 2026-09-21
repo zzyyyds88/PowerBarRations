@@ -200,13 +200,12 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
 > `PUT /api/channels/{name}` 是**部分合并**——只给 `enabled` 会保留原有 `models` / `key` /
 > `model_mapping` 等（字段缺席 = 保持原值，不是清空）。
 >
-> `PUT /api/lanes/{name}` 的 `enabled` / `mode` / `config` 也是部分合并，但 **`members` 是
-> 整体替换、且省略即视为空**：
-> - `{"enabled":false}` → **200，并静默清空整条成员链**（数据丢失路径！）；
-> - `{"enabled":true}` / `{"mode":"manual"}` / `{"config":{...}}` 等**结果仍为启用**且没带
->   `members` → `422 lane_has_no_members`；
-> - 想只改开关或六键、又想保留成员：**必须把完整 `members` 数组一并带上**；
-> - 只改成员用 `PUT /api/lanes/{name}/members`（body `{"members":[...]}`，同样整体替换）。
+> `PUT /api/lanes/{name}` 的 `enabled` / `mode` / `config` / `members` 都是部分合并，
+> **`members` 省略 = 保留现有成员链**（2026-09-21 防呆修复：此前省略即视为空，
+> `{"enabled":false}` 会静默清空整条成员链）：
+> - `{"enabled":false}` → 200，**成员链保留**，仅停用；
+> - 想清空成员：显式 `"members": []`（启用车道清空会 `422 lane_has_no_members`）；
+> - 只改成员用 `PUT /api/lanes/{name}/members`（body `{"members":[...]}`，整体替换）。
 
 ```json
 {

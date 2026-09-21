@@ -363,6 +363,9 @@ func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
 	}
 	encodedConfig, _ := json.Marshal(lane.Config)
 	payload.Config = encodedConfig
+	// 显式初始化空切片：config 里空成员的车道在导入时仍视为"提供了 members"，
+	// 保持导入的清空语义（buildLane 对 nil members 视为省略=保留现有成员链）。
+	payload.Members = make([]laneMemberPayload, 0, len(lane.Members))
 	for _, member := range lane.Members {
 		entry := laneMemberPayload{
 			Channel:       member.Channel,

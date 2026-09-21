@@ -151,3 +151,49 @@ func TestPutChannelNewModelDoesNotCreateLane(t *testing.T) {
 		assert.NotEqual(t, "brand-new-model", item.Name, "声明模型绝不自动建车道")
 	}
 }
+
+// members 省略 = 保留现有成员链（防呆修复 2026-09-21）：PUT 只改开关/六键/启停
+// 不再静默清空成员——此前 {"enabled":false} 会 200 并清空整条成员链（数据丢失路径）。
+// 显式 "members": [] 才清空（启用车道清空 → 422 lane_has_no_members）。
+func TestPutLaneOmittedMembersPreservesExisting(t *testing.T) {
+	db := setupAPITestDB(t)
+	ch := &model.Channel{Name: "keep-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "a-model-1,a-model-2"}
+	require.NoError(t, db.Create(ch).Error)
+
+	body := `{"members":[
+		{"channel":"keep-ch","upstream_model":"a-model-1","priority":10},
+		{"channel":"keep-ch","upstream_model":"a-model-2","priority":20}
+	]}`
+	recorder := callAPI(t, http.MethodPut, "/api/v1/lanes/keep", body, PutLane,
+		gin.Params{{Key: "name", Value: "keep"}})
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	getLane := func() laneMembersResponse {
+		r := callAPI(t, http.MethodGet, "/api/v1/lanes/keep", "", GetLane,
+			gin.Params{{Key: "name", Value: "keep"}})
+		require.Equal(t, http.StatusOK, r.Code, r.Body.String())
+		var resp laneMembersResponse
+		require.NoError(t, json.Unmarshal(r.Body.Bytes(), &resp))
+		return resp
+	}
+	require.Len(t, getLane().Members, 2)
+
+	// 只停用（members 省略）→ 200 且成员链保留。
+	recorder = callAPI(t, http.MethodPut, "/api/v1/lanes/keep", `{"enabled":false}`, PutLane,
+		gin.Params{{Key: "name", Value: "keep"}})
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	afterDisable := getLane()
+	assert.Len(t, afterDisable.Members, 2, "停用车道不得静默清空成员链")
+
+	// 只启用（members 省略）→ 200 且成员链保留（此前是 422）。
+	recorder = callAPI(t, http.MethodPut, "/api/v1/lanes/keep", `{"enabled":true}`, PutLane,
+		gin.Params{{Key: "name", Value: "keep"}})
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Len(t, getLane().Members, 2, "启用车道（省略 members）保留成员链")
+
+	// 显式清空（启用状态）→ 422 lane_has_no_members。
+	recorder = callAPI(t, http.MethodPut, "/api/v1/lanes/keep", `{"enabled":true,"members":[]}`, PutLane,
+		gin.Params{{Key: "name", Value: "keep"}})
+	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code, recorder.Body.String())
+	assert.Contains(t, recorder.Body.String(), "lane_has_no_members")
+}

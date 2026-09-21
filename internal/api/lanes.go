@@ -247,8 +247,10 @@ func buildLane(name string, payload *lanePayload, resolvers ...channelResolver) 
 		resolve = resolvers[0]
 	}
 	laneID := 0
-	if existing, err := model.GetLaneByName(name); err == nil && existing != nil {
-		laneID = existing.Id
+	var existing *model.Lane
+	if e, err := model.GetLaneByName(name); err == nil && e != nil {
+		existing = e
+		laneID = e.Id
 	}
 	lane := &model.Lane{Name: name, Enabled: true, Mode: model.LaneModeFailover}
 	if payload.Enabled != nil {
@@ -283,13 +285,22 @@ func buildLane(name string, payload *lanePayload, resolvers ...channelResolver) 
 		return nil, &laneBuildError{status: http.StatusInternalServerError, code: "internal_error", message: err.Error()}
 	}
 	seenAliases := map[string]bool{}
-	for i := range payload.Members {
-		m := payload.Members[i]
-		member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m, resolve)
-		if buildErr != nil {
-			return nil, buildErr
+	if payload.Members != nil {
+		for i := range payload.Members {
+			m := payload.Members[i]
+			member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m, resolve)
+			if buildErr != nil {
+				return nil, buildErr
+			}
+			lane.Members = append(lane.Members, *member)
 		}
-		lane.Members = append(lane.Members, *member)
+	} else if existing != nil {
+		// members 省略 = 保留现有成员链与点名成员（防呆：只改开关/六键/启停不再
+		// 静默清空成员——{"enabled":false} 曾是数据丢失路径）；显式 [] 才清空。
+		lane.Members = existing.Members
+		if strings.TrimSpace(payload.ActiveMember) == "" {
+			lane.ActiveMember = existing.ActiveMember
+		}
 	}
 	if lane.Enabled && len(lane.Members) == 0 {
 		return nil, &laneBuildError{status: http.StatusUnprocessableEntity, code: apierr.CodeLaneHasNoMembers,
