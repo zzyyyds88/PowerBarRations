@@ -16,6 +16,7 @@ func TestMigrateDropSystemInstanceTableDropsExistingTable(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 
 	require.NoError(t, db.Exec(
@@ -36,6 +37,7 @@ func TestMigrateDropSystemInstanceTableNoopWhenMissing(t *testing.T) {
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
 	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 
 	require.False(t, db.Migrator().HasTable("system_instances"))
