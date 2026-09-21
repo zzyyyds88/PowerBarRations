@@ -28,12 +28,24 @@ import (
 // setupDeliveryDB 提供内存库落投递日志；用后恢复全局 DB。
 func setupDeliveryDB(t *testing.T) {
 	t.Helper()
+	// deliver goroutine 在落库时才读全局 model.DB（webhook.go InsertWebhookDelivery）：
+	// 上一用例的在途投递若不先排空，会落进本用例刚换入的新库（实测 "should have
+	// 1 item(s), but has 2" 偶发 flaky）；还原本库前同样要先排空本用例的在途投递。
+	WaitPendingDeliveries()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
+	// 纯 Go sqlite 的 :memory: 库是每连接独立的：不钉 MaxOpenConns(1) 时
+	// AutoMigrate 与后续查询可能落在不同连接上，偶发 "no such table"。
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(&model.WebhookDelivery{}))
 	previous := model.DB
 	model.DB = db
-	t.Cleanup(func() { model.DB = previous })
+	t.Cleanup(func() {
+		WaitPendingDeliveries()
+		model.DB = previous
+	})
 }
 
 // restoreConfig 恢复配置注入点并清空防风暴表，避免用例间串扰。

@@ -59,6 +59,11 @@ func testPrefillGroupMigrationNonPostgreSQL(t *testing.T, db *gorm.DB) {
 func TestMigratePrefillGroupUniquenessSQLite(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	// 纯 Go sqlite 的 :memory: 库每连接独立，不钉 MaxOpenConns(1) 时建表与查询
+	// 可能落在不同连接上，偶发 no such table（webhook 测试实测 flaky）。
+	if sqlDB, err := db.DB(); err == nil {
+		sqlDB.SetMaxOpenConns(1)
+	}
 	testPrefillGroupMigrationNonPostgreSQL(t, db)
 }
 

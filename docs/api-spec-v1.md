@@ -280,7 +280,7 @@
 |---|---|---|
 | GET | `/api/lanes` | 列表（cursor） |
 | GET | `/api/lanes/{name}` | 详情（含成员） |
-| PUT | `/api/lanes/{name}` | 全量 upsert（含成员，按数组顺序即优先级） |
+| PUT | `/api/lanes/{name}` | 全量 upsert；`members` **省略 = 保留现有成员链**（防呆：只改开关/六键/启停不会静默清空成员），显式 `[]` 才清空，提供时按数组顺序即优先级 |
 | POST | `/api/lanes/cleanup-members` | **清理悬空成员**：移除"渠道已不存在"的车道成员（历史数据修复入口），成员清空的车道整条删除；`?dry_run=true` 只返回受影响车道名 |
 | DELETE | `/api/lanes/{name}` | 删除 |
 | PUT | `/api/lanes/{name}/members` | 仅替换成员列表（有序全量） |
