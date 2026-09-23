@@ -6,7 +6,7 @@
 "真实数据下新功能的渲染与交互"，因此不做初始化与造数。
 
 用法：
-    python3 verify/e2e-ui/real_data_check.py --base http://127.0.0.1:8194 --password '...'
+    python3 verify/e2e-ui/real_data_check.py --base http://127.0.0.1:5700 --password '...'
 
 缺 chromium / websocket-client 时 SKIP（退出码 2），不包装成 PASS。
 """
