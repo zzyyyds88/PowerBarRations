@@ -9,6 +9,7 @@
     "Attempt chain: which member served the request and why the others were skipped.": "Attempt chain: which member served the request and why the others were skipped.",
     "Attempts": "Attempts",
     "Bound channels": "Kênh đã liên kết",
+    "Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.": "Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.",
     "Channels {{count}}": "Kênh {{count}}",
     "Channel association": "Liên kết kênh",
     "Circuit open": "Cầu dao mở",

@@ -249,6 +249,27 @@ describe('车道成员编排器', () => {
     ).not.toBeInTheDocument()
   })
 
+  test('最终上游真名未被渠道声明时，成员行内联告警（不拦截保存）', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    renderComposer({ model: 'hermes-lane' })
+
+    // 加入 channel-a 的 a-model-1：已声明，无告警。
+    await user.click(await screen.findByRole('button', { name: /channel-a/ }))
+    await user.click(await screen.findByRole('button', { name: /a-model-1/ }))
+    expect(screen.queryByText(/does not declare/)).not.toBeInTheDocument()
+
+    // 改名成渠道未声明的名字（模拟清空成员真名后回落为车道名的场景）。
+    const rename = screen.getByLabelText('Upstream model for channel-a')
+    await user.clear(rename)
+    await user.type(rename, 'undeclared-model')
+    expect(screen.getByText(/does not declare/)).toBeVisible()
+
+    // 告警不拦截保存。
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+  })
+
   // 回归：Base UI 的 SelectValue 默认回显原始值（failover/manual），会绕过 i18n，
   // 中文界面出现英文。触发框必须渲染翻译后的标签。
   test('模式下拉触发框显示翻译后的标签而非原始值', async () => {
