@@ -37,6 +37,15 @@ EVID = os.path.join(REPO, "verify", "e2e-ui", "run-%s.log" % STAMP)
 SHOTS = os.path.join(REPO, "verify", "e2e-ui", "shots")
 PW = "Pbr-Ui-Journey-Passw0rd!2026"
 MODEL = "ui-model"
+# 拖拽重排需要至少 3 个成员才能区分"拖到首位/末位"；成员唯一键是
+# (渠道, 上游真名)，所以同一渠道的多个已声明模型即可组成 3 成员车道（ADR 0006）。
+# 命名有两条硬约束：
+#   ① **不得与 `ui-model` 互为子串**（`X-Served-By` 与页面文案都做包含匹配，
+#      `ui-model` 是 `ui-model-2` 的前缀会让"命中谁"的断言假绿）；
+#   ② **字母序必须排在 `ui-model` 之后**：试打台在无显式选择时回落到模型列表
+#      首项（getModelFallback），而只有 `ui-model` 有车道——排到前面会让试打台
+#      默认选中一个没车道的模型，请求 503（实测踩到）。
+EXTRA_MODELS = ["ui-zeta-1", "ui-zeta-2"]
 CHANNEL = "ui-channel"
 KEYNAME = "ui-client"
 SITE_NAME = "PBR-UI-Journey"
@@ -75,11 +84,37 @@ def admin_key_of(password):
     return base64.b64encode(hashlib.sha256(password.encode()).digest()).decode()
 
 
+def http_served_by(base, model, client_key, timeout=30):
+    """发一次模型面请求并返回 X-Served-By 响应头（失败/503 时为 None）。
+
+    design-v1 §4.1：X-Served-By 只出现在成功响应上，形态
+    `channel=<id>:<name>, model=<upstream>`。这是"这次实际命中谁"的权威证据，
+    比 attempts 链更直接（attempts 要等日志落库）。
+    """
+    if not client_key:
+        return None
+    data = json.dumps({"model": model, "messages": [{"role": "user", "content": "hi"}]}).encode()
+    r = urllib.request.Request(base + "/v1/chat/completions", data=data, method="POST")
+    r.add_header("Content-Type", "application/json")
+    r.add_header("Authorization", "Bearer " + client_key)
+    try:
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
+            return resp.headers.get("X-Served-By")
+    except urllib.error.HTTPError as e:
+        return e.headers.get("X-Served-By")
+    except Exception:
+        return None
+
+
 class CDP:
     def __init__(self, ws_url):
         self.ws = websocket.create_connection(ws_url, timeout=40)
         self.i = 1
         self.console_errors = []
+        # 读响应时顺带收到的 CDP 事件先存这里：`Input.dragIntercepted` 会在
+        # 拖拽过程中到达，若在读别的响应时被丢弃，拖拽链路就永远等不到它。
+        self.events = []
+        self.last_drag_debug = ""
 
     def send(self, method, params=None, timeout=30):
         mid = self.i
@@ -99,9 +134,31 @@ class CDP:
                 self.console_errors.append(str(d["params"].get("exceptionDetails", {}).get("text", ""))[:240])
             if d.get("method") == "Runtime.consoleAPICalled" and d["params"].get("type") == "error":
                 self.console_errors.append(" ".join(str(a.get("value", "")) for a in d["params"].get("args", []))[:240])
+            if d.get("method"):
+                self.events.append(d)
             if d.get("id") == mid:
                 return d
         return {}
+
+    def take_event(self, method, timeout=6.0):
+        """取出并消费一条指定 CDP 事件；超时返回 None。"""
+        end = time.time() + timeout
+        while True:
+            for idx, ev in enumerate(self.events):
+                if ev.get("method") == method:
+                    return self.events.pop(idx)
+            if time.time() >= end:
+                return None
+            self.ws.settimeout(max(0.1, end - time.time()))
+            try:
+                raw = self.ws.recv()
+            except Exception:
+                continue
+            if not raw:
+                continue
+            d = json.loads(raw)
+            if d.get("method"):
+                self.events.append(d)
 
     def val(self, expr, timeout=30):
         r = self.send("Runtime.evaluate", {"expression": expr, "returnByValue": True, "awaitPromise": True}, timeout=timeout)
@@ -126,6 +183,67 @@ class CDP:
                     fh.write(base64.b64decode(data))
         except Exception:
             pass
+
+    def drag(self, src, dst, drop_after=False):
+        """真实鼠标拖拽（HTML5 DnD）——不是合成 drop 事件。
+
+        headless Chromium 下原生 DnD 需要 `Input.setInterceptDrags` 接管：
+        按下并移动后浏览器发出 `Input.dragIntercepted`，再由调用方用
+        `Input.dispatchDragEvent` 把 drag 数据投递到目标点，这样页面收到的是
+        **真实的 dragstart/dragover/drop** 事件链，React 的 onDragStart/Over/Drop
+        与 dataTransfer 都按真实路径工作。先在本机最小 HTML 上验证过该链路
+        （A,B,C → C,A,B）。
+
+        `drop_after=True` 时落点在目标行下半（插入到其后），否则上半（插入到其前）。
+        """
+        # 页面侧事件计数：用于区分"浏览器没发起 dragstart"与"CDP 没投递
+        # dragIntercepted"——两者都表现为拖拽无效果，但修法完全不同。
+        self.val(
+            "(function(){window.__pbrDrag={start:0,over:0,drop:0};"
+            "['dragstart','dragover','drop'].forEach(function(t){"
+            "document.addEventListener(t,function(){window.__pbrDrag[t==='dragstart'?'start':(t==='dragover'?'over':'drop')]++;},true);});"
+            "return 1;})()"
+        )
+        self.send("Input.setInterceptDrags", {"enabled": True})
+        try:
+            self.send("Input.dispatchMouseEvent", {
+                "type": "mousePressed", "x": src["x"], "y": src["y"],
+                "button": "left", "buttons": 1, "clickCount": 1})
+            # 多步移动：浏览器需要若干 mouseMoved 才认定进入拖拽。
+            # 每次移动后都检查 dragIntercepted——它可能在任意一步到达，
+            # 且可能已被 send() 收进事件队列。
+            data = None
+            for frac in (0.35, 0.6, 0.85, 1.0):
+                self.send("Input.dispatchMouseEvent", {
+                    "type": "mouseMoved", "x": src["x"], "y": src["y"] + frac * 24,
+                    "button": "left", "buttons": 1})
+                ev = self.take_event("Input.dragIntercepted", timeout=1.5)
+                if ev is not None:
+                    data = ev["params"]["data"]
+                    break
+            if data is None:
+                ev = self.take_event("Input.dragIntercepted", timeout=4)
+                if ev is not None:
+                    data = ev["params"]["data"]
+            if data is None:
+                self.last_drag_debug = "no dragIntercepted; page counters=%s" % (
+                    self.val("JSON.stringify(window.__pbrDrag)"),)
+                return False
+            # 落点：上半 = before（插入到该行之前），下半 = after。
+            offset = dst["h"] * 0.35 if drop_after else -dst["h"] * 0.35
+            y = dst["y"] + offset
+            for evt in ("dragEnter", "dragOver"):
+                self.send("Input.dispatchDragEvent",
+                          {"type": evt, "x": dst["x"], "y": y, "data": data})
+                time.sleep(0.2)
+            self.send("Input.dispatchDragEvent",
+                      {"type": "drop", "x": dst["x"], "y": y, "data": data})
+            time.sleep(0.4)
+            self.last_drag_debug = "page counters=%s" % (
+                self.val("JSON.stringify(window.__pbrDrag)"),)
+            return True
+        finally:
+            self.send("Input.setInterceptDrags", {"enabled": False})
 
     def close(self):
         try:
@@ -190,6 +308,41 @@ JS_CLICK_CHANNEL = (
     "return false;})()"
 )
 
+# 编排器成员行的坐标（按行序返回）。定位完全靠**结构**，不靠 Tailwind 类名
+# （类名是样式实现细节，改一次样式就失效）也不靠文案匹配
+# （`ui-model` 是 `ui-model-2` 的子串，包含匹配会串行）。
+#
+# 锚点：每个成员行有且只有一个 `[role=switch]`（启停开关）。从它向上找
+# **最低的、同时含开关与上游输入框的祖先** —— 那就是行；再上一层是右栏面板
+# （它含多个开关，故不会被选中）。
+JS_MEMBER_ROWS = (
+    "(function(){var rows=[];var seen=new Set();"
+    "var switches=document.querySelectorAll('[role=switch]');"
+    "for(var i=0;i<switches.length;i++){var n=switches[i].parentElement;var row=null;"
+    "while(n&&n!==document.body){"
+    "if(n.querySelector('input[aria-label]')){row=n;break;}"
+    "n=n.parentElement;}"
+    "if(row&&!seen.has(row)){seen.add(row);rows.push(row);}}"
+    "return rows;})()"
+)
+JS_MEMBER_ROW_RECTS = (
+    "(function(){return %s.map(function(d){var r=d.getBoundingClientRect();"
+    "return {x:r.left+r.width/2,y:r.top+r.height/2,h:r.height};});})()" % JS_MEMBER_ROWS
+)
+# 拖拽**必须从手柄按下**：`draggable` 只挂在手柄上（整行 draggable 会让行内输入框
+# 的文本选择失效），所以拖拽源坐标取手柄中心，落点坐标才取整行。
+JS_MEMBER_HANDLE_RECTS = (
+    "(function(){return %s.map(function(d){"
+    "var s=d.querySelector('[draggable]');"
+    "if(!s)return null;var r=s.getBoundingClientRect();"
+    "return {x:r.left+r.width/2,y:r.top+r.height/2,h:r.height};});})()" % JS_MEMBER_ROWS
+)
+# 成员行里"上游真名"输入框的当前值，按行序返回（用于断言拖拽后的草稿顺序）。
+JS_MEMBER_ROW_UPSTREAMS = (
+    "(function(){return %s.map(function(d){"
+    "var i=d.querySelector('input[aria-label]');return i?i.value:'';});})()" % JS_MEMBER_ROWS
+)
+
 
 def js_set_by_name(name, value):
     return JS_SET_BY_NAME % (json.dumps(name), json.dumps(name), json.dumps(value), json.dumps(value))
@@ -217,6 +370,34 @@ def js_click_channel(name):
 
 def js_click_aria(name):
     return JS_CLICK_ARIA % json.dumps(name)
+
+
+def js_member_row_rects():
+    return JS_MEMBER_ROW_RECTS
+
+
+def js_member_handle_rects():
+    return JS_MEMBER_HANDLE_RECTS
+
+
+def js_member_row_upstreams():
+    return JS_MEMBER_ROW_UPSTREAMS
+
+
+# 按可访问名（含渠道 + 上游真名）点击成员开关。同一渠道多成员时只用渠道名会重名，
+# 所以 aria-label 带上 `channel/upstream`（lane-composer.tsx 的实现口径）。
+# 用**包含**匹配而非全等：label 走 i18n（"Member enabled for {{channel}}"），
+# 全等会随语言变化而失配。
+JS_CLICK_MEMBER_SWITCH = (
+    "(function(){var want=%s;var bs=[...document.querySelectorAll('[role=switch]')];"
+    "for(var i=0;i<bs.length;i++){var l=bs[i].getAttribute('aria-label')||'';"
+    "if(l.indexOf(want)>=0){bs[i].click();return true;}}"
+    "return false;})()"
+)
+
+
+def js_click_member_switch(channel, upstream):
+    return JS_CLICK_MEMBER_SWITCH % json.dumps("%s · %s" % (channel, upstream))
 
 
 def main():
@@ -309,9 +490,13 @@ def main():
             log("FAIL: 未就绪"); return 1
 
         # 启动 chromium：--lang=en-US 让文案确定是英文（点击仍兼容中文）。
+        # `--window-size` 必须显式给足高度：编排器弹窗是固定档位（xl = 86vh/720px），
+        # headless 默认视口只有 600px 高，成员列表会被裁到页脚之下——手柄落在可视区外，
+        # elementFromPoint 命中的是页脚，浏览器根本不发 dragstart（实测踩到）。
         cdp_port = free_port()
         proc = subprocess.Popen([chrome, "--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
                                  "--no-first-run", "--no-default-browser-check", "--lang=en-US", "--accept-lang=en-US",
+                                 "--window-size=1600,1200",
                                  "--remote-debugging-port=%d" % cdp_port, "--remote-allow-origins=*",
                                  "--user-data-dir=" + WORK + "/profile", "about:blank"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -403,19 +588,26 @@ def main():
         cdp.val(js_set_by_name("base_url", up_base))
         cdp.val(js_set_by_name("key", up_key))
         # 模型：Models 区的文本框（placeholder 形如 "Model name (...)"）填名后点 Add。
-        cdp.val("(function(){var ins=[...document.querySelectorAll('[role=dialog] input,[role=dialog] textarea')];"
-                "var el=ins.filter(function(x){return /Model name|模型名/i.test(x.placeholder||'');})[0];"
-                "if(!el)return false;var p=Object.getPrototypeOf(el);var d=Object.getOwnPropertyDescriptor(p,'value');"
-                "if(d&&d.set)d.set.call(el,%s);else el.value=%s;"
-                "el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true;})()" % (json.dumps(MODEL), json.dumps(MODEL)))
-        time.sleep(0.5)
-        cdp.val(js_click_dialog(["Add", "添加"]))
+        # 连加 3 个模型：成员唯一键是 (渠道, 上游真名)，同一渠道的多个模型即可
+        # 组成 3 成员车道，供后面的拖拽重排路径使用（ADR 0006）。
+        for m in [MODEL] + EXTRA_MODELS:
+            cdp.val("(function(){var ins=[...document.querySelectorAll('[role=dialog] input,[role=dialog] textarea')];"
+                    "var el=ins.filter(function(x){return /Model name|模型名/i.test(x.placeholder||'');})[0];"
+                    "if(!el)return false;var p=Object.getPrototypeOf(el);var d=Object.getOwnPropertyDescriptor(p,'value');"
+                    "if(d&&d.set)d.set.call(el,%s);else el.value=%s;"
+                    "el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true;})()" % (json.dumps(m), json.dumps(m)))
+            time.sleep(0.4)
+            cdp.val(js_click_dialog(["Add", "添加"]))
+            time.sleep(0.5)
         time.sleep(0.6)
         cdp.shot("03-channel-form")
         cdp.val(js_click_dialog(["Create Channel", "创建渠道"]))
         time.sleep(3)
         s, ch = req(base, "GET", "/api/v1/channels/" + CHANNEL, key=admin_key)
         check("回读渠道存在且 models 含 ui-model", s == 200 and MODEL in (ch.get("models") or []), (s, ch))
+        check("回读渠道声明了 3 个模型（拖拽用例的成员来源）",
+              s == 200 and all(m in (ch.get("models") or []) for m in [MODEL] + EXTRA_MODELS),
+              ch.get("models"))
         cdp.shot("04-channel-created")
 
         # ---- 用户动作 4：建车道（路由页只列真实车道，ADR 0007）----
@@ -526,6 +718,167 @@ def main():
         body = cdp.val("document.body.innerText") or ""
         check("日志页可见 ui-model", MODEL in body, body[-300:])
         cdp.shot("09-logs")
+
+        # ---- 用户动作 7b：拖拽重排成员顺序（test-spec §4 行 4d，真实鼠标拖拽）----
+        log("")
+        log("=== 用户动作 7b：路由页拖拽重排成员并保存（真实鼠标拖拽）===")
+        # 先把车道扩成 3 个成员：成员唯一键是 (渠道, 上游真名)，同一渠道的 3 个模型
+        # 即可组成 3 成员车道，才能区分"拖到首位"与"拖到末位"。
+        cdp.nav(base + "/routes", wait=4)
+        cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
+        check("编排器打开", wait_for("!!document.querySelector('#lane-route-key')", 15))
+        cdp.val(js_click_contains([CHANNEL]))
+        time.sleep(0.6)
+        for m in EXTRA_MODELS:
+            cdp.val(js_click_aria(m))
+            time.sleep(0.5)
+        cdp.shot("11-composer-three-members")
+
+        def member_rows():
+            return cdp.val(js_member_row_rects()) or []
+
+        def member_handles():
+            return cdp.val(js_member_handle_rects()) or []
+
+        def draft_order():
+            return cdp.val(js_member_row_upstreams()) or []
+
+        rows_before = member_rows()
+        handles_before = member_handles()
+        check("编排器里有 3 个成员行（拖拽前置条件）", len(rows_before) == 3, rows_before)
+        check("每个成员行都有拖拽手柄（真实拖拽的按下点）",
+              len(handles_before) == 3 and all(h for h in handles_before), handles_before)
+        # 拖拽前先确认"按下点确实落在可拖拽元素上"：坐标算错或被遮挡时，
+        # 浏览器不会发起 dragstart，页面侧表现为计数器全 0（实测踩过）。
+        if handles_before:
+            h0 = handles_before[0]
+            hit = cdp.val(
+                "(function(){var e=document.elementFromPoint(%s,%s);"
+                "if(!e)return 'NONE';var d=e.closest('[draggable]');"
+                "return (d?'draggable:':'NOT-draggable:')+e.tagName+'.'+(e.className||'').toString().slice(0,60);})()"
+                % (h0["x"], h0["y"])
+            )
+            check("拖拽按下点落在可拖拽手柄上（未被遮挡）",
+                  isinstance(hit, str) and hit.startswith("draggable:"), hit)
+        if len(rows_before) == 3 and len(handles_before) == 3:
+            # (a) 拖到末位：从第 1 行手柄按下，落到第 3 行下半（after）。
+            dragged = cdp.drag(handles_before[0], rows_before[2], drop_after=True)
+            check("拖拽事件链建立（dragIntercepted 后投递 drop）", dragged, cdp.last_drag_debug)
+            time.sleep(0.6)
+            cdp.shot("12-drag-to-last")
+            order_mid = draft_order()
+            check("拖到末位后草稿顺序变了（第 1 行移到末位）",
+                  order_mid and order_mid[-1] == MODEL and order_mid[0] != MODEL,
+                  order_mid)
+            # (b) 拖回首位：从当前末行手柄按下，落到当前首行上半（before）。
+            rows_mid = member_rows()
+            handles_mid = member_handles()
+            if len(rows_mid) == 3 and len(handles_mid) == 3:
+                cdp.drag(handles_mid[2], rows_mid[0], drop_after=False)
+                time.sleep(0.6)
+            order_back = draft_order()
+            check("拖回首位后草稿顺序复原", order_back and order_back[0] == MODEL, order_back)
+            cdp.shot("13-drag-back-to-first")
+            # 上移/下移按钮必须仍然存在且有效（拖拽不是唯一途径，test-spec §4 行 4d）。
+            up_btns = cdp.val("[...document.querySelectorAll('button[aria-label]')]"
+                              ".filter(function(b){return b.getAttribute('aria-label')==='Move up';}).length")
+            check("上移/下移按钮仍然存在（拖拽不是唯一重排途径）", (up_btns or 0) == 3, up_btns)
+            cdp.val(js_click_exact(["Save", "保存"]))
+            time.sleep(3)
+            s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+            got_order = [m.get("upstream_model") for m in (route.get("members") or [])]
+            got_prio = [m.get("priority") for m in (route.get("members") or [])]
+            check("保存后回读成员顺序与草稿一致（拖拽结果已固化）",
+                  s == 200 and got_order and got_order[0] == MODEL, got_order)
+            check("回读 priority 与新下标一一对应（降序，数字大者优先）",
+                  got_prio == sorted(got_prio, reverse=True) and len(got_prio) == 3, got_prio)
+        else:
+            check("每个成员行都有拖拽手柄（真实拖拽的按下点）", False, "成员行数不足 3")
+            check("拖到末位后草稿顺序变了（第 1 行移到末位）", False, "成员行数不足 3")
+            check("拖回首位后草稿顺序复原", False, "成员行数不足 3")
+            check("上移/下移按钮仍然存在（拖拽不是唯一重排途径）", False, "成员行数不足 3")
+            check("保存后回读成员顺序与草稿一致（拖拽结果已固化）", False, "成员行数不足 3")
+            check("回读 priority 与新下标一一对应（降序，数字大者优先）", False, "成员行数不足 3")
+
+        # ---- 用户动作 7c：人工停用成员并验证端到端不再命中（test-spec §4 行 4e）----
+        log("")
+        log("=== 用户动作 7c：点击开关停用成员 → 保存 → 端到端不再命中 → 打开恢复 ===")
+        s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        first_upstream = (route.get("members") or [{}])[0].get("upstream_model")
+        check("停用前该成员确实参与选路（X-Served-By 命中它）",
+              (", model=%s" % first_upstream) in (http_served_by(base, MODEL, client_key) or ""),
+              http_served_by(base, MODEL, client_key))
+        cdp.nav(base + "/routes", wait=4)
+        cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
+        check("编排器再次打开", wait_for("!!document.querySelector('#lane-route-key')", 15))
+        time.sleep(0.8)
+        toggled = cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        check("点中头名成员的开关（可访问名含渠道/上游真名）", bool(toggled), (CHANNEL, first_upstream))
+        time.sleep(0.6)
+        cdp.shot("14-member-toggled-off")
+        # 关闭态必须可见地降透明度 + 短标记（ui-spec §6.3：不得只靠开关本身）。
+        composer_text = cdp.val("document.body.innerText") or ""
+        check("关闭态出现「人工关闭」可见标记", "Manually disabled" in composer_text, composer_text[-300:])
+        cdp.val(js_click_exact(["Save", "保存"]))
+        time.sleep(3)
+        s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        members_after = route.get("members") or []
+        disabled_members = [m for m in members_after if m.get("enabled") is False]
+        check("回读该成员 enabled=false 且仍在成员链里、位置不变",
+              s == 200 and len(disabled_members) == 1
+              and disabled_members[0].get("upstream_model") == first_upstream
+              and members_after[0].get("upstream_model") == first_upstream,
+              members_after)
+        check("停用不改变成员数（开关不是删除别名）",
+              len(members_after) == 3, [m.get("upstream_model") for m in members_after])
+        # 端到端：头名成员被停用 → 不再命中它（X-Served-By 换人）。
+        # X-Served-By 只在成功响应上（design-v1 §4.1），形态
+        # `channel=<id>:<name>, model=<upstream>`；成员同属一个渠道，所以判据是
+        # "命中的上游不再是它"，而不是渠道名。
+        served_off = http_served_by(base, MODEL, client_key)
+        check("停用后端到端仍成功（逃逸到次成员）", served_off is not None, served_off)
+        check("停用后不再命中被关闭成员（X-Served-By 换人）",
+              served_off is not None and (", model=%s" % first_upstream) not in served_off,
+              served_off)
+        # 重新打开 → 端到端必须恢复命中（test-spec §4 行 4e：必须实测恢复）。
+        cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
+        wait_for("!!document.querySelector('#lane-route-key')", 15)
+        time.sleep(0.8)
+        cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        time.sleep(0.5)
+        cdp.val(js_click_exact(["Save", "保存"]))
+        time.sleep(3)
+        s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        check("重新打开后 enabled=true（读回写往返不丢）",
+              s == 200 and all(m.get("enabled") is not False for m in (route.get("members") or [])),
+              route.get("members"))
+        served_on = http_served_by(base, MODEL, client_key)
+        check("重新打开后端到端恢复命中被恢复的成员",
+              served_on is not None and (", model=%s" % first_upstream) in served_on,
+              served_on)
+        # 卡片摘要与运行态：被停用成员标灰 + 「人工关闭」徽章（与 Cooldown/Circuit 可区分）。
+        # 注意：上一步保存后弹窗会自动关闭，这里必须重新打开编辑器再切开关，
+        # 否则点击落在已卸载的 DOM 上（实测：静默 no-op，卡片断言假失败）。
+        cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
+        check("编排器第三次打开（卡片断言的前置）",
+              wait_for("!!document.querySelector('#lane-route-key')", 15))
+        time.sleep(0.8)
+        cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        time.sleep(0.4)
+        cdp.val(js_click_exact(["Save", "保存"]))
+        time.sleep(3)
+        cdp.nav(base + "/routes", wait=5)
+        card_body = cdp.val("document.body.innerText") or ""
+        check("卡片摘要标出被人工停用的成员", "Manually disabled" in card_body, card_body[-300:])
+        cdp.shot("15-card-disabled-member")
+        # 复原（供后续日志/设置动作使用）。
+        cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
+        wait_for("!!document.querySelector('#lane-route-key')", 15)
+        time.sleep(0.8)
+        cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        time.sleep(0.5)
+        cdp.val(js_click_exact(["Save", "保存"]))
+        time.sleep(3)
 
         # ---- 用户动作 8：改系统设置并回读 ----
         log("")

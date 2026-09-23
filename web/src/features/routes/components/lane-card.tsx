@@ -28,14 +28,15 @@ import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { LaneHealthSnapshot } from '@/lib/route-events'
+import { cn } from '@/lib/utils'
 
-import type { PBRModelSummary } from '../api'
+import type { PBRLaneSummaryMember, PBRModelSummary } from '../api'
 import { LaneRuntimeCell } from './lane-runtime-cell'
 
 export interface LaneCardProps {
   summary: PBRModelSummary
-  /** 车道成员（有序）。 */
-  members: { channel: string; upstream_model: string }[]
+  /** 车道成员（有序）。`enabled=false` = 被人工停用，标灰并加短标记（ui-spec §6.3）。 */
+  members: PBRLaneSummaryMember[]
   snapshot?: LaneHealthSnapshot
   now: number
   onEdit: () => void
@@ -46,6 +47,13 @@ export function LaneCard(props: LaneCardProps) {
   const { t } = useTranslation()
   const row = props.summary
   const unavailable = row.member_count - (row.available_member_count ?? 0)
+  // "成员全被我关了"与"上游全挂了"都是 degraded=true，但排障结论完全不同
+  // （api-spec §5.7、ui-spec §6.3）：前者靠 disabled_member_count == member_count
+  // 判定，文案与配色都必须与"全部成员不可用"区分，不得被它冒充。
+  const allMembersDisabled =
+    typeof row.disabled_member_count === 'number' &&
+    row.member_count > 0 &&
+    row.disabled_member_count === row.member_count
 
   let statusBadge
   if (row.source === 'disabled') {
@@ -53,6 +61,15 @@ export function LaneCard(props: LaneCardProps) {
       <StatusBadge
         label={t('Lane disabled')}
         variant='warning'
+        size='sm'
+        copyable={false}
+      />
+    )
+  } else if (allMembersDisabled) {
+    statusBadge = (
+      <StatusBadge
+        label={t('All members disabled')}
+        variant='neutral'
         size='sm'
         copyable={false}
       />
@@ -112,15 +129,32 @@ export function LaneCard(props: LaneCardProps) {
           </div>
           {props.members.length > 0 && (
             <ol className='text-muted-foreground mt-1 space-y-0.5'>
-              {props.members.map((member, index) => (
-                <li
-                  key={`${member.channel}\u0000${member.upstream_model}`}
-                  className='truncate font-mono'
-                  title={`${member.channel} / ${member.upstream_model}`}
-                >
-                  {index + 1}. {member.channel} · {member.upstream_model}
-                </li>
-              ))}
+              {props.members.map((member, index) => {
+                // 被人工停用的成员仍留在链里（开关不是删除别名），但要可见地标灰，
+                // 否则卡片看起来"一切正常"而实际不参与选路（ui-spec §6.3）。
+                const disabled = member.enabled === false
+                return (
+                  <li
+                    key={`${member.channel}\u0000${member.upstream_model}`}
+                    className={cn(
+                      'truncate font-mono',
+                      disabled && 'opacity-50'
+                    )}
+                    title={`${member.channel} / ${member.upstream_model}`}
+                  >
+                    {index + 1}. {member.channel} · {member.upstream_model}
+                    {disabled && (
+                      <StatusBadge
+                        className='ml-1 align-middle'
+                        label={t('Manually disabled')}
+                        variant='neutral'
+                        size='sm'
+                        copyable={false}
+                      />
+                    )}
+                  </li>
+                )
+              })}
             </ol>
           )}
         </div>

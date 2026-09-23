@@ -2954,6 +2954,12 @@
     "Call count": "呼び出し回数",
     "No call data yet": "呼び出しデータがまだありません",
     "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.": "レーンを手動で作成：ルートキーを入力し、任意のチャネルからメンバーを選択します。チャネルでモデルを宣言してもレーンは作成されません。",
-    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "リクエストがレーンを通過すると、呼び出し回数・成功率・トークン使用量がここに表示されます。"
+    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "リクエストがレーンを通過すると、呼び出し回数・成功率・トークン使用量がここに表示されます。",
+    "Manually disabled": "手動無効",
+    "All members disabled": "全メンバーが無効",
+    "Drag to reorder": "ドラッグして並べ替え",
+    "Member enabled for {{channel}}": "{{channel}} のメンバーを有効にする",
+    "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "このメンバーは手動で無効化されています。チェーンには残りますが、ルーティング時はスキップされます。再度有効にすると復帰します。",
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "このメンバーは manual レーンの指定メンバーですが手動で無効化されているため、このモデルは「利用可能なメンバーなし」を返します。"
   }
 }

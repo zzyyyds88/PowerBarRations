@@ -2954,6 +2954,12 @@
     "Call count": "Nombre d'appels",
     "No call data yet": "Aucune donnée d'appel pour l'instant",
     "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.": "Créez une voie manuellement : saisissez une clé de route et choisissez des membres dans n'importe quel canal. Déclarer des modèles sur les canaux ne crée pas de voie.",
-    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "Une fois que les requêtes passent par les voies, le nombre d'appels, le taux de réussite et l'usage de tokens apparaissent ici."
+    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "Une fois que les requêtes passent par les voies, le nombre d'appels, le taux de réussite et l'usage de tokens apparaissent ici.",
+    "Manually disabled": "Désactivé manuellement",
+    "All members disabled": "Tous les membres sont désactivés",
+    "Drag to reorder": "Glisser pour réordonner",
+    "Member enabled for {{channel}}": "Membre activé pour {{channel}}",
+    "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "Ce membre est désactivé manuellement : il reste dans la chaîne mais est ignoré lors du routage. Réactivez-le pour le rétablir.",
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Ce membre est le membre actif d'une voie manual et il est désactivé : le modèle ne renvoie donc aucun membre disponible."
   }
 }

@@ -2954,6 +2954,12 @@
     "Call count": "呼叫次數",
     "No call data yet": "暫無呼叫資料",
     "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.": "手動新增車道：輸入路由鍵，再從任意渠道挑選成員。在渠道裡宣告模型不會建立車道。",
-    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "當請求經由車道轉發後，這裡會顯示呼叫次數、成功率與 Token 用量。"
+    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "當請求經由車道轉發後，這裡會顯示呼叫次數、成功率與 Token 用量。",
+    "Manually disabled": "人工關閉",
+    "All members disabled": "成員全部已停用",
+    "Drag to reorder": "拖曳排序",
+    "Member enabled for {{channel}}": "{{channel}} 的成員是否參與選路",
+    "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "該成員已被人工關閉：它仍留在成員鏈裡，但選路時會跳過。重新開啟即可恢復參與選路。",
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "該成員是 manual 車道指定的當前成員，但已被人工關閉，因此該模型目前回傳「無可用成員」。"
   }
 }

@@ -32,6 +32,7 @@ export type MemberStateLabel =
   | 'Affinity'
   | 'Probing'
   | 'Current'
+  | 'Manually disabled'
 
 export interface MemberState {
   label: MemberStateLabel
@@ -63,6 +64,13 @@ export function laneMemberStates(
   now: number
 ): MemberState[] {
   const states: MemberState[] = []
+  // 人工关闭排在**最前**且用 neutral：它是配置态结论，与下面两个运行态故障徽章
+  // （Cooldown=warning / Circuit open=danger）必须一眼可分——排障时"是运维关的"
+  // 和"上游出故障了"是两种完全不同的结论（routing-spec §9、ui-spec §6.3）。
+  // 被关闭成员的冷却/熔断字段仍照实给出，所以这里不短路：两类徽章可以并存。
+  if (member.enabled === false) {
+    states.push({ label: 'Manually disabled', variant: 'neutral', detail: '' })
+  }
   if (member.circuit === 'open') {
     states.push({
       label: 'Circuit open',

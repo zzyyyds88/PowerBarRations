@@ -2954,6 +2954,12 @@
     "Call count": "Call count",
     "No call data yet": "No call data yet",
     "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.": "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.",
-    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "Once requests flow through lanes, call counts, success rate and token usage appear here."
+    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "Once requests flow through lanes, call counts, success rate and token usage appear here.",
+    "Manually disabled": "Manually disabled",
+    "All members disabled": "All members disabled",
+    "Drag to reorder": "Drag to reorder",
+    "Member enabled for {{channel}}": "Member enabled for {{channel}}",
+    "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.",
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "This member is the active member of a manual lane and is disabled, so the model returns no available member."
   }
 }
