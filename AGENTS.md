@@ -182,7 +182,7 @@ verification: "`cd web && pnpm typecheck && pnpm lint && pnpm test && pnpm forma
 - **[`web/AGENTS.md`](web/AGENTS.md) 是前端细则的真源**（组件复用强制检索、i18n、错误处理、测试、依赖与构建），改前端前先读它；本节只列不可违反的硬约束。
 - 栈：React 19 + TypeScript + Rsbuild + TanStack Router/Query/Table + Base UI + Tailwind；包管理 **pnpm 11**（`packageManager` 锁定，跟踪 `pnpm-lock.yaml`）。
 - **全仓 `pnpm lint` 必须 0 error**；`.oxlintrc.json` 中对 `react/incompatible-library` / `react/set-state-in-effect` / `react/refs` 的降级是**有理由的既有决定**，改动它们需同步更新 `web/AGENTS.md`。
-- 面向用户的文案一律走 i18n（zh / zh-Hant / en），禁止硬编码自然语言后续再补。
+- 面向用户的文案一律走 i18n，**7 个 locale 全部同步**：`zh`（源）、`zh-TW`、`en`、`fr`、`ru`、`ja`、`vi`（见 `web/src/i18n/config.ts` 的 `supportedLngs`；`web/src/i18n/__tests__/literal-key-coverage.test.ts` 逐 locale 守卫缺键）。禁止硬编码自然语言后续再补。
 - 新增或修改 UI 前必须先在 `src/components/` 与相关 `src/features/` 检索复用，禁止在 feature 内重新拼装已有的通用交互。
 - 前端只能消费 `docs/api-spec-v1.md` 定义的端点；缺端点先补契约，禁止模块内自造接口或直连第三方。
 - **发布前必须重建 `web/dist`**（`pnpm build`），并注意与 `go build` 的串行约束。
