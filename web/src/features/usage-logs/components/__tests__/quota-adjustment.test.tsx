@@ -189,13 +189,12 @@ describe('quota adjustment log localization', () => {
         </I18nextProvider>
       )
 
-      // The modal makes the table preview inert, but both remain rendered.
-      expect(screen.getAllByText(scenario.english)).toHaveLength(2)
+      // 详情列只渲染展开按钮/占位符（ui-spec §6.6）：
+      // 额度调整的本地化描述只在详情弹窗渲染，不在表格列内。
       expect(
         within(screen.getByRole('dialog')).getByText(scenario.english)
       ).toBeInTheDocument()
       await act(() => i18n.changeLanguage('zh'))
-      expect(screen.getAllByText(scenario.chinese)).toHaveLength(2)
       expect(
         within(screen.getByRole('dialog')).getByText(scenario.chinese)
       ).toBeInTheDocument()

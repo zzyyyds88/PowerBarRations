@@ -25,13 +25,22 @@ import {
 import { render, screen } from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
-import { afterAll, afterEach, beforeEach, expect, test, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from 'vitest'
 
 import en from '@/i18n/locales/en.json'
 
 import type { UsageLog } from '../../data/schema'
 import type { LogOtherData } from '../../types'
 import { useCommonLogsColumns } from '../columns/common-logs-columns'
+import { DetailsDialog } from '../dialogs/details-dialog'
 
 vi.mock('@lobehub/icons', () => ({}))
 vi.hoisted(() => {
@@ -69,14 +78,11 @@ function makeLog(other: LogOtherData, type = 2): UsageLog {
   }
 }
 
-function DetailPreview(props: {
-  other: LogOtherData
-  isAdmin: boolean
-  type?: number
-}) {
+// 只渲染 content（Details）列的单元格，验证它的列内契约。
+function DetailPreview(props: { other: LogOtherData; type?: number }) {
   const table = useReactTable({
     data: [makeLog(props.other, props.type ?? 2)],
-    columns: useCommonLogsColumns(props.isAdmin, false),
+    columns: useCommonLogsColumns(true, false),
     getCoreRowModel: getCoreRowModel(),
   })
   const cell = table
@@ -101,40 +107,62 @@ afterEach(() => {
   client.clear()
 })
 
-function renderPreview(other: LogOtherData, isAdmin = true, type = 2) {
+function renderPreview(other: LogOtherData, type = 2) {
   render(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={client}>
-        <DetailPreview other={other} isAdmin={isAdmin} type={type} />
+        <DetailPreview other={other} type={type} />
       </QueryClientProvider>
     </I18nextProvider>
   )
-  return screen.getByRole('button')
 }
 
-// PBR 通用日志只存元数据：详情预览只展示排障相关的状态/原因，
-// 不渲染上游的计费/额度/分组/倍率文案。
-test.each([
-  {
-    name: 'stream failure shows the end reason',
-    other: {
-      stream_status: { status: 'error', end_reason: 'upstream closed' },
-    },
-    expected: 'Stream Status: upstream closed',
-  },
-  {
-    name: 'system prompt override is flagged',
-    other: { is_system_prompt_overwritten: true },
-    expected: 'System Prompt Override',
-  },
-  {
-    name: 'missing details fall back to the content placeholder',
-    other: {},
-    expected: '—',
-  },
-])('$name', ({ other, expected }) => {
-  const preview = renderPreview(other)
-  expect(preview.textContent).toBe(expected)
+// PBR 日志详情的权威入口是详情行展开与详情弹窗（ui-spec §6.6）；
+// stream status / 额度饱和 / 退款原因在弹窗断言（见本文件后半）。
+
+describe('details column contract', () => {
+  // PBR 日志（other.pbr 存在）渲染展开按钮。
+  test('PBR logs render an expand button in the details column', () => {
+    renderPreview({
+      pbr: {
+        lane: 'lane-a',
+        route_source: 'explicit',
+        upstream_model: 'upstream-model',
+        error_kind: '',
+        error_summary: '',
+        http_status: 200,
+        total_ms: 120,
+        estimated_cost: 0,
+        attempts: [],
+        total_attempts: 1,
+        inbound_format: 'chat_completions',
+        success: true,
+      },
+    })
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeVisible()
+  })
+
+  // 非 PBR 日志渲染占位符，不渲染按钮。
+  test('non-PBR logs render the placeholder without a button', () => {
+    renderPreview({})
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByText('—')).toBeVisible()
+  })
+
+  // 计费/额度文案绝不出现在详情列（PBR 无额度语义）。
+  test('billing and quota wording never appears in the details column', () => {
+    renderPreview({
+      model_ratio: 1,
+      completion_ratio: 2,
+      group_ratio: 1,
+      model_price: 0.25,
+      billing_mode: 'tiered_expr',
+      fixed_price: 0.04,
+      matched_tier: 'image',
+    })
+    expect(screen.getByText('—')).toBeVisible()
+    expect(screen.queryByText(/Per-call|Standard|Group Ratio|\$/i)).toBeNull()
+  })
 })
 
 const saturationOther: LogOtherData = {
@@ -148,35 +176,72 @@ const saturationOther: LogOtherData = {
   },
 }
 
-test('quota saturation is first for admins', () => {
-  const preview = renderPreview(saturationOther, true)
-  expect(preview.textContent).toBe('Quota clamped')
-})
+describe('moved previews live in the details dialog', () => {
+  const queryClients: QueryClient[] = []
 
-test('quota saturation never leaks to non-admins', () => {
-  const preview = renderPreview(saturationOther, false)
-  expect(preview.textContent).toBe('—')
-})
+  afterEach(() => {
+    for (const client of queryClients) client.clear()
+    queryClients.length = 0
+  })
 
-test('refund logs preview their recorded reason', () => {
-  const preview = renderPreview({ reason: 'upstream timeout' }, false, 6)
-  expect(preview.textContent).toBe('upstream timeout')
-})
+  function renderDialog(other: LogOtherData, isAdmin: boolean, type = 2) {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    queryClients.push(queryClient)
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={queryClient}>
+          <DetailsDialog
+            log={makeLog(other, type)}
+            isAdmin={isAdmin}
+            isRoot={false}
+            open
+            onOpenChange={() => undefined}
+          />
+        </QueryClientProvider>
+      </I18nextProvider>
+    )
+  }
 
-test('billing and quota wording never appears in the details preview', () => {
-  renderPreview(
-    {
-      model_ratio: 1,
-      completion_ratio: 2,
-      group_ratio: 1,
-      model_price: 0.25,
-      billing_mode: 'tiered_expr',
-      fixed_price: 0.04,
-      matched_tier: 'image',
-    },
-    true
-  )
-  const preview = screen.getByRole('button')
-  expect(preview.textContent).toBe('—')
-  expect(preview.textContent).not.toMatch(/Per-call|Standard|Group Ratio|\$/i)
+  // 额度饱和徽标只给管理员（不泄漏给 self view）。
+  test('quota saturation is first for admins', () => {
+    renderDialog(saturationOther, true)
+    expect(screen.getByText('Quota clamped')).toBeVisible()
+  })
+
+  test('quota saturation never leaks to non-admins', () => {
+    renderDialog(saturationOther, false)
+    expect(screen.queryByText('Quota clamped')).toBeNull()
+  })
+
+  // 退款原因在弹窗展示。
+  test('refund logs preview their recorded reason', () => {
+    renderDialog({ reason: 'upstream timeout' }, false, 6)
+    expect(screen.getByText('upstream timeout')).toBeVisible()
+  })
+
+  // 系统提示覆盖标记在弹窗展示（System Prompt 行 + Overwritten 徽章）。
+  test('system prompt override is flagged in the details dialog', () => {
+    renderDialog({ is_system_prompt_overwritten: true }, true)
+    expect(screen.getByText('System Prompt')).toBeVisible()
+    expect(screen.getByText('Overwritten')).toBeVisible()
+  })
+
+  // 弹窗不渲染计费/额度文案。
+  test('billing and quota wording never appears in the details dialog', () => {
+    renderDialog(
+      {
+        model_ratio: 1,
+        completion_ratio: 2,
+        group_ratio: 1,
+        model_price: 0.25,
+        billing_mode: 'tiered_expr',
+        fixed_price: 0.04,
+        matched_tier: 'image',
+      },
+      true
+    )
+    expect(screen.queryByText(/Per-call|Standard|Group Ratio|\$/i)).toBeNull()
+  })
 })
