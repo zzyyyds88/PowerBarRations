@@ -191,6 +191,12 @@ export function PBRLogsFilterBar<TData>(props: PBRLogsFilterBarProps<TData>) {
       />
     </LogsFilterField>
   )
+  // 成功与否筛选的标签（单层判定构建，web/AGENTS §3.2 禁嵌套三元）。
+  const successLabelMap: Record<SuccessFilter, string> = {
+    all: t('All'),
+    true: t('Success'),
+    false: t('Failed'),
+  }
   const successFilter = (
     <LogsFilterField>
       <Select
@@ -200,8 +206,10 @@ export function PBRLogsFilterBar<TData>(props: PBRLogsFilterBarProps<TData>) {
           setDraft((current) => ({ ...current, success: v }))
         }}
       >
-        <SelectTrigger className='h-8 w-32'>
-          <SelectValue />
+        <SelectTrigger className='h-8 w-32' aria-label={t('Status filter')}>
+          {/* 显式给 SelectValue 子节点：Base UI 默认回显原始值（all/true/false），
+              会绕过 i18n。 */}
+          <SelectValue>{successLabelMap[draft.success]}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value='all'>{t('All')}</SelectItem>

@@ -17,11 +17,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
+import { afterEach, expect, it, vi } from 'vitest'
 
-import { ChannelPricesEditor } from '../channel-prices-editor'
 import type { ChannelModelPrice } from '../../types'
+import { ChannelPricesEditor } from '../channel-prices-editor'
 
 // 渠道级上游单价编辑器（design-v1 §16.9#7）：表格初始为空，行按需手动添加
 // ——可搜索下拉列出渠道模型清单中尚未添加的模型，也允许键入清单外自定义名

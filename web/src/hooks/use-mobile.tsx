@@ -21,7 +21,11 @@ import * as React from 'react'
 const MOBILE_BREAKPOINT = 768
 
 export function useIsMobile() {
-  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+  // 初始值在渲染期直接求值（react-compiler 禁止 effect 内直呼 setState）；
+  // 变化由 change 监听器同步。
+  const [isMobile, setIsMobile] = React.useState<boolean>(
+    () => window.innerWidth < MOBILE_BREAKPOINT
+  )
 
   React.useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
@@ -29,7 +33,6 @@ export function useIsMobile() {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
     mql.addEventListener('change', onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     return () => mql.removeEventListener('change', onChange)
   }, [])
 
