@@ -128,6 +128,30 @@ function resolveDisplayUpstream(
   return trimmed !== '' ? trimmed : routeKey
 }
 
+/**
+ * 成员最终发给上游的模型名若未被该渠道声明（models 清单或 model_mapping 值
+ * 都不含它），返回该名字用于告警提示；已声明返回 null。
+ * 车道名未被任何成员渠道声明时，运行期必然 404/503（hermes-lane 实测：
+ * 控制台编辑清空成员显式真名后，最终上游回落为车道名，整条车道必挂）。
+ */
+function undeclaredUpstream(
+  routeKey: string,
+  member: ComposerMember,
+  catalog: PBRChannelCatalogEntry[]
+): string | null {
+  const final = resolveDisplayUpstream(
+    routeKey,
+    member.channel,
+    member.upstreamOverride,
+    catalog
+  )
+  const channel = catalog.find((c) => c.name === member.channel)
+  if (!channel) return null
+  if (channel.models.includes(final)) return null
+  if (Object.values(channel.model_mapping ?? {}).includes(final)) return null
+  return final
+}
+
 function ModelIcon(props: { name: string }) {
   const provider = resolveModelProvider(props.name)
   const icon = provider?.icon
@@ -572,67 +596,81 @@ export function LaneComposer(props: LaneComposerProps) {
               />
             ) : (
               <div className='space-y-1.5'>
-                {members.map((member, index) => (
-                  <div
-                    key={member.id}
-                    className='flex items-center gap-2 rounded-md border p-2'
-                  >
-                    <span className='text-muted-foreground w-5 shrink-0 text-center text-xs'>
-                      {index + 1}
-                    </span>
-                    <div className='min-w-0 flex-1'>
-                      <div className='truncate font-mono text-xs font-medium'>
-                        {member.channel}
+                {members.map((member, index) => {
+                  const undeclared = undeclaredUpstream(
+                    routeKey,
+                    member,
+                    catalog
+                  )
+                  return (
+                    <div key={member.id} className='rounded-md border p-2'>
+                      <div className='flex items-center gap-2'>
+                        <span className='text-muted-foreground w-5 shrink-0 text-center text-xs'>
+                          {index + 1}
+                        </span>
+                        <div className='min-w-0 flex-1'>
+                          <div className='truncate font-mono text-xs font-medium'>
+                            {member.channel}
+                          </div>
+                          <div className='text-muted-foreground truncate text-xs'>
+                            {t('Resolved upstream')}: {member.resolvedUpstream}
+                          </div>
+                        </div>
+                        <Input
+                          className='h-7 w-32 shrink-0 text-xs'
+                          aria-label={t('Upstream model for {{channel}}', {
+                            channel: member.channel,
+                          })}
+                          placeholder={t('Use channel mapping')}
+                          value={member.upstreamOverride}
+                          onChange={(event) =>
+                            renameMember(index, event.target.value)
+                          }
+                        />
+                        <Button
+                          type='button'
+                          size='icon'
+                          variant='ghost'
+                          className='size-7 shrink-0'
+                          aria-label={t('Move up')}
+                          disabled={index === 0}
+                          onClick={() => moveMember(index, -1)}
+                        >
+                          <ArrowUp className='size-3.5' />
+                        </Button>
+                        <Button
+                          type='button'
+                          size='icon'
+                          variant='ghost'
+                          className='size-7 shrink-0'
+                          aria-label={t('Move down')}
+                          disabled={index === members.length - 1}
+                          onClick={() => moveMember(index, 1)}
+                        >
+                          <ArrowDown className='size-3.5' />
+                        </Button>
+                        <Button
+                          type='button'
+                          size='icon'
+                          variant='ghost'
+                          className='size-7 shrink-0'
+                          aria-label={t('Remove member')}
+                          onClick={() => removeMember(index)}
+                        >
+                          <X className='size-3.5' />
+                        </Button>
                       </div>
-                      <div className='text-muted-foreground truncate text-xs'>
-                        {t('Resolved upstream')}: {member.resolvedUpstream}
-                      </div>
+                      {undeclared !== null && (
+                        <p className='mt-1.5 text-xs text-amber-600 dark:text-amber-500'>
+                          {t(
+                            'Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.',
+                            { channel: member.channel, model: undeclared }
+                          )}
+                        </p>
+                      )}
                     </div>
-                    <Input
-                      className='h-7 w-32 shrink-0 text-xs'
-                      aria-label={t('Upstream model for {{channel}}', {
-                        channel: member.channel,
-                      })}
-                      placeholder={t('Use channel mapping')}
-                      value={member.upstreamOverride}
-                      onChange={(event) =>
-                        renameMember(index, event.target.value)
-                      }
-                    />
-                    <Button
-                      type='button'
-                      size='icon'
-                      variant='ghost'
-                      className='size-7 shrink-0'
-                      aria-label={t('Move up')}
-                      disabled={index === 0}
-                      onClick={() => moveMember(index, -1)}
-                    >
-                      <ArrowUp className='size-3.5' />
-                    </Button>
-                    <Button
-                      type='button'
-                      size='icon'
-                      variant='ghost'
-                      className='size-7 shrink-0'
-                      aria-label={t('Move down')}
-                      disabled={index === members.length - 1}
-                      onClick={() => moveMember(index, 1)}
-                    >
-                      <ArrowDown className='size-3.5' />
-                    </Button>
-                    <Button
-                      type='button'
-                      size='icon'
-                      variant='ghost'
-                      className='size-7 shrink-0'
-                      aria-label={t('Remove member')}
-                      onClick={() => removeMember(index)}
-                    >
-                      <X className='size-3.5' />
-                    </Button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

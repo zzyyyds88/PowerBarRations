@@ -154,10 +154,7 @@ export function UsageLogsMobileList<TData>({
               />
             )}
             {logCategory === 'pbr' && (
-              <PBRLogMobileCard
-                log={row.original as UsageLog}
-                cells={cells}
-              />
+              <PBRLogMobileCard log={row.original as UsageLog} cells={cells} />
             )}
           </div>
         )

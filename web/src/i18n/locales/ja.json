@@ -9,6 +9,7 @@
     "Attempt chain: which member served the request and why the others were skipped.": "Attempt chain: which member served the request and why the others were skipped.",
     "Attempts": "Attempts",
     "Bound channels": "紐付け済みチャネル",
+    "Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.": "Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.",
     "Channels {{count}}": "チャネル {{count}}",
     "Channel association": "チャネル関連",
     "Circuit open": "サーキットブレーカー開放",
