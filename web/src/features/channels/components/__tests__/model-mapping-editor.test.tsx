@@ -69,14 +69,14 @@ test('language changes preserve draft mappings and explain the same direction in
   )
 
   await act(() => i18n.changeLanguage('zh'))
-  expect(screen.getByText('请求模型名称')).toBeVisible()
+  expect(screen.getByText('模型名称')).toBeVisible()
   expect(screen.getByText('上游模型名称')).toBeVisible()
   expect(screen.getByDisplayValue('client-alias')).toBeVisible()
   expect(screen.getByDisplayValue('provider-model')).toBeVisible()
 
   await user.click(screen.getByRole('tab', { name: 'JSON' }))
   expect(
-    screen.getByText('JSON 的键是请求模型名称，值是上游模型名称。')
+    screen.getByText('JSON 的键是模型名称，值是上游模型名称。')
   ).toBeVisible()
   expect(screen.getByRole('textbox', { name: '模型映射' })).toHaveValue(
     '{\n  "client-alias": "provider-model"\n}'

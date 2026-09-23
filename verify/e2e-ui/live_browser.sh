@@ -98,7 +98,7 @@ if [ -z "$AK" ]; then
 fi
 A=(-H "Authorization: Bearer $AK" -H 'Content-Type: application/json')
 curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UP_PORT"'","key":"'"$GOOD_KEY"'","models":["demo-model"],"enabled":true}' "http://127.0.0.1:$PBR_PORT/api/v1/channels/demo-channel" >/dev/null
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","members":[{"channel":"demo-channel","upstream_model":"demo-model","priority":10}]}' "http://127.0.0.1:$PBR_PORT/api/v1/lanes/demo-model" >/dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","members":[{"channel":"demo-channel","model":"demo-model","priority":10}]}' "http://127.0.0.1:$PBR_PORT/api/v1/lanes/demo-model" >/dev/null
 CK=$(curl -s "${A[@]}" -X POST -d '{"name":"demo-client"}' "http://127.0.0.1:$PBR_PORT/api/v1/keys" | python3 -c "import sys,json;print(json.load(sys.stdin).get('key',''))" 2>/dev/null)
 
 echo "--- x11vnc :$VNC_PORT"

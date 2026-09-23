@@ -84,8 +84,10 @@ export function LaneEditorDialog(props: {
     ? (routeQuery.data?.members ?? []).map((m, index) => ({
         id: `initial-${index}`,
         channel: m.channel,
-        upstreamOverride: m.upstream_override ?? '',
-        resolvedUpstream: m.upstream_model,
+        // 成员只存所选模型（ADR 0008）；`upstream_model` 是服务端派生的只读真名，
+        // 只用于展示，**不进草稿的落库字段**——编排器在渲染期按渠道目录重新派生它，
+        // 所以这里不需要（也不应该）把它存进草稿。
+        model: m.model,
         publicAlias: m.public_alias,
         // 读写闭环（api-spec §4.2 通则）：读端点回传什么，草稿就存什么，保存时
         // 原样带回。漏读任一字段都会在下次保存被全量替换清空。

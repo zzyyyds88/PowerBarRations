@@ -646,7 +646,7 @@ func (channel *Channel) GetModelMapping() string {
 	return *channel.ModelMapping
 }
 
-// ModelMappingMap 解析渠道 model_mapping（路由键 → 上游真名）。
+// ModelMappingMap 解析渠道 model_mapping（模型名 → 上游真名，ADR 0008）。
 // 空串 / "{}" / 非法 JSON 一律返回空表（调用方回落到路由键）。
 func (channel *Channel) ModelMappingMap() map[string]string {
 	out := map[string]string{}

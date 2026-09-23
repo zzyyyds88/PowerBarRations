@@ -23,9 +23,12 @@
 
 - **车道是唯一入口**：不存在"隐式车道"。渠道声明了某个模型但没有对应车道时，该模型**不可调用**（503），必须先在模型管理里把它的成员链固化成车道。
 - 渠道只声明自己提供的模型清单（`Channel.Models []string`）与上游真名映射；**渠道没有 `priority`/`weight`**（已物理删除）：路由顺序完全由车道的成员顺序决定，不在渠道上排序。
-- **渠道模型映射**（`Channel.ModelMapping`，JSON dict：路由键 → 上游真名）：上游命名不一致时在渠道管理里配置一次，参与该渠道所有车道成员的上游名解析。
-- **成员上游名解析优先级**：成员级显式改名 > 渠道映射 > 路由键本身。
-- **映射查表键 = 该成员"当前用于查映射的名字"**：运行期回落查表用**路由键（车道名）**；而控制台从"渠道 × 模型 m"加入成员时，**以 m 为键**先把映射解析出来并显式写入成员 `upstream_model`（ADR 0006 §5）——因此**池化车道**（车道名 ≠ m）也能命中映射。
+- **渠道模型映射**（`Channel.ModelMapping`，JSON dict：模型名 → 上游真名）：上游命名不一致时在渠道管理里配置一次，参与该渠道所有车道成员的上游名解析。
+- **成员上游名解析（单处规则，只有一条）**：`上游真名 = Channel.ModelMapping[成员所选模型] ?? 成员所选模型`。
+  - **成员不存上游真名，只存"所选模型"**（[ADR 0008](adr/0008-member-stores-selected-model.md)）：成员级上游名覆盖能力已整体移除，写端点不接受成员级真名；读端点的 `upstream_model` 是**只读派生值**，供展示与排障，**不可写回**。
+  - **查表键恒为"成员所选模型"**，与路由键无关。此前"加入时以成员模型为键、运行期以路由键为键"的两套口径已废除（池化车道下必然查错，见 ADR 0008 背景第 3 条）。
+  - 上游改名因此**只在渠道配置一次、对所有成员立即生效**——这正是 ADR 0005 决策 2 的原始承诺；此前"加入成员时把映射物化写入成员字段"的做法会让后续映射改动失效，已随本次一并废除。
+- **成员唯一键 = `(渠道, 所选模型)`**：同一渠道的同一模型在一条车道内只能出现一次，重复提交 `422 duplicate_member`；同一渠道的**不同**模型仍可多次出现。
 - 车道成员 `priority` 是**车道内顺序**（数字大者优先），由界面上的"上移/下移"维护；成员数组顺序即写库顺序。
 
 **解析顺序**（对请求的 `model`）：
@@ -35,11 +38,11 @@
 3. 都没有 → 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`（对"没建车道"与"上游全挂"不做区分，下游无需分支）。
 
 **配置入口**（[ADR 0006](adr/0006-lane-free-member-composition.md)）：
-- 路由页以**卡片网格**列出全部车道，新建/编辑进入**两栏编排器**：左栏「渠道 → 模型」选择器（数据源 = `GET /api/channels` 各渠道的 `models`，带搜索），右栏已选成员有序列表（排序 / 启停 / 删除 / 改上游真名 / 清空）。
-- **成员候选 = 任意启用渠道的任意已声明模型**：可跨渠道、跨模型组链，不要求成员声明了该路由键，**同一渠道可出现多次**（成员唯一键 = `(渠道, 上游真名)`）；路由键可任意命名，无需任何渠道声明过它。**不提供「自动添加」**，成员全部人工挑选。
+- 路由页以**卡片网格**列出全部车道，新建/编辑进入**两栏编排器**：左栏「渠道 → 模型」选择器（数据源 = `GET /api/channels` 各渠道的 `models`，带搜索），右栏已选成员有序列表（排序 / 启停 / 删除 / 清空）。
+- **成员候选 = 任意启用渠道的任意已声明模型**：可跨渠道、跨模型组链，不要求成员声明了该路由键，**同一渠道可出现多次**（成员唯一键 = `(渠道, 所选模型)`）；路由键可任意命名，无需任何渠道声明过它。**不提供「自动添加」**，成员全部人工挑选。左栏对**已加入的 `(渠道, 模型)` 直接禁用**，从源头杜绝重复成员。
 - `GET /api/routes/{model}` 的 `candidates` 语义**降级为推荐项**（声明或 `model_mapping` 映射了该键、且不在成员链里的渠道），只供界面高亮/排序，**不是可选范围限制**。
 - **渠道声明 `models` 的增删绝不自动建车道**（重申 ADR 0005）：新增模型后仍需人工显式建车道，未建一律 503。
-- 车道作为可选的高级层仍完整保留：两种模式（`failover` / `manual`，后者用 `active_member` 指定）、六键、成员级覆盖、别名、成员级启停（§1.2）。
+- 车道作为可选的高级层仍完整保留：两种模式（`failover` / `manual`，后者用 `active_member` 指定）、六键、别名、成员级启停（§1.2）。
 
 > 第 3 条是刻意的：让"模型名写错"与"上游全挂"对下游呈现同一错误形态，下游无需分支。
 
@@ -49,7 +52,7 @@
 type Channel struct {
     Name         string
     Models       []string          // 本渠道提供的路由键；可经 sync-models 从上游拉取或手工维护（探测是手动按钮动作，不自动拉取）
-    ModelMapping map[string]string // 路由键 → 上游真名（上游命名不一致时配置一次）
+    ModelMapping map[string]string // 模型名 → 上游真名（上游命名不一致时配置一次）
     // base_url/key/type/param_override/enabled/proxy 见 design-v1 §3.4
 }
 
@@ -61,24 +64,26 @@ type Lane struct { // 车道：唯一路由入口（不再有隐式覆盖层）
 }
 
 type LaneMember struct {
-    Channel       string
-    UpstreamModel string // 可选：成员级改名覆盖；留空则用渠道 ModelMapping，再退回路由键
-    PublicAlias   string
-    Priority      int    // 车道内顺序：数字大者优先
-    Disabled      bool   // 人工停用（可逆）：true = 不参与选路，但成员仍留在链里
-    Overrides     map[string]int // 成员级六键覆盖
+    Channel     string
+    Model       string // 该成员所选、由该渠道声明的模型名（上游真名由它推导，见下）
+    PublicAlias string
+    Priority    int    // 车道内顺序：数字大者优先
+    Disabled    bool   // 人工停用（可逆）：true = 不参与选路，但成员仍留在链里
+    Overrides   map[string]int // 成员级六键覆盖
 }
 ```
+
+- **成员不存上游真名**（[ADR 0008](adr/0008-member-stores-selected-model.md)）：只存**所选模型** `Model`。上游真名一律由 `Channel.ModelMapping[Model] ?? Model` 推导（§1.1），成员级改名能力已整体移除。这样上游改名回到"渠道配置一次、处处生效"，且池化车道的查表键正确。
 
 - **成员人工停用的存储口径（单处规范）**：字段是 `Disabled bool`（**语义取反**，零值 = 启用），不是 `Enabled bool`。GORM 更新时忽略零值，给布尔开关加 `default` 会让"显式关闭"被默认值吃掉；而直接用 `Enabled bool` 会让存量行迁移后全为 `false`，等于**所有成员被静默停用、全站 503**。因此：**禁止给它加 gorm `default`，禁止用 `*bool` 落库**；列由 `AutoMigrate` 自动添加，**不需要迁移脚本**，存量行天然解读为"启用"。（同一约束已写在 `Lane.Enabled` 的字段注释上——这里不是新规矩，是复用。）
 - **解析态沿用反向字段**：`RouteMember.Disabled` 与 `LaneMember.Disabled` 同向（零值 = 参与选路），由车道解析入口（`resolveExactRoute`）与控制台展示解析（`displayMembersForLane`）填充；**选路一律读反向 `Disabled`，不得在下游取反成正向**。
   - **为什么解析态也不取反**：`RouteMember` 由多处字面量构造（生产 4 处 + 测试夹具），若改成正向 `Enabled`，其零值 `false` 会让任何忘记置真的构造点静默变成"已停用"，表现为该模型必 503；反向命名下零值 = 参与选路，与新增该字段之前的行为逐位一致。
   - **取反只发生在对外输出处一次**：管理面 JSON 一律正向 `enabled`（api-spec §4.2 命名规则），`RouteMember` 从不被直接 JSON 序列化（handler 全手工拼 `gin.H`），所以 `enabled = !Disabled` 只在 handler 输出时算一次。
 - **停用 ≠ 删除**：被关闭的成员**仍留在成员链里**，顺序、别名、成员级六键覆盖一律不动——需求是"可逆的临时停用"。停用**不写冷却、不改变熔断器的三态与计数**（§5、§6），重新打开即立即恢复参与选路。开关只约束**选路**这一件事：管理面的逐成员探活仍覆盖被关闭成员（它不经选路、不写运行态，api-spec §6.4），控制台与导出同样照实呈现。
-- **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
+- **车道成员上游名解析**：`Channel.ModelMapping[成员所选模型] ?? 成员所选模型`（§1.1 单处规则；无成员级覆盖、查表键与路由键无关）。
 - **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。
-- **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则成员级显式改名会被渠道映射悄悄反向覆盖（优先级倒挂）。非 PBR 链路（渠道测试直连指定渠道）不受此约束。
-- 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。成员唯一键为 `(渠道, 上游真名)`，同一渠道可在一条车道内多次出现。
+- **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则会出现"映射被应用两次"的优先级倒挂。非 PBR 链路（渠道测试直连指定渠道）不受此约束。
+- 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。成员唯一键为 `(渠道, 所选模型)`，同一渠道的不同模型可在一条车道内多次出现（同一模型不可重复，见 §1.1）。
 - 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。** 被人工停用（`Disabled`）的成员在**两种模式下都不被选中**（§2.1、§2.2）。
 
 ### 1.3 进程内运行态（每车道一份，全部请求共享）
@@ -111,7 +116,7 @@ type LaneRuntime struct {
 
 ### 2.1 manual
 
-- 使用人工指定的 `active_member`。
+- 使用人工指定的 `active_member`：成员的 `public_alias`，或 **`channel/所选模型`** 标签（成员身份是 `(渠道, 所选模型)`，标签随之稳定，不随渠道映射改动漂移）。
 - 若该成员的**渠道被停用或已不存在**，**直接返回无可用**（不静默换人）——manual 的语义是"就要这一个"。
 - 若 `active_member` 指向的成员被**人工停用**（§1.2 `Disabled`），同样**返回"无可用"、不静默换人**，按 §4.2 快抛 503；该情形留痕为 `disabled`（§9）。
 - 不参与冷却/亲和（但仍过熔断：熔断打开时返回无可用，§5）。加开关时**不要把冷却逻辑一并并进 manual**——manual 不参与冷却是既有语义（§5.3 的"可选"合取在 manual 下不取冷却项）。
@@ -208,7 +213,7 @@ type LaneRuntime struct {
 
 ### 5.1 键与状态
 
-- 键 = `laneID : memberID`（成员粒度；等价于 `channel:upstream_model` 在车道内的组合）。
+- 键 = `laneID : memberID`（成员粒度；等价于 `channel:model` 在车道内的组合，`model` = 成员所选模型）。
 - 三态：`closed / open / half_open`。
 
 ### 5.2 转换
@@ -290,7 +295,7 @@ type LaneRuntime struct {
 | 全部成员耗尽 | 轮询等待 | **快抛 503**（下游契约） |
 | 熔断器 | 无 | 三态 + 半开 + 指数退避 |
 | 模式 | manual / failover | failover / manual（`weighted`/`round_robin` 已删） |
-| 成员改名 | 不支持（无别名列） | `upstream_model` + `public_alias` |
+| 成员改名 | 不支持（无别名列） | **也不支持成员级改名**：上游真名一律由渠道映射推导（ADR 0008）；成员有 `public_alias` 别名 |
 | 成员停用 | 无（启停只在渠道级） | **成员级人工停用**（`Disabled`，§1.2）：配置态、不写冷却、不动熔断、不占探测槽，留痕 `disabled`（§9） |
 | 成员候选范围 | 任选任意渠道模型（`ChannelModel`） | **同样任选任意渠道的任意模型**（ADR 0006）；`candidates` 仅作推荐 |
 | 运行态粒度 | 分组 | 车道（同） | 

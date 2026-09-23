@@ -66,7 +66,7 @@ type channelPayload struct {
 	Proxy         *string                  `json:"proxy"`
 	Key           string                   `json:"key"`
 	Prices        *[]dto.ChannelModelPrice `json:"prices"`
-	// ModelMapping 路由键 → 上游真名（ADR 0005）；省略则保持原值。
+	// ModelMapping 模型名 → 上游真名（ADR 0005/0008）；省略则保持原值。
 	ModelMapping *map[string]string `json:"model_mapping"`
 }
 
@@ -429,7 +429,7 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 	}
 
 	if payload.ModelMapping != nil {
-		// 渠道模型映射（路由键 → 上游真名）：两边都不得为空，值去空。
+		// 渠道模型映射（模型名 → 上游真名）：两边都不得为空，值去空。
 		cleaned := map[string]string{}
 		for routeKey, upstream := range *payload.ModelMapping {
 			routeKey = strings.TrimSpace(routeKey)

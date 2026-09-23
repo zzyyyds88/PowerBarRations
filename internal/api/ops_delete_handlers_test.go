@@ -74,7 +74,7 @@ func TestDeleteDisabledChannelsBlockedByLane(t *testing.T) {
 	require.NoError(t, db.Create(&model.Lane{Name: "m", Enabled: true, Mode: model.LaneModeFailover}).Error)
 	var lane model.Lane
 	require.NoError(t, db.Where("name = ?", "m").First(&lane).Error)
-	require.NoError(t, db.Create(&model.LaneMember{LaneId: lane.Id, ChannelId: ch.Id, UpstreamModel: "m", Priority: 1}).Error)
+	require.NoError(t, db.Create(&model.LaneMember{LaneId: lane.Id, ChannelId: ch.Id, Model: "m", Priority: 1}).Error)
 
 	recorder := doOpsRequest(engine, http.MethodDelete, "/api/v1/channels/disabled", "")
 	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())

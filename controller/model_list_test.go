@@ -95,7 +95,7 @@ func seedLane(t *testing.T, db *gorm.DB, name string, mode string, enabled bool,
 	require.NoError(t, db.Create(lane).Error)
 	if memberChannelId > 0 {
 		require.NoError(t, db.Create(&model.LaneMember{
-			LaneId: lane.Id, ChannelId: memberChannelId, UpstreamModel: name, Priority: 10,
+			LaneId: lane.Id, ChannelId: memberChannelId, Model: name, Priority: 10,
 		}).Error)
 	}
 }
@@ -261,8 +261,8 @@ func TestListModelsOwnedByPrefersTopPriorityMemberChannel(t *testing.T) {
 	lane := &model.Lane{Name: "lane-owner", Mode: model.LaneModeFailover, Enabled: true}
 	require.NoError(t, db.Create(lane).Error)
 	require.NoError(t, db.Create(&[]model.LaneMember{
-		{LaneId: lane.Id, ChannelId: 71, UpstreamModel: "lane-owner", Priority: 1},
-		{LaneId: lane.Id, ChannelId: 72, UpstreamModel: "lane-owner", Priority: 100},
+		{LaneId: lane.Id, ChannelId: 71, Model: "lane-owner", Priority: 1},
+		{LaneId: lane.Id, ChannelId: 72, Model: "lane-owner", Priority: 100},
 	}).Error)
 
 	recorder := httptest.NewRecorder()

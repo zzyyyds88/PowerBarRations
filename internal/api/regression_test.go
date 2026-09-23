@@ -53,7 +53,7 @@ func TestValidateBundleRejectsMissingMemberChannel(t *testing.T) {
 		Version: "v1",
 		Lanes: []LaneConfig{{
 			Name: "imp", Enabled: true, Mode: model.LaneModeFailover,
-			Members: []LaneMemberConfig{{Channel: "ghost", UpstreamModel: "x", Priority: 1}},
+			Members: []LaneMemberConfig{{Channel: "ghost", Model: "x", Priority: 1}},
 		}},
 	}
 	err := validateBundle(c, bundle)

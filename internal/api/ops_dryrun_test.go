@@ -32,7 +32,7 @@ func TestOpsDryRunPreviewHasNoSideEffects(t *testing.T) {
 	require.NoError(t, db.Where("name = ?", "dry-m").First(&lane).Error)
 	var ch model.Channel
 	require.NoError(t, db.Where("name = ?", "dry-ch").First(&ch).Error)
-	require.NoError(t, db.Create(&model.LaneMember{LaneId: lane.Id, ChannelId: ch.Id, UpstreamModel: "dry-m", Priority: 1}).Error)
+	require.NoError(t, db.Create(&model.LaneMember{LaneId: lane.Id, ChannelId: ch.Id, Model: "dry-m", Priority: 1}).Error)
 	require.NoError(t, db.Create(&model.ClientKey{Name: "dry-key", KeyPlain: "pbr-x", Enabled: true}).Error)
 	require.NoError(t, db.Create(&model.PrefillGroup{Name: "dry-pg", Type: "model"}).Error)
 	require.NoError(t, db.Create(&model.Model{ModelName: "dry-meta", NameRule: model.NameRuleExact, Status: 1}).Error)

@@ -97,7 +97,7 @@ func TestExplicitLaneOverridesMembers(t *testing.T) {
 		Mode:    LaneModeFailover,
 		Members: []LaneMember{{
 			ChannelId:     channelA.Id,
-			UpstreamModel: "vendor-real-name",
+			Model: "vendor-real-name",
 			Priority:      1,
 			Overrides:     `{"member_max_attempts":1}`,
 		}},
@@ -135,8 +135,8 @@ func TestResolveByPublicAliasPinsMember(t *testing.T) {
 		Enabled: true,
 		Mode:    LaneModeFailover,
 		Members: []LaneMember{
-			{ChannelId: channelA.Id, UpstreamModel: "model-x", PublicAlias: "fast", Priority: 1},
-			{ChannelId: channelB.Id, UpstreamModel: "model-x", PublicAlias: "cheap", Priority: 2},
+			{ChannelId: channelA.Id, Model: "model-x", PublicAlias: "fast", Priority: 1},
+			{ChannelId: channelB.Id, Model: "model-x", PublicAlias: "cheap", Priority: 2},
 		},
 	}))
 
@@ -152,14 +152,15 @@ func TestResolveByPublicAliasPinsMember(t *testing.T) {
 	}
 }
 
-// 渠道 model_mapping：成员 upstream 留空时用映射；成员级显式改名优先。
+// 渠道 model_mapping：上游真名恒由 `mapping[成员所选模型] ?? 所选模型` 推导（ADR 0008）。
+// 成员级覆盖已移除，所以这里只断言"映射命中"与"映射未命中回落模型名"两种情形。
 func TestChannelModelMappingResolvesUpstream(t *testing.T) {
 	setupLaneTest(t)
 	mapping, _ := json.Marshal(map[string]string{"model-1": "vendor-a/real-1"})
 	mappingJSON := string(mapping)
 	channel := &Channel{
 		Name:         "channel-a",
-		Models:       "model-1",
+		Models:       "model-1,model-2",
 		Status:       common.ChannelStatusEnabled,
 		Group:        "default",
 		Key:          "sk-test",
@@ -167,27 +168,31 @@ func TestChannelModelMappingResolvesUpstream(t *testing.T) {
 	}
 	require.NoError(t, DB.Create(channel).Error)
 
+	// 成员所选模型命中映射 → 真名取映射右值。
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "model-1",
 		Enabled: true,
 		Mode:    LaneModeFailover,
-		Members: []LaneMember{{ChannelId: channel.Id, Priority: 10}},
+		Members: []LaneMember{{ChannelId: channel.Id, Model: "model-1", Priority: 10}},
 	}))
 	route, err := ResolveRoute("model-1")
 	require.NoError(t, err)
 	require.Len(t, route.Members, 1)
-	assert.Equal(t, "vendor-a/real-1", route.Members[0].UpstreamModel)
+	assert.Equal(t, "model-1", route.Members[0].Model, "成员存的是所选模型")
+	assert.Equal(t, "vendor-a/real-1", route.Members[0].UpstreamModel, "真名由映射推导")
 
-	// 成员级显式改名覆盖渠道映射。
+	// 成员所选模型未命中映射 → 真名回落模型名本身（不再有成员级覆盖这一层）。
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "model-1",
 		Enabled: true,
 		Mode:    LaneModeFailover,
-		Members: []LaneMember{{ChannelId: channel.Id, UpstreamModel: "member-override", Priority: 10}},
+		Members: []LaneMember{{ChannelId: channel.Id, Model: "model-2", Priority: 10}},
 	}))
 	route, err = ResolveRoute("model-1")
 	require.NoError(t, err)
-	assert.Equal(t, "member-override", route.Members[0].UpstreamModel)
+	require.Len(t, route.Members, 1)
+	assert.Equal(t, "model-2", route.Members[0].Model)
+	assert.Equal(t, "model-2", route.Members[0].UpstreamModel, "无映射即回落所选模型名")
 }
 
 // 车道六键：未写的走默认，写了 0 的按默认补齐（Normalize 语义）。
@@ -223,14 +228,15 @@ func TestResolveFallsBackToNormalizedModelName(t *testing.T) {
 		Name:    normalized,
 		Enabled: true,
 		Mode:    LaneModeFailover,
-		Members: []LaneMember{{ChannelId: channelA.Id, Priority: 10}},
+		Members: []LaneMember{{ChannelId: channelA.Id, Model: normalized, Priority: 10}},
 	}))
 
 	route, err := ResolveRoute(requested)
 	require.NoError(t, err)
 	require.Len(t, route.Members, 1)
 	assert.Equal(t, requested, route.Model)
-	// 成员 upstream 留空 → 上游名回落到车道名（归一化后的模型名）。
+	// 成员所选模型 = 归一化后的模型名；无映射时上游真名就是它（ADR 0008）。
+	assert.Equal(t, normalized, route.Members[0].Model)
 	assert.Equal(t, normalized, route.Members[0].UpstreamModel)
 }
 
@@ -243,7 +249,7 @@ func TestListModelSummaries(t *testing.T) {
 		Name:    "lane-pool",
 		Enabled: true,
 		Mode:    LaneModeFailover,
-		Members: []LaneMember{{ChannelId: channelA.Id, UpstreamModel: "vendor-x"}},
+		Members: []LaneMember{{ChannelId: channelA.Id, Model: "vendor-x"}},
 	}))
 	require.NoError(t, UpsertLane(&Lane{
 		Name:    "model-1",

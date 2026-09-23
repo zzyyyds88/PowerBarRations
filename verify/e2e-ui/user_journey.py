@@ -310,17 +310,18 @@ JS_CLICK_CHANNEL = (
 
 # 编排器成员行的坐标（按行序返回）。定位完全靠**结构**，不靠 Tailwind 类名
 # （类名是样式实现细节，改一次样式就失效）也不靠文案匹配
-# （`ui-model` 是 `ui-model-2` 的子串，包含匹配会串行）。
+# （模型名可能互为子串，包含匹配会串行）。
 #
-# 锚点：每个成员行有且只有一个 `[role=switch]`（启停开关）。从它向上找
-# **最低的、同时含开关与上游输入框的祖先** —— 那就是行；再上一层是右栏面板
+# 锚点：每个成员行有且只有一个拖拽手柄 `[draggable]`（成员行的固有结构，不随
+# 字段增删变化——上游真名输入框已被 ADR 0008 移除，不能再用它当锚点）。
+# 从手柄向上找**最低的、同时含启停开关的祖先** —— 那就是行；再上一层是右栏面板
 # （它含多个开关，故不会被选中）。
 JS_MEMBER_ROWS = (
     "(function(){var rows=[];var seen=new Set();"
-    "var switches=document.querySelectorAll('[role=switch]');"
-    "for(var i=0;i<switches.length;i++){var n=switches[i].parentElement;var row=null;"
+    "var handles=document.querySelectorAll('[draggable]');"
+    "for(var i=0;i<handles.length;i++){var n=handles[i].parentElement;var row=null;"
     "while(n&&n!==document.body){"
-    "if(n.querySelector('input[aria-label]')){row=n;break;}"
+    "if(n.querySelector('[role=switch]')){row=n;break;}"
     "n=n.parentElement;}"
     "if(row&&!seen.has(row)){seen.add(row);rows.push(row);}}"
     "return rows;})()"
@@ -337,10 +338,25 @@ JS_MEMBER_HANDLE_RECTS = (
     "if(!s)return null;var r=s.getBoundingClientRect();"
     "return {x:r.left+r.width/2,y:r.top+r.height/2,h:r.height};});})()" % JS_MEMBER_ROWS
 )
-# 成员行里"上游真名"输入框的当前值，按行序返回（用于断言拖拽后的草稿顺序）。
-JS_MEMBER_ROW_UPSTREAMS = (
-    "(function(){return %s.map(function(d){"
-    "var i=d.querySelector('input[aria-label]');return i?i.value:'';});})()" % JS_MEMBER_ROWS
+# 成员行的草稿顺序：按行序返回"该行文本里出现的第一个候选模型名"。
+#
+# 不读输入框值（上游真名输入框已随 ADR 0008 移除），也不依赖 i18n 文案——
+# 直接把已知的候选模型名集合传给页面，在每行文本里找命中项。模型名互为子串时
+# 由调用方保证候选集内无前缀关系（见 EXTRA_MODELS 的命名约束）。
+JS_MEMBER_ROW_MODELS = (
+    "(function(){var want=%s;var rows=%s;"
+    "return rows.map(function(d){var t=d.textContent||'';"
+    "for(var i=0;i<want.length;i++){if(t.indexOf(want[i])>=0)return want[i];}"
+    "return '';});})()"
+)
+# 点击某成员行的启停开关：按"行文本含该模型名"定位行，再点行内开关。
+# 不依赖开关 aria-label 的具体措辞（那随 i18n 与实现变化）。
+JS_CLICK_MEMBER_SWITCH_BY_MODEL = (
+    "(function(){var want=%s;var rows=%s;"
+    "for(var i=0;i<rows.length;i++){var t=rows[i].textContent||'';"
+    "if(t.indexOf(want)>=0){var sw=rows[i].querySelector('[role=switch]');"
+    "if(sw){sw.click();return true;}}}"
+    "return false;})()"
 )
 
 
@@ -380,24 +396,13 @@ def js_member_handle_rects():
     return JS_MEMBER_HANDLE_RECTS
 
 
-def js_member_row_upstreams():
-    return JS_MEMBER_ROW_UPSTREAMS
+def js_member_row_models(candidates):
+    return JS_MEMBER_ROW_MODELS % (json.dumps(list(candidates)), JS_MEMBER_ROWS)
 
 
-# 按可访问名（含渠道 + 上游真名）点击成员开关。同一渠道多成员时只用渠道名会重名，
-# 所以 aria-label 带上 `channel/upstream`（lane-composer.tsx 的实现口径）。
-# 用**包含**匹配而非全等：label 走 i18n（"Member enabled for {{channel}}"），
-# 全等会随语言变化而失配。
-JS_CLICK_MEMBER_SWITCH = (
-    "(function(){var want=%s;var bs=[...document.querySelectorAll('[role=switch]')];"
-    "for(var i=0;i<bs.length;i++){var l=bs[i].getAttribute('aria-label')||'';"
-    "if(l.indexOf(want)>=0){bs[i].click();return true;}}"
-    "return false;})()"
-)
+def js_click_member_switch_by_model(model):
+    return JS_CLICK_MEMBER_SWITCH_BY_MODEL % (json.dumps(model), JS_MEMBER_ROWS)
 
-
-def js_click_member_switch(channel, upstream):
-    return JS_CLICK_MEMBER_SWITCH % json.dumps("%s · %s" % (channel, upstream))
 
 
 def main():
@@ -740,8 +745,12 @@ def main():
         def member_handles():
             return cdp.val(js_member_handle_rects()) or []
 
+        # 候选模型名集合：用于在成员行文本里认出"这一行是哪个成员"。
+        # 名称之间不互为前缀（见 EXTRA_MODELS 的命名约束），故顺序无关。
+        CANDIDATES = [MODEL] + EXTRA_MODELS
+
         def draft_order():
-            return cdp.val(js_member_row_upstreams()) or []
+            return cdp.val(js_member_row_models(CANDIDATES)) or []
 
         rows_before = member_rows()
         handles_before = member_handles()
@@ -786,7 +795,7 @@ def main():
             cdp.val(js_click_exact(["Save", "保存"]))
             time.sleep(3)
             s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
-            got_order = [m.get("upstream_model") for m in (route.get("members") or [])]
+            got_order = [m.get("model") for m in (route.get("members") or [])]
             got_prio = [m.get("priority") for m in (route.get("members") or [])]
             check("保存后回读成员顺序与草稿一致（拖拽结果已固化）",
                   s == 200 and got_order and got_order[0] == MODEL, got_order)
@@ -804,16 +813,19 @@ def main():
         log("")
         log("=== 用户动作 7c：点击开关停用成员 → 保存 → 端到端不再命中 → 打开恢复 ===")
         s, route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        # 成员身份 = (渠道, 所选模型) → 用 model 定位行与断言成员；
+        # upstream_model 是派生真名（转发目标）→ 用 X-Served-By 断言"命中了谁"（ADR 0008）。
+        first_model = (route.get("members") or [{}])[0].get("model")
         first_upstream = (route.get("members") or [{}])[0].get("upstream_model")
         check("停用前该成员确实参与选路（X-Served-By 命中它）",
-              (", model=%s" % first_upstream) in (http_served_by(base, MODEL, client_key) or ""),
-              http_served_by(base, MODEL, client_key))
+              first_upstream and (", model=%s" % first_upstream) in (http_served_by(base, MODEL, client_key) or ""),
+              (first_upstream, http_served_by(base, MODEL, client_key)))
         cdp.nav(base + "/routes", wait=4)
         cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
         check("编排器再次打开", wait_for("!!document.querySelector('#lane-route-key')", 15))
         time.sleep(0.8)
-        toggled = cdp.val(js_click_member_switch(CHANNEL, first_upstream))
-        check("点中头名成员的开关（可访问名含渠道/上游真名）", bool(toggled), (CHANNEL, first_upstream))
+        toggled = cdp.val(js_click_member_switch_by_model(first_model))
+        check("点中头名成员的开关（按成员行文本定位）", bool(toggled), first_model)
         time.sleep(0.6)
         cdp.shot("14-member-toggled-off")
         # 关闭态必须可见地降透明度 + 短标记（ui-spec §6.3：不得只靠开关本身）。
@@ -826,11 +838,11 @@ def main():
         disabled_members = [m for m in members_after if m.get("enabled") is False]
         check("回读该成员 enabled=false 且仍在成员链里、位置不变",
               s == 200 and len(disabled_members) == 1
-              and disabled_members[0].get("upstream_model") == first_upstream
-              and members_after[0].get("upstream_model") == first_upstream,
+              and disabled_members[0].get("model") == first_model
+              and members_after[0].get("model") == first_model,
               members_after)
         check("停用不改变成员数（开关不是删除别名）",
-              len(members_after) == 3, [m.get("upstream_model") for m in members_after])
+              len(members_after) == 3, [m.get("model") for m in members_after])
         # 端到端：头名成员被停用 → 不再命中它（X-Served-By 换人）。
         # X-Served-By 只在成功响应上（design-v1 §4.1），形态
         # `channel=<id>:<name>, model=<upstream>`；成员同属一个渠道，所以判据是
@@ -844,7 +856,7 @@ def main():
         cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
         wait_for("!!document.querySelector('#lane-route-key')", 15)
         time.sleep(0.8)
-        cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        cdp.val(js_click_member_switch_by_model(first_model))
         time.sleep(0.5)
         cdp.val(js_click_exact(["Save", "保存"]))
         time.sleep(3)
@@ -863,7 +875,7 @@ def main():
         check("编排器第三次打开（卡片断言的前置）",
               wait_for("!!document.querySelector('#lane-route-key')", 15))
         time.sleep(0.8)
-        cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        cdp.val(js_click_member_switch_by_model(first_model))
         time.sleep(0.4)
         cdp.val(js_click_exact(["Save", "保存"]))
         time.sleep(3)
@@ -875,10 +887,50 @@ def main():
         cdp.val(js_click_exact(["Edit members", "编辑成员链"]))
         wait_for("!!document.querySelector('#lane-route-key')", 15)
         time.sleep(0.8)
-        cdp.val(js_click_member_switch(CHANNEL, first_upstream))
+        cdp.val(js_click_member_switch_by_model(first_model))
         time.sleep(0.5)
         cdp.val(js_click_exact(["Save", "保存"]))
         time.sleep(3)
+
+        # ---- 用户动作 7d：改渠道映射即时生效（ADR 0008 的核心修复）----
+        log("")
+        log("=== 用户动作 7d：渠道模型映射改动立即作用于已建车道 ===")
+        # ADR 0008 之前：加入成员时把渠道映射"物化"写进成员字段，之后改映射对该成员
+        # 完全失效。现在成员只存所选模型，真名由映射推导，所以**不重存车道**也应立即变化。
+        s, before_route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        before_upstream = (before_route.get("members") or [{}])[0].get("upstream_model")
+        # 给渠道加一条映射：所选模型 → 一个刻意不同的真名（fake 上游接受任意模型名）。
+        s, ch_detail = req(base, "GET", "/api/v1/channels/" + CHANNEL, key=admin_key)
+        original_mapping = ch_detail.get("model_mapping") or {}
+        new_mapping = dict(original_mapping)
+        new_mapping[first_model] = "ui-renamed/" + first_model
+        put_body = {
+            "type": ch_detail.get("type"),
+            "base_url": ch_detail.get("base_url"),
+            "models": ch_detail.get("models"),
+            "enabled": True,
+            "model_mapping": new_mapping,
+        }
+        # 渠道更新需要 key；用与建渠道时相同的 up_key（脚本内变量）。
+        put_body["key"] = up_key
+        s, _ = req(base, "PUT", "/api/v1/channels/" + CHANNEL, put_body, key=admin_key)
+        check("渠道映射更新成功", s == 200, s)
+        # **不重存车道**，直接回读：真名必须已跟随映射。
+        s, after_route = req(base, "GET", "/api/v1/routes/" + MODEL, key=admin_key)
+        after_upstream = (after_route.get("members") or [{}])[0].get("upstream_model")
+        after_model = (after_route.get("members") or [{}])[0].get("model")
+        check("成员存的仍是所选模型（未被真名污染）", after_model == first_model, after_model)
+        check("改渠道映射后真名立即生效，无需重存车道",
+              after_upstream == "ui-renamed/" + first_model and after_upstream != before_upstream,
+              (before_upstream, after_upstream))
+        # 端到端也应按新真名转发（X-Served-By 的 model= 段来自真名）。
+        served_mapped = http_served_by(base, MODEL, client_key)
+        check("端到端按新真名转发",
+              served_mapped is not None and ("model=ui-renamed/" + first_model) in served_mapped,
+              served_mapped)
+        # 复原映射，避免影响后续动作。
+        put_body["model_mapping"] = original_mapping
+        req(base, "PUT", "/api/v1/channels/" + CHANNEL, put_body, key=admin_key)
 
         # ---- 用户动作 8：改系统设置并回读 ----
         log("")

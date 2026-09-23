@@ -243,8 +243,8 @@ def main():
                            "member_non_stream_response_timeout_seconds": 1,
                            "member_stream_first_event_timeout_seconds": 1,
                            "member_cooldown_seconds": 1, "member_affinity_seconds": 0},
-                "members": [{"channel": "channel-dead", "upstream_model": "t4-model", "priority": 2},
-                            {"channel": "channel-live", "upstream_model": "t4-model", "priority": 1}]}, key=admin_key)
+                "members": [{"channel": "channel-dead", "model": "t4-model", "priority": 2},
+                            {"channel": "channel-live", "model": "t4-model", "priority": 1}]}, key=admin_key)
             s, route1 = req(base, "GET", "/api/v1/routes/t4-model", key=admin_key)
             order = [x.get("channel") for x in route1.get("members", [])]
             check("显式链顺序为 dead → live（API 直写）", order[:2] == ["channel-dead", "channel-live"], order)

@@ -6,6 +6,10 @@
 # → 密钥轮换 → 导出/导入幂等 → 日志保留 → 审计
 # → 成员启停开关：写入回读 / 三态默认 / dry-run 不落库 / 停用形态与 attempts /
 #   运行态不被污染 / /api/models 聚合可辨识 / 导出导入往返 / 审计（test-spec §5 场景 3d）。
+# → 成员只存所选模型（ADR 0008）：写端点成员载荷用 `model`；上游真名由
+#   `model_mapping[model] ?? model` 推导（改映射不重存车道即生效，池化车道按
+#   成员所选模型而非路由键查表）；成员唯一键 (渠道, 模型) 重复即 422 duplicate_member；
+#   导出/导入只带 `model`、不带派生 `upstream_model`（test-spec §3.1）。
 # 每步"调用 → 回读 → 断言"。
 #
 # 全程本地：独立端口 + 独立 SQLite + 内置假上游；不打真实厂商、不碰现网。
@@ -103,21 +107,81 @@ assert_json "渠道回读含 models 与 key_prefix（不回声明文）" "$CH_A"
 
 echo
 echo "=== 运维 4：建车道（唯一路由入口，ADR 0005）==="
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"ops-a","upstream_model":"ops-model","priority":20},{"channel":"ops-b","upstream_model":"ops-model","priority":10}]}' "$BASE/api/v1/lanes/ops-model" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"ops-a","model":"ops-model","priority":20},{"channel":"ops-b","model":"ops-model","priority":10}]}' "$BASE/api/v1/lanes/ops-model" > /dev/null
 ROUTE=$(curl -s "${A[@]}" "$BASE/api/v1/routes/ops-model")
 assert_json "routes routable 且成员按 priority 降序" "$ROUTE" "d['routable'] is True and [m['channel'] for m in d['members']][:2]==['ops-a','ops-b']"
 MODELS=$(curl -s "${A[@]}" "$BASE/api/v1/models")
 assert_json "models 列出 ops-model 且 explicit" "$MODELS" "any(m['model']=='ops-model' and m['source']=='explicit' and m['routable'] for m in d['items'])"
 
 echo
-echo "=== 运维 4b：池化车道（跨渠道跨模型，ADR 0006）==="
-# 成员可来自任意启用渠道的任意已声明模型：这里让 ops-b 同时贡献两个不同上游名，
-# 并让同一渠道在一条车道内出现两次（去重键 = 渠道 + 上游真名）。
+echo "=== 运维 4b：池化车道（跨渠道跨模型，ADR 0006/0008）==="
+# 成员可来自任意启用渠道的任意已声明模型：这里让 ops-b 同时贡献两个不同模型，
+# 并让同一渠道在一条车道内出现两次（去重键 = 渠道 + **所选模型**，ADR 0008）。
+# 车道名 ops-pool 与任何成员模型名都不同——这正是 ADR 0008 要修的池化场景：
+# 上游真名的查表键必须是**成员所选模型**，与路由键无关。
 curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["ops-model","ops-alt"],"enabled":true}' "$BASE/api/v1/channels/ops-b" > /dev/null
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"ops-b","upstream_model":"ops-model","priority":30},{"channel":"ops-b","upstream_model":"ops-alt","priority":20},{"channel":"ops-a","upstream_model":"ops-model","priority":10}]}' "$BASE/api/v1/lanes/ops-pool" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"ops-b","model":"ops-model","priority":30},{"channel":"ops-b","model":"ops-alt","priority":20},{"channel":"ops-a","model":"ops-model","priority":10}]}' "$BASE/api/v1/lanes/ops-pool" > /dev/null
 POOL=$(curl -s "${A[@]}" "$BASE/api/v1/routes/ops-pool")
-assert_json "池化车道成员 = 提交的 (渠道, 上游真名) 列表（含同渠道两次）" "$POOL" "[(m['channel'],m['upstream_model']) for m in d['members']][:3]==[('ops-b','ops-model'),('ops-b','ops-alt'),('ops-a','ops-model')]"
+assert_json "池化车道成员 = 提交的 (渠道, 所选模型) 列表（含同渠道两模型）" "$POOL" "[(m['channel'],m['model']) for m in d['members']][:3]==[('ops-b','ops-model'),('ops-b','ops-alt'),('ops-a','ops-model')]"
+assert_json "无渠道映射时 upstream_model 派生为所选模型本身" "$POOL" "[m['upstream_model'] for m in d['members']][:3]==['ops-model','ops-alt','ops-model']"
 assert_json "池化车道可路由" "$POOL" "d['routable'] is True"
+
+echo
+echo "=== 运维 4b-2：改渠道 model_mapping 后不重存车道，派生真名立即变化（ADR 0008 核心缺陷）==="
+# 这是 ADR 0008 背景第 2 条修掉的真缺陷：旧实现把解析后的真名物化写进成员，
+# 渠道映射改完也不生效。现在成员只存所选模型，真名现算，改映射即对所有成员生效。
+# 映射里**故意同时放一个路由键条目**（ops-pool → route-key-should-not-be-used）：
+# 若查表键错用路由键，三个成员的 upstream_model 都会变成它；按成员所选模型查表
+# 才会得到下面三个各不相同的结果。这就是"查表键 = 成员所选模型"的可证伪断言。
+curl -s "${A[@]}" -X PUT -d '{"model_mapping":{"ops-model":"ops-model-v2","ops-alt":"ops-alt-v2","ops-pool":"route-key-should-not-be-used"}}' "$BASE/api/v1/channels/ops-b" > /dev/null
+POOL2=$(curl -s "${A[@]}" "$BASE/api/v1/routes/ops-pool")
+assert_json "改渠道映射后（未重存车道）ops-b/ops-model 的真名立即变为映射值" "$POOL2" "[m['upstream_model'] for m in d['members'] if m['channel']=='ops-b' and m['model']=='ops-model']==['ops-model-v2']"
+assert_json "同渠道另一模型按自己的键查表（ops-alt → ops-alt-v2）" "$POOL2" "[m['upstream_model'] for m in d['members'] if m['channel']=='ops-b' and m['model']=='ops-alt']==['ops-alt-v2']"
+assert_json "未配映射的渠道成员不受影响（ops-a/ops-model 仍为模型名）" "$POOL2" "[m['upstream_model'] for m in d['members'] if m['channel']=='ops-a']==['ops-model']"
+assert_json "查表键是成员所选模型而非路由键（路由键条目不得被采用）" "$POOL2" "all(m['upstream_model']!='route-key-should-not-be-used' for m in d['members'])"
+# 运行期同口径：真发一次请求，上游必须收到映射后的真名，而不是路由键或模型名。
+POOL_KEY=$(curl -s "${A[@]}" -X POST -d '{"name":"ops-pool-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')
+curl -s -o /dev/null -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $POOL_KEY" -H 'Content-Type: application/json' -d '{"model":"ops-pool","messages":[{"role":"user","content":"hi"}]}'
+sleep 1
+assert_json "运行期把映射后的真名发给上游（pool 车道首成员 ops-model-v2）" "$(python3 -c '
+import json, sys
+out = []
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        out.append(json.loads(line)["model"])
+    except Exception:
+        pass
+print(json.dumps(out))
+' "$WORK/upstream.log")" "'ops-model-v2' in d"
+assert_json "运行期绝不把路由键发给上游" "$(python3 -c '
+import json, sys
+out = []
+for line in open(sys.argv[1]):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        out.append(json.loads(line)["model"])
+    except Exception:
+        pass
+print(json.dumps(out))
+' "$WORK/upstream.log")" "'route-key-should-not-be-used' not in d"
+
+echo
+echo "=== 运维 4b-3：成员唯一键 = (渠道, 所选模型)：重复 422，同渠道不同模型可共存 ==="
+DUP=$(curl -s -o "$WORK/dup.json" -w '%{http_code}' "${A[@]}" -X PUT -d '{"members":[{"channel":"ops-b","model":"ops-model","priority":30},{"channel":"ops-b","model":"ops-model","priority":20}]}' "$BASE/api/v1/lanes/ops-pool/members")
+check "同一 (渠道, 模型) 重复提交返回 422" "$DUP" "422"
+check "422 带稳定错误码 duplicate_member" "$(cat "$WORK/dup.json")" '"duplicate_member"'
+# 全量替换语义下，被拒的写不得改动任何东西
+assert_json "422 后成员链未被改动（全量写失败即无副作用）" "$(curl -s "${A[@]}" "$BASE/api/v1/routes/ops-pool")" "[(m['channel'],m['model']) for m in d['members']][:3]==[('ops-b','ops-model'),('ops-b','ops-alt'),('ops-a','ops-model')]"
+assert_json "同渠道不同模型仍可共存（ops-b 两个模型都在链上）" "$(curl -s "${A[@]}" "$BASE/api/v1/routes/ops-pool")" "len([m for m in d['members'] if m['channel']=='ops-b'])==2"
+# 缺 model 的成员载荷必须被拒（成员身份的一半，ADR 0008）
+NOMODEL=$(curl -s -o "$WORK/nomodel.json" -w '%{http_code}' "${A[@]}" -X PUT -d '{"members":[{"channel":"ops-b","priority":10}]}' "$BASE/api/v1/lanes/ops-pool/members")
+check "成员缺 model 返回 400" "$NOMODEL" "400"
+check "缺 model 的错误码为 validation_failed" "$(cat "$WORK/nomodel.json")" '"validation_failed"'
 
 echo
 echo "=== 运维 4c：声明模型不自动建车道（ADR 0005/0007）==="
@@ -225,13 +289,13 @@ for c in w3-a w3-b w3-c; do
 done
 CFG_X='{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0}'
 # 成员片段：整链在不同用例里反复原样带回，只切换 enabled 三态，避免复制粘贴漂移。
-MA0='{"channel":"w3-a","upstream_model":"w3-model-x","priority":30}'
-MB0='{"channel":"w3-b","upstream_model":"w3-model-x","public_alias":"w3-alias-b","priority":20,"overrides":{"member_cooldown_seconds":120}}'
-MC0='{"channel":"w3-c","upstream_model":"w3-model-x","priority":10}'
-MA_OFF='{"channel":"w3-a","upstream_model":"w3-model-x","priority":30,"enabled":false}'
-MA_ON='{"channel":"w3-a","upstream_model":"w3-model-x","priority":30,"enabled":true}'
-MB_ON='{"channel":"w3-b","upstream_model":"w3-model-x","public_alias":"w3-alias-b","priority":20,"overrides":{"member_cooldown_seconds":120},"enabled":true}'
-MC_ON='{"channel":"w3-c","upstream_model":"w3-model-x","priority":10,"enabled":true}'
+MA0='{"channel":"w3-a","model":"w3-model-x","priority":30}'
+MB0='{"channel":"w3-b","model":"w3-model-x","public_alias":"w3-alias-b","priority":20,"overrides":{"member_cooldown_seconds":120}}'
+MC0='{"channel":"w3-c","model":"w3-model-x","priority":10}'
+MA_OFF='{"channel":"w3-a","model":"w3-model-x","priority":30,"enabled":false}'
+MA_ON='{"channel":"w3-a","model":"w3-model-x","priority":30,"enabled":true}'
+MB_ON='{"channel":"w3-b","model":"w3-model-x","public_alias":"w3-alias-b","priority":20,"overrides":{"member_cooldown_seconds":120},"enabled":true}'
+MC_ON='{"channel":"w3-c","model":"w3-model-x","priority":10,"enabled":true}'
 CHAIN_KEEP="$MA0,$MB0,$MC0"          # 全员省略 enabled（三态用例）
 CHAIN_OFF="$MA_OFF,$MB_ON,$MC_ON"    # 显式停用 w3-a
 CHAIN_ON="$MA_ON,$MB_ON,$MC_ON"      # 显式全开
@@ -288,7 +352,8 @@ check "停用头名成员后端到端仍成功（逃逸到次成员）" "$RESP" 
 SERVED=$(grep -i '^x-served-by:' "$WORK/w3-x1.headers" | tr -d '\r' | sed 's/^[^:]*: //')
 check "X-Served-By 是 w3-b（被关闭成员不再被命中，也不占探测槽）" "$SERVED" ":w3-b"
 sleep 1
-assert_json "attempts 链：停用侧 status=disabled（与 cooldown/circuit_break/skipped 可区分）且末段成功" "$(curl -s "${A[@]}" "$BASE/api/v1/logs?limit=10")" "any(i['lane']=='w3-model-x' and i['success'] and any(a['status']=='disabled' and 'w3-a' in a['member'] for a in i['attempts']) and i['attempts'][-1]['status']=='success' for i in d['items'])"
+assert_json "attempts 链：停用侧 status=disabled（与 cooldown/circuit_break/skipped 可区分）且末段成功" "$(curl -s "${A[@]}" "$BASE/api/v1/logs?limit=10")" "any(i['lane']=='w3-model-x' and i['success'] and any(a['status']=='disabled' and a['member']=='w3-a/w3-model-x' for a in i['attempts']) and i['attempts'][-1]['status']=='success' for i in d['items'])"
+assert_json "attempts[].member 标签为 channel/所选模型（ADR 0008，非真名）" "$(curl -s "${A[@]}" "$BASE/api/v1/logs?limit=10")" "any(i['lane']=='w3-model-x' and i['success'] and i['attempts'][-1]['member']=='w3-b/w3-model-x' for i in d['items'])"
 # 重新打开 → 端到端必须重新命中（3d：实测恢复，不能只测关闭）
 curl -s "${A[@]}" -X PUT -d "{\"members\":[$CHAIN_ON]}" "$BASE/api/v1/lanes/w3-model-x/members" > /dev/null
 RESP=$(curl -s -D "$WORK/w3-x2.headers" -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $W3_KEY" -H 'Content-Type: application/json' -d '{"model":"w3-model-x","messages":[{"role":"user","content":"hi"}]}')
@@ -306,7 +371,7 @@ echo "=== 运维 18：开关不污染运行态 + /api/models 聚合可辨识（r
 curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["w3-model-y","w3-model-z"],"enabled":true}' "$BASE/api/v1/channels/w3-d" > /dev/null
 curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["w3-model-z"],"enabled":true}' "$BASE/api/v1/channels/w3-e" > /dev/null
 CFG_Y='{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":120,"member_affinity_seconds":0}'
-curl -s "${A[@]}" -X PUT -d "{\"enabled\":true,\"mode\":\"failover\",\"config\":$CFG_Y,\"members\":[{\"channel\":\"w3-d\",\"upstream_model\":\"w3-model-y\",\"priority\":10}]}" "$BASE/api/v1/lanes/w3-model-y" > /dev/null
+curl -s "${A[@]}" -X PUT -d "{\"enabled\":true,\"mode\":\"failover\",\"config\":$CFG_Y,\"members\":[{\"channel\":\"w3-d\",\"model\":\"w3-model-y\",\"priority\":10}]}" "$BASE/api/v1/lanes/w3-model-y" > /dev/null
 control '{"model":"w3-model-y","status":500}'
 curl -s -o /dev/null -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $W3_KEY" -H 'Content-Type: application/json' -d '{"model":"w3-model-y","messages":[{"role":"user","content":"hi"}]}'
 sleep 1
@@ -315,18 +380,18 @@ assert_json "前置成立：上游 500 已记为真实运行态（consecutive_fa
 TRIP='str([[m["circuit"],m["cooldown_until"],m["consecutive_failures"]] for m in d["members"]])'
 PRE_TRIP=$(echo "$HY" | jget "$TRIP")
 assert_json "上游全挂路径：degraded=true 且 disabled_member_count=0（区别于'我关的'）" "$(curl -s "${A[@]}" "$BASE/api/v1/models")" "len([e for e in d['items'] if e['model']=='w3-model-y' and e['degraded'] is True and e.get('disabled_member_count')==0])==1"
-curl -s "${A[@]}" -X PUT -d '{"members":[{"channel":"w3-d","upstream_model":"w3-model-y","priority":10,"enabled":false}]}' "$BASE/api/v1/lanes/w3-model-y/members" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"members":[{"channel":"w3-d","model":"w3-model-y","priority":10,"enabled":false}]}' "$BASE/api/v1/lanes/w3-model-y/members" > /dev/null
 HY2=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/w3-model-y/health")
 assert_json "停用后 enabled=false 且 available=false（关闭本身即成因，可归因）" "$HY2" "d['members'][0]['enabled'] is False and d['members'][0]['available'] is False"
 assert_same "停用不清零/不省略 circuit、cooldown_until、consecutive_failures（照实保留）" "$(echo "$HY2" | jget "$TRIP")" "$PRE_TRIP"
-curl -s "${A[@]}" -X PUT -d '{"members":[{"channel":"w3-d","upstream_model":"w3-model-y","priority":10,"enabled":true}]}' "$BASE/api/v1/lanes/w3-model-y/members" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"members":[{"channel":"w3-d","model":"w3-model-y","priority":10,"enabled":true}]}' "$BASE/api/v1/lanes/w3-model-y/members" > /dev/null
 HY3=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/w3-model-y/health")
 assert_json "重新打开后 enabled=true" "$HY3" "d['members'][0]['enabled'] is True"
 assert_same "关→开往返运行态逐字段不变（仍处原冷却，不因'关过'受罚）" "$(echo "$HY3" | jget "$TRIP")" "$PRE_TRIP"
 control '{"model":"w3-model-y","status":200}'
 # w3-model-z：上游零故障、纯人工全关 → 与"上游全挂"同 degraded、靠 disabled_member_count 区分
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":120,"member_affinity_seconds":0},"members":[{"channel":"w3-d","upstream_model":"w3-model-z","priority":10},{"channel":"w3-e","upstream_model":"w3-model-z","priority":5}]}' "$BASE/api/v1/lanes/w3-model-z" > /dev/null
-curl -s "${A[@]}" -X PUT -d '{"members":[{"channel":"w3-d","upstream_model":"w3-model-z","priority":10,"enabled":false},{"channel":"w3-e","upstream_model":"w3-model-z","priority":5,"enabled":false}]}' "$BASE/api/v1/lanes/w3-model-z/members" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":120,"member_affinity_seconds":0},"members":[{"channel":"w3-d","model":"w3-model-z","priority":10},{"channel":"w3-e","model":"w3-model-z","priority":5}]}' "$BASE/api/v1/lanes/w3-model-z" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"members":[{"channel":"w3-d","model":"w3-model-z","priority":10,"enabled":false},{"channel":"w3-e","model":"w3-model-z","priority":5,"enabled":false}]}' "$BASE/api/v1/lanes/w3-model-z/members" > /dev/null
 WM=$(curl -s "${A[@]}" "$BASE/api/v1/models")
 assert_json "成员全关路径：degraded=true 且 disabled_member_count==member_count、available=0（合法写入，非 422）" "$WM" "len([e for e in d['items'] if e['model']=='w3-model-z' and e['degraded'] is True and e.get('disabled_member_count')==2 and e['member_count']==2 and e['available_member_count']==0])==1"
 assert_json "全关不隐藏模型：仍在 /api/models 且 source=explicit" "$WM" "len([e for e in d['items'] if e['model']=='w3-model-z' and e['source']=='explicit'])==1"
@@ -336,12 +401,16 @@ echo
 echo "=== 运维 19：导出/导入往返开关不丢（api-spec §5.6：'导出→清空→导入'不得把人工停用成员静默放回选路）==="
 curl -s "${A[@]}" "$BASE/api/v1/export" -o "$WORK/export-w3.json"
 assert_json "导出成员对象恒带 enabled，且关闭状态写进文件" "$(cat "$WORK/export-w3.json")" "len([m for l in d['lanes'] if l['name']=='w3-model-x' for m in l['members'] if 'enabled' in m])==3 and len([m for l in d['lanes'] if l['name']=='w3-model-x' for m in l['members'] if m['channel']=='w3-a' and m['enabled'] is False])==1"
+# ADR 0008：导出只带所选模型，**不得**带派生真名（把旧真名导回改过映射的实例会覆盖新映射）。
+assert_json "导出成员带 model（所选模型）" "$(cat "$WORK/export-w3.json")" "all(m.get('model') for l in d['lanes'] if l['name']=='w3-model-x' for m in l['members']) and [m['model'] for l in d['lanes'] if l['name']=='w3-model-x' for m in l['members']]==['w3-model-x']*3"
+assert_json "导出成员不含 upstream_model（派生真名不进导出文件）" "$(cat "$WORK/export-w3.json")" "not any('upstream_model' in m for l in d['lanes'] for m in l['members'])"
 curl -s "${A[@]}" -X DELETE "$BASE/api/v1/lanes/w3-model-x" > /dev/null
 assert_json "护栏：车道确已清空（source=unconfigured），导入不得靠'保留原值'假装往返成功" "$(curl -s "${A[@]}" "$BASE/api/v1/routes/w3-model-x")" "d['source']=='unconfigured'"
 IMP_CODE=$(curl -s -o "$WORK/import-w3.out" -w '%{http_code}' "${A[@]}" -X POST --data-binary @"$WORK/export-w3.json" "$BASE/api/v1/import")
 check "真实导入返回 200" "$IMP_CODE" "200"
 XRT=$(curl -s "${A[@]}" "$BASE/api/v1/routes/w3-model-x")
 assert_json "导出→清空→导入往返：w3-a 仍是停用（开关不丢）" "$XRT" "len(d['members'])==3 and [m for m in d['members'] if m['channel']=='w3-a'][0]['enabled'] is False"
+assert_json "往返后成员所选模型保留（model 未被真名顶替）" "$XRT" "[m['model'] for m in d['members']]==['w3-model-x']*3"
 assert_json "往返不连带丢其余成员字段（alias/overrides/他员 enabled 随链恢复）" "$XRT" "[m for m in d['members'] if m['channel']=='w3-b'][0]['public_alias']=='w3-alias-b' and [m for m in d['members'] if m['channel']=='w3-b'][0]['overrides'].get('member_cooldown_seconds')==120 and [m for m in d['members'] if m['channel']=='w3-c'][0]['enabled'] is True"
 
 echo

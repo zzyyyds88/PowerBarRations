@@ -40,16 +40,20 @@ type ChannelConfig struct {
 	Proxy         string   `json:"proxy,omitempty"`
 	// Prices 渠道级上游单价（成本折算）；空表导出为 []，与"缺席=保持原值"区分。
 	Prices []dto.ChannelModelPrice `json:"prices"`
-	// ModelMapping 路由键 → 上游真名；空表导出为 {}（ADR 0005）。
+	// ModelMapping 模型名 → 上游真名；空表导出为 {}（ADR 0005/0008）。
 	ModelMapping map[string]string `json:"model_mapping"`
 	KeySet       bool              `json:"key_set"`
 }
 
 // LaneMemberConfig 车道成员的可导出形态。
+//
+// 只导出 `model`（成员所选模型，ADR 0008）：上游真名可由 `model_mapping` 重算，
+// **导出冗余的真名反而有害**——把旧文件导回一个已改过映射的实例时，会让旧真名
+// 复活、覆盖新映射。成员级覆盖已移除，因此这里没有 `upstream_model` 字段。
 type LaneMemberConfig struct {
-	Channel       string `json:"channel"`
-	UpstreamModel string `json:"upstream_model"`
-	PublicAlias   string `json:"public_alias,omitempty"`
+	Channel     string `json:"channel"`
+	Model       string `json:"model"`
+	PublicAlias string `json:"public_alias,omitempty"`
 	Priority      int    `json:"priority"`
 	Overrides     any    `json:"overrides,omitempty"`
 	// Enabled 可空三态：导出恒给出（非 nil），导入文件省略时按 api-spec §4.2 的
@@ -131,12 +135,12 @@ func BuildConfigBundle() (*ConfigBundle, error) {
 			}
 			enabled := !member.Disabled
 			entry.Members = append(entry.Members, LaneMemberConfig{
-				Channel:       channelName,
-				UpstreamModel: member.UpstreamModel,
-				PublicAlias:   member.PublicAlias,
-				Priority:      member.Priority,
-				Overrides:     jsonObject(member.Overrides),
-				Enabled:       &enabled,
+				Channel:     channelName,
+				Model:       member.Model,
+				PublicAlias: member.PublicAlias,
+				Priority:    member.Priority,
+				Overrides:   jsonObject(member.Overrides),
+				Enabled:     &enabled,
 			})
 		}
 		bundle.Lanes = append(bundle.Lanes, entry)
@@ -375,10 +379,10 @@ func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
 	payload.Members = make([]laneMemberPayload, 0, len(lane.Members))
 	for _, member := range lane.Members {
 		entry := laneMemberPayload{
-			Channel:       member.Channel,
-			UpstreamModel: member.UpstreamModel,
-			PublicAlias:   member.PublicAlias,
-			Priority:      member.Priority,
+			Channel:     member.Channel,
+			Model:       member.Model,
+			PublicAlias: member.PublicAlias,
+			Priority:    member.Priority,
 			// 指针直接透传，保住三态：导出恒有值 → 导入按文件里的开关还原；
 			// 老文件省略该字段 → nil → buildLaneMember 按"新建启用/既有保留原值"处理。
 			Enabled: member.Enabled,
@@ -843,12 +847,12 @@ func laneDigestOfLane(lane *model.Lane) string {
 		// 在审计里与不动作同形。
 		memberEnabled := !member.Disabled
 		config.Members = append(config.Members, LaneMemberConfig{
-			Channel:       channelName,
-			UpstreamModel: member.UpstreamModel,
-			PublicAlias:   member.PublicAlias,
-			Priority:      member.Priority,
-			Overrides:     jsonObject(member.Overrides),
-			Enabled:       &memberEnabled,
+			Channel:     channelName,
+			Model:       member.Model,
+			PublicAlias: member.PublicAlias,
+			Priority:    member.Priority,
+			Overrides:   jsonObject(member.Overrides),
+			Enabled:     &memberEnabled,
 		})
 	}
 	return laneDigestOf(&config)

@@ -23,13 +23,13 @@ func TestPruneMissingMemberChannelsSkipsOrphans(t *testing.T) {
 			{
 				Name: "mixed", Enabled: true, Mode: model.LaneModeFailover,
 				Members: []LaneMemberConfig{
-					{Channel: "real-ch", UpstreamModel: "m", Priority: 2},
-					{Channel: "ghost-ch", UpstreamModel: "m", Priority: 1},
+					{Channel: "real-ch", Model: "m", Priority: 2},
+					{Channel: "ghost-ch", Model: "m", Priority: 1},
 				},
 			},
 			{
 				Name: "all-ghost", Enabled: true, Mode: model.LaneModeFailover,
-				Members: []LaneMemberConfig{{Channel: "ghost-ch", UpstreamModel: "m", Priority: 1}},
+				Members: []LaneMemberConfig{{Channel: "ghost-ch", Model: "m", Priority: 1}},
 			},
 		},
 	}

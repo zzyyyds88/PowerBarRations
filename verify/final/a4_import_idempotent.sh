@@ -58,7 +58,7 @@ curl -s "${A[@]}" -X PUT "$BASE/api/v1/channels/a4-ch1" \
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/channels/a4-ch2" \
   -d '{"type":"openai","base_url":"http://127.0.0.1:1","key":"'"$GOOD_KEY"'","models":["a4-m1"],"enabled":true}' >/dev/null
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/lanes/a4-m1" \
-  -d '{"enabled":true,"mode":"failover","members":[{"channel":"a4-ch1","upstream_model":"a4-m1","priority":20},{"channel":"a4-ch2","upstream_model":"a4-m1","priority":10}]}' >/dev/null
+  -d '{"enabled":true,"mode":"failover","members":[{"channel":"a4-ch1","model":"a4-m1","priority":20},{"channel":"a4-ch2","model":"a4-m1","priority":10}]}' >/dev/null
 curl -s "${A[@]}" -X POST "$BASE/api/v1/keys" -d '{"name":"a4-key"}' >/dev/null
 check "初始配置就绪" "$(curl -s "${A[@]}" "$BASE/api/v1/models" | jget 'len(d["items"])')" "2"
 

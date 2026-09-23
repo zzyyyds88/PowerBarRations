@@ -27,7 +27,7 @@ func TestRemovedModelLaneRefsDetectsLaneUse(t *testing.T) {
 
 	// 反例（旧的误报形态）：车道名与上游真名同名，但车道名不在被移除集合里。
 	other := &model.Lane{Name: "sync-lane", Mode: model.LaneModeFailover, Enabled: true, Members: []model.LaneMember{
-		{ChannelId: channel.Id, UpstreamModel: "drop-me", Priority: 1},
+		{ChannelId: channel.Id, Model: "drop-me", Priority: 1},
 	}}
 	require.NoError(t, model.UpsertLane(other))
 

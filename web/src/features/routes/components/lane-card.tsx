@@ -133,16 +133,27 @@ export function LaneCard(props: LaneCardProps) {
                 // 被人工停用的成员仍留在链里（开关不是删除别名），但要可见地标灰，
                 // 否则卡片看起来"一切正常"而实际不参与选路（ui-spec §6.3）。
                 const disabled = member.enabled === false
+                // 成员身份 = 所选模型（ADR 0008）；`upstream_model` 是它经渠道映射
+                // 派生出的只读真名，仅在改名时补出来（两者相同就不重复占位）。
+                const renamed = member.upstream_model !== member.model
                 return (
                   <li
-                    key={`${member.channel}\u0000${member.upstream_model}`}
+                    key={`${member.channel}\u0000${member.model}`}
                     className={cn(
                       'truncate font-mono',
                       disabled && 'opacity-50'
                     )}
-                    title={`${member.channel} / ${member.upstream_model}`}
+                    title={`${member.channel} / ${member.model}${
+                      renamed ? ` → ${member.upstream_model}` : ''
+                    }`}
                   >
-                    {index + 1}. {member.channel} · {member.upstream_model}
+                    {index + 1}. {member.channel} · {member.model}
+                    {renamed && (
+                      <span className='text-muted-foreground/70'>
+                        {' '}
+                        → {member.upstream_model}
+                      </span>
+                    )}
                     {disabled && (
                       <StatusBadge
                         className='ml-1 align-middle'

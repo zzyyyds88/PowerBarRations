@@ -1968,7 +1968,7 @@ export function ChannelMutateDialog({
                     </div>
                     <PopoverDescription className='leading-6'>
                       {t(
-                        'Users call the model on the left. The platform forwards the request to the upstream model on the right.'
+                        'Lane members pick the model on the left; this channel sends the upstream model on the right. One edit here applies to every lane.'
                       )}
                     </PopoverDescription>
                   </LearnMore>
