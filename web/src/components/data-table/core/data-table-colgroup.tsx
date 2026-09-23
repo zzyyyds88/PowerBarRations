@@ -26,9 +26,7 @@ export function DataTableColgroup<TData>({
   table: TanstackTable<TData>
 }) {
   const columns = table.getVisibleLeafColumns()
-  const sizedColumns = columns.filter(
-    (column) => !isContentSizedColumn(column)
-  )
+  const sizedColumns = columns.filter((column) => !isContentSizedColumn(column))
   const totalSize = sizedColumns.reduce((sum, col) => sum + col.getSize(), 0)
 
   return (

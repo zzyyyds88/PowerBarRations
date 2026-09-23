@@ -356,13 +356,7 @@ export function PBRLogMobileCard<TData>(props: {
   )
 }
 
-function KeyValue({
-  label,
-  children,
-}: {
-  label: string
-  children: ReactNode
-}) {
+function KeyValue({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className='flex min-w-0 items-center gap-2'>
       <span className='text-muted-foreground max-w-[40%] shrink-0 text-xs [overflow-wrap:anywhere]'>
