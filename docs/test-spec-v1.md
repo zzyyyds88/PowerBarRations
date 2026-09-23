@@ -77,7 +77,9 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 写入开关 + 写后回读 | `PUT /lanes/{name}/members` 置 `enabled=false` → 响应体即落库终态；再 `GET /lanes/{name}` 与 `GET /routes/{model}` **恒回** `enabled` | §2.2 写后回读 |
 | `enabled` 三态默认 | ①省略 `enabled` 的新成员 → 回读为启用；②省略 `enabled` 的既有成员（按 `(channel, upstream_model)` 匹配）→ **保留原值**（原本关闭的仍关闭）；③显式 `true`/`false` 生效 | `TestPutLaneOmittedMembersPreservesExisting` 同族；防"漏发字段即全站关掉成员" |
 | 全量替换未被放宽 | 漏发成员仍等于删除该成员 | 新字段不得把全量合同变成补丁合同 |
-| `GET /routes/{model}` 成员字段齐全 | 恒回 `enabled` / `overrides`（无覆盖时为 `{}`）/ `member_id`；`unconfigured` 推荐项 `member_id=0`、`enabled=true` | `routes_upstream_override_test.go` 同族；防"读不到即清空"这类回归 |
+| `GET /routes/{model}` 成员字段齐全 | 恒回 `model` / `upstream_model`（只读派生）/ `enabled` / `overrides`（无覆盖时为 `{}`）/ `member_id`；`unconfigured` 推荐项 `member_id=0`、`enabled=true` | 防"读不到即清空"这类回归（[ADR 0008](adr/0008-member-stores-selected-model.md)） |
+| 成员唯一键 `(渠道, 模型)` | 同一 `(channel, model)` 重复提交 → `422 duplicate_member`；同渠道不同模型仍可共存 | 去重键 = 成员所选模型 |
+| 上游真名由渠道映射推导 | 改渠道 `model_mapping` 后，**不重存车道**再 `GET /routes/{model}`，成员 `upstream_model` 立即变化；池化车道（车道名 ≠ 模型名）下查表键是**模型名**而非路由键 | ADR 0008 背景第 2/3 条；落 `routes_member_model_test.go` 同族 |
 | dry-run 不落库 | `PUT /lanes/{name}` 与 `PUT /lanes/{name}/members` 带 `?dry_run=true` 改开关 → 响应 `dry_run:true` 且车道名出现在 `diff.lanes.update`，随后 `GET` 回读**逐字段与调用前一致** | diff 是名级的（api-spec §5.9），"未落库"只能靠回读比对断言 |
 | 导出/导入保留开关 | `GET /export` 的成员对象带 `enabled`；导出→导入往返后关闭状态仍为关闭 | api-spec §5.6 |
 | `/api/models` 聚合口径 | 关掉一个成员 → `available_member_count` 减一、`disabled_member_count` 加一；全部关闭 → `degraded=true` 且 `disabled_member_count == member_count`（而 `disabled_member_count=0` 的全挂仍为 `degraded=true`，两条路径可区分）；模型始终在清单里 | routing-spec §7；落 `models_health_test.go` 同族 |
@@ -148,7 +150,7 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | 3 | 建车道 | `PUT /lanes/{model}` | 回读成员顺序=priority 降序 |
 | 3b | 池化车道（跨渠道跨模型） | `PUT /lanes/{name}`（成员任选，含同一渠道多次） | 回读成员 = 提交的 `(渠道, 上游真名)` 列表；未声明该键的成员同样写入 |
 | 3c | 声明模型不自动建车道 | `PUT /channels/{name}` 新增模型后 `GET /models` | 新模型 `source=unconfigured`、`routable=false`；`GET /lanes` 不新增任何车道，路由页也不出现新卡片 |
-| 3d | **成员开关：停用 → 回读 → 预览 → 端到端后果** | `GET /routes/{name}` 取全链 → `PUT /lanes/{name}/members`（目标成员 `enabled=false`，整链原样带回）→ `GET /lanes/{name}` 回读 → 同载荷带 `?dry_run=true` 再调一次 → `POST /v1/chat/completions` → `GET /lanes/{name}/health` | 回读该成员 `enabled=false` **且其余成员的 `overrides` / `upstream_override` / `public_alias` 未被清空**；dry-run 后再次回读**与调用前逐字段一致**且响应含 `dry_run:true`；端到端请求不再命中被关闭成员（`attempts[].status` 出现 `disabled`）；健康快照该成员 `disabled=true` 且 `available=false`；把 `enabled` 改回 `true` 后重新命中 |
+| 3d | **成员开关：停用 → 回读 → 预览 → 端到端后果** | `GET /routes/{name}` 取全链 → `PUT /lanes/{name}/members`（目标成员 `enabled=false`，整链原样带回）→ `GET /lanes/{name}` 回读 → 同载荷带 `?dry_run=true` 再调一次 → `POST /v1/chat/completions` → `GET /lanes/{name}/health` | 回读该成员 `enabled=false` **且其余成员的 `overrides` / `public_alias` / `model` 未被清空**；dry-run 后再次回读**与调用前逐字段一致**且响应含 `dry_run:true`；端到端请求不再命中被关闭成员（`attempts[].status` 出现 `disabled`）；健康快照该成员 `disabled=true` 且 `available=false`；把 `enabled` 改回 `true` 后重新命中 |
 | 4 | 路由总览 | `GET /models`、`GET /routes/{model}` | `routable=true` |
 | 5 | 端到端调用 | `POST /v1/chat/completions`（客户端密钥） | 200；日志出现 |
 | 6 | 排障 | `GET /lanes/{name}/health`、`GET /logs?success=false` | 冷却/熔断/attempts 可读 |

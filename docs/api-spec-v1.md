@@ -106,6 +106,7 @@
 | 409 | `not_initialized` | 未设置登录口令就调用管理接口（先 `POST /api/setup`） |
 | 422 | `lane_has_no_members` | 启用车道但无成员 |
 | 422 | `member_channel_missing` | 成员引用的渠道不存在 |
+| 422 | `duplicate_member` | 同一 `(渠道, 所选模型)` 在一条车道内重复提交（成员唯一键，[ADR 0008](adr/0008-member-stores-selected-model.md)） |
 | 422 | `invalid_mode` | 模式不在 failover/manual（`weighted`/`round_robin` 已删） |
 | 502 | `upstream_error` | 探活时上游返回错误 |
 | 503 | `no_available_member` | 模型面：车道无可用成员（body 形态见 §6.1） |
@@ -146,7 +147,7 @@
   `https://host` ≡ `https://host/v1` ≡ `https://host/v1/chat/completions`。
   旧数据（只填 host 或版本段）行为不变；Custom(8) 的 `base_url` 原样保留（支持 `{model}` 变量与完整端点）。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。**渠道未配价即不折算（0）——没有全局单价层**。省略该字段时保持原值。
-- `model_mapping`：**渠道模型映射**（JSON dict，路由键 → 上游真名），用于上游命名与路由键不一致的情况。车道成员解析上游名时：成员级 `upstream_model`（非空且≠路由键）> 本映射 > 路由键。省略该字段时保持原值。
+- `model_mapping`：**渠道模型映射**（JSON dict，**模型名 → 上游真名**），用于上游命名与成员所选模型名不一致的情况。**这是上游改名的唯一入口**（成员级改名已移除，[ADR 0008](adr/0008-member-stores-selected-model.md)）：成员上游真名恒为 `model_mapping[成员所选模型] ?? 成员所选模型`，改一次即对该渠道所有车道成员生效。省略该字段时保持原值。
 
 ### 4.2 Lane
 
@@ -165,8 +166,8 @@
     "member_affinity_seconds": 0
   },
   "members": [
-    { "channel": "channel-a", "upstream_model": "model-x", "public_alias": "", "priority": 2, "enabled": true },
-    { "channel": "channel-b", "upstream_model": "model-x", "public_alias": "", "priority": 1, "enabled": false,
+    { "channel": "channel-a", "model": "model-x", "public_alias": "", "priority": 2, "enabled": true },
+    { "channel": "channel-b", "model": "model-x", "public_alias": "", "priority": 1, "enabled": false,
       "overrides": { "member_max_attempts": 1 } }
   ],
   "orphan_member_count": 0,
@@ -181,11 +182,11 @@
 - **成员没有 `weight` 字段**（随 `weighted` 模式一并删除）；旧配置里出现会被忽略。
 - `overrides` 为成员级六键覆盖，省略字段表示继承车道。**读回口径**：`GET /api/routes/{model}`（编排器草稿来源）**恒回**，无覆盖时为 `{}`；`GET /api/lanes/{name}`（纯查看面）只在有覆盖时给出——"缺席"与"空对象"在继承语义下等价，不影响回填（§5.7）。
 - **成员级 `enabled`（人工停用开关，可逆）**：`false` 表示"该成员临时不参与选路"，**不是删除成员的别名**——它仍留在成员链里、仍占 `priority`、仍出现在所有成员读端点与导出文件里，随时可重新打开。后果固定为：failover 跳过该成员并在 `attempts[].status` 留痕为 `disabled`（与 `cooldown`/`circuit_break`/`skipped` 可区分，算法见 routing-spec §2.2/§9）；`manual` 模式下 `active_member` 被关闭时该模型按"**无可用**"处理，**不换人**（manual 没有替代者，见 routing-spec §2.1）；**切换开关不写冷却、不改熔断状态**（冷却/熔断是运行态故障统计，开关是配置态人工干预，两者不得互相污染）。把一条车道的成员**全部**关闭后，模型仍在 `GET /api/models` 列出、调用返回 `503 no_available_member`——与"上游全挂"同形，但排障时靠 `disabled_member_count`（§5.7）与健康快照的 `enabled`（§6.5）区分"我关的"与"上游挂了"。**全部成员被关闭不是写入错误**：它不同于空成员链（后者仍按 `422 lane_has_no_members` 拒绝），"关掉一切但保留配置"是合法的人工干预状态。**同理，`manual` 车道的 `active_member` 指向一个被停用的成员也不返回 422**——该组合运行期必然 `503` 且不换人，但"先关成员、再改别的配置"是合法的中间态，硬拒会把调用方锁在编辑之外；界面必须行内告警让用户看见（ui-spec §6.3），API 侧不拦。
-- **`enabled` 的写入是三态（可空布尔）**：请求体成员**省略** `enabled` 时，**新建成员按"启用"处理、既有成员保留原值**；显式 `true`/`false` 生效。"既有成员"按成员唯一键 `(channel, upstream_model)` 与该车道当前成员链匹配（ADR 0006）；改了这个键即视为新成员，按"新建 → 启用"处理。**为什么必须三态**：成员写入是**全量替换**（§5.2），若缺省按 `false` 处理，任何不带该字段的调用方一发请求就会把整条成员链关掉。
+- **`enabled` 的写入是三态（可空布尔）**：请求体成员**省略** `enabled` 时，**新建成员按"启用"处理、既有成员保留原值**；显式 `true`/`false` 生效。"既有成员"按成员唯一键 `(channel, model)` 与该车道当前成员链匹配（ADR 0006/0008）；改了这个键即视为新成员，按"新建 → 启用"处理。**为什么必须三态**：成员写入是**全量替换**（§5.2），若缺省按 `false` 处理，任何不带该字段的调用方一发请求就会把整条成员链关掉。
 - **开关不进 `overrides`**：`overrides` 是六键**数值**覆盖容器（六个 `*int`，`nil` = 继承车道），人工停用是一等配置态选路概念；混进去会让"继承车道"与"人工关闭"共用一个 JSON 串，并整体承受 §5.2 全量替换的清空风险。
-- **成员级字段的读写闭环（通则，强制）**：任何新增到车道成员上的字段，必须同时满足 ①**读端点回传**（`GET /api/lanes/{name}` **与** `GET /api/routes/{model}`）、②前端读入编排器草稿、③保存时带回。成员写入是全量替换（先删光该车道成员再整体重插），**前端读不到即不回传 → 一次控制台保存就把该字段清空**。`upstream_override`、`overrides`、`public_alias`、`enabled` 一律按这条收口（`GET /api/routes/{model}` 的字段清单见 §5.7）。
+- **成员级字段的读写闭环（通则，强制）**：任何新增到车道成员上的字段，必须同时满足 ①**读端点回传**（`GET /api/lanes/{name}` **与** `GET /api/routes/{model}`）、②前端读入编排器草稿、③保存时带回。成员写入是全量替换（先删光该车道成员再整体重插），**前端读不到即不回传 → 一次控制台保存就把该字段清空**。`overrides`、`public_alias`、`enabled` 一律按这条收口（`GET /api/routes/{model}` 的字段清单见 §5.7）。**`upstream_model` 不属于这条**——它是服务端由渠道映射推导出的只读派生值（[ADR 0008](adr/0008-member-stores-selected-model.md)），前端不回传、也不得回传。
 - **成员布尔值的命名规则（单处规范，防止一处两种拼法）**：管理面 JSON 里成员是否参与选路**一律用正向 `enabled`**——写端点（§4.2 / §5.2）、读端点（`GET /lanes/{name}`、`GET /routes/{model}`、`GET /lane-summaries`）、健康快照与 SSE（§6.5）全部同此，**不存在"写面 enabled、展示面 disabled"这种分裂**。取反只在两个地方出现，且各自合理：① **Go 侧字段一律反向**——存储是 `LaneMember.Disabled`、解析态是 `RouteMember.Disabled`（两者同向，零值 = 启用/参与选路；为绕开 GORM 忽略零值导致全站停用，也避免正向字段的零值把忘记置真的构造点静默变成"已停用"，见 routing-spec §1.2），映射在 API 边界做一次；② **`disabled` 作为 `attempts[].status` 的枚举值**（§4.4）与 **`disabled_member_count` 计数名**（§5.7）保留——它们描述"因人工停用而被跳过/有几个被停用"，是独立命名空间，**不得**被顺手统一成 `enabled`。
-- **`active_member` 仅 `manual` 模式使用**：人工指定的成员（成员的 `public_alias`，或 `channel/upstream_model` 标签；空串表示未指定）。`orphan_member_count` 是成员中"渠道已不存在"的悬空数量（只读，不落库）；`created_at` / `updated_at` 为车道时间戳。
+- **`active_member` 仅 `manual` 模式使用**：人工指定的成员（成员的 `public_alias`，或 **`channel/model`** 标签，`model` = 成员所选模型；空串表示未指定）。成员身份稳定，不随渠道映射改动漂移。`orphan_member_count` 是成员中"渠道已不存在"的悬空数量（只读，不落库）；`created_at` / `updated_at` 为车道时间戳。
 - **每条车道都是显式对象**：`GET /lanes` 就是全部路由入口，不存在隐藏的自动链（ADR 0005）；没建车道的模型一律 `503`。
 
 ### 4.3 ClientKey
@@ -424,16 +425,16 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计"渠道存在且启用、**且未被人工停用**"的成员，供界面标注"含不可用"；口径见 routing-spec §7）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（**定义不变**：成员总数 > 0 且当前可选数 == 0 时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。车道存在时（`source ∈ {explicit, disabled}`）另给 `disabled_member_count`：成员链里**被人工停用**（成员 `enabled=false`）的成员数，用来把"我自己关掉的"与"上游挂了的"分开——`degraded=true` 且 `disabled_member_count == member_count` 是"成员全被我关了"，`degraded=true` 且 `disabled_member_count == 0` 才是"上游全不可用"；`unconfigured` 没有成员链，故不返回该字段（§4.2）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
-| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ `upstream_model` / `priority` / **`enabled`（恒回，含 `false`，不省略）** / **`overrides`（恒回，成员级六键覆盖，无覆盖时为 `{}`）/ `member_id`（成员当前库 id，仅供排障与审计定位）**，成员级显式改名时给出 `upstream_override`、设了成员别名时给出 `public_alias`；响应顶层含 `mode` / `config`（车道模式与六键）。**为什么 `enabled` / `overrides` / `member_id` 必须在本端点回传**：编排器的成员草稿**唯一来源就是本端点**（`GET /lanes/{name}` 不参与编辑回填），而成员写入是**整体替换**（先删光再重插，§5.2）——本端点少回传任何一个成员级字段，控制台"打开编辑再保存"就会把全部成员的该字段清空（`upstream_override` 已因此丢过全部成员的上游真名，见 §4.2 通则；`overrides` 与 `enabled` 是同一类路径的其余例。**`member_id` 不属于这条通则**——它是服务端自有的派生值，不靠回传维持）。无车道时返回**推荐成员**（声明或 `model_mapping` 映射了该键的渠道，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——推荐项只供界面排序/高亮，不代表已可调用，也**不是成员可选范围限制**（成员候选 = 任意启用渠道的任意已声明模型，见本节末与 [ADR 0006](adr/0006-lane-free-member-composition.md)）；推荐项没有落库成员身份，`member_id` 为 `0`、`enabled` 恒 `true`。已配车道时额外返回 `candidates`（同口径推荐项、不在成员链里）。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
-| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/upstream_model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它。**成员可任选任意启用渠道的任意已声明模型**，不要求成员声明了该路由键，**同一渠道可多次出现**（去重键 = `(渠道, 上游真名)`）；成员 `upstream_model` 留空 = 用渠道 `model_mapping`/路由键；成员可带 `enabled`（三态，省略 = 新建启用 / 既有保留原值）临时停用某个成员——`manual` 模式下 `active_member` 指向被关闭的成员时该模型按"无可用"处理，**不换人**（§4.2） |
-| GET | `/api/lane-summaries` | **全部车道的成员顺序摘要**（不分页）：`{items: [{name, enabled, mode, active_member, orphan_member_count, members: [{channel, upstream_model, public_alias, priority, channel_enabled, enabled, orphan?}]}]}`。供路由页一次取全量顺序，避免 `GET /api/lanes` 的 cursor 上限（200）在大部署下让摘要列退化。**新增成员级 `enabled`**（恒回）供卡片把被人工停用的成员标灰（ui-spec §6.3）；`channel_enabled`（渠道是否启用）与 `public_alias` 本端点**已在返回**，只是控制台的前端类型未声明、未消费（`web/src/features/routes/api.ts` 的 `listPBRLaneSummaries`）——补的是**前端读取**，不是后端字段。本端点只读、不参与编辑回填。**注意 `items[].enabled` 是车道停用态、`items[].members[].enabled` 是成员停用态**，两个 subject 同名但层级不同（与 `GET /api/lanes/{name}` 同一命名规则，见 §4.2） |
+| GET | `/api/routes/{model}` | 该模型的成员链：每名成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ **`model`（成员所选模型，写回时用它）/ `upstream_model`（由渠道映射推导的只读真名，供展示与排障，不接受写回）** / `priority` / **`enabled`（恒回，含 `false`，不省略）** / **`overrides`（恒回，成员级六键覆盖，无覆盖时为 `{}`）/ `member_id`（成员当前库 id，仅供排障与审计定位）**；设了成员别名时给出 `public_alias`；响应顶层含 `mode` / `config`（车道模式与六键）。**为什么 `enabled` / `overrides` / `member_id` 必须在本端点回传**：编排器的成员草稿**唯一来源就是本端点**（`GET /lanes/{name}` 不参与编辑回填），而成员写入是**整体替换**（先删光再重插，§5.2）——本端点少回传任何一个成员级字段，控制台"打开编辑再保存"就会把全部成员的该字段清空（`overrides` 与 `enabled` 是同一类路径的例。**`member_id` 不属于这条通则**——它是服务端自有的派生值，不靠回传维持）。无车道时返回**推荐成员**（声明或 `model_mapping` 映射了该键的渠道，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——推荐项只供界面排序/高亮，不代表已可调用，也**不是成员可选范围限制**（成员候选 = 任意启用渠道的任意已声明模型，见本节末与 [ADR 0006](adr/0006-lane-free-member-composition.md)）；推荐项没有落库成员身份，`member_id` 为 `0`、`enabled` 恒 `true`。已配车道时额外返回 `candidates`（同口径推荐项、不在成员链里）。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
+| PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它。**成员可任选任意启用渠道的任意已声明模型**，不要求成员声明了该路由键，**同一渠道的不同模型可多次出现**（去重键 = `(渠道, 所选模型)`；同一模型重复提交 `422 duplicate_member`）；成员载荷为 `{channel, model, priority, public_alias, enabled, overrides}`——**上游真名由 `model_mapping[model] ?? model` 推导，不接受成员级真名**（[ADR 0008](adr/0008-member-stores-selected-model.md)）；成员可带 `enabled`（三态，省略 = 新建启用 / 既有保留原值）临时停用某个成员——`manual` 模式下 `active_member` 指向被关闭的成员时该模型按"无可用"处理，**不换人**（§4.2） |
+| GET | `/api/lane-summaries` | **全部车道的成员顺序摘要**（不分页）：`{items: [{name, enabled, mode, active_member, orphan_member_count, members: [{channel, model, upstream_model, public_alias, priority, channel_enabled, enabled, orphan?}]}]}`。供路由页一次取全量顺序，避免 `GET /api/lanes` 的 cursor 上限（200）在大部署下让摘要列退化。**新增成员级 `enabled`**（恒回）供卡片把被人工停用的成员标灰（ui-spec §6.3）；`channel_enabled`（渠道是否启用）与 `public_alias` 本端点**已在返回**，只是控制台的前端类型未声明、未消费（`web/src/features/routes/api.ts` 的 `listPBRLaneSummaries`）——补的是**前端读取**，不是后端字段。本端点只读、不参与编辑回填。**注意 `items[].enabled` 是车道停用态、`items[].members[].enabled` 是成员停用态**，两个 subject 同名但层级不同（与 `GET /api/lanes/{name}` 同一命名规则，见 §4.2） |
 | GET | `/api/model-metadata` | **模型目录元数据**（不分页）：`{items: [{model, description, icon, tags, endpoints, status, name_rule, has_metadata, configured_channel_count}]}`。这是"模型管理页"的稳定只读面；`has_metadata=false` 表示仅由渠道声明、尚无目录记录。**本面保持轻量：不返回 `matched_count` / `matched_models`**（命中集只在控制台面 `/api/console/models/**` 计算，那里本就要遍历渠道模型做全量填充）。`name_rule != 0` 的条目，`configured_channel_count` **按规则命中的模型名集合**统计去重后的渠道数（用一次内存预计算，与 `MatchesName` 同口径；不得按精确名查表，也不得逐条查库） |
 | PUT | `/api/model-metadata/{model}` | **写入模型目录元数据**（全量幂等 upsert）：body `{description, icon, tags, endpoints, status, name_rule}`；响应为写后回读。**`name_rule` 允许 `0`（精确）/ `1`（前缀）/ `2`（包含）/ `3`（后缀）**，由 `model.ValidateMetadataValues` 统一校验，越界返回 422 `validation_failed`。语义：非精确条目是一条**匹配规则**——`model` 字段是规则串而非真实模型名，运行期按 **精确 > 前缀 > 后缀 > 包含** 的优先级命中渠道声明的模型名（`model/model_meta.go` 的 `MatchesName` / `resolveModelMetadata`），即控制台上的"自动匹配"。命中数与命中清单只在控制台面返回 |
 | DELETE | `/api/model-metadata/{model}` | **删除模型目录记录**（按 `model_name` 精确匹配这条记录本身，非精确规则条目同样可删——删的只是规则，不影响被它命中的模型）：`?remove_from_channels=true` 同时把该模型从渠道声明里移除，**仅对 `name_rule=0` 允许**（规则条目的命中集是"一批"模型名，批量摘除渠道声明语义不明确，一律 422 拒绝）；被车道引用时 409（返回 `blocked` 渠道→车道清单），`?force=1` 覆盖并清理成员 |
 
 **UI 心智**（design-v1 §7.7）：渠道管理填上游与模型（并在渠道上配 `model_mapping`）→ 路由与故障切换页为路由键设定成员顺序（写 `PUT /lanes/{model}`）→ 令牌允许该模型。**没有车道就没有路由**：未固化的模型请求与"成员全挂"同形返回 `503`。
 
-**成员自由编排（[ADR 0006](adr/0006-lane-free-member-composition.md)）**：车道的成员可来自任意启用渠道的任意已声明模型，成员之间**无需同名**，**同一渠道可在一条车道内出现多次**（成员唯一键 = `(渠道, 上游真名)`）。前端成员选择器的数据源为 `GET /api/channels`（每渠道的 `models`）与 `GET /api/models`，不新增专用端点；`GET /api/routes/{model}` 的 `members`/`candidates` 只用于展示与推荐，**不限制可选范围**。渠道声明 `models` 的增删（含 `sync-models`）**绝不自动创建/修改/删除车道**。
+**成员自由编排（[ADR 0006](adr/0006-lane-free-member-composition.md)）**：车道的成员可来自任意启用渠道的任意已声明模型，成员之间**无需同名**，**同一渠道的不同模型可在一条车道内出现多次**（成员唯一键 = `(渠道, 所选模型)`，同一模型不可重复）。前端成员选择器的数据源为 `GET /api/channels`（每渠道的 `models`）与 `GET /api/models`，不新增专用端点；`GET /api/routes/{model}` 的 `members`/`candidates` 只用于展示与推荐，**不限制可选范围**。渠道声明 `models` 的增删（含 `sync-models`）**绝不自动创建/修改/删除车道**。
 
 ```bash
 curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
@@ -452,15 +453,15 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
     "member_affinity_seconds": 0
   },
   "members": [
-    { "member_id": 11, "channel": "channel-a", "channel_enabled": true, "upstream_model": "model-1",
+    { "member_id": 11, "channel": "channel-a", "channel_enabled": true, "model": "model-1", "upstream_model": "model-1",
       "priority": 2, "enabled": true, "overrides": {} },
-    { "member_id": 12, "channel": "channel-b", "channel_enabled": true, "upstream_model": "model-1",
+    { "member_id": 12, "channel": "channel-b", "channel_enabled": true, "model": "model-1", "upstream_model": "model-1",
       "priority": 1, "enabled": false, "overrides": { "member_cooldown_seconds": 120 } }
   ]
 }
 ```
 
-- 该响应就是编排器的**成员草稿来源**：`enabled` / `overrides` / `upstream_override` / `public_alias` 在这里回传什么，控制台保存时就原样带回什么（§4.2 通则）。示例中第二条成员被人工停用，它**仍出现在成员链里**、仍占 `priority` 1，只是不参与选路。
+- 该响应就是编排器的**成员草稿来源**：`model` / `enabled` / `overrides` / `public_alias` 在这里回传什么，控制台保存时就原样带回什么（§4.2 通则）；`upstream_model` 是只读派生值，控制台**只展示、不回传**。示例中第二条成员被人工停用，它**仍出现在成员链里**、仍占 `priority` 1，只是不参与选路。
 - **`member_id` 不承诺稳定，禁止用作界面标识**。成员的写入是整体替换（先删光该车道全部成员再重插、主键重新自增，§5.2 / routing-spec §1.2），所以**保存一次，一条链上每个 `member_id` 都会变**。编排器的行标识必须是前端自有的草稿 id（在编辑会话内稳定，见 ui-spec §6.3），不得取 `member_id` 作 React key 或拖拽身份——否则每次保存都会重挂载全部成员行。本字段只用于排障与审计定位"当前这一行的库 id"。
 - 未声明该模型的渠道 → `members: []`；模型面请求此时返回 `503 No available channel for model model-1`（与全挂同形）。
 - 成员链非空但**全部** `enabled=false` → 模型面同样返回 `503 no_available_member`（与"全挂"同形、与"没有车道"同形），但管理面必须可区分：`GET /api/models` 的 `disabled_member_count == member_count`、`GET /lanes/{name}/health` 逐成员 `enabled=false`（§4.2、§6.5）。
@@ -890,8 +891,8 @@ curl -sfX PUT $PBR/api/channels/channel-b -H "Authorization: Bearer $ADMIN_KEY" 
 curl -sfX PUT $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"enabled":true,"mode":"failover","members":[
-        {"channel":"channel-a","upstream_model":"model-x","priority":2},
-        {"channel":"channel-b","upstream_model":"model-y","priority":1}]}'
+        {"channel":"channel-a","model":"model-x","priority":2},
+        {"channel":"channel-b","model":"model-y","priority":1}]}'
 
 # 3) 回读确认（写接口自带回读，但首次接入仍建议显式 GET）
 curl -sf $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY"
@@ -900,16 +901,16 @@ curl -sf $PBR/api/lanes/lane-beta -H "Authorization: Bearer $ADMIN_KEY"
 **临时停用某个成员（不删除它）**：成员链是全量合同，没有单成员 PATCH，必须"取全链 → 改一个字段 → 带回全链"。
 
 ```bash
-# 1) 取当前成员链（编排器同款读端点，回传 enabled / overrides / upstream_override / public_alias）
+# 1) 取当前成员链（编排器同款读端点，回传 model / enabled / overrides / public_alias）
 curl -sf $PBR/api/routes/lane-beta -H "Authorization: Bearer $ADMIN_KEY"
 
 # 2) 把目标成员 enabled 置 false，其余成员按上一步回读结果**原样**带回（含各自 overrides /
-#    upstream_override / public_alias——漏带回即清空），整链 PUT
+#    overrides / public_alias——漏带回即清空），整链 PUT
 curl -sfX PUT $PBR/api/lanes/lane-beta/members -H "Authorization: Bearer $ADMIN_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"members":[
-        {"channel":"channel-a","upstream_model":"model-x","priority":2,"enabled":false},
-        {"channel":"channel-b","upstream_model":"model-y","priority":1,"enabled":true,
+        {"channel":"channel-a","model":"model-x","priority":2,"enabled":false},
+        {"channel":"channel-b","model":"model-y","priority":1,"enabled":true,
          "overrides":{"member_cooldown_seconds":120}}]}'
 
 # 3) 确认它已不参与选路（enabled=false 且 available=false，与冷却/熔断可区分）
