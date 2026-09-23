@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { useState } from 'react'
 
 import { ChannelPricesEditor } from '../channel-prices-editor'
+import type { ChannelModelPrice } from '../../types'
 
 // 渠道级上游单价编辑器（design-v1 §16.9#7）：表格初始为空，行按需手动添加
 // ——可搜索下拉列出渠道模型清单中尚未添加的模型，也允许键入清单外自定义名
@@ -121,6 +123,41 @@ it('keeps an edited price value in the row value', () => {
   })
 
   expect(onChange).toHaveBeenCalledWith([{ model: 'gpt-4o', input: 2.5 }])
+})
+
+it('keeps the trailing decimal point while typing 0.1 keystroke by keystroke', () => {
+  // 用有状态包装渲染：失焦吸附读的是上层归一化值，静态 prop 读不到。
+  function Wrapper() {
+    const [value, setValue] = useState<ChannelModelPrice[]>([])
+    return (
+      <ChannelPricesEditor
+        value={value}
+        models={['gpt-4o', 'gpt-4o-mini']}
+        onChange={setValue}
+      />
+    )
+  }
+  render(<Wrapper />)
+
+  const add = screen.getByRole('combobox', {
+    name: 'Add a model to price',
+  })
+  fireEvent.change(add, { target: { value: 'gpt-4o' } })
+  fireEvent.keyDown(add, { key: 'Enter' })
+
+  const cell = screen.getByLabelText('gpt-4o cache_read')
+  fireEvent.change(cell, { target: { value: '0' } })
+  // 键入 `0.` 时输入框必须仍显示 `0.`：立即归一化会把小数点吃掉，
+  // 永远打不出 0.1（实测 bug）。
+  fireEvent.change(cell, { target: { value: '0.' } })
+  expect(cell).toHaveValue('0.')
+
+  fireEvent.change(cell, { target: { value: '0.1' } })
+  expect(cell).toHaveValue('0.1')
+
+  // 失焦后吸附到归一化值（仍是 0.1）。
+  fireEvent.blur(cell)
+  expect(cell).toHaveValue('0.1')
 })
 
 it('hides the add-model input while the editor is disabled', () => {

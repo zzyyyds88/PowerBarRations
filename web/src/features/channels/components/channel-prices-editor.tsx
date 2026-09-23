@@ -36,6 +36,11 @@ import type { ChannelModelPrice } from '../types'
 // 都可删除。**未添加的模型不折算成本（免费）**，行内留空的维度按 0 计。
 // 保存时仅落库至少填了一项的行；写入 setting JSON 由
 // channel-form.buildSettingJSON 完成。
+//
+// 价格输入用草稿态保留原始键入：受控输入若在键入过程中立即归一化，键入 `0.`
+// 会被 `Number("0.")` 归一成 0 并写回输入框，小数点永远打不出来（实测 bug）。
+// 因此 onChange 只把归一化结果同步给上层，输入框显示原始草稿；失焦时才
+// 吸附到上层已归一化的值。
 
 const PRICE_FIELDS = ['input', 'output', 'cache_read', 'cache_write'] as const
 
@@ -69,6 +74,8 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
   const { t } = useTranslation()
   const [customDraft, setCustomDraft] = useState('')
   const [customModels, setCustomModels] = useState<string[]>([])
+  // 价格单元格的原始键入草稿（键 = model:field），失焦即吸附归一化值。
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({})
 
   // 展示行 = 手动添加的行 ∪ 已有计价条目（编辑回显时后端带来的价格也要可见，
   // 否则会变成表格外的隐形价格行）。
@@ -94,6 +101,9 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
     [addOptions]
   )
 
+  const priceDraftKey = (model: string, field: PriceField) =>
+    `${model}:${field}`
+
   const update = (model: string, key: PriceField, raw: string) => {
     const value = toNumber(raw)
     if (props.value.some((item) => item.model === model)) {
@@ -106,6 +116,22 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
       return
     }
     props.onChange([...props.value, createPrice(model, key, value)])
+  }
+
+  const onPriceChange = (model: string, key: PriceField, raw: string) => {
+    const draftKey = priceDraftKey(model, key)
+    setPriceDrafts((prev) => ({ ...prev, [draftKey]: raw }))
+    update(model, key, raw)
+  }
+
+  const onPriceBlur = (model: string, key: PriceField) => {
+    const draftKey = priceDraftKey(model, key)
+    setPriceDrafts((prev) => {
+      if (!(draftKey in prev)) return prev
+      const next = { ...prev }
+      delete next[draftKey]
+      return next
+    })
   }
 
   const addCustomModel = (rawModel: string) => {
@@ -138,6 +164,13 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
 
   const removeModel = (model: string) => {
     setCustomModels(customModels.filter((item) => item !== model))
+    setPriceDrafts((prev) => {
+      const next: Record<string, string> = {}
+      for (const [key, value] of Object.entries(prev)) {
+        if (!key.startsWith(`${model}:`)) next[key] = value
+      }
+      return next
+    })
     props.onChange(props.value.filter((item) => item.model !== model))
   }
 
@@ -167,11 +200,16 @@ export function ChannelPricesEditor(props: ChannelPricesEditorProps) {
                         <Input
                           aria-label={`${model} ${field}`}
                           inputMode='decimal'
-                          value={price?.[field] ?? ''}
+                          value={
+                            priceDrafts[priceDraftKey(model, field)] ??
+                            price?.[field] ??
+                            ''
+                          }
                           disabled={props.disabled}
                           onChange={(event) =>
-                            update(model, field, event.target.value)
+                            onPriceChange(model, field, event.target.value)
                           }
+                          onBlur={() => onPriceBlur(model, field)}
                         />
                       </td>
                     ))}
