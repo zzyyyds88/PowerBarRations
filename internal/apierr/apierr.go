@@ -32,6 +32,7 @@ const (
 	CodeNotInitialized        = "not_initialized"
 	CodeLaneHasNoMembers      = "lane_has_no_members"
 	CodeMemberChannelMissing  = "member_channel_missing"
+	CodeDuplicateMember       = "duplicate_member"
 	CodeInvalidMode           = "invalid_mode"
 	CodeUpstreamError         = "upstream_error"
 	CodeNoAvailableMember     = "no_available_member"

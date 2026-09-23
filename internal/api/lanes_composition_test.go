@@ -21,7 +21,7 @@ type laneMembersResponse struct {
 	Name    string `json:"name"`
 	Members []struct {
 		Channel       string `json:"channel"`
-		UpstreamModel string `json:"upstream_model"`
+		UpstreamModel string `json:"model"`
 		Priority      int    `json:"priority"`
 	} `json:"members"`
 }
@@ -34,8 +34,8 @@ func TestPutLaneAllowsTwoModelsFromSameChannel(t *testing.T) {
 	require.NoError(t, db.Create(ch).Error)
 
 	body := `{"members":[
-		{"channel":"pool-ch","upstream_model":"a-model-1","priority":10},
-		{"channel":"pool-ch","upstream_model":"a-model-2","priority":20}
+		{"channel":"pool-ch","model":"a-model-1","priority":10},
+		{"channel":"pool-ch","model":"a-model-2","priority":20}
 	]}`
 	recorder := callAPI(t, http.MethodPut, "/api/v1/lanes/fast", body, PutLane,
 		gin.Params{{Key: "name", Value: "fast"}})
@@ -73,7 +73,7 @@ func TestPutLaneAllowsMemberChannelWithoutRouteKey(t *testing.T) {
 	ch := &model.Channel{Name: "no-key-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "declared-model"}
 	require.NoError(t, db.Create(ch).Error)
 
-	body := `{"members":[{"channel":"no-key-ch","upstream_model":"declared-model","priority":5}]}`
+	body := `{"members":[{"channel":"no-key-ch","model":"declared-model","priority":5}]}`
 	recorder := callAPI(t, http.MethodPut, "/api/v1/lanes/pooled-lane", body, PutLane,
 		gin.Params{{Key: "name", Value: "pooled-lane"}})
 	require.Equal(t, http.StatusOK, recorder.Code, "ADR 0006：PUT 不校验成员是否声明该路由键：%s", recorder.Body.String())
@@ -161,8 +161,8 @@ func TestPutLaneOmittedMembersPreservesExisting(t *testing.T) {
 	require.NoError(t, db.Create(ch).Error)
 
 	body := `{"members":[
-		{"channel":"keep-ch","upstream_model":"a-model-1","priority":10},
-		{"channel":"keep-ch","upstream_model":"a-model-2","priority":20}
+		{"channel":"keep-ch","model":"a-model-1","priority":10},
+		{"channel":"keep-ch","model":"a-model-2","priority":20}
 	]}`
 	recorder := callAPI(t, http.MethodPut, "/api/v1/lanes/keep", body, PutLane,
 		gin.Params{{Key: "name", Value: "keep"}})

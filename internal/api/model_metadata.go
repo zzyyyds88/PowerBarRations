@@ -45,8 +45,10 @@ func ListLaneSummaries(c *gin.Context) {
 				orphans++
 			}
 			item := gin.H{
-				"channel":         name,
-				"upstream_model":  m.UpstreamModel,
+				"channel": name,
+				// model = 成员所选模型；upstream_model = 派生真名（只读，ADR 0008）。
+				"model":           m.Model,
+				"upstream_model":  model.EffectiveUpstreamForMember(m.ChannelId, m.Model),
 				"public_alias":    m.PublicAlias,
 				"priority":        m.Priority,
 				"channel_enabled": channelEnabled,

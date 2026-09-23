@@ -366,10 +366,13 @@ func routeSnapshotSignature(resolved *model.ResolvedRoute) string {
 	for i := range resolved.Members {
 		m := &resolved.Members[i]
 		// Disabled 必须在签名里：它是配置态、直接决定该成员是否参与选路。
+		// **UpstreamModel（派生真名）也必须在**：渠道 model_mapping 改动不经过成员重插，
+		// 只能靠签名变化触发快照重建，否则改了映射的车道会继续把请求打到旧上游名
+		// （ADR 0008；routing-spec §1.3）。
 		// 不要指望 LaneVersion（秒级）或 MemberId（整体重插必然变）的副作用来驱动重建
-		// ——同秒内的两次保存即失效，且渠道级改动根本不经过成员重插（routing-spec §1.3）。
+		// ——同秒内的两次保存即失效，且渠道级改动根本不经过成员重插。
 		fmt.Fprintf(&b, "|%d:%s:%s:%s:%d:%d:%t:%s",
-			m.ChannelId, m.UpstreamModel, m.UpstreamOverride, m.PublicAlias,
+			m.ChannelId, m.Model, m.UpstreamModel, m.PublicAlias,
 			m.Priority, m.MemberId, m.Disabled, strings.TrimSpace(m.Overrides))
 	}
 	return b.String()
@@ -838,14 +841,20 @@ func (s *State) LogAttempts() []model.PBRAttempt {
 	return out
 }
 
+// memberLabel 成员对外标签：`channel/model`（成员所选模型，ADR 0008）。
+//
+// 用**所选模型**而非派生真名：成员身份是 `(渠道, 模型)`，标签随之稳定，
+// 不随渠道 `model_mapping` 改动漂移（真名变了不该让 attempts 链里的成员换个名字）。
+// 代价：历史日志里仍是旧标签 `channel/真名`，与新日志并存——历史只作追溯，
+// 本项目无对外兼容包袱，故不回溯改写（ADR 0008）。
 func memberLabel(m *model.RouteMember) string {
 	if m == nil {
 		return ""
 	}
 	if m.Channel != "" {
-		return m.Channel + "/" + m.UpstreamModel
+		return m.Channel + "/" + m.Model
 	}
-	return m.UpstreamModel
+	return m.Model
 }
 
 func truncate(err *types.NewAPIError, max int) string {

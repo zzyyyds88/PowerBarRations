@@ -33,8 +33,11 @@ func testRoute(lane string, members int, maxAttempts int) *model.ResolvedRoute {
 	}
 	for i := 0; i < members; i++ {
 		resolved.Members = append(resolved.Members, model.RouteMember{
-			ChannelId:     i + 1,
-			Channel:       "channel-" + string(rune('a'+i)),
+			ChannelId: i + 1,
+			Channel:   "channel-" + string(rune('a'+i)),
+			// 夹具对齐生产形态：Model = 成员所选模型（成员身份、标签用它），
+			// UpstreamModel = 派生真名（无映射时等于 Model，ADR 0008）。
+			Model:         "model-1",
 			UpstreamModel: "model-1",
 			Priority:      100 - i,
 		})

@@ -19,11 +19,14 @@ import (
 // 自定义顺序 / 成员改名 / 池化不同上游的不同模型名都通过车道表达。
 
 type laneMemberPayload struct {
-	Channel       string          `json:"channel"`
-	UpstreamModel string          `json:"upstream_model"`
-	PublicAlias   string          `json:"public_alias"`
-	Priority      int             `json:"priority"`
-	Overrides     json.RawMessage `json:"overrides"`
+	Channel string `json:"channel"`
+	// Model 是成员所选、由该渠道声明的模型名（成员身份，ADR 0008）。
+	// **不接受成员级上游真名**：真名一律由 `Channel.ModelMapping[Model] ?? Model` 推导，
+	// 这样上游改名只在渠道配置一次、对所有成员立即生效。
+	Model       string          `json:"model"`
+	PublicAlias string          `json:"public_alias"`
+	Priority    int             `json:"priority"`
+	Overrides   json.RawMessage `json:"overrides"`
 	// Enabled 是**可空三态**：nil（请求省略）= 新建成员按启用、既有成员保留原值；
 	// 显式 true/false 生效。成员写入是全量替换，若把"省略"当成 false，任何不带该
 	// 字段的调用方一发请求就会把整条成员链关掉（api-spec §4.2）。
@@ -53,8 +56,10 @@ func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 			orphans++
 		}
 		item := gin.H{
-			"channel":        channelName,
-			"upstream_model": m.UpstreamModel,
+			"channel": channelName,
+			// model = 成员所选模型（写回用）；upstream_model = 派生真名（只读展示，ADR 0008）。
+			"model":          m.Model,
+			"upstream_model": model.EffectiveUpstreamForMember(m.ChannelId, m.Model),
 			"public_alias":   m.PublicAlias,
 			"priority":       m.Priority,
 			// 对外一律正向 enabled（api-spec §4.2 命名规则）：落库是反向 Disabled。
@@ -298,8 +303,20 @@ func buildLane(name string, payload *lanePayload, resolvers ...channelResolver) 
 		baselineMembers = existing.Members
 	}
 	if payload.Members != nil {
+		// 成员唯一键 = (渠道, 所选模型)（ADR 0008）：同一渠道的同一模型在一条车道里
+		// 只能出现一次，否则两条成员完全等价（没有成员级真名可区分），选路顺序也无意义。
+		// 按渠道名+模型去重（此处 channel 尚未落库，用请求里的渠道名即可）。
+		seenMembers := map[string]bool{}
 		for i := range payload.Members {
 			m := payload.Members[i]
+			dedupKey := strings.TrimSpace(m.Channel) + "\u0000" + strings.TrimSpace(m.Model)
+			if seenMembers[dedupKey] {
+				return nil, &laneBuildError{status: http.StatusUnprocessableEntity, code: apierr.CodeDuplicateMember,
+					message: "duplicate member: channel '" + strings.TrimSpace(m.Channel) +
+						"' model '" + strings.TrimSpace(m.Model) + "' appears more than once",
+					hint: "a member is identified by (channel, model); list each pair once"}
+			}
+			seenMembers[dedupKey] = true
 			member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m, resolve, baselineMembers)
 			if buildErr != nil {
 				return nil, buildErr
@@ -343,11 +360,15 @@ func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliase
 		}
 		channel = found
 	}
-	// 成员 upstream_model 是可选覆盖：留空 → 运行期用渠道 model_mapping，再退回路由键（ADR 0005）。
-	upstream := strings.TrimSpace(m.UpstreamModel)
+	// 成员所选模型：必填（成员身份的一半，另一半是渠道）。
+	selected := strings.TrimSpace(m.Model)
+	if selected == "" {
+		return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
+			message: "member.model is required", hint: "pick a model declared by the channel"}
+	}
 	// `enabled` 的三态默认值（api-spec §4.2）：显式给出以给出为准；省略时命中既有成员
-	// 则保留其原值、否则按启用。"既有成员"按成员唯一键 (channel_id, upstream_model)
-	// 匹配（ADR 0006）——改了这个键即视为新成员，按启用处理。
+	// 则保留其原值、否则按启用。"既有成员"按成员唯一键 (channel_id, model) 匹配
+	// （ADR 0008）——改了这个键即视为新成员，按启用处理。
 	// 绝不能把"省略"当成关闭：成员写入是全量替换，那样任何不带该字段的调用方
 	// 一发请求就会把整条成员链关掉。
 	enabled := true
@@ -355,18 +376,18 @@ func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliase
 		enabled = *m.Enabled
 	} else {
 		for _, prev := range existingMembers {
-			if prev.ChannelId == channel.Id && prev.UpstreamModel == upstream {
+			if prev.ChannelId == channel.Id && prev.Model == selected {
 				enabled = !prev.Disabled
 				break
 			}
 		}
 	}
 	member := &model.LaneMember{
-		ChannelId:     channel.Id,
-		UpstreamModel: upstream,
-		PublicAlias:   strings.TrimSpace(m.PublicAlias),
-		Priority:      m.Priority,
-		Disabled:      !enabled,
+		ChannelId:   channel.Id,
+		Model:       selected,
+		PublicAlias: strings.TrimSpace(m.PublicAlias),
+		Priority:    m.Priority,
+		Disabled:    !enabled,
 	}
 	if len(m.Overrides) > 0 && string(m.Overrides) != "null" {
 		if !json.Valid(m.Overrides) {
@@ -434,8 +455,18 @@ func PutLaneMembers(c *gin.Context) {
 		return
 	}
 	seenAliases := map[string]bool{}
+	// 成员唯一键 = (渠道, 所选模型)，同一对重复提交即 422（与 buildLane 同口径，ADR 0008）。
+	seenMembers := map[string]bool{}
 	members := make([]model.LaneMember, 0, len(payload.Members))
 	for i := range payload.Members {
+		dedupKey := strings.TrimSpace(payload.Members[i].Channel) + "\u0000" + strings.TrimSpace(payload.Members[i].Model)
+		if seenMembers[dedupKey] {
+			apierr.Unprocessable(c, apierr.CodeDuplicateMember,
+				"duplicate member: channel '"+strings.TrimSpace(payload.Members[i].Channel)+
+					"' model '"+strings.TrimSpace(payload.Members[i].Model)+"' appears more than once")
+			return
+		}
+		seenMembers[dedupKey] = true
 		member, buildErr := buildLaneMember(name, existing.Id, laneNames, seenAliases, &payload.Members[i], nil, existing.Members)
 		if buildErr != nil {
 			apierr.Write(c, buildErr.status, buildErr.code, buildErr.message, buildErr.hint)

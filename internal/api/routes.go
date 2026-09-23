@@ -94,21 +94,19 @@ func GetRoute(c *gin.Context) {
 		item := gin.H{
 			"channel":         m.Channel,
 			"channel_enabled": m.ChannelEnabled,
-			"upstream_model":  m.UpstreamModel,
-			"priority":        m.Priority,
-			"enabled":         !m.Disabled,
-			"overrides":       overrides,
+			// model = 成员所选模型（成员身份，编排器写回用它）；upstream_model = 派生真名
+			// （只读，随渠道 model_mapping 变化，不接受写回。ADR 0008）。
+			"model":          m.Model,
+			"upstream_model": m.UpstreamModel,
+			"priority":       m.Priority,
+			"enabled":        !m.Disabled,
+			"overrides":      overrides,
 			// member_id 仅供排障与审计定位：整体替换后必然变化，界面不得用作行标识
 			// （api-spec §5.7）。
 			"member_id": m.MemberId,
 		}
-		// upstream_override 必须在有成员级显式改名时无条件回传（api-spec §4.4）：
-		// 此前条件 `!= m.UpstreamModel` 恒假——只要显式名非空且 ≠ 路由键，
-		// 解析后的 upstream_model 就等于它，字段从不出现；控制台车道编辑器
-		// 读不到原值，重新保存时会把全部成员的显式上游真名清空（实测数据丢失）。
-		if m.UpstreamOverride != "" {
-			item["upstream_override"] = m.UpstreamOverride
-		}
+		// 成员级上游覆盖已移除（ADR 0008）：`upstream_model` 是派生只读真名，
+		// 随渠道 `model_mapping` 变化，不接受写回。
 		if m.PublicAlias != "" {
 			item["public_alias"] = m.PublicAlias
 		}

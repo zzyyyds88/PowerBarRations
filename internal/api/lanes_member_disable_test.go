@@ -21,7 +21,7 @@ import (
 // memberShape 是成员响应断言形状（跨 lanes / routes / export 复用）。
 type memberShape struct {
 	Channel       string         `json:"channel"`
-	UpstreamModel string         `json:"upstream_model"`
+	UpstreamModel string         `json:"model"`
 	PublicAlias   string         `json:"public_alias"`
 	Priority      int            `json:"priority"`
 	Enabled       *bool          `json:"enabled"`
@@ -118,10 +118,10 @@ func modelItem(t *testing.T, key string) modelSummaryItem {
 func TestPutLaneMembersPersistsDisabledAndReadsBack(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "dis-ch", "dis-model")
-	seedLane(t, "dis-lane", `[{"channel":"dis-ch","upstream_model":"dis-model","priority":2}]`)
+	seedLane(t, "dis-lane", `[{"channel":"dis-ch","model":"dis-model","priority":2}]`)
 
 	putMembers(t, "dis-lane",
-		`[{"channel":"dis-ch","upstream_model":"dis-model","priority":2,"enabled":false}]`)
+		`[{"channel":"dis-ch","model":"dis-model","priority":2,"enabled":false}]`)
 
 	got := getLaneMembers(t, "dis-lane")
 	require.Len(t, got.Members, 1)
@@ -142,14 +142,14 @@ func TestOmittedEnabledKeepsExistingMemberState(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "tri-ch", "tri-model")
 	seedLane(t, "tri-lane", `[
-		{"channel":"tri-ch","upstream_model":"tri-model","priority":2,"enabled":false},
-		{"channel":"tri-ch","upstream_model":"tri-model-2","priority":1,"enabled":true}
+		{"channel":"tri-ch","model":"tri-model","priority":2,"enabled":false},
+		{"channel":"tri-ch","model":"tri-model-2","priority":1,"enabled":true}
 	]`)
 
 	// 整链重发，但一个字段的 enabled 都不带。
 	putMembers(t, "tri-lane", `[
-		{"channel":"tri-ch","upstream_model":"tri-model","priority":2},
-		{"channel":"tri-ch","upstream_model":"tri-model-2","priority":1}
+		{"channel":"tri-ch","model":"tri-model","priority":2},
+		{"channel":"tri-ch","model":"tri-model-2","priority":1}
 	]`)
 
 	byModel := membersByModel(t, getLaneMembers(t, "tri-lane"))
@@ -164,12 +164,12 @@ func TestOmittedEnabledKeepsExistingMemberState(t *testing.T) {
 func TestOmittedEnabledDefaultsNewMemberToEnabled(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "new-ch", "new-model")
-	seedLane(t, "new-lane", `[{"channel":"new-ch","upstream_model":"seed-model","priority":1}]`)
+	seedLane(t, "new-lane", `[{"channel":"new-ch","model":"seed-model","priority":1}]`)
 
 	// 整链替换：seed-model 是既有成员，new-model 是新建成员，两者都不带 enabled。
 	putMembers(t, "new-lane", `[
-		{"channel":"new-ch","upstream_model":"seed-model","priority":1},
-		{"channel":"new-ch","upstream_model":"new-model","priority":2}
+		{"channel":"new-ch","model":"seed-model","priority":1},
+		{"channel":"new-ch","model":"new-model","priority":2}
 	]`)
 
 	byModel := membersByModel(t, getLaneMembers(t, "new-lane"))
@@ -184,10 +184,10 @@ func TestChangedMemberKeyIsTreatedAsNewAndEnabled(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "key-ch", "key-model")
 	seedLane(t, "key-lane",
-		`[{"channel":"key-ch","upstream_model":"key-model","priority":1,"enabled":false}]`)
+		`[{"channel":"key-ch","model":"key-model","priority":1,"enabled":false}]`)
 
 	putMembers(t, "key-lane",
-		`[{"channel":"key-ch","upstream_model":"key-model-renamed","priority":1}]`)
+		`[{"channel":"key-ch","model":"key-model-renamed","priority":1}]`)
 
 	got := getLaneMembers(t, "key-lane")
 	require.Len(t, got.Members, 1)
@@ -202,9 +202,9 @@ func TestGetRouteReturnsEnabledOverridesAndMemberID(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "rt-ch", "rt-model")
 	seedLane(t, "rt-model", `[
-		{"channel":"rt-ch","upstream_model":"rt-model","priority":2,"enabled":false,
+		{"channel":"rt-ch","model":"rt-model","priority":2,"enabled":false,
 		 "overrides":{"member_cooldown_seconds":120}},
-		{"channel":"rt-ch","upstream_model":"rt-model-2","priority":1}
+		{"channel":"rt-ch","model":"rt-model-2","priority":1}
 	]`)
 
 	recorder := callAPI(t, http.MethodGet, "/api/v1/routes/rt-model", "", GetRoute,
@@ -246,10 +246,10 @@ func TestDryRunToggleDoesNotPersist(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "dr-ch", "dr-model")
 	seedLane(t, "dr-lane",
-		`[{"channel":"dr-ch","upstream_model":"dr-model","priority":1,"enabled":true}]`)
+		`[{"channel":"dr-ch","model":"dr-model","priority":1,"enabled":true}]`)
 
 	recorder := callAPI(t, http.MethodPut, "/api/v1/lanes/dr-lane/members?dry_run=true",
-		`{"members":[{"channel":"dr-ch","upstream_model":"dr-model","priority":1,"enabled":false}]}`,
+		`{"members":[{"channel":"dr-ch","model":"dr-model","priority":1,"enabled":false}]}`,
 		PutLaneMembers, gin.Params{{Key: "name", Value: "dr-lane"}})
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	assert.Contains(t, recorder.Body.String(), `"dry_run":true`)
@@ -266,7 +266,7 @@ func TestExportImportPreservesDisabledMember(t *testing.T) {
 	setupImportTestDB(t)
 	seedChannel(t, model.DB, "ex-ch", "ex-model")
 	seedLane(t, "ex-lane",
-		`[{"channel":"ex-ch","upstream_model":"ex-model","priority":1,"enabled":false}]`)
+		`[{"channel":"ex-ch","model":"ex-model","priority":1,"enabled":false}]`)
 
 	recorder := callAPI(t, http.MethodGet, "/api/v1/export", "", GetExport, nil)
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
@@ -310,9 +310,9 @@ func TestModelsReportsDisabledMemberCountAndExcludesFromAvailable(t *testing.T) 
 	// 三个成员的 (channel, upstream_model) 必须互不相同：成员唯一键就是这两元组
 	// （ADR 0006），重复键会让三态默认值与计数语义都变得不可判定。
 	seedLane(t, "cnt-model", `[
-		{"channel":"cnt-ch","upstream_model":"cnt-model","priority":3,"enabled":false},
-		{"channel":"cnt-ch","upstream_model":"cnt-model-2","priority":2,"enabled":false},
-		{"channel":"cnt-ch","upstream_model":"cnt-model-3","priority":1,"enabled":true}
+		{"channel":"cnt-ch","model":"cnt-model","priority":3,"enabled":false},
+		{"channel":"cnt-ch","model":"cnt-model-2","priority":2,"enabled":false},
+		{"channel":"cnt-ch","model":"cnt-model-3","priority":1,"enabled":true}
 	]`)
 
 	found := modelItem(t, "cnt-model")
@@ -331,8 +331,8 @@ func TestModelsDistinguishesAllDisabledFromAllFailing(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "alloff-ch", "alloff-model")
 	seedLane(t, "alloff-model", `[
-		{"channel":"alloff-ch","upstream_model":"alloff-model","priority":2,"enabled":false},
-		{"channel":"alloff-ch","upstream_model":"alloff-model-2","priority":1,"enabled":false}
+		{"channel":"alloff-ch","model":"alloff-model","priority":2,"enabled":false},
+		{"channel":"alloff-ch","model":"alloff-model-2","priority":1,"enabled":false}
 	]`)
 
 	found := modelItem(t, "alloff-model")
@@ -361,10 +361,10 @@ func TestModelsOmitsDisabledCountForUnconfigured(t *testing.T) {
 func TestDisablingAllMembersIsAcceptedButEmptyChainIsNot(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "all-ch", "all-model")
-	seedLane(t, "all-lane", `[{"channel":"all-ch","upstream_model":"all-model","priority":1}]`)
+	seedLane(t, "all-lane", `[{"channel":"all-ch","model":"all-model","priority":1}]`)
 
 	recorder := callAPI(t, http.MethodPut, "/api/v1/lanes/all-lane/members",
-		`{"members":[{"channel":"all-ch","upstream_model":"all-model","priority":1,"enabled":false}]}`,
+		`{"members":[{"channel":"all-ch","model":"all-model","priority":1,"enabled":false}]}`,
 		PutLaneMembers, gin.Params{{Key: "name", Value: "all-lane"}})
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String(),
 		"关掉一切但保留配置是合法的人工干预状态，不得 422")
@@ -381,14 +381,14 @@ func TestLaneDigestChangesWhenMemberToggled(t *testing.T) {
 	db := setupAPITestDB(t)
 	seedChannel(t, db, "dig-ch", "dig-model")
 	seedLane(t, "dig-lane",
-		`[{"channel":"dig-ch","upstream_model":"dig-model","priority":1,"enabled":true}]`)
+		`[{"channel":"dig-ch","model":"dig-model","priority":1,"enabled":true}]`)
 
 	before, err := model.GetLaneByName("dig-lane")
 	require.NoError(t, err)
 	digestBefore := laneDigestOfLane(before)
 
 	putMembers(t, "dig-lane",
-		`[{"channel":"dig-ch","upstream_model":"dig-model","priority":1,"enabled":false}]`)
+		`[{"channel":"dig-ch","model":"dig-model","priority":1,"enabled":false}]`)
 	after, err := model.GetLaneByName("dig-lane")
 	require.NoError(t, err)
 

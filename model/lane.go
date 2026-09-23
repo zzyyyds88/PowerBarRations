@@ -190,13 +190,19 @@ type Lane struct {
 
 // LaneMember 车道成员：渠道 + 上游真名。
 type LaneMember struct {
-	Id            int    `json:"id" gorm:"primaryKey"`
-	LaneId        int    `json:"lane_id" gorm:"not null;index"`
-	ChannelId     int    `json:"channel_id" gorm:"not null"`
-	UpstreamModel string `json:"upstream_model" gorm:"not null"`
-	PublicAlias   string `json:"public_alias" gorm:"type:varchar(128);index"`
-	Priority      int    `json:"priority"`                   // 车道内顺序：数字大者优先
-	Overrides     string `json:"overrides" gorm:"type:text"` // 成员级六键覆盖 JSON
+	Id        int    `json:"id" gorm:"primaryKey"`
+	LaneId    int    `json:"lane_id" gorm:"not null;index"`
+	ChannelId int    `json:"channel_id" gorm:"not null"`
+	// Model 是该成员**所选、由该渠道声明的模型名**（列名 `model`）。
+	//
+	// 成员**不存上游真名**：真名一律由 Model 推导（`Channel.ModelMapping[Model] ?? Model`，
+	// ADR 0008）。此前存解析后的真名并允许成员级覆盖，后果是"加入时把渠道映射物化写入"
+	// 让后续映射改动失效、且运行期与加入期的查表键不一致（池化车道必错）。
+	// 列名由 AutoMigrate 从旧的 upstream_model 迁移（见 migrateLaneMemberModelSemantics）。
+	Model       string `json:"model" gorm:"column:model;not null"`
+	PublicAlias string `json:"public_alias" gorm:"type:varchar(128);index"`
+	Priority    int    `json:"priority"`                   // 车道内顺序：数字大者优先
+	Overrides   string `json:"overrides" gorm:"type:text"` // 成员级六键覆盖 JSON
 	// Disabled 是该成员被人工停用（可逆）：仍留在成员链里，但不参与选路。
 	//
 	// 字段刻意取反（不是 Enabled）且**禁止加 gorm default**：GORM 更新时会忽略
@@ -213,14 +219,16 @@ type RouteMember struct {
 	Channel   string `json:"channel"`
 	// ChannelEnabled 该成员渠道当前是否启用；停用渠道成员在控制台应可见地标灰
 	// （否则同一渠道在模型页有停用徽章、路由页却是绿色"可调用"）。
-	ChannelEnabled bool   `json:"channel_enabled"`
-	UpstreamModel  string `json:"upstream_model"`
-	// UpstreamOverride 是成员级显式改名（数据库原值，可能为空）。为空表示"用渠道映射"。
-	UpstreamOverride string `json:"upstream_override,omitempty"`
-	PublicAlias      string `json:"public_alias,omitempty"`
-	Priority         int    `json:"priority"`
-	MemberId         int    `json:"member_id,omitempty"`
-	Overrides        string `json:"-"`
+	ChannelEnabled bool `json:"channel_enabled"`
+	// Model 是成员**所选**的模型名（成员身份，`active_member` 标签与 attempts 用它）。
+	Model string `json:"model"`
+	// UpstreamModel 是**派生**的上游真名 = `Channel.ModelMapping[Model] ?? Model`（ADR 0008）。
+	// 只读：由解析时算出，供展示、转发与日志，**不接受写回**。
+	UpstreamModel string `json:"upstream_model"`
+	PublicAlias   string `json:"public_alias,omitempty"`
+	Priority      int    `json:"priority"`
+	MemberId      int    `json:"member_id,omitempty"`
+	Overrides     string `json:"-"`
 	// Disabled 该成员被人工停用（配置态），选路时应跳过。
 	//
 	// 与 LaneMember.Disabled 同样是**反向**命名，理由一致且更硬：RouteMember 由多处
@@ -713,16 +721,16 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 			name = ch.Name
 		}
 		route.Members = append(route.Members, RouteMember{
-			ChannelId:        m.ChannelId,
-			Channel:          name,
-			ChannelEnabled:   ch != nil && ch.Status == common.ChannelStatusEnabled,
-			UpstreamModel:    effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
-			UpstreamOverride: m.UpstreamModel,
-			PublicAlias:      m.PublicAlias,
-			Priority:         m.Priority,
-			MemberId:         m.Id,
-			Overrides:        m.Overrides,
-			Disabled:         m.Disabled,
+			ChannelId:      m.ChannelId,
+			Channel:        name,
+			ChannelEnabled: ch != nil && ch.Status == common.ChannelStatusEnabled,
+			Model:          m.Model,
+			UpstreamModel:  effectiveUpstreamModel(ch, m.Model),
+			PublicAlias:    m.PublicAlias,
+			Priority:       m.Priority,
+			MemberId:       m.Id,
+			Overrides:      m.Overrides,
+			Disabled:       m.Disabled,
 		})
 	}
 	sort.SliceStable(route.Members, func(i, j int) bool {
@@ -731,22 +739,34 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	return route, nil
 }
 
-// effectiveUpstreamModel 计算成员最终发给上游的模型名（ADR 0005）。
-// 优先级：成员级显式改名（非空且 ≠ 路由键）> 渠道 model_mapping > 路由键。
-func effectiveUpstreamModel(channel *Channel, routeKey, memberUpstream string) string {
-	memberUpstream = strings.TrimSpace(memberUpstream)
-	if memberUpstream != "" && memberUpstream != routeKey {
-		return memberUpstream
+// effectiveUpstreamModel 计算成员最终发给上游的模型名（ADR 0008）。
+//
+// 规则只有一条：`Channel.ModelMapping[model] ?? model`。**查表键恒为成员所选模型**，
+// 与路由键无关——此前"加入时以成员模型为键、运行期以路由键为键"的两套口径已废除
+// （池化车道下必然查错）。成员级覆盖已整体移除，所以这里不再有第一层分支。
+func effectiveUpstreamModel(channel *Channel, model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
 	}
 	if channel != nil {
-		if mapped := strings.TrimSpace(channel.ModelMappingMap()[routeKey]); mapped != "" {
+		if mapped := strings.TrimSpace(channel.ModelMappingMap()[model]); mapped != "" {
 			return mapped
 		}
 	}
-	if memberUpstream != "" {
-		return memberUpstream
+	return model
+}
+
+// EffectiveUpstreamForMember 供管理面按 (渠道 id, 所选模型) 求派生上游真名（ADR 0008）。
+//
+// 成员表不存真名，读端点要给出 `upstream_model` 就得现算；渠道不存在时按"无映射"处理
+// （回落模型名本身），与运行期一致——渠道被删的悬空成员仍能显示出它原本要打的真名。
+func EffectiveUpstreamForMember(channelID int, modelName string) string {
+	channel, err := ChannelOrNil(channelID)
+	if err != nil {
+		channel = nil
 	}
-	return routeKey
+	return effectiveUpstreamModel(channel, modelName)
 }
 
 // suggestedMembers 返回"渠道声明"的候选成员（按渠道 id 升序；渠道 priority 已删除）。
@@ -777,7 +797,9 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 			// 候选/推荐成员没有落库成员身份，恒为参与选路（api-spec §5.7：unconfigured
 			// 推荐项 enabled 恒 true、member_id 为 0）。Disabled 是反向字段，零值即真，
 			// 故这里不需要显式赋值；反而若改成正向字段必须逐处置真。
-			UpstreamModel: effectiveUpstreamModel(c, modelName, ""),
+			// 推荐项的"所选模型"就是它服务的路由键本身。
+			Model:         modelName,
+			UpstreamModel: effectiveUpstreamModel(c, modelName),
 			// priority 数字大者优先：渠道 id 升序 → priority 递减，
 			// 使落库后 resolveExactRoute（按 priority 降序）得到的实际顺序
 			// 仍是渠道 id 升序（routing-spec §1.1 / design-v1 §7.7 的 seed 语义）。
@@ -840,16 +862,16 @@ func displayMembersForLane(lane *Lane) ([]RouteMember, error) {
 			name = ch.Name
 		}
 		members = append(members, RouteMember{
-			ChannelId:        m.ChannelId,
-			Channel:          name,
-			ChannelEnabled:   ch != nil && ch.Status == common.ChannelStatusEnabled,
-			UpstreamModel:    effectiveUpstreamModel(ch, lane.Name, m.UpstreamModel),
-			UpstreamOverride: m.UpstreamModel,
-			PublicAlias:      m.PublicAlias,
-			Priority:         m.Priority,
-			MemberId:         m.Id,
-			Overrides:        m.Overrides,
-			Disabled:         m.Disabled,
+			ChannelId:      m.ChannelId,
+			Channel:        name,
+			ChannelEnabled: ch != nil && ch.Status == common.ChannelStatusEnabled,
+			Model:          m.Model,
+			UpstreamModel:  effectiveUpstreamModel(ch, m.Model),
+			PublicAlias:    m.PublicAlias,
+			Priority:       m.Priority,
+			MemberId:       m.Id,
+			Overrides:      m.Overrides,
+			Disabled:       m.Disabled,
 		})
 	}
 	sort.SliceStable(members, func(i, j int) bool {

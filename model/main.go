@@ -326,6 +326,13 @@ func migrateDB() error {
 		common.SysError("failed to drop legacy channel affinity options: " + err.Error())
 	}
 
+	// 成员模型语义迁移（ADR 0008）：lane_members.upstream_model → model，并按渠道映射
+	// 把"解析后的真名"回填成"所选模型"。**必须在 AutoMigrate 之前**——AutoMigrate 会
+	// 按新结构加 `model` 列，若不先重命名，旧列的数据会留在 upstream_model 里成为孤儿列。
+	if err := migrateLaneMemberModelSemantics(DB); err != nil {
+		common.SysError("failed to migrate lane member model semantics: " + err.Error())
+	}
+
 	// W7（design-v1 §10.2.1）：计费/多用户相关表随多用户面物理删除，AutoMigrate
 	// 只保留 PBR 自有表与仍被保留管理面使用的基座表（User 仅作系统用户锚点）。
 	if err := DB.AutoMigrate(

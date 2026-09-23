@@ -24,7 +24,7 @@ func TestImportKeepsMembersOfChannelsDeclaredInSameBundle(t *testing.T) {
 		Channels: []ChannelConfig{{Name: "new-ch", Type: "openai", Enabled: true, Models: []string{"m"}}},
 		Lanes: []LaneConfig{{
 			Name: "m", Enabled: true, Mode: model.LaneModeFailover,
-			Members: []LaneMemberConfig{{Channel: "new-ch", UpstreamModel: "m", Priority: 1}},
+			Members: []LaneMemberConfig{{Channel: "new-ch", Model: "m", Priority: 1}},
 		}},
 	}
 	result := ImportResult{Valid: true, Diff: map[string]any{"lanes": newDiffList()}}
@@ -41,7 +41,7 @@ func TestPostImportRestoresChannelAndLaneInOneBundle(t *testing.T) {
 	db := setupAPITestDB(t)
 	gin.SetMode(gin.TestMode)
 	body := `{"version":"v1","channels":[{"name":"restore-ch","type":"openai","base_url":"http://upstream.example","key":"__INJECT__","enabled":true,"models":["restore-model"]}],` +
-		`"lanes":[{"name":"restore-model","enabled":true,"mode":"failover","config":{},"members":[{"channel":"restore-ch","priority":1}]}]}`
+		`"lanes":[{"name":"restore-model","enabled":true,"mode":"failover","config":{},"members":[{"channel":"restore-ch","model":"restore-model","priority":1}]}]}`
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/import", strings.NewReader(body))

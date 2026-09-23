@@ -41,7 +41,7 @@ func TestListLaneSummariesReturnsAllLanesInOrder(t *testing.T) {
 	ch := &model.Channel{Name: "sum-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "m"}
 	require.NoError(t, db.Create(ch).Error)
 	require.NoError(t, model.UpsertLane(&model.Lane{Name: "sum-lane", Enabled: true, Mode: model.LaneModeFailover,
-		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 5, UpstreamModel: "real"}}}))
+		Members: []model.LaneMember{{ChannelId: ch.Id, Priority: 5, Model: "real"}}}))
 
 	recorder := callAPI(t, http.MethodGet, "/api/v1/lane-summaries", "", ListLaneSummaries, nil)
 	require.Equal(t, http.StatusOK, recorder.Code)
@@ -50,7 +50,7 @@ func TestListLaneSummariesReturnsAllLanesInOrder(t *testing.T) {
 			Name    string `json:"name"`
 			Members []struct {
 				Channel       string `json:"channel"`
-				UpstreamModel string `json:"upstream_model"`
+				UpstreamModel string `json:"model"`
 				Priority      int    `json:"priority"`
 				ChannelEnable bool   `json:"channel_enabled"`
 			} `json:"members"`
