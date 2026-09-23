@@ -67,7 +67,7 @@ A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/channels/a3-ch" \
   -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["a3-model"],"enabled":true}' >/dev/null
 curl -s "${A[@]}" -X PUT "$BASE/api/v1/lanes/a3-model" \
-  -d '{"enabled":true,"mode":"failover","members":[{"channel":"a3-ch","upstream_model":"a3-model","priority":10}]}' >/dev/null
+  -d '{"enabled":true,"mode":"failover","members":[{"channel":"a3-ch","model":"a3-model","priority":10}]}' >/dev/null
 CLIENT_PLAIN=$(curl -s "${A[@]}" -X POST "$BASE/api/v1/keys" -d '{"name":"a3-key"}' | jget 'd["key"]')
 curl -s -o /dev/null -X POST "$BASE/v1/chat/completions" \
   -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' \

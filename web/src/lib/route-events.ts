@@ -187,11 +187,6 @@ export function createSseFrameParser(): {
   }
 }
 
-/** 车道成员唯一标签（与后端 memberKeyOf 同口径：`channel/upstream_model`）。 */
-export function memberKeyOf(channel: string, upstreamModel: string): string {
-  return `${channel}/${upstreamModel}`
-}
-
 function isLaneHealthSnapshot(value: unknown): value is LaneHealthSnapshot {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>

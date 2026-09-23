@@ -345,7 +345,7 @@ export const FIELD_DESCRIPTIONS = {
   MODELS:
     'Selected models. Use "Probe upstream models" above to fetch the upstream list, then add the ones you need; edit here manually as a fallback.',
   MODEL_MAPPING:
-    'For this channel, map the model name in client requests to the model name sent upstream.',
+    'Map a model name to the upstream model name this channel should receive. Lane members derive their upstream name from this mapping.',
   TEST_MODEL: 'Model to use when testing channel connectivity',
   AUTO_BAN: 'Automatically disable channel on repeated failures',
   STATUS_CODE_MAPPING: 'Map response status codes (JSON format)',

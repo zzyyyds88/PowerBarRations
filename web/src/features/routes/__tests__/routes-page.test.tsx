@@ -104,8 +104,16 @@ function mockRouteKeys() {
             {
               name: 'model-1',
               members: [
-                { channel: 'channel-a', upstream_model: 'model-1' },
-                { channel: 'channel-b', upstream_model: 'model-1' },
+                {
+                  channel: 'channel-a',
+                  model: 'model-1',
+                  upstream_model: 'model-1',
+                },
+                {
+                  channel: 'channel-b',
+                  model: 'model-1',
+                  upstream_model: 'model-1',
+                },
               ],
             },
           ],
@@ -120,8 +128,18 @@ function mockRouteKeys() {
           routable: true,
           mode: 'failover',
           members: [
-            { channel: 'channel-a', upstream_model: 'model-1', priority: 2 },
-            { channel: 'channel-b', upstream_model: 'model-1', priority: 1 },
+            {
+              channel: 'channel-a',
+              model: 'model-1',
+              upstream_model: 'model-1',
+              priority: 2,
+            },
+            {
+              channel: 'channel-b',
+              model: 'model-1',
+              upstream_model: 'model-1',
+              priority: 1,
+            },
           ],
         },
       } as never
@@ -251,7 +269,12 @@ describe('路由与故障切换页', () => {
             source: 'explicit',
             routable: true,
             members: [
-              { channel: 'channel-a', upstream_model: 'model-1', priority: 2 },
+              {
+                channel: 'channel-a',
+                model: 'model-1',
+                upstream_model: 'model-1',
+                priority: 2,
+              },
             ],
           },
         } as never
@@ -351,7 +374,9 @@ describe('路由与故障切换页', () => {
               {
                 name: 'model-1',
                 orphan_member_count: 1,
-                members: [{ channel: '', upstream_model: 'model-1' }],
+                members: [
+                  { channel: '', model: 'model-1', upstream_model: 'model-1' },
+                ],
               },
             ],
           },
@@ -415,9 +440,14 @@ describe('路由与故障切换页', () => {
               {
                 name: 'model-1',
                 members: [
-                  { channel: 'channel-a', upstream_model: 'model-1' },
+                  {
+                    channel: 'channel-a',
+                    model: 'model-1',
+                    upstream_model: 'model-1',
+                  },
                   {
                     channel: 'channel-b',
+                    model: 'model-1',
                     upstream_model: 'model-1',
                     enabled: false,
                   },
@@ -473,11 +503,13 @@ describe('路由与故障切换页', () => {
                 members: [
                   {
                     channel: 'channel-a',
+                    model: 'model-1',
                     upstream_model: 'model-1',
                     enabled: false,
                   },
                   {
                     channel: 'channel-b',
+                    model: 'model-1',
                     upstream_model: 'model-1',
                     enabled: false,
                   },
@@ -529,8 +561,16 @@ describe('路由与故障切换页', () => {
               {
                 name: 'model-1',
                 members: [
-                  { channel: 'channel-a', upstream_model: 'model-1' },
-                  { channel: 'channel-b', upstream_model: 'model-1' },
+                  {
+                    channel: 'channel-a',
+                    model: 'model-1',
+                    upstream_model: 'model-1',
+                  },
+                  {
+                    channel: 'channel-b',
+                    model: 'model-1',
+                    upstream_model: 'model-1',
+                  },
                 ],
               },
             ],

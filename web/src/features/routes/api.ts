@@ -67,10 +67,18 @@ export interface PBRRouteMember {
   channel: string
   /** 该渠道是否启用（供界面标灰，与"成员被人工停用"是两件事）。 */
   channel_enabled?: boolean
-  /** 解析后的上游真名（渠道映射/成员覆盖/路由键之一）。 */
+  /**
+   * 成员**所选**模型（成员身份与唯一键的一半，保存写回用它）。
+   *
+   * 成员不再存上游真名：真名恒由 `渠道 model_mapping[model] ?? model` 推导
+   * （ADR 0008），因此改渠道映射对该车道所有成员立即生效。
+   */
+  model: string
+  /**
+   * **派生只读**的上游真名 = `渠道 model_mapping[model] ?? model`（ADR 0008）。
+   * 供展示与排障，**不可写回**（写回会被服务端忽略，且写端点根本不接受该字段）。
+   */
   upstream_model: string
-  /** 成员级显式改名原值；为空表示"用渠道映射"。 */
-  upstream_override?: string
   public_alias?: string
   /** 车道内顺序：数字大者优先（保存时按数组位置生成）。 */
   priority: number
@@ -118,13 +126,13 @@ export async function listPBRModels(): Promise<PBRModelSummary[]> {
  *
  * 成员候选 = **任意启用渠道的任意已声明模型**，与路由键是否同名无关；
  * 数据源直接复用 `GET /api/v1/channels`（已返回每渠道 models 与 model_mapping），
- * 不新增专用端点。`model_mapping` 供界面解析成员的上游真名展示。
+ * 不新增专用端点。`model_mapping` 供界面派生成员的上游真名展示。
  */
 export interface PBRChannelCatalogEntry {
   name: string
   enabled: boolean
   models: string[]
-  /** 路由键 → 上游真名；成员未显式改名时用于展示解析结果。 */
+  /** 模型名 → 上游真名；成员的上游真名恒由它按成员所选模型推导（ADR 0008）。 */
   model_mapping: Record<string, string>
 }
 
@@ -164,34 +172,23 @@ export async function listPBRChannelCatalog(): Promise<
 }
 
 /**
- * 车道成员的唯一键 = `(渠道, 上游真名)`（ADR 0006）。
+ * 车道成员的唯一键 = `(渠道, 所选模型)`（ADR 0008）。
  *
- * 同一渠道可在一条车道内出现多次（各自对应不同上游模型），因此**不能按渠道去重**；
- * 未显式改名的成员用解析后的上游真名参与去重。
+ * 同一渠道的**不同**模型可在一条车道内出现多次，因此**不能按渠道去重**；
+ * 同一渠道的同一模型在一条车道内只能出现一次（后端另有 `422 duplicate_member` 兜底）。
+ * 键用**成员所选模型**而非派生真名：真名会随渠道 `model_mapping` 改动漂移，
+ * 用它去重会让"同一模型换了个映射"被误判成另一个成员。
  */
-export function memberKey(member: {
-  channel: string
-  upstream_model: string
-}): string {
-  return `${member.channel}\u0000${member.upstream_model}`
-}
-
-/** 解析成员展示用的上游真名：显式改名 > 渠道映射 > 路由键。 */
-export function resolveUpstreamModel(
-  override: string,
-  routeKey: string,
-  channel?: PBRChannelCatalogEntry
-): string {
-  const trimmed = override.trim()
-  if (trimmed !== '' && trimmed !== routeKey) return trimmed
-  const mapped = channel?.model_mapping?.[routeKey]
-  if (mapped && mapped.trim() !== '') return mapped.trim()
-  return trimmed !== '' ? trimmed : routeKey
+export function memberKey(member: { channel: string; model: string }): string {
+  return `${member.channel}\u0000${member.model}`
 }
 
 /** GET /api/v1/lanes 的精简项：车道名 + 有序成员（成员数组顺序即故障切换顺序）。 */
 export interface PBRLaneSummaryMember {
   channel: string
+  /** 成员**所选**模型（成员身份，ADR 0008）。 */
+  model: string
+  /** **派生只读**的上游真名 = `渠道 model_mapping[model] ?? model`，供卡片展示解析结果。 */
   upstream_model: string
   /** 成员别名（可选）。后端**已在返回**，此前前端未声明、未消费（api-spec §5.7）。 */
   public_alias?: string
@@ -245,6 +242,7 @@ export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
     orphan_member_count: lane.orphan_member_count ?? 0,
     members: (lane.members ?? []).map((m) => ({
       channel: m.channel,
+      model: m.model,
       upstream_model: m.upstream_model,
       public_alias: m.public_alias,
       channel_enabled: m.channel_enabled,
@@ -263,17 +261,21 @@ export async function getPBRRoute(model: string): Promise<PBRRouteDetail> {
 }
 
 /**
- * 成员链编辑提交项。upstream_model 留空 = 用渠道映射。
+ * 成员链编辑提交项。
  *
  * **读写闭环（api-spec §4.2 通则，强制）**：成员写入是**全量替换**（先删光再重插），
  * 所以草稿里读到的每个成员级字段都必须在保存时原样带回，否则一次控制台保存就会
- * 把它们清空——`upstream_override` / `public_alias` / `overrides` 都因此丢过数据。
+ * 把它们清空——`public_alias` / `overrides` 都因此丢过数据。
  * `enabled` 是三态：省略 = 新建成员启用、既有成员保留原值，**绝不能**把"未读到"
  * 当成 `false`（那会把整条成员链关掉）。
+ *
+ * `upstream_model` **不属于**这条闭环：它是服务端由渠道映射推导的只读派生值
+ * （ADR 0008），写端点不接受该字段，前端只展示、不回传。
  */
 export interface PBRMemberInput {
   channel: string
-  upstream_model?: string
+  /** 成员所选模型，**必填**（缺了后端返回 400 `validation_failed`）。 */
+  model: string
   /** 成员别名；空串 = 无别名。不带上会被全量替换清空。 */
   public_alias?: string
   /** 车道内顺序：数字大者优先；数组位置即顺序。 */
@@ -289,7 +291,7 @@ export type PBRLaneMode = 'failover' | 'manual'
 /** 成员链保存选项：模式、manual 的 active member 与六键。 */
 export interface PBRSaveLaneOptions {
   mode?: PBRLaneMode
-  /** 仅 manual 模式：成员别名，或 "channel/upstream_model" 标签。 */
+  /** 仅 manual 模式：成员别名，或 "channel/model" 标签（model = 成员所选模型）。 */
   activeMember?: string
   /**
    * 车道六键。编排器显式传入（含用户在「高级」区改过的值）；

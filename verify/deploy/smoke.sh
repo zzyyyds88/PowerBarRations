@@ -98,7 +98,7 @@ curl -s "${A[@]}" -X PUT -d '{
 }' "$BASE/api/v1/channels/deploy-channel" > /dev/null
 curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"failover",
-  "members":[{"channel":"deploy-channel","upstream_model":"deploy-model","priority":1}]
+  "members":[{"channel":"deploy-channel","model":"deploy-model","priority":1}]
 }' "$BASE/api/v1/lanes/deploy-model" > /dev/null
 CLIENT_PLAIN=$(curl -s "${A[@]}" -X POST -d '{"name":"deploy-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')
 [[ -n "$CLIENT_PLAIN" ]] || { echo "FAIL: 未取得客户端密钥"; exit 1; }

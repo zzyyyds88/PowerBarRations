@@ -290,7 +290,7 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
           {rows.length > 0 ? (
             <div className='space-y-2'>
               <div className='grid grid-cols-[1fr_1fr_auto] gap-2 text-sm font-medium'>
-                <div>{t('Request Model Name')}</div>
+                <div>{t('Model name')}</div>
                 <div>{t('Upstream Model Name')}</div>
                 <div className='w-10' />
               </div>
@@ -352,14 +352,12 @@ export function ModelMappingEditor(props: ModelMappingEditorProps) {
         </TabsContent>
         <TabsContent value='json' className='space-y-2'>
           <p className='text-muted-foreground text-sm'>
-            {t(
-              'JSON keys are request model names; values are upstream model names.'
-            )}
+            {t('JSON keys are model names; values are upstream model names.')}
           </p>
           <JsonCodeEditor
             value={jsonValue}
             onChange={handleJsonChange}
-            placeholder='{"request-model": "upstream-model"}'
+            placeholder='{"model-name": "upstream-model"}'
             disabled={props.disabled}
             className={jsonError ? 'border-destructive' : undefined}
             aria-invalid={Boolean(jsonError)}

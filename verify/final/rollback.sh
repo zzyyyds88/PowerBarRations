@@ -75,7 +75,7 @@ check "切流前旧端点正常服务" "$BEFORE_OLD" 'pong from fake upstream'
 ADMIN_KEY=$(curl -s $H -d '{"password":"'"$PBR_PW"'"}' "$NEW/api/v1/setup" | jget 'd["admin_key"]')
 A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
 curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$OLD_PORT"'","key":"'"$GOOD_KEY"'","models":["migrated-model"],"enabled":true}' "$NEW/api/v1/channels/legacy-vendor" > /dev/null
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","members":[{"channel":"legacy-vendor","upstream_model":"migrated-model","priority":1}]}' "$NEW/api/v1/lanes/migrated-model" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","members":[{"channel":"legacy-vendor","model":"migrated-model","priority":1}]}' "$NEW/api/v1/lanes/migrated-model" > /dev/null
 # 客户端凭据保持"值不变"（迁移原则）：下游零改动
 CLIENT_KEY=$(curl -s "${A[@]}" -X POST -d '{"name":"downstream","key":"'"$GOOD_KEY"'"}' "$NEW/api/v1/keys" | jget 'd["key"]' 2>/dev/null || true)
 if [[ -z "$CLIENT_KEY" || "$CLIENT_KEY" == "None" ]]; then

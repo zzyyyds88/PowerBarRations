@@ -630,7 +630,7 @@ def main() -> int:
             st, _b = http_request(base + "/api/v1/lanes/flow-model", method="PUT", token=admin_key,
                                   body=json.dumps({
                                       "enabled": True, "mode": "failover",
-                                      "members": [{"channel": "flow-channel", "priority": 10}],
+                                      "members": [{"channel": "flow-channel", "model": "flow-model", "priority": 10}],
                                   }).encode())
             if st in (200, 201):
                 lane_ok = True

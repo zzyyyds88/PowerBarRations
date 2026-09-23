@@ -17,15 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /*
-车道成员编排器（ui-spec §6.3、ADR 0006）：新建车道与编辑成员链共用。
+车道成员编排器（ui-spec §6.3、ADR 0008）：新建车道与编辑成员链共用。
 
 两栏布局（对齐线上 octopus 分组编辑器）：
 - 左栏「添加成员」：从 GET /api/v1/channels 拉全部启用渠道的 models，按渠道折叠，
   带搜索；点某个模型即把「该渠道 × 该模型」加入右栏。**没有「自动添加」**。
-- 右栏「成员（顺序）」：已选成员有序列表，上移/下移、删除、改上游真名、清空。
+- 右栏「成员（顺序）」：已选成员有序列表，上移/下移、拖拽、删除、启停开关、清空。
 
-成员唯一键 = (渠道, 上游真名)：同一渠道可在一条车道内出现多次。路由键可任意命名，
-无需任何渠道声明过它；候选为空时仍可保存（只要已选成员非空）。
+成员唯一键 = **(渠道, 所选模型)**：同一渠道的不同模型可在一条车道内出现多次，
+同一模型不可重复（左栏对已加入的 (渠道, 模型) 直接禁用）。成员**只存所选模型**，
+上游真名一律由 `渠道 model_mapping[所选模型] ?? 所选模型` 派生——成员行只读展示
+解析结果，**不再提供成员级改名输入框**。路由键可任意命名，无需任何渠道声明过它；
+候选为空时仍可保存（只要已选成员非空）。
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -75,26 +78,29 @@ import {
   memberKey,
   savePBRFailover,
   type PBRLaneMode,
-  type PBRChannelCatalogEntry,
   type PBRMemberOverrides,
 } from '../api'
-import { defaultUpstreamForModel } from '../lib/lane-member-upstream'
+import {
+  isModelDeclaredByChannel,
+  resolvedUpstreamForMember,
+} from '../lib/lane-member-upstream'
 import { priorityForIndex, reorderMembers } from '../lib/reorder-members'
 
 /** 编排器里的一个已选成员（草稿态）。 */
 export interface ComposerMember {
   /**
-   * 稳定标识：仅用于 React key / 拖拽身份。不能把 channel 或 upstreamOverride
-   * 拼进 key——那样每次改名都会重挂载行、输入框失焦（实测 bug）。
+   * 稳定标识：仅用于 React key / 拖拽身份。不能把 channel 或 model 拼进 key
+   * ——同一渠道可含多个模型，拼进去会让行身份随选择变化漂移。
    * 也**不得**用后端的 `member_id`：成员写入是整体替换，保存一次全部重算
    * （api-spec §5.7）。
    */
   id: string
   channel: string
-  /** 成员级显式改名原值；空 = 用渠道映射。 */
-  upstreamOverride: string
-  /** 渠道映射/路由键解析出的上游真名，仅展示。 */
-  resolvedUpstream: string
+  /**
+   * 成员**所选**模型（成员身份与唯一键的一半，保存写回用它）。
+   * 必须来自渠道声明的模型清单——它是成员表唯一落库的模型字段。
+   */
+  model: string
   /** 成员别名（可选，仅用于 manual 的 active_member 取值）。 */
   publicAlias?: string
   /**
@@ -124,45 +130,6 @@ let memberIdSeq = 0
 function nextMemberId(): string {
   memberIdSeq += 1
   return `m${memberIdSeq}`
-}
-
-/** 渠道映射/路由键解析出的展示用上游真名。 */
-function resolveDisplayUpstream(
-  routeKey: string,
-  channelName: string,
-  override: string,
-  catalog: PBRChannelCatalogEntry[]
-): string {
-  const trimmed = override.trim()
-  if (trimmed !== '' && trimmed !== routeKey) return trimmed
-  const channel = catalog.find((c) => c.name === channelName)
-  const mapped = channel?.model_mapping?.[routeKey]
-  if (mapped && mapped.trim() !== '') return mapped.trim()
-  return trimmed !== '' ? trimmed : routeKey
-}
-
-/**
- * 成员最终发给上游的模型名若未被该渠道声明（models 清单或 model_mapping 值
- * 都不含它），返回该名字用于告警提示；已声明返回 null。
- * 车道名未被任何成员渠道声明时，运行期必然 404/503（hermes-lane 实测：
- * 控制台编辑清空成员显式真名后，最终上游回落为车道名，整条车道必挂）。
- */
-function undeclaredUpstream(
-  routeKey: string,
-  member: ComposerMember,
-  catalog: PBRChannelCatalogEntry[]
-): string | null {
-  const final = resolveDisplayUpstream(
-    routeKey,
-    member.channel,
-    member.upstreamOverride,
-    catalog
-  )
-  const channel = catalog.find((c) => c.name === member.channel)
-  if (!channel) return null
-  if (channel.models.includes(final)) return null
-  if (Object.values(channel.model_mapping ?? {}).includes(final)) return null
-  return final
 }
 
 function ModelIcon(props: { name: string }) {
@@ -294,15 +261,13 @@ export function LaneComposer(props: LaneComposerProps) {
     markDirty(next)
   }
 
+  // 左栏禁用判定与 addMember 去重共用同一键：`(渠道, 所选模型)`（ADR 0008）。
+  // 用所选模型而非派生真名——真名会随渠道映射改动漂移，拿它去重会让
+  // "同一模型换了映射"被误判成另一个成员。
   const selectedKeys = useMemo(
     () =>
       new Set(
-        members.map((m) =>
-          memberKey({
-            channel: m.channel,
-            upstream_model: m.upstreamOverride.trim() || m.resolvedUpstream,
-          })
-        )
+        members.map((m) => memberKey({ channel: m.channel, model: m.model }))
       ),
     [members]
   )
@@ -325,19 +290,10 @@ export function LaneComposer(props: LaneComposerProps) {
   }, [catalog, keyword])
 
   const addMember = (channel: string, model: string) => {
-    // 默认上游 = 按渠道 model_mapping 以所选模型为键解析的结果（ADR 0006 §5）：
-    // 有映射写映射右值，无映射写所选模型名。按 (渠道, 上游真名) 去重。
-    const upstream = defaultUpstreamForModel(channel, model, catalog)
-    const key = memberKey({ channel, upstream_model: upstream })
-    if (
-      members.some(
-        (m) =>
-          memberKey({
-            channel: m.channel,
-            upstream_model: m.upstreamOverride.trim() || m.resolvedUpstream,
-          }) === key
-      )
-    ) {
+    // 成员只存"用户点的这个模型"；上游真名不进草稿落库字段，只在展示时派生
+    // （ADR 0008）。去重键 = (渠道, 所选模型)：同一渠道的不同模型仍可多次加入。
+    const key = memberKey({ channel, model })
+    if (members.some((m) => memberKey(m) === key)) {
       return
     }
     markDirty([
@@ -345,13 +301,7 @@ export function LaneComposer(props: LaneComposerProps) {
       {
         id: nextMemberId(),
         channel,
-        upstreamOverride: upstream,
-        resolvedUpstream: resolveDisplayUpstream(
-          routeKey,
-          channel,
-          upstream,
-          catalog
-        ),
+        model,
         // 新增成员一律按启用起草：后端三态对"新建成员省略 enabled"也是启用，
         // 两边口径一致，避免用户以为加进来就是关的。
         enabled: true,
@@ -372,21 +322,6 @@ export function LaneComposer(props: LaneComposerProps) {
     markDirty(next)
   }
 
-  const renameMember = (index: number, value: string) => {
-    const next = [...members]
-    next[index] = {
-      ...next[index],
-      upstreamOverride: value,
-      resolvedUpstream: resolveDisplayUpstream(
-        routeKey,
-        next[index].channel,
-        value,
-        catalog
-      ),
-    }
-    markDirty(next)
-  }
-
   const updateConfig = (key: string, value: number) => {
     setConfig((prev) => ({ ...prev, [key]: value }))
   }
@@ -397,11 +332,11 @@ export function LaneComposer(props: LaneComposerProps) {
         routeKey,
         members.map((m, index) => ({
           channel: m.channel,
-          upstream_model: m.upstreamOverride.trim(),
+          // 写端点成员字段：model 必填；**不发 upstream_model**（服务端派生只读，
+          // 写端点根本不接受该字段，ADR 0008）。
+          model: m.model,
           // 读写闭环（api-spec §4.2 通则）：成员写入是全量替换，草稿里读到的每个
-          // 成员级字段都必须原样带回。此前只发 channel/upstream_model/priority，
-          // 于是"打开编辑再保存"会把全部成员的别名与六键覆盖清空（实测数据丢失），
-          // 并连带打断 manual 的 active_member（按别名匹配）。
+          // 成员级字段都必须原样带回，否则"打开编辑再保存"会把它们清空。
           public_alias: m.publicAlias ?? '',
           priority: priorityForIndex(index, members.length),
           enabled: m.enabled,
@@ -480,14 +415,7 @@ export function LaneComposer(props: LaneComposerProps) {
                   key={model}
                   model={model}
                   added={selectedKeys.has(
-                    memberKey({
-                      channel: channel.name,
-                      upstream_model: defaultUpstreamForModel(
-                        channel.name,
-                        model,
-                        catalog
-                      ),
-                    })
+                    memberKey({ channel: channel.name, model })
                   )}
                   onAdd={() => addMember(channel.name, model)}
                 />
@@ -501,12 +429,12 @@ export function LaneComposer(props: LaneComposerProps) {
 
   const memberOptions = members.map((m) => {
     const alias = m.publicAlias ?? ''
-    const value = alias || `${m.channel}/${m.resolvedUpstream}`
+    // active_member 的标签取 `channel/model`（model = 成员所选模型，ADR 0008）：
+    // 成员身份稳定，不随渠道映射改动漂移（api-spec §4.2）。
+    const value = alias || `${m.channel}/${m.model}`
     return {
       value,
-      label: alias
-        ? `${alias} (${m.channel})`
-        : `${m.channel} / ${m.resolvedUpstream}`,
+      label: alias ? `${alias} (${m.channel})` : `${m.channel} / ${m.model}`,
     }
   })
   // 触发框显示所选成员的标签；找不到匹配项时回退原始值（不静默显示空）。
@@ -682,9 +610,12 @@ export function LaneComposer(props: LaneComposerProps) {
             ) : (
               <div className='space-y-1.5'>
                 {members.map((member, index) => {
-                  const undeclared = undeclaredUpstream(
-                    routeKey,
-                    member,
+                  // 防呆告警（ui-spec §6.3）：成员所选模型不在该渠道声明范围内时
+                  // 行内提示，**不拦截保存**。判据是**所选模型**（渠道 models 或
+                  // model_mapping 左键），不再是解析后的真名。
+                  const undeclared = !isModelDeclaredByChannel(
+                    member.channel,
+                    member.model,
                     catalog
                   )
                   const disabled = !member.enabled
@@ -695,8 +626,7 @@ export function LaneComposer(props: LaneComposerProps) {
                     mode === 'manual' &&
                     disabled &&
                     (activeMember === member.publicAlias ||
-                      activeMember ===
-                        `${member.channel}/${member.resolvedUpstream}`)
+                      activeMember === `${member.channel}/${member.model}`)
                   return (
                     <div
                       key={member.id}
@@ -739,13 +669,25 @@ export function LaneComposer(props: LaneComposerProps) {
                           <div className='truncate font-mono text-xs font-medium'>
                             {member.channel}
                           </div>
+                          <div className='text-muted-foreground truncate font-mono text-xs'>
+                            {member.model}
+                          </div>
+                          {/* 上游真名只读派生（ADR 0008）：成员不落库真名，改渠道
+                              model_mapping 即对所有成员生效。这里**渲染期**按当前渠道
+                              目录派生（不是加入时算一次），所以编辑器开着时改映射也能
+                              立即看到新真名。 */}
                           <div className='text-muted-foreground truncate text-xs'>
-                            {t('Resolved upstream')}: {member.resolvedUpstream}
+                            {t('Resolved upstream')}:{' '}
+                            {resolvedUpstreamForMember(
+                              member.channel,
+                              member.model,
+                              catalog
+                            )}
                           </div>
                         </div>
                         {/* 成员启停开关：复用既有 Switch（web/AGENTS 强制检索复用）。
-                            可访问名带渠道 + 上游真名：同一渠道可在一条车道里出现多次
-                            （ADR 0006），只用渠道名会让多行开关重名、无法定位。
+                            可访问名带渠道 + 所选模型：同一渠道可在一条车道里出现多次
+                            （ADR 0008），只用渠道名会让多行开关重名、无法定位。
                             分隔符用 " · " 而非 "/"：i18next 会把插值里的斜杠转义成
                             `&#x2F;`，可访问名随之变形（实测：测试与读屏都取不到原值）。 */}
                         <div className='flex shrink-0 items-center gap-1'>
@@ -753,7 +695,7 @@ export function LaneComposer(props: LaneComposerProps) {
                             size='sm'
                             checked={member.enabled}
                             aria-label={t('Member enabled for {{channel}}', {
-                              channel: `${member.channel} · ${member.resolvedUpstream}`,
+                              channel: `${member.channel} · ${member.model}`,
                             })}
                             onCheckedChange={(checked) =>
                               toggleMemberEnabled(index, checked)
@@ -765,17 +707,6 @@ export function LaneComposer(props: LaneComposerProps) {
                             </span>
                           )}
                         </div>
-                        <Input
-                          className='h-7 w-32 shrink-0 text-xs'
-                          aria-label={t('Upstream model for {{channel}}', {
-                            channel: member.channel,
-                          })}
-                          placeholder={t('Use channel mapping')}
-                          value={member.upstreamOverride}
-                          onChange={(event) =>
-                            renameMember(index, event.target.value)
-                          }
-                        />
                         <Button
                           type='button'
                           size='icon'
@@ -823,11 +754,11 @@ export function LaneComposer(props: LaneComposerProps) {
                           )}
                         </p>
                       )}
-                      {undeclared !== null && (
+                      {undeclared && (
                         <p className='mt-1.5 text-xs text-amber-600 dark:text-amber-500'>
                           {t(
                             'Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.',
-                            { channel: member.channel, model: undeclared }
+                            { channel: member.channel, model: member.model }
                           )}
                         </p>
                       )}

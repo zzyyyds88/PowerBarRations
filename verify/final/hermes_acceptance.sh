@@ -81,7 +81,7 @@ A=(-H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json')
 for ch in hermes-a hermes-b; do
   curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["'"$LANE"'"],"enabled":true}' "$BASE/api/v1/channels/$ch" > /dev/null
 done
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"hermes-a","upstream_model":"'"$LANE"'","priority":20},{"channel":"hermes-b","upstream_model":"'"$LANE"'","priority":10}]}' "$BASE/api/v1/lanes/$LANE" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"hermes-a","model":"'"$LANE"'","priority":20},{"channel":"hermes-b","model":"'"$LANE"'","priority":10}]}' "$BASE/api/v1/lanes/$LANE" > /dev/null
 # hermes-spec §2：ClientKey 默认可只允许 <hermes-lane>。
 CLIENT_PLAIN=$(curl -s "${A[@]}" -X POST -d '{"name":"hermes-client","lane_policy":{"mode":"allow","allow_lanes":["'"$LANE"'"],"deny_lanes":[]}}' "$BASE/api/v1/keys" | jget 'd["key"]')
 [[ -n "$CLIENT_PLAIN" ]] || { echo "FAIL: 未取得客户端密钥"; exit 1; }
@@ -142,7 +142,7 @@ HEALTH=$(curl -s "${A[@]}" "$BASE/api/v1/lanes/$LANE/health")
 assert_json "健康快照为 RFC3339/null 形状（api-spec §6.5）" "$HEALTH" "all(('cooldown_until' not in m) or m['cooldown_until'] is None or isinstance(m['cooldown_until'],str) for m in d['members'])"
 assert_json "affinity 为对象或 null（不再是 affinity_until）" "$HEALTH" "'affinity' in d and 'affinity_until' not in d"
 # 通过管理 API 交换成员顺序（hermes-b 升到首位）。
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"hermes-b","upstream_model":"'"$LANE"'","priority":20},{"channel":"hermes-a","upstream_model":"'"$LANE"'","priority":10}]}' "$BASE/api/v1/lanes/$LANE" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":30,"member_stream_first_event_timeout_seconds":15,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"hermes-b","model":"'"$LANE"'","priority":20},{"channel":"hermes-a","model":"'"$LANE"'","priority":10}]}' "$BASE/api/v1/lanes/$LANE" > /dev/null
 SWAP=$(curl -s -D "$WORK/swap.headers" -X POST "$BASE/v1/chat/completions" -H "Authorization: Bearer $CLIENT_PLAIN" -H 'Content-Type: application/json' -d '{"model":"'"$LANE"'","messages":[{"role":"user","content":"hi"}]}')
 SWAP_SERVED=$(grep -i '^x-served-by:' "$WORK/swap.headers" | tr -d '\r' | sed 's/^[^:]*: //')
 check "改序后由 hermes-b 服务" "$SWAP_SERVED" 'channel=2:hermes-b'

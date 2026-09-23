@@ -80,9 +80,9 @@ done
 # 死渠道：指向一个没人监听的端口，用于验证"连接失败"分类
 curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$DEAD_PORT"'","key":"sk-dead","models":["fi-model"],"enabled":true}' "$BASE/api/v1/channels/channel-dead" > /dev/null
 # 双成员车道：非流式超时 1s、冷却 1s
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-a","upstream_model":"fi-model","priority":20},{"channel":"channel-b","upstream_model":"fi-model","priority":10}]}' "$BASE/api/v1/lanes/fi-model" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-a","model":"fi-model","priority":20},{"channel":"channel-b","model":"fi-model","priority":10}]}' "$BASE/api/v1/lanes/fi-model" > /dev/null
 # 单成员车道（含死渠道兜底），用于"全挂快抛"
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-a","upstream_model":"solo-model","priority":1}]}' "$BASE/api/v1/lanes/solo-model" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-a","model":"solo-model","priority":1}]}' "$BASE/api/v1/lanes/solo-model" > /dev/null
 # 收紧熔断阈值，使"打开 → 半开 → 复通"能在验收时长内跑完
 curl -s "${A[@]}" -X PUT -d '{"circuit_failure_threshold":1,"circuit_open_seconds":2,"circuit_max_open_seconds":10}' "$BASE/api/v1/system/options" > /dev/null
 CLIENT=$(curl -s "${A[@]}" -X POST -d '{"name":"fault-client"}' "$BASE/api/v1/keys" | jget 'd["key"]')
@@ -148,7 +148,7 @@ control '{"model":"fi-model","status":200,"body":""}'
 echo
 echo "=== C6 连接失败（渠道指向无人监听的端口）==="
 reset_lane fi-model
-curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-dead","upstream_model":"dead-model","priority":30},{"channel":"channel-b","upstream_model":"fi-model","priority":10}]}' "$BASE/api/v1/lanes/dead-model" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":1,"member_stream_first_event_timeout_seconds":1,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-dead","model":"dead-model","priority":30},{"channel":"channel-b","model":"fi-model","priority":10}]}' "$BASE/api/v1/lanes/dead-model" > /dev/null
 control '{"model":"dead-model","status":200}'
 CODE=$(chat '{"model":"dead-model","messages":[{"role":"user","content":"hi"}]}')
 H6=$(health dead-model)
