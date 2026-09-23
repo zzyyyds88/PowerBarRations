@@ -201,30 +201,6 @@ export function useCommonLogsColumns(
       },
       meta: { contentSized: true },
     })
-
-    // 用户列按 new-api 形态恢复（ui-spec §6.6：时间/类型/渠道/用户/令牌/…），
-    // 仅管理员可见（self view 隐藏，与渠道列同策略）。
-    columns.push({
-      id: 'user',
-      header: t('User'),
-      accessorFn: (row) => row.username ?? '',
-      cell: function UserCell({ row }) {
-        const { sensitiveVisible } = useUsageLogsContext()
-        const log = row.original
-        if (!isDisplayableLogType(log.type)) return null
-
-        const username = log.username
-        if (!username) return null
-
-        const displayName = sensitiveVisible ? username : '••••'
-        return (
-          <div className='max-w-[140px] truncate [font-family:var(--font-body)] text-sm'>
-            {displayName}
-          </div>
-        )
-      },
-      meta: { contentSized: true },
-    })
   }
 
   columns.push(
