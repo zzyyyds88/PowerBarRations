@@ -35,11 +35,11 @@
 3. 都没有 → 与"全部成员耗尽"**同形**返回 `503 No available channel for model <X>`（对"没建车道"与"上游全挂"不做区分，下游无需分支）。
 
 **配置入口**（[ADR 0006](adr/0006-lane-free-member-composition.md)）：
-- 路由页以**卡片网格**列出全部车道，新建/编辑进入**两栏编排器**：左栏「渠道 → 模型」选择器（数据源 = `GET /api/channels` 各渠道的 `models`，带搜索），右栏已选成员有序列表（排序 / 删除 / 改上游真名 / 清空）。
+- 路由页以**卡片网格**列出全部车道，新建/编辑进入**两栏编排器**：左栏「渠道 → 模型」选择器（数据源 = `GET /api/channels` 各渠道的 `models`，带搜索），右栏已选成员有序列表（排序 / 启停 / 删除 / 改上游真名 / 清空）。
 - **成员候选 = 任意启用渠道的任意已声明模型**：可跨渠道、跨模型组链，不要求成员声明了该路由键，**同一渠道可出现多次**（成员唯一键 = `(渠道, 上游真名)`）；路由键可任意命名，无需任何渠道声明过它。**不提供「自动添加」**，成员全部人工挑选。
 - `GET /api/routes/{model}` 的 `candidates` 语义**降级为推荐项**（声明或 `model_mapping` 映射了该键、且不在成员链里的渠道），只供界面高亮/排序，**不是可选范围限制**。
 - **渠道声明 `models` 的增删绝不自动建车道**（重申 ADR 0005）：新增模型后仍需人工显式建车道，未建一律 503。
-- 车道作为可选的高级层仍完整保留：两种模式（`failover` / `manual`，后者用 `active_member` 指定）、六键、成员级覆盖、别名。
+- 车道作为可选的高级层仍完整保留：两种模式（`failover` / `manual`，后者用 `active_member` 指定）、六键、成员级覆盖、别名、成员级启停（§1.2）。
 
 > 第 3 条是刻意的：让"模型名写错"与"上游全挂"对下游呈现同一错误形态，下游无需分支。
 
@@ -65,15 +65,19 @@ type LaneMember struct {
     UpstreamModel string // 可选：成员级改名覆盖；留空则用渠道 ModelMapping，再退回路由键
     PublicAlias   string
     Priority      int    // 车道内顺序：数字大者优先
+    Disabled      bool   // 人工停用（可逆）：true = 不参与选路，但成员仍留在链里
     Overrides     map[string]int // 成员级六键覆盖
 }
 ```
 
+- **成员人工停用的存储口径（单处规范）**：字段是 `Disabled bool`（**语义取反**，零值 = 启用），不是 `Enabled bool`。GORM 更新时忽略零值，给布尔开关加 `default` 会让"显式关闭"被默认值吃掉；而直接用 `Enabled bool` 会让存量行迁移后全为 `false`，等于**所有成员被静默停用、全站 503**。因此：**禁止给它加 gorm `default`，禁止用 `*bool` 落库**；列由 `AutoMigrate` 自动添加，**不需要迁移脚本**，存量行天然解读为"启用"。（同一约束已写在 `Lane.Enabled` 的字段注释上——这里不是新规矩，是复用。）
+- **解析态一律用正向字段**：`RouteMember.Enabled = !LaneMember.Disabled`，由车道解析入口（`resolveExactRoute`）与控制台展示解析（`displayMembersForLane`）填充；**选路与展示一律读正向 `Enabled`，不得在下游再次取反**。
+- **停用 ≠ 删除**：被关闭的成员**仍留在成员链里**，顺序、别名、成员级六键覆盖一律不动——需求是"可逆的临时停用"。停用**不写冷却、不改变熔断器的三态与计数**（§5、§6），重新打开即立即恢复参与选路。开关只约束**选路**这一件事：管理面的逐成员探活仍覆盖被关闭成员（它不经选路、不写运行态，api-spec §6.4），控制台与导出同样照实呈现。
 - **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
 - **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。
 - **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则成员级显式改名会被渠道映射悄悄反向覆盖（优先级倒挂）。非 PBR 链路（渠道测试直连指定渠道）不受此约束。
 - 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。成员唯一键为 `(渠道, 上游真名)`，同一渠道可在一条车道内多次出现。
-- 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。**
+- 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。** 被人工停用（`Disabled`）的成员在**两种模式下都不被选中**（§2.1、§2.2）。
 
 ### 1.3 进程内运行态（每车道一份，全部请求共享）
 
@@ -94,6 +98,10 @@ type LaneRuntime struct {
 - **进程内、重启清空**，与线上一致；README 必须写明。
 - 成员被删除或渠道被删除时，清理其残留状态（参考线上 `groupRouteLocked` 的清理逻辑）。
 - 状态经 SSE 推送给控制台（§7）。
+- **成员停用态不在运行态里**：`LaneRuntime` 没有"停用"这一项，人工关闭**不写** `Cooldowns`、**不写** `Circuits`、也不为此新增运行态字段——它只是配置态，随解析快照走（§1.2 `RouteMember.Enabled`）。这也是"关闭再打开一个成员不背冷却"的结构保证。
+- **快照重建契约（约束，非风险提示）**：解析快照的内容签名**必须显式包含每一个影响选路的成员字段**，新增字段（含本规格里成员的人工停用态）一律**显式入签名**，并应有单测断言"只改该字段就会让签名变化"。
+  - 为什么要单列这条：签名里**已经**含车道版本（`Lane.UpdatedAt`，Unix **秒级**）与成员主键，而保存成员是"删光整条链再整体重插、主键重新自增"（§1.2、design §7.7），所以每次保存成员链时这两项必然变化——新字段即使漏入签名，通常也会被这层副作用带着重建快照，**不会**表现为"改了没反应"。
+  - 但签名的契约是"只含影响选路的字段"，靠主键 churn 与秒级时间戳驱动快照重建属于**隐式耦合**：同一秒内的两次保存即失效，且渠道级改动、运行态重置等路径根本不经过成员重插。因此按契约规定，不按事故风险规定。
 
 ---
 
@@ -102,15 +110,18 @@ type LaneRuntime struct {
 ### 2.1 manual
 
 - 使用人工指定的 `active_member`。
-- 若该成员被禁用，**直接返回无可用**（不静默换人）——manual 的语义是"就要这一个"。
-- 不参与冷却/亲和（但仍过熔断：熔断打开时返回无可用，§5）。
+- 若该成员的**渠道被停用或已不存在**，**直接返回无可用**（不静默换人）——manual 的语义是"就要这一个"。
+- 若 `active_member` 指向的成员被**人工停用**（§1.2 `Disabled`），同样**返回"无可用"、不静默换人**，按 §4.2 快抛 503；该情形留痕为 `disabled`（§9）。
+- 不参与冷却/亲和（但仍过熔断：熔断打开时返回无可用，§5）。加开关时**不要把冷却逻辑一并并进 manual**——manual 不参与冷却是既有语义（§5.3 的"可选"合取在 manual 下不取冷却项）。
+- 停用判定**先于**冷却/熔断判定：人工关闭是配置态结论，不需要、也不允许靠运行态推断得出（§9）。
 
 ### 2.2 failover（默认）
 
 按线上算法照搬：
 
-1. 亲和期未到且 `CurrentMemberID != 0` → **沿用当前成员**（不提前探测已恢复的更靠前成员）。
+1. 亲和期未到且 `CurrentMemberID != 0` → **沿用当前成员**（不提前探测已恢复的更靠前成员）。**前置条件额外要求该成员未被人工关闭**（§1.2）：当前成员被关闭即**立即失效**，按顺序重选（不是"等亲和到期"）。
 2. 否则按成员顺序（`priority` 降序）遍历成员：
+   - 该成员被人工关闭（§1.2 `Disabled`）→ **跳过并留痕 `disabled`（§9）**。此判定排在后续冷却/熔断判定**之前**，且**绝不占用探测槽**——探测槽只服务"运行态暂时不可选、可能自己恢复"的成员，人工关闭不在此列，否则一个关着的成员会把每轮唯一的探测机会吃掉；
    - 该成员处于冷却且未到期 → 跳过；
    - 该成员冷却**已到期** → 若 `ProbeMemberID` 已被占用则跳过；否则占用探测位并返回该成员（**只放行一个探测请求**，避免全部请求同时涌向尚未恢复的成员）；
    - 探测位**按请求归属**：只有真正占用了该槽的那次请求（在其失败换人、不换人收尾、或整个请求收尾时）可以归还它；未占槽的并发请求归还槽是禁止的，否则"单探测"在并发下失效；
@@ -123,7 +134,7 @@ type LaneRuntime struct {
 - `weighted`（按成员 `weight` 加权随机）与 `round_robin`（环形轮询）**已删除**，成员 `weight` 字段一并删除（删除理由见 design-v1 §7.2；与线上的差异总表见 §10）。
 - 兼容：`PUT /api/lanes/{name}` 遇到 `mode` 不在 `failover|manual` 时返回既有 `422 invalid_mode`；导入旧配置里的 `weighted`/`round_robin` 与成员 `weight` 会被忽略（不报错）。
 
-> 两种现存模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同。
+> 两种现存模式**共用**冷却、熔断、日志、超时基础设施，仅"选谁"这一步不同；两者也共用同一条**停用判定**（§1.2、§2.1、§2.2）——切换开关本身不产生冷却记录、不改变熔断器的三态与计数。
 
 ---
 
@@ -213,6 +224,7 @@ type LaneRuntime struct {
 - **冷却**（六键 `member_cooldown_seconds`）= 成员尝试预算耗尽后的短期回避；
 - **熔断** = 基于历史失败率的长期回避。
 - 二者作用于同一份"该成员当前是否可选"的判断：`可选 = 不在冷却 && 熔断 != open`。实现上可统一为一个 `MemberAvailability` 查询，避免两套逻辑打架。
+- **成员人工停用（§1.2）是第三个回避来源，但不同层**：它是配置态，不在这份"可选"判断里，也不得被并进去——该判断只能看见冷却与熔断两份运行态表，把配置态开关塞进去会让运行态函数反向依赖车道配置，并把"我关的"误报成"故障"。停用判定放选路调用方、排在可用性查询之前（§2.1、§2.2、§9）。
 
 ---
 
@@ -228,8 +240,11 @@ type LaneRuntime struct {
 
 ## 7. 运行态对外的暴露
 
-- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind`，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无退避/无亲和为 `null`。
-- `GET /api/route-events`（SSE）→ 建连即推全量快照，之后每 ~1s 推一帧（形状对齐线上 `RouteState`），供控制台的"成员状态"实时显示；断线由客户端指数退避重连（1s 起翻倍、封顶 30s、带抖动），重连即收到全量快照。
+- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind` / **`enabled`（布尔，恒回；§1.2 的人工停用态，被停用为 `false`。API 面一律正向命名，取反只存在于 Go 存储字段，见 api-spec §4.2）**，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无退避/无亲和为 `null`。
+- **人工关闭的成员 `available=false`**（它当前确实不可选），但其 `circuit` / `cooldown_until` / `consecutive_failures` 等运行态字段**照常如实给出，不因人工关闭而归零或省略**——排障时要能同时看到"我把它关了"和"关之前它是什么状态"。`enabled` 与 `available` 是两件事：`available=false` 不蕴含任何故障结论，`enabled=false` 才说明是人工关的。
+- **`GET /api/models` 的聚合可辨识性**：`degraded` 的判定**保持既有定义不变**——成员总数 > 0 且**当前可选成员数 == 0**（可选 = 运行态可选，即上面 `available` 的口径）。另**新增 `disabled_member_count`**（被关闭成员数），使"全部成员被人工关闭"与"上游全挂"这两种 `degraded=true` 可区分。"渠道存在且启用"口径的 `available_member_count` 计数**必须同时排除被关闭成员**。
+- 车道全部成员被关闭时：模型**仍在 `/api/models` 清单里列出**（不隐藏、不删除），模型面调用按 §4.2 返回 503——与"上游全挂"**同形**，**不新增第三种错误语义**（§1.1 第 3 条的取向不变）。
+- `GET /api/route-events`（SSE）→ 建连即推全量快照，之后每 ~1s 推一帧（形状对齐线上 `RouteState`，成员形状与上面的 health 快照**同一个结构体**，故 `enabled` 随成员一并给出，不需要第二套口径），供控制台的"成员状态"实时显示；断线由客户端指数退避重连（1s 起翻倍、封顶 30s、带抖动），重连即收到全量快照。
 - 控制台另有 30s 轮询兜底（`GET /api/lanes/{name}/health`，对齐线上 `refetchInterval`）：SSE 快照新鲜（10s 窗口）时 SSE 主导渲染、轮询结果只对账补齐 SSE 缺失的车道；SSE 断开或过期时轮询主导。SSE 仅作加速，不作为唯一数据源。
 
 ---
@@ -255,7 +270,11 @@ type LaneRuntime struct {
   "error_kind": "soft_rate_limit", "duration_ms": 800, "msg": "429 too many requests" }
 ```
 
-`status ∈ success | failed | cooldown | circuit_break | skipped`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）。
+`status ∈ success | failed | cooldown | circuit_break | skipped | disabled`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）。
+
+- `disabled` = 该成员被**人工停用**（§1.2）而跳过，与 `cooldown` / `circuit_break` / `skipped` **并列且必须可区分**：排障时要能一眼分清"是运维关的"还是"上游出故障了"，**禁止**用 `skipped` 或 `cooldown` 顶替。
+- **`disabled` 是配置态结论，因此原因必须由选路调用方显式给出**：运行态的"该成员为什么被跳过"推断只能看见熔断表与冷却表两张表，拿不到车道配置（§1.3、§5.3）。所以谁判定出"被人工关闭"，谁就负责把原因连同跳过动作一起交出；**禁止**把配置态开关并入运行态的可用性/原因推断逻辑——那会让运行态函数反向依赖车道配置，并把"人工关的"误报成一种故障。
+- 与运行态留痕同一条"同一成员在同一请求内只记一次"的去重口径，避免多轮重试把链撑成噪声。
 
 `canceled`（客户端断开/上下文取消）按 §4.1 **不换人、不冷却**，但该次尝试仍会在 attempts 链留一条 `failed(canceled)` 记录（`error_kind="canceled"`），用于解释"请求为什么在这里结束"。
 
@@ -270,6 +289,7 @@ type LaneRuntime struct {
 | 熔断器 | 无 | 三态 + 半开 + 指数退避 |
 | 模式 | manual / failover | failover / manual（`weighted`/`round_robin` 已删） |
 | 成员改名 | 不支持（无别名列） | `upstream_model` + `public_alias` |
+| 成员停用 | 无（启停只在渠道级） | **成员级人工停用**（`Disabled`，§1.2）：配置态、不写冷却、不动熔断、不占探测槽，留痕 `disabled`（§9） |
 | 成员候选范围 | 任选任意渠道模型（`ChannelModel`） | **同样任选任意渠道的任意模型**（ADR 0006）；`candidates` 仅作推荐 |
 | 运行态粒度 | 分组 | 车道（同） | 
 | 客户端身份校验 | `supported_models` 白名单（默认拒） | 令牌默认放行 + 显式拒绝（token-spec） |
