@@ -48,8 +48,17 @@ export interface LaneMemberHealth {
   current: boolean
   /** 探测占用中（半开探测）。 */
   probing: boolean
-  /** 当前是否可被选中（未冷却、熔断非 open）。 */
+  /** 当前是否可被选中（未冷却、熔断非 open，且未被人工停用）。 */
   available: boolean
+  /**
+   * 该成员是否参与选路（配置态人工开关，恒回；api-spec §6.5）。
+   *
+   * 与 `available` 是两件事：`available=false` 不蕴含任何故障结论（可能只是冷却），
+   * 只有 `enabled=false` 才说明"是运维关的"。被关闭成员的 `circuit` /
+   * `cooldown_until` / `consecutive_failures` 仍照实给出，所以排障时要先看这个
+   * 字段才能分清"我关的"与"上游挂了"。字段缺席按"参与选路"处理（老后端兼容）。
+   */
+  enabled?: boolean
 }
 
 /** 车道亲和（api-spec §6.5 目标形状：对象 + until RFC3339，可为 null）。 */

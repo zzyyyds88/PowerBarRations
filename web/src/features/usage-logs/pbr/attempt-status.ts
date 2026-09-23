@@ -18,13 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { PBRAttempt } from './pbr-logs-api'
 
-/** attempts 状态 → 展示色（routing-spec §9：区分冷却/熔断/跳过）。 */
+/** attempts 状态 → 展示色（routing-spec §9：区分冷却/熔断/跳过/人工停用）。 */
 const ATTEMPT_STATUS_CLASSES: Record<string, string> = {
   success: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
   failed: 'bg-destructive/15 text-destructive',
   cooldown: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   circuit_break: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
   skipped: 'bg-muted text-muted-foreground',
+  // 人工停用（配置态，非故障）：用与 cooldown（琥珀）/circuit_break（紫）都不同的
+  // 中性灰蓝，避免被误读成"上游出故障"（routing-spec §9 要求并列且可区分）。
+  disabled: 'bg-slate-500/15 text-slate-600 dark:text-slate-300',
 }
 
 export function attemptStatusClass(status: string): string {
@@ -34,7 +37,10 @@ export function attemptStatusClass(status: string): string {
 /** 是否是需要解释"为什么没用它"的跳过类状态。 */
 export function isSkipStatus(status: string): boolean {
   return (
-    status === 'cooldown' || status === 'circuit_break' || status === 'skipped'
+    status === 'cooldown' ||
+    status === 'circuit_break' ||
+    status === 'skipped' ||
+    status === 'disabled'
   )
 }
 

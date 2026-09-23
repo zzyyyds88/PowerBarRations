@@ -50,12 +50,23 @@ export interface PBRModelSummary {
   health_member_count?: number
   /** explicit 车道：所有成员当前都不可选（全冷却/熔断）时为 true。 */
   degraded?: boolean
+  /**
+   * 车道存在时：成员链里被**人工停用**（成员 `enabled=false`）的成员数。
+   * 用来把"我自己关掉的"与"上游挂了的"分开：`degraded && disabled_member_count
+   * === member_count` 是"成员全被我关了"（api-spec §5.7、ui-spec §6.3）。
+   */
+  disabled_member_count?: number
 }
+
+/** 成员级六键覆盖（六个可空数值，缺席 = 继承车道，api-spec §4.2）。 */
+export type PBRMemberOverrides = Record<string, number>
 
 /** GET /api/v1/routes/{model} 返回的成员。 */
 export interface PBRRouteMember {
   channel_id: number
   channel: string
+  /** 该渠道是否启用（供界面标灰，与"成员被人工停用"是两件事）。 */
+  channel_enabled?: boolean
   /** 解析后的上游真名（渠道映射/成员覆盖/路由键之一）。 */
   upstream_model: string
   /** 成员级显式改名原值；为空表示"用渠道映射"。 */
@@ -63,7 +74,16 @@ export interface PBRRouteMember {
   public_alias?: string
   /** 车道内顺序：数字大者优先（保存时按数组位置生成）。 */
   priority: number
+  /**
+   * 成员当前库 id，仅供排障与审计定位。**不承诺稳定**（成员写入是整体替换，
+   * 保存一次所有 member_id 都会变），因此禁止用作 React key 或拖拽身份
+   * （api-spec §5.7）——行标识一律用前端自有的草稿 id。
+   */
   member_id?: number
+  /** 成员级人工停用开关（恒回，含 false；false = 不参与选路，api-spec §4.2）。 */
+  enabled?: boolean
+  /** 成员级六键覆盖，**恒回**，无覆盖时为 `{}`（api-spec §5.7）。 */
+  overrides?: PBRMemberOverrides
 }
 
 export interface PBRRouteDetail {
@@ -170,9 +190,23 @@ export function resolveUpstreamModel(
 }
 
 /** GET /api/v1/lanes 的精简项：车道名 + 有序成员（成员数组顺序即故障切换顺序）。 */
+export interface PBRLaneSummaryMember {
+  channel: string
+  upstream_model: string
+  /** 成员别名（可选）。后端**已在返回**，此前前端未声明、未消费（api-spec §5.7）。 */
+  public_alias?: string
+  /** 该渠道是否启用（供卡片标灰；与"成员被人工停用"是两件事）。 */
+  channel_enabled?: boolean
+  /**
+   * 成员是否参与选路（恒回）。`false` = 被人工停用，卡片标灰（ui-spec §6.3）。
+   * 注意与 `PBRLaneSummary.enabled`（车道级停用）同名不同层级（api-spec §5.7）。
+   */
+  enabled?: boolean
+}
+
 export interface PBRLaneSummary {
   name: string
-  members: { channel: string; upstream_model: string }[]
+  members: PBRLaneSummaryMember[]
   /** 渠道已不存在的悬空成员数（历史数据；可用「清理悬空成员」修复）。 */
   orphan_member_count: number
 }
@@ -203,7 +237,7 @@ export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
     items?: {
       name: string
       orphan_member_count?: number
-      members?: { channel: string; upstream_model: string }[]
+      members?: PBRLaneSummaryMember[]
     }[]
   }>('/api/v1/lane-summaries')
   return (res.data.items ?? []).map((lane) => ({
@@ -212,6 +246,10 @@ export async function listPBRLaneSummaries(): Promise<PBRLaneSummary[]> {
     members: (lane.members ?? []).map((m) => ({
       channel: m.channel,
       upstream_model: m.upstream_model,
+      public_alias: m.public_alias,
+      channel_enabled: m.channel_enabled,
+      // 字段缺席按"参与选路"处理：老后端不返回时不得把成员误标成已停用。
+      enabled: m.enabled !== false,
     })),
   }))
 }
@@ -224,12 +262,26 @@ export async function getPBRRoute(model: string): Promise<PBRRouteDetail> {
   return res.data
 }
 
-/** 成员链编辑提交项。upstream_model 留空 = 用渠道映射。 */
+/**
+ * 成员链编辑提交项。upstream_model 留空 = 用渠道映射。
+ *
+ * **读写闭环（api-spec §4.2 通则，强制）**：成员写入是**全量替换**（先删光再重插），
+ * 所以草稿里读到的每个成员级字段都必须在保存时原样带回，否则一次控制台保存就会
+ * 把它们清空——`upstream_override` / `public_alias` / `overrides` 都因此丢过数据。
+ * `enabled` 是三态：省略 = 新建成员启用、既有成员保留原值，**绝不能**把"未读到"
+ * 当成 `false`（那会把整条成员链关掉）。
+ */
 export interface PBRMemberInput {
   channel: string
   upstream_model?: string
+  /** 成员别名；空串 = 无别名。不带上会被全量替换清空。 */
+  public_alias?: string
   /** 车道内顺序：数字大者优先；数组位置即顺序。 */
   priority: number
+  /** 人工停用开关（三态：省略 = 新建启用 / 既有保留原值）。 */
+  enabled?: boolean
+  /** 成员级六键覆盖；不带上会被全量替换清空。 */
+  overrides?: PBRMemberOverrides
 }
 
 export type PBRLaneMode = 'failover' | 'manual'

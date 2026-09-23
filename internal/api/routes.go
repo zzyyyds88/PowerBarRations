@@ -36,6 +36,12 @@ func ListModels(c *gin.Context) {
 			"member_count":           s.MemberCount,
 			"available_member_count": s.AvailableMemberCount,
 		}
+		if s.Source == model.RouteSourceExplicit || s.Source == model.RouteSourceDisabled {
+			// 车道存在才给：unconfigured 没有成员链，字段缺席（api-spec §5.7）。
+			// 它与 degraded 组合起来区分"成员全被我关了"（== member_count）与
+			// "上游全不可用"（== 0）；degraded 自身的定义不变。
+			item["disabled_member_count"] = s.DisabledMemberCount
+		}
 		if s.Source == model.RouteSourceExplicit {
 			healthy, total := laneHealthCounts(s.Model)
 			item["healthy_member_count"] = healthy
@@ -78,11 +84,23 @@ func GetRoute(c *gin.Context) {
 	}
 	members := make([]gin.H, 0, len(resolved.Members))
 	for _, m := range resolved.Members {
+		// overrides 恒回、无覆盖时为 {}（不是 null、不是缺席）：本端点是编排器唯一的
+		// 成员草稿来源，成员写入又是整体替换，字段缺席会让"打开编辑再保存"把
+		// 全部成员的六键覆盖清空（api-spec §4.2 读回写通则）。
+		overrides := jsonObject(m.Overrides)
+		if overrides == nil {
+			overrides = map[string]any{}
+		}
 		item := gin.H{
 			"channel":         m.Channel,
 			"channel_enabled": m.ChannelEnabled,
 			"upstream_model":  m.UpstreamModel,
 			"priority":        m.Priority,
+			"enabled":         !m.Disabled,
+			"overrides":       overrides,
+			// member_id 仅供排障与审计定位：整体替换后必然变化，界面不得用作行标识
+			// （api-spec §5.7）。
+			"member_id": m.MemberId,
 		}
 		// upstream_override 必须在有成员级显式改名时无条件回传（api-spec §4.4）：
 		// 此前条件 `!= m.UpstreamModel` 恒假——只要显式名非空且 ≠ 路由键，
@@ -117,6 +135,11 @@ func GetRoute(c *gin.Context) {
 				"channel":        m.Channel,
 				"upstream_model": m.UpstreamModel,
 				"priority":       m.Priority,
+				// 推荐项没有落库成员身份：member_id 为 0、enabled 恒 true
+				// （api-spec §5.7）。这里读 !m.Disabled 而非写死 true，是因为
+				// SuggestedMembers 的反向字段零值即"参与选路"，口径与成员链一致。
+				"member_id": 0,
+				"enabled":   !m.Disabled,
 			})
 		}
 	}

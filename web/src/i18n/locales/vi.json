@@ -2954,6 +2954,12 @@
     "Call count": "Số lượt gọi",
     "No call data yet": "Chưa có dữ liệu gọi",
     "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.": "Tạo làn thủ công: nhập khóa định tuyến rồi chọn thành viên từ bất kỳ kênh nào. Khai báo model trên kênh không tạo làn.",
-    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "Khi yêu cầu đi qua làn, số lượt gọi, tỷ lệ thành công và lượng token sẽ hiển thị ở đây."
+    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "Khi yêu cầu đi qua làn, số lượt gọi, tỷ lệ thành công và lượng token sẽ hiển thị ở đây.",
+    "Manually disabled": "Tắt thủ công",
+    "All members disabled": "Tất cả thành viên đã bị tắt",
+    "Drag to reorder": "Kéo để sắp xếp lại",
+    "Member enabled for {{channel}}": "Bật thành viên cho {{channel}}",
+    "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "Thành viên này đã bị tắt thủ công: nó vẫn nằm trong chuỗi nhưng bị bỏ qua khi định tuyến. Bật lại để khôi phục.",
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Thành viên này là thành viên đang hoạt động của làn manual và đã bị tắt, nên mô hình trả về \"không có thành viên khả dụng\"."
   }
 }

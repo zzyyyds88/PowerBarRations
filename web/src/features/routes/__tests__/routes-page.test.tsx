@@ -386,4 +386,167 @@ describe('路由与故障切换页', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     expect(mockedDelete).not.toHaveBeenCalled()
   })
+
+  // ui-spec §6.3：被人工停用的成员在卡片摘要里必须可见地标灰 + 短标记，
+  // 否则卡片看起来"一切正常"而该成员实际不参与选路。
+  test('卡片摘要把被人工停用的成员标出来', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 2,
+                available_member_count: 1,
+                disabled_member_count: 1,
+                degraded: false,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lane-summaries') {
+        return {
+          data: {
+            items: [
+              {
+                name: 'model-1',
+                members: [
+                  { channel: 'channel-a', upstream_model: 'model-1' },
+                  {
+                    channel: 'channel-b',
+                    upstream_model: 'model-1',
+                    enabled: false,
+                  },
+                ],
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lanes/model-1/health') {
+        // 运行态不在本组用例职责内（见 lane-runtime.test.tsx）：抛错即"无运行态"，
+        // 与既有用例同一约定，避免桩返回 null 让 hook 解构失败。
+        throw new Error('health unavailable')
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    renderPage()
+
+    // 只给被停用的那一行加标记：停用数 1、成员 2，所以恰好一个徽章。
+    const markers = await screen.findAllByText('Manually disabled')
+    expect(markers).toHaveLength(1)
+    // 标记落在 channel-b 那一行上（不是 channel-a）。
+    expect(markers[0].closest('li')?.textContent).toContain('channel-b')
+  })
+
+  // api-spec §5.7 / ui-spec §6.3：「成员全被我关了」不得被「上游全挂了」冒充，
+  // 两者的 degraded 都为 true，只能靠 disabled_member_count == member_count 区分。
+  test('全部成员被人工关闭时用独立徽章，不冒充「全部成员不可用」', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 2,
+                available_member_count: 0,
+                disabled_member_count: 2,
+                degraded: true,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lane-summaries') {
+        return {
+          data: {
+            items: [
+              {
+                name: 'model-1',
+                members: [
+                  {
+                    channel: 'channel-a',
+                    upstream_model: 'model-1',
+                    enabled: false,
+                  },
+                  {
+                    channel: 'channel-b',
+                    upstream_model: 'model-1',
+                    enabled: false,
+                  },
+                ],
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lanes/model-1/health') {
+        // 运行态不在本组用例职责内（见 lane-runtime.test.tsx）：抛错即"无运行态"，
+        // 与既有用例同一约定，避免桩返回 null 让 hook 解构失败。
+        throw new Error('health unavailable')
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    renderPage()
+
+    expect(await screen.findByText('All members disabled')).toBeVisible()
+    expect(
+      screen.queryByText('All members unavailable')
+    ).not.toBeInTheDocument()
+  })
+
+  // 对照：上游全挂（无人为关闭）仍走「全部成员不可用」，两条路径文案不同。
+  test('上游全挂时仍显示「全部成员不可用」', async () => {
+    mockedGet.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/models') {
+        return {
+          data: {
+            items: [
+              {
+                model: 'model-1',
+                source: 'explicit',
+                routable: true,
+                member_count: 2,
+                available_member_count: 0,
+                disabled_member_count: 0,
+                degraded: true,
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lane-summaries') {
+        return {
+          data: {
+            items: [
+              {
+                name: 'model-1',
+                members: [
+                  { channel: 'channel-a', upstream_model: 'model-1' },
+                  { channel: 'channel-b', upstream_model: 'model-1' },
+                ],
+              },
+            ],
+          },
+        } as never
+      }
+      if (url === '/api/v1/lanes/model-1/health') {
+        // 运行态不在本组用例职责内（见 lane-runtime.test.tsx）：抛错即"无运行态"，
+        // 与既有用例同一约定，避免桩返回 null 让 hook 解构失败。
+        throw new Error('health unavailable')
+      }
+      throw new Error(`Unexpected GET ${url}`)
+    })
+    renderPage()
+
+    expect(await screen.findByText('All members unavailable')).toBeVisible()
+    expect(screen.queryByText('All members disabled')).not.toBeInTheDocument()
+  })
 })

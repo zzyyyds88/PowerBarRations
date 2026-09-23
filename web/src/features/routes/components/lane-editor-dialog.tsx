@@ -87,6 +87,11 @@ export function LaneEditorDialog(props: {
         upstreamOverride: m.upstream_override ?? '',
         resolvedUpstream: m.upstream_model,
         publicAlias: m.public_alias,
+        // 读写闭环（api-spec §4.2 通则）：读端点回传什么，草稿就存什么，保存时
+        // 原样带回。漏读任一字段都会在下次保存被全量替换清空。
+        overrides: m.overrides,
+        // `enabled` 缺省按启用：字段缺席不得被读成"已停用"（那会静默关掉整条链）。
+        enabled: m.enabled !== false,
       }))
     : []
   const initialMode: PBRLaneMode =

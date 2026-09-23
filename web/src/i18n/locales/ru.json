@@ -2954,6 +2954,12 @@
     "Call count": "Число вызовов",
     "No call data yet": "Данных о вызовах пока нет",
     "Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.": "Создайте полосу вручную: введите ключ маршрута и выберите участников из любого канала. Объявление моделей в каналах не создаёт полосы.",
-    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "После прохождения запросов через полосы здесь появятся число вызовов, доля успешных и расход токенов."
+    "Once requests flow through lanes, call counts, success rate and token usage appear here.": "После прохождения запросов через полосы здесь появятся число вызовов, доля успешных и расход токенов.",
+    "Manually disabled": "Отключён вручную",
+    "All members disabled": "Все участники отключены",
+    "Drag to reorder": "Перетащите для изменения порядка",
+    "Member enabled for {{channel}}": "Участник включён для {{channel}}",
+    "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "Этот участник отключён вручную: он остаётся в цепочке, но пропускается при маршрутизации. Включите его снова, чтобы вернуть.",
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Этот участник — активный участник manual-полосы, но он отключён, поэтому модель возвращает «нет доступных участников»."
   }
 }

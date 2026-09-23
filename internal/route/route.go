@@ -365,9 +365,12 @@ func routeSnapshotSignature(resolved *model.ResolvedRoute) string {
 	}
 	for i := range resolved.Members {
 		m := &resolved.Members[i]
-		fmt.Fprintf(&b, "|%d:%s:%s:%s:%d:%d:%s",
+		// Disabled 必须在签名里：它是配置态、直接决定该成员是否参与选路。
+		// 不要指望 LaneVersion（秒级）或 MemberId（整体重插必然变）的副作用来驱动重建
+		// ——同秒内的两次保存即失效，且渠道级改动根本不经过成员重插（routing-spec §1.3）。
+		fmt.Fprintf(&b, "|%d:%s:%s:%s:%d:%d:%t:%s",
 			m.ChannelId, m.UpstreamModel, m.UpstreamOverride, m.PublicAlias,
-			m.Priority, m.MemberId, strings.TrimSpace(m.Overrides))
+			m.Priority, m.MemberId, m.Disabled, strings.TrimSpace(m.Overrides))
 	}
 	return b.String()
 }
@@ -481,6 +484,20 @@ func (s *State) markAttemptedLocked(key string) {
 // 同一成员在同一请求内只记一次：多轮重试会反复跳过同一个冷却中的成员，
 // 重复写会把尝试链撑成噪声。
 func (s *State) recordSkipLocked(key, member string) {
+	status := "skipped"
+	if s.Runtime != nil {
+		status = s.Runtime.SkipReason(key)
+	}
+	s.recordSkipWithStatusLocked(key, member, status)
+}
+
+// recordSkipWithStatusLocked 以调用方给定的原因记一条"被跳过"的尝试。
+//
+// 为什么需要一个显式传原因的入口：`disabled`（成员被人工停用）是**配置态**结论，
+// 而 Runtime.SkipReason 只能看见熔断表与冷却表两张运行态表，拿不到车道配置
+// （routing-spec §5.3/§9）。把开关下沉进运行态推断会让 Runtime 反向依赖车道配置，
+// 还会把"运维自己关的"误报成一种故障。所以谁判定出停用，谁在这里交出原因。
+func (s *State) recordSkipWithStatusLocked(key, member, status string) {
 	if s.skipRecorded == nil {
 		s.skipRecorded = map[string]bool{}
 	}
@@ -488,10 +505,6 @@ func (s *State) recordSkipLocked(key, member string) {
 		return
 	}
 	s.skipRecorded[key] = true
-	status := "skipped"
-	if s.Runtime != nil {
-		status = s.Runtime.SkipReason(key)
-	}
 	s.history = append(s.history, Attempt{
 		AttemptNum: len(s.history) + 1,
 		Member:     member,
@@ -540,7 +553,8 @@ func (s *State) chooseFailoverLocked() int {
 		if s.Runtime.HasCurrent && s.Runtime.AffinityUntil > nowMs() {
 			if idx := s.indexOfKey(s.Runtime.CurrentMember); idx >= 0 {
 				key := memberKeyOf(&s.Route.Members[idx])
-				if s.attempts[idx] < s.budgetFor(idx) &&
+				if !s.Route.Members[idx].Disabled &&
+					s.attempts[idx] < s.budgetFor(idx) &&
 					s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availSkip {
 					// 亲和绕过的高优先级成员必须留痕，否则 attempts 链无法解释
 					// "为什么没用 P1"（routing-spec §6/§9）。
@@ -555,6 +569,13 @@ func (s *State) chooseFailoverLocked() int {
 				continue
 			}
 			key := memberKeyOf(&s.Route.Members[idx])
+			// 人工停用排在冷却/熔断判定**之前**，且必须在 takeProbe 之前：探测槽只服务
+			// "运行态暂时不可选、可能自己恢复"的成员，一个关着的成员若占了它，
+			// 会把整条链每轮唯一的恢复探测机会吃掉（routing-spec §2.2）。
+			if s.Route.Members[idx].Disabled {
+				s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
+				continue
+			}
 			switch s.Runtime.availabilityOf(key, CurrentCircuitSettings()) {
 			case availSkip:
 				// 记录"为什么没用这个成员"（routing-spec §9）：cooldown / circuit_break。
@@ -603,6 +624,13 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 	key := memberKeyOf(&s.Route.Members[idx])
 	ok := false
 	s.Runtime.withLock(func() {
+		// 人工停用排在熔断判定之前，并留痕 `disabled`（routing-spec §2.1/§9）：
+		// manual 没有替代者，指定的成员被关掉就是"无可用"，**绝不静默换人**，
+		// 也不因为这次关闭而写冷却或改动熔断状态。
+		if s.Route.Members[idx].Disabled {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
+			return
+		}
 		// §2.1：manual **不参与冷却**（人工指定的成员就是唯一选择，冷却在此
 		// 没有可换的替代者，只会把请求变成 503），但仍过熔断。
 		// 此前直接用 availabilityOf，把冷却也一并判了，导致指定成员一次失败后

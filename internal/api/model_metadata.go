@@ -50,6 +50,9 @@ func ListLaneSummaries(c *gin.Context) {
 				"public_alias":    m.PublicAlias,
 				"priority":        m.Priority,
 				"channel_enabled": channelEnabled,
+				// 供路由页卡片把被人工停用的成员标灰（ui-spec §6.3）。对外正向命名，
+				// 落库是反向 Disabled（api-spec §4.2）。
+				"enabled": !m.Disabled,
 			}
 			if name == "" {
 				item["orphan"] = true

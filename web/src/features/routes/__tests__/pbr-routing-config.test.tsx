@@ -340,3 +340,108 @@ describe('savePBRFailover 六键来源', () => {
     expect(body.config).toMatchObject({ member_max_attempts: 1 })
   })
 })
+
+// api-spec §4.2 通则（读写闭环，强制）：成员写入是全量替换，草稿里读到的每个
+// 成员级字段都必须在保存时原样带回。本仓已因此丢过 upstream_override / overrides /
+// public_alias，这组用例把"再丢一次"变成测试失败。
+describe('成员级字段读回写闭环', () => {
+  test('保存时带回 public_alias / overrides / enabled，不被清空', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    renderComposer({
+      model: 'model-1',
+      initialMembers: [
+        {
+          id: 'draft-1',
+          channel: 'channel-a',
+          upstreamOverride: 'vendor-a/real-1',
+          resolvedUpstream: 'vendor-a/real-1',
+          publicAlias: 'fast-a',
+          overrides: { member_cooldown_seconds: 120 },
+          enabled: false,
+        },
+      ],
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      {
+        members: {
+          channel: string
+          upstream_model: string
+          public_alias: string
+          priority: number
+          enabled: boolean
+          overrides: Record<string, number>
+        }[]
+      },
+    ]
+    expect(body.members).toHaveLength(1)
+    const saved = body.members[0]
+    expect(saved.channel).toBe('channel-a')
+    expect(saved.upstream_model).toBe('vendor-a/real-1')
+    // 这三条就是此前被静默清空的字段。
+    expect(saved.public_alias).toBe('fast-a')
+    expect(saved.overrides).toEqual({ member_cooldown_seconds: 120 })
+    expect(saved.enabled).toBe(false)
+  })
+
+  test('点击开关把成员置为停用并随保存回传', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    renderComposer({
+      model: 'model-1',
+      initialMembers: [
+        {
+          id: 'draft-1',
+          channel: 'channel-a',
+          upstreamOverride: 'a-model-1',
+          resolvedUpstream: 'a-model-1',
+          enabled: true,
+        },
+      ],
+    })
+
+    // 行内开关的可访问名带渠道名（ui-spec §6.3）。
+    await user.click(
+      screen.getByRole('switch', {
+        name: 'Member enabled for channel-a · a-model-1',
+      })
+    )
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+
+    const [, body] = mockedPut.mock.calls[0] as [
+      string,
+      { members: { enabled: boolean; public_alias: string }[] },
+    ]
+    expect(body.members[0].enabled).toBe(false)
+    // 无别名的成员也必须显式回传空串（缺席 = 被整体替换清空）。
+    expect(body.members[0].public_alias).toBe('')
+  })
+
+  test('停用成员后仍能保存（合法人工态，不得被拦截）', async () => {
+    mockCatalog()
+    const user = userEvent.setup()
+    renderComposer({
+      model: 'model-1',
+      initialMembers: [
+        {
+          id: 'draft-1',
+          channel: 'channel-a',
+          upstreamOverride: 'a-model-1',
+          resolvedUpstream: 'a-model-1',
+          enabled: false,
+        },
+      ],
+    })
+
+    const saveButton = screen.getByRole('button', { name: 'Save' })
+    expect(saveButton).toBeEnabled()
+    await user.click(saveButton)
+    await waitFor(() => expect(mockedPut).toHaveBeenCalled())
+  })
+})

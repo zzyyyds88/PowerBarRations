@@ -31,13 +31,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowDown,
   ArrowUp,
+  GripVertical,
   Loader2,
   Plus,
   Search,
   Trash2,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type DragEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -63,6 +64,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { resolveModelProvider } from '@/lib/model-provider'
 import { cn } from '@/lib/utils'
@@ -74,14 +76,18 @@ import {
   savePBRFailover,
   type PBRLaneMode,
   type PBRChannelCatalogEntry,
+  type PBRMemberOverrides,
 } from '../api'
 import { defaultUpstreamForModel } from '../lib/lane-member-upstream'
+import { priorityForIndex, reorderMembers } from '../lib/reorder-members'
 
 /** 编排器里的一个已选成员（草稿态）。 */
 export interface ComposerMember {
   /**
    * 稳定标识：仅用于 React key / 拖拽身份。不能把 channel 或 upstreamOverride
    * 拼进 key——那样每次改名都会重挂载行、输入框失焦（实测 bug）。
+   * 也**不得**用后端的 `member_id`：成员写入是整体替换，保存一次全部重算
+   * （api-spec §5.7）。
    */
   id: string
   channel: string
@@ -91,6 +97,13 @@ export interface ComposerMember {
   resolvedUpstream: string
   /** 成员别名（可选，仅用于 manual 的 active_member 取值）。 */
   publicAlias?: string
+  /**
+   * 成员级六键覆盖草稿。**必须原样回传**：成员写入是全量替换，读不到即保存清空
+   * （api-spec §4.2 读写闭环）。
+   */
+  overrides?: PBRMemberOverrides
+  /** 人工停用开关草稿；`false` = 不参与选路（仍留在链里，可逆）。 */
+  enabled: boolean
 }
 
 export interface LaneComposerProps {
@@ -206,6 +219,13 @@ export function LaneComposer(props: LaneComposerProps) {
   )
   const [search, setSearch] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // 原生 HTML5 DnD 的拖拽态：拖起者、当前悬停行、落点在该行的上半还是下半。
+  // 参照 param-override-editor-dialog.tsx 的 handleDragStart/Over/Drop + resetDragState。
+  const [draggedId, setDraggedId] = useState('')
+  const [dragOverId, setDragOverId] = useState('')
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>(
+    'before'
+  )
 
   const catalogQuery = useQuery({
     queryKey: ['pbr-channel-catalog'],
@@ -217,6 +237,61 @@ export function LaneComposer(props: LaneComposerProps) {
   const markDirty = (next: ComposerMember[]) => {
     setMembers(next)
     props.onDirtyChange?.(true)
+  }
+
+  const resetDragState = useCallback(() => {
+    setDraggedId('')
+    setDragOverId('')
+    setDragOverPosition('before')
+  }, [])
+
+  const handleDragStart = useCallback((event: DragEvent, memberId: string) => {
+    setDraggedId(memberId)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', memberId)
+  }, [])
+
+  const handleDragOver = useCallback(
+    (event: DragEvent, memberId: string) => {
+      event.preventDefault()
+      if (!draggedId || draggedId === memberId) return
+      // 落点按行高一半判定：上半插入到该行之前、下半之后。这条规则让"拖到末位"
+      // 只需落在最后一行下半，不必依赖列表尾部空白区。
+      const rect = event.currentTarget.getBoundingClientRect()
+      const position: 'before' | 'after' =
+        event.clientY - rect.top > rect.height / 2 ? 'after' : 'before'
+      setDragOverId(memberId)
+      setDragOverPosition(position)
+      event.dataTransfer.dropEffect = 'move'
+    },
+    [draggedId]
+  )
+
+  const handleDrop = useCallback(
+    (event: DragEvent, memberId: string) => {
+      event.preventDefault()
+      const sourceId = draggedId || event.dataTransfer.getData('text/plain')
+      const position = dragOverId === memberId ? dragOverPosition : 'before'
+      if (sourceId && memberId && sourceId !== memberId) {
+        // 先算出结果再更新 state：把 onDirtyChange 放进 setState 更新器里会让
+        // 副作用随更新器重放（StrictMode 下更新器会被调用两次）。
+        const next = reorderMembers(members, sourceId, memberId, position)
+        // reorderMembers 在无效输入时返回原引用：引用未变即没有真实重排，
+        // 不置脏、不触发多余的保存提示。
+        if (next !== members) {
+          setMembers(next)
+          props.onDirtyChange?.(true)
+        }
+      }
+      resetDragState()
+    },
+    [draggedId, dragOverId, dragOverPosition, members, props, resetDragState]
+  )
+
+  const toggleMemberEnabled = (index: number, enabled: boolean) => {
+    const next = [...members]
+    next[index] = { ...next[index], enabled }
+    markDirty(next)
   }
 
   const selectedKeys = useMemo(
@@ -277,6 +352,9 @@ export function LaneComposer(props: LaneComposerProps) {
           upstream,
           catalog
         ),
+        // 新增成员一律按启用起草：后端三态对"新建成员省略 enabled"也是启用，
+        // 两边口径一致，避免用户以为加进来就是关的。
+        enabled: true,
       },
     ])
   }
@@ -320,7 +398,14 @@ export function LaneComposer(props: LaneComposerProps) {
         members.map((m, index) => ({
           channel: m.channel,
           upstream_model: m.upstreamOverride.trim(),
-          priority: members.length - index,
+          // 读写闭环（api-spec §4.2 通则）：成员写入是全量替换，草稿里读到的每个
+          // 成员级字段都必须原样带回。此前只发 channel/upstream_model/priority，
+          // 于是"打开编辑再保存"会把全部成员的别名与六键覆盖清空（实测数据丢失），
+          // 并连带打断 manual 的 active_member（按别名匹配）。
+          public_alias: m.publicAlias ?? '',
+          priority: priorityForIndex(index, members.length),
+          enabled: m.enabled,
+          overrides: m.overrides ?? {},
         })),
         {
           mode,
@@ -602,9 +687,51 @@ export function LaneComposer(props: LaneComposerProps) {
                     member,
                     catalog
                   )
+                  const disabled = !member.enabled
+                  // manual 的 active_member 指向被停用成员：运行期必然"无可用"且
+                  // 不换人（routing-spec §2.1）。界面**行内告警但不拦保存**——
+                  // "先关成员、再改别的配置"是合法中间态（api-spec §4.2）。
+                  const activeDisabled =
+                    mode === 'manual' &&
+                    disabled &&
+                    (activeMember === member.publicAlias ||
+                      activeMember ===
+                        `${member.channel}/${member.resolvedUpstream}`)
                   return (
-                    <div key={member.id} className='rounded-md border p-2'>
+                    <div
+                      key={member.id}
+                      onDragOver={(event) => handleDragOver(event, member.id)}
+                      onDrop={(event) => handleDrop(event, member.id)}
+                      className={cn(
+                        'rounded-md border p-2',
+                        // 拖拽反馈：被拖起的行降透明度、落点行显示上/下指示线。
+                        draggedId === member.id && 'opacity-50',
+                        dragOverId === member.id &&
+                          draggedId !== member.id &&
+                          (dragOverPosition === 'before'
+                            ? 'border-t-2 border-t-primary'
+                            : 'border-b-2 border-b-primary'),
+                        disabled && 'bg-muted/40'
+                      )}
+                    >
                       <div className='flex items-center gap-2'>
+                        {/* 拖拽手柄：原生 HTML5 draggable，无第三方 dnd 依赖。
+                            整行也可作为落点（onDragOver/onDrop 在外层），但只有手柄
+                            可拖起，避免与行内输入框的文本选择冲突。 */}
+                        <span
+                          role='button'
+                          tabIndex={-1}
+                          draggable
+                          aria-label={t('Drag to reorder')}
+                          title={t('Drag to reorder')}
+                          onDragStart={(event) =>
+                            handleDragStart(event, member.id)
+                          }
+                          onDragEnd={resetDragState}
+                          className='text-muted-foreground hover:text-foreground shrink-0 cursor-grab active:cursor-grabbing'
+                        >
+                          <GripVertical className='size-4' />
+                        </span>
                         <span className='text-muted-foreground w-5 shrink-0 text-center text-xs'>
                           {index + 1}
                         </span>
@@ -615,6 +742,28 @@ export function LaneComposer(props: LaneComposerProps) {
                           <div className='text-muted-foreground truncate text-xs'>
                             {t('Resolved upstream')}: {member.resolvedUpstream}
                           </div>
+                        </div>
+                        {/* 成员启停开关：复用既有 Switch（web/AGENTS 强制检索复用）。
+                            可访问名带渠道 + 上游真名：同一渠道可在一条车道里出现多次
+                            （ADR 0006），只用渠道名会让多行开关重名、无法定位。
+                            分隔符用 " · " 而非 "/"：i18next 会把插值里的斜杠转义成
+                            `&#x2F;`，可访问名随之变形（实测：测试与读屏都取不到原值）。 */}
+                        <div className='flex shrink-0 items-center gap-1'>
+                          <Switch
+                            size='sm'
+                            checked={member.enabled}
+                            aria-label={t('Member enabled for {{channel}}', {
+                              channel: `${member.channel} · ${member.resolvedUpstream}`,
+                            })}
+                            onCheckedChange={(checked) =>
+                              toggleMemberEnabled(index, checked)
+                            }
+                          />
+                          {disabled && (
+                            <span className='text-muted-foreground text-xs'>
+                              {t('Manually disabled')}
+                            </span>
+                          )}
                         </div>
                         <Input
                           className='h-7 w-32 shrink-0 text-xs'
@@ -660,6 +809,20 @@ export function LaneComposer(props: LaneComposerProps) {
                           <X className='size-3.5' />
                         </Button>
                       </div>
+                      {disabled && (
+                        <p className='text-muted-foreground mt-1.5 text-xs'>
+                          {t(
+                            'This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.'
+                          )}
+                        </p>
+                      )}
+                      {activeDisabled && (
+                        <p className='mt-1.5 text-xs text-amber-600 dark:text-amber-500'>
+                          {t(
+                            'This member is the active member of a manual lane and is disabled, so the model returns no available member.'
+                          )}
+                        </p>
+                      )}
                       {undeclared !== null && (
                         <p className='mt-1.5 text-xs text-amber-600 dark:text-amber-500'>
                           {t(

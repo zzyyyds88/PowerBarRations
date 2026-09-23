@@ -71,7 +71,9 @@ type LaneMember struct {
 ```
 
 - **成员人工停用的存储口径（单处规范）**：字段是 `Disabled bool`（**语义取反**，零值 = 启用），不是 `Enabled bool`。GORM 更新时忽略零值，给布尔开关加 `default` 会让"显式关闭"被默认值吃掉；而直接用 `Enabled bool` 会让存量行迁移后全为 `false`，等于**所有成员被静默停用、全站 503**。因此：**禁止给它加 gorm `default`，禁止用 `*bool` 落库**；列由 `AutoMigrate` 自动添加，**不需要迁移脚本**，存量行天然解读为"启用"。（同一约束已写在 `Lane.Enabled` 的字段注释上——这里不是新规矩，是复用。）
-- **解析态一律用正向字段**：`RouteMember.Enabled = !LaneMember.Disabled`，由车道解析入口（`resolveExactRoute`）与控制台展示解析（`displayMembersForLane`）填充；**选路与展示一律读正向 `Enabled`，不得在下游再次取反**。
+- **解析态沿用反向字段**：`RouteMember.Disabled` 与 `LaneMember.Disabled` 同向（零值 = 参与选路），由车道解析入口（`resolveExactRoute`）与控制台展示解析（`displayMembersForLane`）填充；**选路一律读反向 `Disabled`，不得在下游取反成正向**。
+  - **为什么解析态也不取反**：`RouteMember` 由多处字面量构造（生产 4 处 + 测试夹具），若改成正向 `Enabled`，其零值 `false` 会让任何忘记置真的构造点静默变成"已停用"，表现为该模型必 503；反向命名下零值 = 参与选路，与新增该字段之前的行为逐位一致。
+  - **取反只发生在对外输出处一次**：管理面 JSON 一律正向 `enabled`（api-spec §4.2 命名规则），`RouteMember` 从不被直接 JSON 序列化（handler 全手工拼 `gin.H`），所以 `enabled = !Disabled` 只在 handler 输出时算一次。
 - **停用 ≠ 删除**：被关闭的成员**仍留在成员链里**，顺序、别名、成员级六键覆盖一律不动——需求是"可逆的临时停用"。停用**不写冷却、不改变熔断器的三态与计数**（§5、§6），重新打开即立即恢复参与选路。开关只约束**选路**这一件事：管理面的逐成员探活仍覆盖被关闭成员（它不经选路、不写运行态，api-spec §6.4），控制台与导出同样照实呈现。
 - **车道成员上游名解析**：`成员 UpstreamModel（非空且 ≠ 路由键）> Channel.ModelMapping[路由键] > 路由键`。
 - **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。
@@ -98,7 +100,7 @@ type LaneRuntime struct {
 - **进程内、重启清空**，与线上一致；README 必须写明。
 - 成员被删除或渠道被删除时，清理其残留状态（参考线上 `groupRouteLocked` 的清理逻辑）。
 - 状态经 SSE 推送给控制台（§7）。
-- **成员停用态不在运行态里**：`LaneRuntime` 没有"停用"这一项，人工关闭**不写** `Cooldowns`、**不写** `Circuits`、也不为此新增运行态字段——它只是配置态，随解析快照走（§1.2 `RouteMember.Enabled`）。这也是"关闭再打开一个成员不背冷却"的结构保证。
+- **成员停用态不在运行态里**：`LaneRuntime` 没有"停用"这一项，人工关闭**不写** `Cooldowns`、**不写** `Circuits`、也不为此新增运行态字段——它只是配置态，随解析快照走（§1.2 `RouteMember.Disabled`）。这也是"关闭再打开一个成员不背冷却"的结构保证。
 - **快照重建契约（约束，非风险提示）**：解析快照的内容签名**必须显式包含每一个影响选路的成员字段**，新增字段（含本规格里成员的人工停用态）一律**显式入签名**，并应有单测断言"只改该字段就会让签名变化"。
   - 为什么要单列这条：签名里**已经**含车道版本（`Lane.UpdatedAt`，Unix **秒级**）与成员主键，而保存成员是"删光整条链再整体重插、主键重新自增"（§1.2、design §7.7），所以每次保存成员链时这两项必然变化——新字段即使漏入签名，通常也会被这层副作用带着重建快照，**不会**表现为"改了没反应"。
   - 但签名的契约是"只含影响选路的字段"，靠主键 churn 与秒级时间戳驱动快照重建属于**隐式耦合**：同一秒内的两次保存即失效，且渠道级改动、运行态重置等路径根本不经过成员重插。因此按契约规定，不按事故风险规定。
