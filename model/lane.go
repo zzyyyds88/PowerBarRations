@@ -197,6 +197,14 @@ type LaneMember struct {
 	PublicAlias   string `json:"public_alias" gorm:"type:varchar(128);index"`
 	Priority      int    `json:"priority"`                   // 车道内顺序：数字大者优先
 	Overrides     string `json:"overrides" gorm:"type:text"` // 成员级六键覆盖 JSON
+	// Disabled 是该成员被人工停用（可逆）：仍留在成员链里，但不参与选路。
+	//
+	// 字段刻意取反（不是 Enabled）且**禁止加 gorm default**：GORM 更新时会忽略
+	// 零值，加了 default 之后"显式关闭"会被默认值吃掉；而直接用 Enabled bool 会让
+	// 存量行迁移后全为 false，等于所有成员被静默停用、全站 503。取反后零值 = 启用，
+	// 存量行天然正确，列由 AutoMigrate 自动添加，不需要迁移脚本。
+	// 同一条约束也写在 Lane.Enabled 上。口径真源：routing-spec §1.2。
+	Disabled bool `json:"disabled"`
 }
 
 // RouteMember 一次解析出的成员（对外展示与选路共用）。
@@ -213,6 +221,15 @@ type RouteMember struct {
 	Priority         int    `json:"priority"`
 	MemberId         int    `json:"member_id,omitempty"`
 	Overrides        string `json:"-"`
+	// Disabled 该成员被人工停用（配置态），选路时应跳过。
+	//
+	// 与 LaneMember.Disabled 同样是**反向**命名，理由一致且更硬：RouteMember 由多处
+	// 字面量构造（生产 4 处 + 测试夹具），正向 Enabled 的零值是 false，会让任何忘记
+	// 置真的成员静默变成"已停用"，表现为该模型必 503。反向命名下零值 = 参与选路，
+	// 与新增该字段之前的行为完全一致。
+	// 本结构体不被直接 JSON 序列化（handler 全部手工拼 gin.H），所以对外仍是正向
+	// `enabled`，取反只做在输出处一次（api-spec §4.2 命名规则、routing-spec §1.2）。
+	Disabled bool `json:"-"`
 }
 
 // RouteSourceDisabled 车道存在但被停用：模型不可调用，但仍应在管理面可见，
@@ -258,9 +275,13 @@ type ModelSummary struct {
 	// MemberCount 是车道成员总数（含渠道已删/停用的悬空成员）；unconfigured 时
 	// 表示声明该模型的候选渠道数。
 	MemberCount int `json:"member_count"`
-	// AvailableMemberCount 是当前真正可路由的成员数（渠道存在且启用）；
+	// AvailableMemberCount 是当前真正可路由的成员数（渠道存在且启用，且未被人工停用）；
 	// 与 MemberCount 的差值即"不可用成员"，供界面标注"含不可用"（P3-1）。
 	AvailableMemberCount int `json:"available_member_count"`
+	// DisabledMemberCount 是成员链里被人工停用（LaneMember.Disabled）的数量。
+	// 它的唯一用途是把 degraded=true 拆成两种排障结论："成员全被我关了"
+	// （== MemberCount）与"上游全不可用"（== 0）。degraded 的定义不变。
+	DisabledMemberCount int `json:"disabled_member_count"`
 }
 
 // ---------- 车道 CRUD ----------
@@ -701,6 +722,7 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 			Priority:         m.Priority,
 			MemberId:         m.Id,
 			Overrides:        m.Overrides,
+			Disabled:         m.Disabled,
 		})
 	}
 	sort.SliceStable(route.Members, func(i, j int) bool {
@@ -752,7 +774,10 @@ func suggestedMembers(modelName string) ([]RouteMember, error) {
 			ChannelId:      c.Id,
 			Channel:        c.Name,
 			ChannelEnabled: true, // listEnabledChannels 只含启用渠道
-			UpstreamModel:  effectiveUpstreamModel(c, modelName, ""),
+			// 候选/推荐成员没有落库成员身份，恒为参与选路（api-spec §5.7：unconfigured
+			// 推荐项 enabled 恒 true、member_id 为 0）。Disabled 是反向字段，零值即真，
+			// 故这里不需要显式赋值；反而若改成正向字段必须逐处置真。
+			UpstreamModel: effectiveUpstreamModel(c, modelName, ""),
 			// priority 数字大者优先：渠道 id 升序 → priority 递减，
 			// 使落库后 resolveExactRoute（按 priority 降序）得到的实际顺序
 			// 仍是渠道 id 升序（routing-spec §1.1 / design-v1 §7.7 的 seed 语义）。
@@ -824,6 +849,7 @@ func displayMembersForLane(lane *Lane) ([]RouteMember, error) {
 			Priority:         m.Priority,
 			MemberId:         m.Id,
 			Overrides:        m.Overrides,
+			Disabled:         m.Disabled,
 		})
 	}
 	sort.SliceStable(members, func(i, j int) bool {
@@ -861,6 +887,7 @@ func ListModelSummaries() ([]ModelSummary, error) {
 					Routable:             false,
 					MemberCount:          len(lane.Members),
 					AvailableMemberCount: countAvailableMembers(lane.Members, enabledChannelIDs),
+					DisabledMemberCount:  countDisabledMembers(lane.Members),
 				}
 			}
 			continue
@@ -872,6 +899,7 @@ func ListModelSummaries() ([]ModelSummary, error) {
 		}
 		s.MemberCount = len(lane.Members)
 		s.AvailableMemberCount = countAvailableMembers(lane.Members, enabledChannelIDs)
+		s.DisabledMemberCount = countDisabledMembers(lane.Members)
 	}
 
 	for _, ch := range allChannels {
@@ -900,11 +928,24 @@ func ListModelSummaries() ([]ModelSummary, error) {
 	return out, nil
 }
 
-// countAvailableMembers 统计成员里"渠道存在且启用"的数量（P3-1）。
+// countAvailableMembers 统计成员里"渠道存在且启用、且未被人工停用"的数量（P3-1）。
+// 人工停用必须一起排除，否则"全部成员被我关掉"的车道仍会报 available==全量，
+// 界面上的"可调用"就成了假健康（routing-spec §7）。
 func countAvailableMembers(members []LaneMember, enabledChannelIDs map[int]bool) int {
 	n := 0
 	for _, m := range members {
-		if enabledChannelIDs[m.ChannelId] {
+		if !m.Disabled && enabledChannelIDs[m.ChannelId] {
+			n++
+		}
+	}
+	return n
+}
+
+// countDisabledMembers 统计成员里被人工停用的数量（ModelSummary.DisabledMemberCount）。
+func countDisabledMembers(members []LaneMember) int {
+	n := 0
+	for _, m := range members {
+		if m.Disabled {
 			n++
 		}
 	}

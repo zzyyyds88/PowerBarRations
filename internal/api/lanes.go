@@ -24,6 +24,10 @@ type laneMemberPayload struct {
 	PublicAlias   string          `json:"public_alias"`
 	Priority      int             `json:"priority"`
 	Overrides     json.RawMessage `json:"overrides"`
+	// Enabled 是**可空三态**：nil（请求省略）= 新建成员按启用、既有成员保留原值；
+	// 显式 true/false 生效。成员写入是全量替换，若把"省略"当成 false，任何不带该
+	// 字段的调用方一发请求就会把整条成员链关掉（api-spec §4.2）。
+	Enabled *bool `json:"enabled"`
 }
 
 type lanePayload struct {
@@ -53,6 +57,8 @@ func laneResponse(c *gin.Context, lane *model.Lane) gin.H {
 			"upstream_model": m.UpstreamModel,
 			"public_alias":   m.PublicAlias,
 			"priority":       m.Priority,
+			// 对外一律正向 enabled（api-spec §4.2 命名规则）：落库是反向 Disabled。
+			"enabled": !m.Disabled,
 		}
 		if channelName == "" {
 			item["orphan"] = true
@@ -285,10 +291,16 @@ func buildLane(name string, payload *lanePayload, resolvers ...channelResolver) 
 		return nil, &laneBuildError{status: http.StatusInternalServerError, code: "internal_error", message: err.Error()}
 	}
 	seenAliases := map[string]bool{}
+	// 既有成员链只作为 `enabled` 三态默认值的比对基线；不写回 lane（写回走下面的
+	// 整体替换或 else 分支的"省略即保留"）。
+	var baselineMembers []model.LaneMember
+	if existing != nil {
+		baselineMembers = existing.Members
+	}
 	if payload.Members != nil {
 		for i := range payload.Members {
 			m := payload.Members[i]
-			member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m, resolve)
+			member, buildErr := buildLaneMember(name, laneID, laneNames, seenAliases, &m, resolve, baselineMembers)
 			if buildErr != nil {
 				return nil, buildErr
 			}
@@ -309,7 +321,9 @@ func buildLane(name string, payload *lanePayload, resolvers ...channelResolver) 
 	return lane, nil
 }
 
-func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliases map[string]bool, m *laneMemberPayload, resolve channelResolver) (*model.LaneMember, *laneBuildError) {
+// buildLaneMember 解析并校验单个成员请求。existingMembers 是该车道**当前**落库的
+// 成员链（新建车道传 nil），仅用于实现 `enabled` 的三态默认值。
+func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliases map[string]bool, m *laneMemberPayload, resolve channelResolver, existingMembers []model.LaneMember) (*model.LaneMember, *laneBuildError) {
 	channelName := strings.TrimSpace(m.Channel)
 	if channelName == "" {
 		return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
@@ -331,11 +345,28 @@ func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliase
 	}
 	// 成员 upstream_model 是可选覆盖：留空 → 运行期用渠道 model_mapping，再退回路由键（ADR 0005）。
 	upstream := strings.TrimSpace(m.UpstreamModel)
+	// `enabled` 的三态默认值（api-spec §4.2）：显式给出以给出为准；省略时命中既有成员
+	// 则保留其原值、否则按启用。"既有成员"按成员唯一键 (channel_id, upstream_model)
+	// 匹配（ADR 0006）——改了这个键即视为新成员，按启用处理。
+	// 绝不能把"省略"当成关闭：成员写入是全量替换，那样任何不带该字段的调用方
+	// 一发请求就会把整条成员链关掉。
+	enabled := true
+	if m.Enabled != nil {
+		enabled = *m.Enabled
+	} else {
+		for _, prev := range existingMembers {
+			if prev.ChannelId == channel.Id && prev.UpstreamModel == upstream {
+				enabled = !prev.Disabled
+				break
+			}
+		}
+	}
 	member := &model.LaneMember{
 		ChannelId:     channel.Id,
 		UpstreamModel: upstream,
 		PublicAlias:   strings.TrimSpace(m.PublicAlias),
 		Priority:      m.Priority,
+		Disabled:      !enabled,
 	}
 	if len(m.Overrides) > 0 && string(m.Overrides) != "null" {
 		if !json.Valid(m.Overrides) {
@@ -405,7 +436,7 @@ func PutLaneMembers(c *gin.Context) {
 	seenAliases := map[string]bool{}
 	members := make([]model.LaneMember, 0, len(payload.Members))
 	for i := range payload.Members {
-		member, buildErr := buildLaneMember(name, existing.Id, laneNames, seenAliases, &payload.Members[i], nil)
+		member, buildErr := buildLaneMember(name, existing.Id, laneNames, seenAliases, &payload.Members[i], nil, existing.Members)
 		if buildErr != nil {
 			apierr.Write(c, buildErr.status, buildErr.code, buildErr.message, buildErr.hint)
 			return

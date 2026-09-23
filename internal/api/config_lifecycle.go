@@ -52,6 +52,11 @@ type LaneMemberConfig struct {
 	PublicAlias   string `json:"public_alias,omitempty"`
 	Priority      int    `json:"priority"`
 	Overrides     any    `json:"overrides,omitempty"`
+	// Enabled 可空三态：导出恒给出（非 nil），导入文件省略时按 api-spec §4.2 的
+	// 三态规则处理（新建成员=启用、命中既有成员=保留原值）。若这里用裸 bool，
+	// "省略"会被读成 false，一次"导出→清空→导入"就会把运维人工停用的成员
+	// 静默放回选路。
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // LaneConfig 显式车道的可导出形态。
@@ -124,12 +129,14 @@ func BuildConfigBundle() (*ConfigBundle, error) {
 			if channel, err := model.ChannelOrNil(member.ChannelId); err == nil && channel != nil {
 				channelName = channel.Name
 			}
+			enabled := !member.Disabled
 			entry.Members = append(entry.Members, LaneMemberConfig{
 				Channel:       channelName,
 				UpstreamModel: member.UpstreamModel,
 				PublicAlias:   member.PublicAlias,
 				Priority:      member.Priority,
 				Overrides:     jsonObject(member.Overrides),
+				Enabled:       &enabled,
 			})
 		}
 		bundle.Lanes = append(bundle.Lanes, entry)
@@ -372,6 +379,9 @@ func lanePayloadFromConfig(lane LaneConfig) *lanePayload {
 			UpstreamModel: member.UpstreamModel,
 			PublicAlias:   member.PublicAlias,
 			Priority:      member.Priority,
+			// 指针直接透传，保住三态：导出恒有值 → 导入按文件里的开关还原；
+			// 老文件省略该字段 → nil → buildLaneMember 按"新建启用/既有保留原值"处理。
+			Enabled: member.Enabled,
 		}
 		if member.Overrides != nil {
 			encoded, _ := json.Marshal(member.Overrides)
@@ -828,12 +838,17 @@ func laneDigestOfLane(lane *model.Lane) string {
 		if channel, err := model.ChannelOrNil(member.ChannelId); err == nil && channel != nil {
 			channelName = channel.Name
 		}
+		// Enabled 必须进摘要：api-spec §5.2 承诺"谁把这条成员关掉了"可从审计
+		// 判定，靠的就是 after_digest 随开关变化而变化。漏进来会让一次停用
+		// 在审计里与不动作同形。
+		memberEnabled := !member.Disabled
 		config.Members = append(config.Members, LaneMemberConfig{
 			Channel:       channelName,
 			UpstreamModel: member.UpstreamModel,
 			PublicAlias:   member.PublicAlias,
 			Priority:      member.Priority,
 			Overrides:     jsonObject(member.Overrides),
+			Enabled:       &memberEnabled,
 		})
 	}
 	return laneDigestOf(&config)

@@ -723,6 +723,11 @@ type MemberHealth struct {
 	Current             bool      `json:"current"`
 	Probing             bool      `json:"probing"`
 	Available           bool      `json:"available"`
+	// Enabled 该成员是否参与选路（配置态人工停用，恒回；api-spec §6.5）。
+	// 与 Available 是两件事：Available=false 不蕴含任何故障结论，只有
+	// Enabled=false 才说明"是运维关的"。关闭者的 Circuit/CooldownUntil/
+	// ConsecutiveFailures 等运行态字段仍照常如实给出，不归零也不省略。
+	Enabled bool `json:"enabled"`
 }
 
 // AffinityState 车道当前亲和（api-spec §6.5：affinity 为对象，无亲和时 null）。
@@ -802,6 +807,7 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 			Circuit:       CircuitClosed,
 			Current:       r.HasCurrent && r.CurrentMember == key,
 			Probing:       r.HasProbe && r.ProbeMember == key,
+			Enabled:       !member.Disabled,
 		}
 		if circuit := r.Circuits[key]; circuit != nil {
 			item.Circuit = circuit.State
@@ -811,11 +817,13 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 			item.CircuitOpenUntil = msToRFC3339(r.circuitOpenUntil(key))
 			item.LastErrorKind = circuit.LastErrorKind
 		}
+		// 人工停用直接令 Available=false，但上面与下面的运行态字段仍照实计算——
+		// 排障时要能同时看到"我把它关了"和"关之前它是什么状态"（routing-spec §7）。
 		if manual {
-			item.Available = !r.circuitBlocksManual(key)
+			item.Available = !member.Disabled && !r.circuitBlocksManual(key)
 		} else {
 			item.CooldownUntil = msToRFC3339(r.Cooldowns[key])
-			item.Available = r.availabilityOf(key, settings) != availSkip
+			item.Available = !member.Disabled && r.availabilityOf(key, settings) != availSkip
 		}
 		snapshot.Members = append(snapshot.Members, item)
 	}
