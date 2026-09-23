@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 /*
 车道成员编排器（ui-spec §6.3、ADR 0008）：新建车道与编辑成员链共用。
 
-两栏布局（对齐线上 octopus 分组编辑器）：
+两栏布局（对齐既有分组编辑器的交互范式）：
 - 左栏「添加成员」：从 GET /api/v1/channels 拉全部启用渠道的 models，按渠道折叠，
   带搜索；点某个模型即把「该渠道 × 该模型」加入右栏。**没有「自动添加」**。
 - 右栏「成员（顺序）」：已选成员有序列表，上移/下移、拖拽、删除、启停开关、清空。

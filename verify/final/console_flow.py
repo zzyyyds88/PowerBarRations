@@ -591,7 +591,7 @@ def main() -> int:
         # task-plugins 移除，system-info 改为 system-tasks。
         pages = [("/dashboard/overview", "03-dashboard"), ("/channels", "04-channels"),
                  ("/models/metadata", "05-models"), ("/routes", "06-routes"),
-                 ("/keys", "07-keys"), ("/usage-logs/common", "08-logs"),
+                 ("/keys", "07-keys"), ("/usage-logs/pbr", "08-logs"),
                  ("/playground", "09-playground"),
                  ("/system-tasks", "11-system-tasks"), ("/system-settings/site/system-info", "12-settings")]
         rendered = 0

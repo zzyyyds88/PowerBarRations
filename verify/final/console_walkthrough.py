@@ -40,7 +40,7 @@ PAGES = [
     # 路由与故障切换已是侧边栏独立页 /routes（与 /models 同级）。
     ("/routes", "routes", "routes"),
     ("/keys", "keys", "keys"),
-    ("/usage-logs/common", "usage-logs", "logs"),
+    ("/usage-logs/pbr", "usage-logs", "logs"),
     ("/playground", "playground", "playground"),
     # task-plugins 子系统已整链路移除；system-info 页已删除，任务面板提为 /system-tasks。
     ("/system-tasks", "system-tasks", "system-tasks"),
@@ -264,12 +264,19 @@ def main() -> int:
                 if "<title>New API" in line or 'content="New API"' in line:
                     brand_hits.append(f"web/index.html:{i}: {line.strip()[:90]}")
 
-        # 2) 旧蓝本（octopus 控制台）不得残留任何标识
+        # 2) 旧蓝本（octopus 控制台）不得残留任何标识。
+        #
+        # **排除测试文件**：品牌守卫测试（如 web/src/features/home/__tests__/content.test.ts）
+        # 必须把品牌名写进正则才能检测残留，把检查器自身的模式串当成残留是假阳性
+        # （实测：修完源码注释后仅剩这一处命中）。测试文件不是"品牌面"。
         for p in src_all:
+            rel = os.path.relpath(p, repo)
+            if "/__tests__/" in rel or rel.endswith((".test.ts", ".test.tsx")):
+                continue
             text = open(p, encoding="utf-8", errors="replace").read()
             for i, line in enumerate(text.splitlines(), 1):
                 if "octopus" in line.lower() and not line.strip().startswith(("//", "*", "/*")):
-                    brand_hits.append(f"{os.path.relpath(p, repo)}:{i}: {line.strip()[:90]}")
+                    brand_hits.append(f"{rel}:{i}: {line.strip()[:90]}")
 
         # 3) 渲染出的文档标题不得是上游品牌
         try:

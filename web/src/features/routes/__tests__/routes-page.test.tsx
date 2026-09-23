@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 /*
-「路由与故障切换」独立页（ui-spec §6.3、ADR 0006/0007）：octopus 式卡片网格。
+「路由与故障切换」独立页（ui-spec §6.3、ADR 0006/0007）：卡片网格。
 - **只列真实车道**（source ∈ explicit|disabled）：渠道声明但未配车道的路由键
   （unconfigured）不出现——渠道声明与车道彻底分列，删车道即卡片消失；
 - 卡片操作固定为「编辑成员链 / 删除车道」；页头「新建车道」手填路由键。

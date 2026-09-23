@@ -719,7 +719,7 @@ def main():
         # ---- 用户动作 7：查看请求日志 ----
         log("")
         log("=== 用户动作 7：请求日志页出现该请求 ===")
-        cdp.nav(base + "/usage-logs/common", wait=5)
+        cdp.nav(base + "/usage-logs/pbr", wait=5)
         body = cdp.val("document.body.innerText") or ""
         check("日志页可见 ui-model", MODEL in body, body[-300:])
         cdp.shot("09-logs")

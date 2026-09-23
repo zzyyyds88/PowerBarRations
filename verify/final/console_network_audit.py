@@ -27,7 +27,7 @@ PAGES = [
     "/models/metadata",
     "/routes",
     "/keys",
-    "/usage-logs/common",
+    "/usage-logs/pbr",
     "/usage-logs/audit",
     "/playground",
     "/system-tasks",
