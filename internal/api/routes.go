@@ -84,7 +84,11 @@ func GetRoute(c *gin.Context) {
 			"upstream_model":  m.UpstreamModel,
 			"priority":        m.Priority,
 		}
-		if m.UpstreamOverride != "" && m.UpstreamOverride != m.UpstreamModel {
+		// upstream_override 必须在有成员级显式改名时无条件回传（api-spec §4.4）：
+		// 此前条件 `!= m.UpstreamModel` 恒假——只要显式名非空且 ≠ 路由键，
+		// 解析后的 upstream_model 就等于它，字段从不出现；控制台车道编辑器
+		// 读不到原值，重新保存时会把全部成员的显式上游真名清空（实测数据丢失）。
+		if m.UpstreamOverride != "" {
 			item["upstream_override"] = m.UpstreamOverride
 		}
 		if m.PublicAlias != "" {
