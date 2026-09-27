@@ -35,7 +35,7 @@ WORK = "/tmp/pbr-ui-journey"
 STAMP = time.strftime("%Y%m%d-%H%M%S")
 EVID = os.path.join(REPO, "verify", "e2e-ui", "run-%s.log" % STAMP)
 SHOTS = os.path.join(REPO, "verify", "e2e-ui", "shots")
-PW = "Pbr-Ui-Journey-Passw0rd!2026"
+PW = "test123"
 MODEL = "ui-model"
 # 拖拽重排需要至少 3 个成员才能区分"拖到首位/末位"；成员唯一键是
 # (渠道, 上游真名)，所以同一渠道的多个已声明模型即可组成 3 成员车道（ADR 0006）。

@@ -18,7 +18,7 @@ EVID="$REPO/verify/final/longrun-$STAMP.log"
 PORT=6802
 UPSTREAM_PORT=6814
 GOOD_KEY='sk-longrun-good'
-PBR_PW='Pbr-Longrun-Passw0rd!2026'
+PBR_PW='test123'
 TOTAL=${TOTAL:-3000}
 CONCURRENCY=${CONCURRENCY:-30}
 

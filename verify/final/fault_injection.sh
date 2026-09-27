@@ -13,7 +13,7 @@ PORT=6800
 UPSTREAM_PORT=6811
 DEAD_PORT=6812
 GOOD_KEY='sk-fault-good'
-PBR_PW='Pbr-Fault-Injection-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W8-C 故障注入矩阵 @ $STAMP ==="

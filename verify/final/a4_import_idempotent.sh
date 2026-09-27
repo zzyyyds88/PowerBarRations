@@ -22,7 +22,7 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 EVID="$REPO/verify/final/a4-$STAMP.log"
 PORT=6831
 GOOD_KEY='sk-a4-good'
-PBR_PW='Pbr-A4-Idempotent-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W8-A4 导入幂等与对账（迁移通用规则）@ $STAMP ==="

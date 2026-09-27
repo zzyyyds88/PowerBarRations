@@ -15,7 +15,7 @@ EVID="$REPO/verify/final/run-$STAMP.log"
 PORT=6799
 UPSTREAM_PORT=6810
 GOOD_KEY='sk-final-good'
-PBR_PW='Pbr-Final-Acceptance-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W8 自验收（自动化部分）@ $STAMP ==="

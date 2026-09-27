@@ -25,7 +25,7 @@ except ImportError:
 
 REPO = os.environ.get("PBR_REPO") or os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 WORK = "/tmp/pbr-t4"
-PW = "Pbr-T4-Failover-Passw0rd!2026"
+PW = "test123"
 
 
 def free_port():

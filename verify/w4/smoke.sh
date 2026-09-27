@@ -12,7 +12,7 @@ EVID="$REPO/verify/w4/run-$STAMP.log"
 PORT=6797
 UPSTREAM_PORT=6808
 GOOD_KEY='sk-w4-good'
-PBR_PW='Pbr-W4-Verify-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W4 控制台验收（构建 + 服务 + SSE）@ $STAMP ==="

@@ -18,7 +18,7 @@ EVID="$REPO/verify/w3/run-$STAMP.log"
 PORT=6794
 UPSTREAM_PORT=6805
 GOOD_KEY='sk-w3-good'
-PBR_PW='Pbr-W3-Verify-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W3 访问与管理面验收 @ $STAMP ==="
