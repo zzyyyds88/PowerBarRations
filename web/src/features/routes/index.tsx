@@ -161,7 +161,7 @@ export function Routes() {
     )
   } else {
     content = (
-      <div className='grid grid-cols-1 gap-3 pb-4 md:grid-cols-2 xl:grid-cols-3'>
+      <div className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-4 pb-4'>
         {models.map((row) => (
           <LaneCard
             key={row.model}
@@ -204,7 +204,7 @@ export function Routes() {
               </div>
             )}
             {orphanLanes.length > 0 && (
-              <div className='mb-3 flex items-center justify-between gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400'>
+              <div className='border-warning/40 bg-warning/10 text-warning rounded-control mb-3 flex items-center justify-between gap-2 border px-3 py-2 text-xs'>
                 <span>
                   {t(
                     '{{count}} lane(s) have members whose channel no longer exists.',

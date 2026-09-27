@@ -26,14 +26,11 @@ import { CHANNEL_STATUS } from '../constants'
 import { isTagAggregateRow } from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
-import { useChannels } from './channels-provider'
-
-const SENSITIVE_MASK = '••••'
 
 /**
  * Bespoke channel card for the card view. Reuses every column's existing cell
  * renderer via `flexRender`, so the table's information and interactions are
- * preserved: row selection, provider/multi-key/IO.NET type badge, id,
+ * preserved: row selection, provider/multi-key/IO.NET type badge,
  * name/remark + warning icons, status (with tooltips), balance
  * refresh, response/test times, tag expand-collapse, and the per-row
  * (or per-tag) actions menu.
@@ -46,7 +43,6 @@ function ChannelCardComponent({
   isSelected: boolean
 }) {
   const { t } = useTranslation()
-  const { sensitiveVisible } = useChannels()
   const isTagRow = isTagAggregateRow(row.original)
   const cells = row.getAllCells()
 
@@ -59,7 +55,7 @@ function ChannelCardComponent({
   }
 
   const fieldLabels: Record<string, string> = {
-    balance: t('Used / Remaining'),
+    balance: t('Usage'),
     response_time: t('Response'),
     test_time: t('Last Tested'),
   }
@@ -103,19 +99,12 @@ function ChannelCardComponent({
           </div>
         </div>
 
-        {/* Body: left column (id/name + balance) paired with a right-aligned
+        {/* Body: left column (name + usage) paired with a right-aligned
           column (response/test time). */}
         <div className='flex items-start justify-between gap-3'>
           {/* Left column */}
           <div className='flex min-w-0 flex-1 flex-col gap-3 overflow-hidden'>
-            <div className='min-w-0 text-sm'>
-              {!isTagRow && (
-                <div className={labelClass}>
-                  #{sensitiveVisible ? row.original.id : SENSITIVE_MASK}
-                </div>
-              )}
-              {nameCell}
-            </div>
+            <div className='min-w-0 text-sm'>{nameCell}</div>
             <div className='min-w-0'>
               <div className={cn('mb-1', labelClass)}>
                 {fieldLabels.balance}

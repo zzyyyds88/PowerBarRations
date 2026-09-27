@@ -64,11 +64,13 @@ export function Playground() {
     clearMessages()
   }
 
-  const { isLoadingModels } = usePlaygroundOptions({
-    currentModel: config.model,
-    setModels,
-    updateConfig,
-  })
+  const { isLoadingModels, clientKeys, isLoadingClientKeys } =
+    usePlaygroundOptions({
+      currentClientKey: config.clientKey,
+      currentModel: config.model,
+      setModels,
+      updateConfig,
+    })
 
   return (
     <div className='relative flex size-full min-h-0 flex-col overflow-hidden'>
@@ -98,6 +100,8 @@ export function Playground() {
           isModelLoading={isLoadingModels}
           modelValue={config.model}
           models={models}
+          clientKeys={clientKeys}
+          isClientKeyLoading={isLoadingClientKeys}
           onConfigChange={updateConfig}
           onClearMessages={handleClearMessages}
           onModelChange={(value) => updateConfig('model', value)}

@@ -748,14 +748,14 @@ export function LaneComposer(props: LaneComposerProps) {
                         </p>
                       )}
                       {activeDisabled && (
-                        <p className='mt-1.5 text-xs text-amber-600 dark:text-amber-500'>
+                        <p className='text-warning mt-1.5 text-xs'>
                           {t(
                             'This member is the active member of a manual lane and is disabled, so the model returns no available member.'
                           )}
                         </p>
                       )}
                       {undeclared && (
-                        <p className='mt-1.5 text-xs text-amber-600 dark:text-amber-500'>
+                        <p className='text-warning mt-1.5 text-xs'>
                           {t(
                             'Channel {{channel}} does not declare {{model}}; confirm the upstream supports this model name.',
                             { channel: member.channel, model: member.model }

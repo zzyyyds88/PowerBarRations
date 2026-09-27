@@ -137,7 +137,7 @@ export interface PlaygroundConfig {
    *
    * 试打台本质上是一个"下游客户端"：必须像下游一样带客户端密钥打
    * `/v1/chat/completions`，管理面会话 Cookie 对模型面无效（token-spec §1）。
-   * 仅保存在本机 localStorage，可在令牌页轮换。
+   * 仅保存在本机 sessionStorage，可在令牌页轮换。
    */
   clientKey: string
   temperature: number
@@ -162,4 +162,11 @@ export interface ParameterEnabled {
 export interface ModelOption {
   label: string
   value: string
+}
+
+export interface ClientKeyOption {
+  id: number
+  label: string
+  value: string
+  prefix: string
 }

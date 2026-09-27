@@ -20,6 +20,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { getApiKeys } from '@/features/keys/api'
+import { API_KEY_STATUS } from '@/features/keys/constants'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import { getUserModels } from '../api'
@@ -28,9 +30,10 @@ import {
   getOptionLoadErrorMessage,
   shouldClearModelWhenUnavailable,
 } from '../lib'
-import type { ModelOption, PlaygroundConfig } from '../types'
+import type { ClientKeyOption, ModelOption, PlaygroundConfig } from '../types'
 
 type UsePlaygroundOptionsParams = {
+  currentClientKey: string
   currentModel: string
   setModels: (models: ModelOption[]) => void
   updateConfig: <K extends keyof PlaygroundConfig>(
@@ -40,6 +43,7 @@ type UsePlaygroundOptionsParams = {
 }
 
 export function usePlaygroundOptions({
+  currentClientKey,
   currentModel,
   setModels,
   updateConfig,
@@ -54,6 +58,37 @@ export function usePlaygroundOptions({
   } = useQuery({
     queryKey: ['playground-models'],
     queryFn: async () => getUserModels(),
+  })
+
+  const {
+    data: clientKeysData,
+    error: clientKeysError,
+    isError: isClientKeysError,
+    isLoading: isLoadingClientKeys,
+  } = useQuery({
+    queryKey: ['playground-client-keys'],
+    queryFn: async () => {
+      const result = await getApiKeys({ p: 1, size: 100 })
+      if (!result.success) {
+        throw new Error(result.message || t('Failed to load API keys'))
+      }
+
+      return (result.data?.items ?? [])
+        .filter(
+          (item) =>
+            item.status === API_KEY_STATUS.ENABLED &&
+            Boolean(item.key_plain?.trim())
+        )
+        .map<ClientKeyOption>((item) => {
+          const value = item.key_plain?.trim() ?? ''
+          return {
+            id: item.id,
+            label: item.name || value.slice(0, 10),
+            value,
+            prefix: value.slice(0, 10),
+          }
+        })
+    },
   })
 
   useEffect(() => {
@@ -84,7 +119,24 @@ export function usePlaygroundOptions({
     }
   }, [modelsData, currentModel, setModels, updateConfig])
 
+  useEffect(() => {
+    if (!isClientKeysError) return
+
+    handleServerError(
+      clientKeysError,
+      getOptionLoadErrorMessage(clientKeysError, t('Failed to load API keys'))
+    )
+  }, [clientKeysError, isClientKeysError, t])
+
+  useEffect(() => {
+    if (!clientKeysData || !currentClientKey) return
+    if (clientKeysData.some((item) => item.value === currentClientKey)) return
+    updateConfig('clientKey', '')
+  }, [clientKeysData, currentClientKey, updateConfig])
+
   return {
     isLoadingModels,
+    clientKeys: clientKeysData ?? [],
+    isLoadingClientKeys,
   }
 }

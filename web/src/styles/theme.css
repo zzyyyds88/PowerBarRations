@@ -91,11 +91,18 @@ For commercial licensing, please contact support@quantumnous.com
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-control: var(--pbr-radius-control);
+  --radius-panel: var(--pbr-radius-panel);
+  --shadow-panel: var(--pbr-shadow-panel);
+  --shadow-popover: var(--pbr-shadow-popover);
 }
 
 :root {
   --radius: 1rem;
-  --app-header-height: 3rem;
+  /* Compact operational surfaces use the semantic shape tokens above. */
+  --pbr-radius-control: calc(var(--radius) * 0.5);
+  --pbr-radius-panel: calc(var(--radius) * 0.75);
+  --app-header-height: 3.25rem;
   /* Static build-channel fallback consumed when JS hasn't booted yet. */
   --app-rev: '2k6e8r7p';
   /* Currently active body font. The font axis swaps this between
@@ -176,6 +183,10 @@ For commercial licensing, please contact support@quantumnous.com
     var(--foreground) 16%,
     var(--background)
   );
+  --pbr-shadow-panel: 0 1px 2px oklch(0 0 0 / 0.04);
+  --pbr-shadow-popover: 0 8px 24px oklch(0 0 0 / 0.12);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
 }
 
 .dark {
@@ -244,4 +255,6 @@ For commercial licensing, please contact support@quantumnous.com
     var(--foreground) 24%,
     var(--background)
   );
+  --pbr-shadow-panel: 0 1px 2px oklch(0 0 0 / 0.18);
+  --pbr-shadow-popover: 0 8px 24px oklch(0 0 0 / 0.36);
 }

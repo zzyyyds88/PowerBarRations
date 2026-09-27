@@ -1259,6 +1259,7 @@
     "Input": "輸入",
     "Input price": "輸入價格",
     "Input Tokens": "輸入 Token",
+    "Input tokens": "輸入 Token",
     "Inset": "內嵌",
     "Install": "安裝",
     "Instance": "實例",
@@ -1714,6 +1715,7 @@
     "Other Settings": "其他設定",
     "Output": "輸出",
     "Output Tokens": "輸出 Token",
+    "Output tokens": "輸出 Token",
     "Outside these times: {{condition}}": "{{condition}}以外的時段",
     "Overage limited": "超額受限",
     "Overflow": "上溢",
@@ -2027,6 +2029,7 @@
     "Upstream unit prices": "上游單價",
     "No cost data yet": "暫無數據",
     "Failed to load statistics": "載入統計失敗",
+    "Failed requests": "失敗請求",
     "Token count": "Token 數",
     "Cache read": "快取讀取",
     "Configure upstream unit prices in the channel to see cost accounting here.": "在渠道裡配置上游單價後，這裡會顯示成本統計。",
@@ -2303,6 +2306,7 @@
     "succeeded": "已成功",
     "Success": "成功",
     "Success rate": "成功率",
+    "Successful requests": "成功請求",
     "Successfully created {{count}} API Key(s)": "成功建立了 {{count}} 個 API 金鑰",
     "Successfully deleted {{count}} API key(s)": "成功刪除了 {{count}} 個 API 金鑰",
     "Successfully deleted {{count}} model(s)": "成功刪除 {{count}} 個模型",
@@ -2596,6 +2600,9 @@
     "URL to your logo image (optional)": "您的徽標圖片 URL（可選）",
     "Usage": "用量",
     "Usage at a glance": "用量概覽",
+    "Usage by lane": "依車道統計用量",
+    "No usage in the last 24 hours": "最近 24 小時沒有用量",
+    "Derived from configured upstream prices": "依已設定的上游單價折算",
     "Usage logs": "使用日誌",
     "Usage Logs": "使用日誌",
     "Usage parameters": "用量參數",
@@ -2957,6 +2964,7 @@
     "Drag to reorder": "拖曳排序",
     "Member enabled for {{channel}}": "{{channel}} 的成員是否參與選路",
     "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "該成員已被人工關閉：它仍留在成員鏈裡，但選路時會跳過。重新開啟即可恢復參與選路。",
-    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "該成員是 manual 車道指定的當前成員，但已被人工關閉，因此該模型目前回傳「無可用成員」。"
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "該成員是 manual 車道指定的當前成員，但已被人工關閉，因此該模型目前回傳「無可用成員」。",
+    "Select a client key": "選擇客戶端金鑰"
   }
 }

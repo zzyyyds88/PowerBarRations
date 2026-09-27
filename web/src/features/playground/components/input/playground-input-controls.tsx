@@ -61,12 +61,15 @@ export function PlaygroundInputControls({
     })
 
   const renderSelector = () => (
-    <ModelSelector
-      selectedModel={modelValue}
-      models={models}
-      onModelChange={onModelChange}
-      disabled={isSelectorDisabled}
-    />
+    <div className='flex items-center gap-1.5'>
+      <span className='text-muted-foreground text-xs'>{t('Model')}</span>
+      <ModelSelector
+        selectedModel={modelValue}
+        models={models}
+        onModelChange={onModelChange}
+        disabled={isSelectorDisabled}
+      />
+    </div>
   )
 
   const renderSubmitButton = () =>
