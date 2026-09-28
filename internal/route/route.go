@@ -456,7 +456,9 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 	defer s.mu.Unlock()
 
 	if s.current >= 0 && lastErr != nil {
-		observeUpstreamBurst(s.Route, s.currentMemberLocked(), lastErr.StatusCode)
+		if !types.IsSkipRetryError(lastErr) {
+			observeUpstreamBurst(s.Route, s.currentMemberLocked(), lastErr.StatusCode)
+		}
 		kind := Classify(lastErr)
 		if !ShouldSwitchMember(kind) {
 			// client_error / canceled：不换人、不冷却，直接把错误交回客户端。
