@@ -89,6 +89,30 @@ func TestStateNextPublishesUpstreamBurstOnce(t *testing.T) {
 	assert.Contains(t, bursts[0].Detail, "count=3")
 }
 
+func TestPriorityChangeClearsExistingAffinity(t *testing.T) {
+	first := testRoute("priority-hot-reload", 2, 2)
+	state := NewState(first)
+	_, _, ok := state.Next(nil)
+	require.True(t, ok)
+	state.Runtime.withLock(func() {
+		state.Runtime.CurrentMember = memberKeyOf(&first.Members[1])
+		state.Runtime.HasCurrent = true
+		state.Runtime.AffinityUntil = nowMs() + 300_000
+	})
+
+	updated := testRoute("priority-hot-reload", 2, 2)
+	updated.Members[0], updated.Members[1] = updated.Members[1], updated.Members[0]
+	updated.Members[0].Priority = 2
+	updated.Members[1].Priority = 1
+	updated.Members[0].MemberId = 102
+	updated.Members[1].MemberId = 101
+	state = NewState(updated)
+	member, _, ok := state.Next(nil)
+	require.True(t, ok)
+	assert.Equal(t, updated.Members[0].Channel, member.Channel)
+	assert.Zero(t, state.Runtime.AffinityUntil)
+}
+
 // fakeClock 控制运行态的时间推进（冷却/熔断都依赖 Unix 毫秒）。
 type fakeClock struct{ ms int64 }
 

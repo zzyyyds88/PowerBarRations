@@ -413,7 +413,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 | 能力 | 取法 |
 |---|---|
 | 六键 `relay_config` 语义 | 照搬 bestruirui 上游字段与默认值/Normalize |
-| 成员冷却 + 亲和 | 移植语义（进程内 cooldowns + affinity） |
+| 成员冷却 + 亲和 | 移植语义（进程内 cooldowns + affinity）；车道成员顺序/优先级变更时立即清除旧亲和，按新配置选路 |
 | failover 排序 | 移植语义 |
 | 熔断三态 + 半开 | **仅算法参考**（同名分叉仓库），按 PBR 模型重写 |
 | 健康快照 / 逐尝试日志 | 参考形状，落到 probe 与 `request_logs.attempts` |

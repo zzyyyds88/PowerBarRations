@@ -315,12 +315,22 @@ func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
 	}
 
 	cfg := resolved.Config.Normalize()
+	signature := routeSnapshotSignature(resolved)
 	if resolved.Source == model.RouteSourceExplicit && len(resolved.Members) > 0 {
 		s.Runtime = Default.For(laneKeyOf(resolved))
 	}
+	s.Runtime.withLock(func() {
+		if s.Runtime.routeSignature != "" && s.Runtime.routeSignature != signature {
+			// A lane edit is an explicit operator decision. Do not let an old
+			// affinity window hide a newly promoted member.
+			s.Runtime.AffinityUntil = 0
+			s.Runtime.AffinityArmed = false
+		}
+		s.Runtime.routeSignature = signature
+	})
 	s.Route = resolved
 	s.cooldownSeconds = cfg.MemberCooldownSeconds
-	s.snapshotSig = routeSnapshotSignature(resolved)
+	s.snapshotSig = signature
 
 	order := make([]int, 0, len(resolved.Members))
 	if resolved.PinnedMemberId != 0 {

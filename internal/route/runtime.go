@@ -221,6 +221,9 @@ type Runtime struct {
 	prunedInit    bool
 	prunedSig     string
 	prunedVersion int64
+	// routeSignature 记录最近一次应用的完整车道配置签名。优先级/成员顺序
+	// 变化时，必须立即解除亲和，否则运行态会继续粘住旧的低优先级成员。
+	routeSignature string
 }
 
 func newRuntime() *Runtime {
