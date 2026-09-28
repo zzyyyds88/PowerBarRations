@@ -83,9 +83,17 @@ async function buildModelFaceErrorMessage(response: Response): Promise<string> {
 export async function getUserModels(): Promise<ModelOption[]> {
   // PBR 无"用户模型"概念：可用模型即全部路由键（api-spec §5.7）。
   const res = await api.get('/api/models')
-  const body = res.data as { items?: Array<{ model?: string }> }
+  const body = res.data as {
+    items?: Array<{ model?: string; routable?: boolean }>
+  }
   const items = body.items ?? []
   return items
+    .filter(
+      (item) =>
+        // /api/models also contains channel declarations without a lane.
+        // Those are not valid playground targets.
+        item.routable === true
+    )
     .map((item) => item.model)
     .filter(
       (model): model is string => typeof model === 'string' && model.length > 0

@@ -1259,6 +1259,7 @@
     "Input": "入力",
     "Input price": "入力価格",
     "Input Tokens": "入力トークン",
+    "Input tokens": "入力トークン",
     "Inset": "インセット",
     "Install": "インストール",
     "Instance": "インスタンス",
@@ -1714,6 +1715,7 @@
     "Other Settings": "その他の設定",
     "Output": "出力",
     "Output Tokens": "出力トークン",
+    "Output tokens": "出力トークン",
     "Outside these times: {{condition}}": "{{condition}}以外の時間帯",
     "Overage limited": "超過利用制限中",
     "Overflow": "オーバーフロー",
@@ -2027,6 +2029,7 @@
     "Upstream unit prices": "Upstream unit prices",
     "No cost data yet": "No cost data yet",
     "Failed to load statistics": "Failed to load statistics",
+    "Failed requests": "失敗したリクエスト",
     "Token count": "Token count",
     "Cache read": "Cache read",
     "Configure upstream unit prices in the channel to see cost accounting here.": "Configure upstream unit prices in the channel to see cost accounting here.",
@@ -2303,6 +2306,7 @@
     "succeeded": "成功",
     "Success": "成功",
     "Success rate": "成功率",
+    "Successful requests": "成功したリクエスト",
     "Successfully created {{count}} API Key(s)": "{{count}}個のAPIキーが正常に作成されました",
     "Successfully deleted {{count}} API key(s)": "{{count}}個のAPIキーが正常に削除されました",
     "Successfully deleted {{count}} model(s)": "{{count}} 個のモデルを削除しました",
@@ -2596,6 +2600,9 @@
     "URL to your logo image (optional)": "ロゴ画像のURL (オプション)",
     "Usage": "使用量",
     "Usage at a glance": "使用状況の概要",
+    "Usage by lane": "レーン別の使用状況",
+    "No usage in the last 24 hours": "過去24時間の使用はありません",
+    "Derived from configured upstream prices": "設定された上流価格から算出",
     "Usage logs": "使用ログ",
     "Usage Logs": "利用履歴",
     "Usage parameters": "使用量パラメータ",
@@ -2957,6 +2964,7 @@
     "Drag to reorder": "ドラッグして並べ替え",
     "Member enabled for {{channel}}": "{{channel}} のメンバーを有効にする",
     "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "このメンバーは手動で無効化されています。チェーンには残りますが、ルーティング時はスキップされます。再度有効にすると復帰します。",
-    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "このメンバーは manual レーンの指定メンバーですが手動で無効化されているため、このモデルは「利用可能なメンバーなし」を返します。"
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "このメンバーは manual レーンの指定メンバーですが手動で無効化されているため、このモデルは「利用可能なメンバーなし」を返します。",
+    "Select a client key": "クライアントキーを選択"
   }
 }

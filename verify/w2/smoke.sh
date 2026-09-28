@@ -19,8 +19,8 @@ EVID="$REPO/verify/w2/run-$STAMP.log"
 PORT=6793
 UPSTREAM_PORT=6804
 GOOD_KEY='sk-w2-good'
-PBR_PW='Pbr-W2-Verify-Passw0rd!2026'
-LEGACY_PW='Pbr-W2-Legacy-Passw0rd!2026'
+PBR_PW='test123'
+LEGACY_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W2 容错验收 @ $STAMP ==="

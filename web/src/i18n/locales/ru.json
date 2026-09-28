@@ -1259,6 +1259,7 @@
     "Input": "Ввод",
     "Input price": "Цена входа",
     "Input Tokens": "Входные токены",
+    "Input tokens": "Входные токены",
     "Inset": "Встроенная",
     "Install": "Установить",
     "Instance": "Экземпляр",
@@ -1714,6 +1715,7 @@
     "Other Settings": "Другие настройки",
     "Output": "Вывод",
     "Output Tokens": "Выходные токены",
+    "Output tokens": "Выходные токены",
     "Outside these times: {{condition}}": "Вне этих периодов: {{condition}}",
     "Overage limited": "Ограничение перерасхода",
     "Overflow": "Переполнение",
@@ -2027,6 +2029,7 @@
     "Upstream unit prices": "Upstream unit prices",
     "No cost data yet": "No cost data yet",
     "Failed to load statistics": "Failed to load statistics",
+    "Failed requests": "Неудачные запросы",
     "Token count": "Token count",
     "Cache read": "Cache read",
     "Configure upstream unit prices in the channel to see cost accounting here.": "Configure upstream unit prices in the channel to see cost accounting here.",
@@ -2303,6 +2306,7 @@
     "succeeded": "успешно",
     "Success": "Успешно",
     "Success rate": "Доля успешных запросов",
+    "Successful requests": "Успешные запросы",
     "Successfully created {{count}} API Key(s)": "Успешно создано {{count}} API-ключ(а/ей)",
     "Successfully deleted {{count}} API key(s)": "Успешно удалено {{count}} API-ключ(а/ей)",
     "Successfully deleted {{count}} model(s)": "Успешно удалено {{count}} моделей",
@@ -2596,6 +2600,9 @@
     "URL to your logo image (optional)": "URL изображения вашего логотипа (необязательно)",
     "Usage": "Использование",
     "Usage at a glance": "Краткий обзор использования",
+    "Usage by lane": "Использование по полосам",
+    "No usage in the last 24 hours": "За последние 24 часа использования не было",
+    "Derived from configured upstream prices": "Рассчитано по настроенным ценам провайдера",
     "Usage logs": "Журналы использования",
     "Usage Logs": "Журнал использования",
     "Usage parameters": "Параметры использования",
@@ -2957,6 +2964,7 @@
     "Drag to reorder": "Перетащите для изменения порядка",
     "Member enabled for {{channel}}": "Участник включён для {{channel}}",
     "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "Этот участник отключён вручную: он остаётся в цепочке, но пропускается при маршрутизации. Включите его снова, чтобы вернуть.",
-    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Этот участник — активный участник manual-полосы, но он отключён, поэтому модель возвращает «нет доступных участников»."
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Этот участник — активный участник manual-полосы, но он отключён, поэтому модель возвращает «нет доступных участников».",
+    "Select a client key": "Выберите клиентский ключ"
   }
 }

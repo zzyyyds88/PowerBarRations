@@ -1259,6 +1259,7 @@
     "Input": "Input",
     "Input price": "Input price",
     "Input Tokens": "Input Tokens",
+    "Input tokens": "Input tokens",
     "Inset": "Inset",
     "Install": "Install",
     "Instance": "Instance",
@@ -1714,6 +1715,7 @@
     "Other Settings": "Other Settings",
     "Output": "Output",
     "Output Tokens": "Output Tokens",
+    "Output tokens": "Output tokens",
     "Outside these times: {{condition}}": "Outside these times: {{condition}}",
     "Overage limited": "Overage limited",
     "Overflow": "Overflow",
@@ -2027,6 +2029,7 @@
     "Upstream unit prices": "Upstream unit prices",
     "No cost data yet": "No cost data yet",
     "Failed to load statistics": "Failed to load statistics",
+    "Failed requests": "Failed requests",
     "Token count": "Token count",
     "Cache read": "Cache read",
     "Configure upstream unit prices in the channel to see cost accounting here.": "Configure upstream unit prices in the channel to see cost accounting here.",
@@ -2303,6 +2306,7 @@
     "succeeded": "succeeded",
     "Success": "Success",
     "Success rate": "Success rate",
+    "Successful requests": "Successful requests",
     "Successfully created {{count}} API Key(s)": "Successfully created {{count}} API Key(s)",
     "Successfully deleted {{count}} API key(s)": "Successfully deleted {{count}} API key(s)",
     "Successfully deleted {{count}} model(s)": "Successfully deleted {{count}} model(s)",
@@ -2596,6 +2600,9 @@
     "URL to your logo image (optional)": "URL to your logo image (optional)",
     "Usage": "Usage",
     "Usage at a glance": "Usage at a glance",
+    "Usage by lane": "Usage by lane",
+    "No usage in the last 24 hours": "No usage in the last 24 hours",
+    "Derived from configured upstream prices": "Derived from configured upstream prices",
     "Usage logs": "Usage logs",
     "Usage Logs": "Usage Logs",
     "Usage parameters": "Usage parameters",
@@ -2957,6 +2964,7 @@
     "Drag to reorder": "Drag to reorder",
     "Member enabled for {{channel}}": "Member enabled for {{channel}}",
     "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.",
-    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "This member is the active member of a manual lane and is disabled, so the model returns no available member."
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "This member is the active member of a manual lane and is disabled, so the model returns no available member.",
+    "Select a client key": "Select a client key"
   }
 }

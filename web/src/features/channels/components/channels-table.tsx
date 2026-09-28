@@ -334,7 +334,7 @@ export function ChannelsTable() {
       applyHeaderSize
       toolbarProps={{
         collapsibleOnMobile: true,
-        searchPlaceholder: t('Filter by name, ID, or key...'),
+        searchPlaceholder: t('Filter by name...'),
         searchDebounceMs: 500,
         onReset: () => {
           resetModelFilterInput()

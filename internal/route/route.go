@@ -21,11 +21,61 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )
+
+var (
+	upstreamBurstMu             sync.Mutex
+	upstreamBurstDetector       = events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{})
+	upstreamBurstConfigProvider func() events.UpstreamBurstConfig
+)
+
+// SetUpstreamBurstDetector replaces the process-local 5xx detector. Tests and
+// configuration reloads use this to provide an isolated detector state.
+func SetUpstreamBurstDetector(detector *events.UpstreamBurstDetector) {
+	upstreamBurstMu.Lock()
+	defer upstreamBurstMu.Unlock()
+	if detector == nil {
+		detector = events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{})
+	}
+	upstreamBurstDetector = detector
+}
+
+// SetUpstreamBurstConfigProvider supplies the current system/options values.
+func SetUpstreamBurstConfigProvider(provider func() events.UpstreamBurstConfig) {
+	upstreamBurstMu.Lock()
+	upstreamBurstConfigProvider = provider
+	upstreamBurstMu.Unlock()
+}
+
+func observeUpstreamBurst(resolved *model.ResolvedRoute, member *model.RouteMember, statusCode int) {
+	if resolved == nil || member == nil || statusCode < http.StatusInternalServerError || statusCode > 599 {
+		return
+	}
+	upstreamBurstMu.Lock()
+	if upstreamBurstConfigProvider != nil {
+		configured := upstreamBurstConfigProvider().NormalizedConfig()
+		if configured != upstreamBurstDetector.Config() {
+			upstreamBurstDetector = events.NewUpstreamBurstDetector(configured)
+		}
+	}
+	result := upstreamBurstDetector.Observe(strconv.Itoa(member.ChannelId), statusCode)
+	upstreamBurstMu.Unlock()
+	if !result.Triggered {
+		return
+	}
+	events.Publish(events.Event{
+		Ts:     time.Now().UnixMilli(),
+		Type:   events.EventUpstreamBurst,
+		Lane:   laneKeyOf(resolved),
+		Member: memberLabel(member),
+		Detail: fmt.Sprintf("channel_id=%d count=%d threshold=%d window_seconds=%d status_code=%d", member.ChannelId, result.Count, result.Threshold, int(result.Window/time.Second), statusCode),
+	})
+}
 
 // contextKey 请求内路由态在 gin.Context 中的键。
 const contextKey = "pbr_request_route"
@@ -406,6 +456,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 	defer s.mu.Unlock()
 
 	if s.current >= 0 && lastErr != nil {
+		observeUpstreamBurst(s.Route, s.currentMemberLocked(), lastErr.StatusCode)
 		kind := Classify(lastErr)
 		if !ShouldSwitchMember(kind) {
 			// client_error / canceled：不换人、不冷却，直接把错误交回客户端。

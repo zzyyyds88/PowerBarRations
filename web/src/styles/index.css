@@ -553,20 +553,16 @@ For commercial licensing, please contact support@quantumnous.com
 
 /* Micro-interactions — Vercel-style subtle hover/active feedback */
 @media (prefers-reduced-motion: no-preference) {
-  [data-slot='card']:not([data-card-hover='false']) {
+  [data-slot='card'][data-card-hover='true'] {
     transition:
-      transform 150ms ease,
-      box-shadow 150ms ease;
+      transform var(--motion-fast) ease,
+      box-shadow var(--motion-fast) ease;
   }
 
   @media (min-width: 641px) {
-    [data-slot='card']:not([data-card-hover='false']):hover {
+    [data-slot='card'][data-card-hover='true']:hover {
       transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgb(0 0 0 / 0.06);
-    }
-
-    .dark [data-slot='card']:not([data-card-hover='false']):hover {
-      box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+      box-shadow: var(--shadow-popover);
     }
   }
 
@@ -579,38 +575,39 @@ For commercial licensing, please contact support@quantumnous.com
     transition: background-color 120ms ease;
   }
 
-  /* Table row stagger-in animation */
-  [data-slot='table'] tbody tr {
+  /* Stagger is opt-in for short visual lists; operational tables stay still
+     so rows do not move while an operator scans or selects them. */
+  [data-table-motion='stagger'] tbody tr {
     animation: tableRowEnter 0.2s cubic-bezier(0.33, 1, 0.68, 1) both;
   }
-  [data-slot='table'] tbody tr:nth-child(2) {
+  [data-table-motion='stagger'] tbody tr:nth-child(2) {
     animation-delay: 25ms;
   }
-  [data-slot='table'] tbody tr:nth-child(3) {
+  [data-table-motion='stagger'] tbody tr:nth-child(3) {
     animation-delay: 50ms;
   }
-  [data-slot='table'] tbody tr:nth-child(4) {
+  [data-table-motion='stagger'] tbody tr:nth-child(4) {
     animation-delay: 75ms;
   }
-  [data-slot='table'] tbody tr:nth-child(5) {
+  [data-table-motion='stagger'] tbody tr:nth-child(5) {
     animation-delay: 100ms;
   }
-  [data-slot='table'] tbody tr:nth-child(6) {
+  [data-table-motion='stagger'] tbody tr:nth-child(6) {
     animation-delay: 125ms;
   }
-  [data-slot='table'] tbody tr:nth-child(7) {
+  [data-table-motion='stagger'] tbody tr:nth-child(7) {
     animation-delay: 150ms;
   }
-  [data-slot='table'] tbody tr:nth-child(8) {
+  [data-table-motion='stagger'] tbody tr:nth-child(8) {
     animation-delay: 175ms;
   }
-  [data-slot='table'] tbody tr:nth-child(9) {
+  [data-table-motion='stagger'] tbody tr:nth-child(9) {
     animation-delay: 200ms;
   }
-  [data-slot='table'] tbody tr:nth-child(10) {
+  [data-table-motion='stagger'] tbody tr:nth-child(10) {
     animation-delay: 225ms;
   }
-  [data-slot='table'] tbody tr:nth-child(n + 11) {
+  [data-table-motion='stagger'] tbody tr:nth-child(n + 11) {
     animation-delay: 250ms;
   }
 }

@@ -26,7 +26,6 @@ import {
   Tags,
   TestTube,
   ListChecks,
-  SortAsc,
   RefreshCw,
   ArrowUpFromLine,
 } from 'lucide-react'
@@ -74,8 +73,6 @@ export function ChannelsPrimaryButtons() {
     setCurrentRow,
     enableTagMode,
     setEnableTagMode,
-    idSort,
-    setIdSort,
     batchMode,
     setBatchMode,
     upstream,
@@ -97,11 +94,6 @@ export function ChannelsPrimaryButtons() {
   const handleTagModeToggle = (checked: boolean) => {
     localStorage.setItem('pbr_enable-tag-mode', String(checked))
     setEnableTagMode(checked)
-  }
-
-  const handleIdSortToggle = (checked: boolean) => {
-    localStorage.setItem('pbr_channels-id-sort', String(checked))
-    setIdSort(checked)
   }
 
   const handleBatchModeToggle = (checked: boolean) => {
@@ -136,18 +128,6 @@ export function ChannelsPrimaryButtons() {
             id='tag-mode'
             checked={enableTagMode}
             onCheckedChange={handleTagModeToggle}
-          />
-        </div>
-
-        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
-          <SortAsc className='text-muted-foreground h-4 w-4' />
-          <Label htmlFor='id-sort' className='cursor-pointer text-sm'>
-            {t('Sort by ID')}
-          </Label>
-          <Switch
-            id='id-sort'
-            checked={idSort}
-            onCheckedChange={handleIdSortToggle}
           />
         </div>
 
@@ -198,15 +178,6 @@ export function ChannelsPrimaryButtons() {
             >
               <Tags className='mr-2 h-4 w-4' />
               {t('Tag Mode')}
-            </DropdownMenuCheckboxItem>
-
-            <DropdownMenuCheckboxItem
-              className='sm:hidden'
-              checked={idSort}
-              onCheckedChange={handleIdSortToggle}
-            >
-              <SortAsc className='mr-2 h-4 w-4' />
-              {t('Sort by ID')}
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuSeparator className='sm:hidden' />

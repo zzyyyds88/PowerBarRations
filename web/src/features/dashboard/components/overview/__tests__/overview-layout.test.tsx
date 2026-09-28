@@ -122,11 +122,15 @@ async function renderOverview() {
 }
 
 describe('overview layout', () => {
-  it('renders usage summary and the first-request preview without the setup guide', async () => {
+  it('renders detailed usage and performance without a first-request panel', async () => {
     await renderOverview()
 
     expect(await screen.findByText('Usage at a glance')).toBeVisible()
-    expect(await screen.findByText('First API request')).toBeVisible()
+    expect(await screen.findByText('Usage by lane')).toBeVisible()
+    expect(
+      screen.getByText('Successful requests 3 · Failed requests 0')
+    ).toBeVisible()
+    expect(screen.queryByText('First API request')).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Setup guide' })
     ).not.toBeInTheDocument()
@@ -137,7 +141,8 @@ describe('overview layout', () => {
   it('does not render recommended quick actions', async () => {
     await renderOverview()
 
-    expect(await screen.findByText('First API request')).toBeVisible()
+    expect(await screen.findByText('Usage by lane')).toBeVisible()
+    expect(screen.queryByText('First API request')).not.toBeInTheDocument()
     expect(screen.queryByText('Recommended actions')).not.toBeInTheDocument()
     expect(
       screen.queryByText('Keep the platform ready')
@@ -151,7 +156,7 @@ describe('overview layout', () => {
       }
       switch (url) {
         case '/api/stats':
-          return { data: { granularity: 'hour', group_by: 'lane', items: [] } }
+          throw new Error('Statistics unavailable')
         default:
           throw new Error(`Unexpected dashboard request: ${url}`)
       }
@@ -159,9 +164,8 @@ describe('overview layout', () => {
 
     await renderOverview()
 
-    expect(await screen.findByText('First API request')).toBeVisible()
-    expect(await screen.findAllByText('Failed to load')).toHaveLength(2)
-    expect(screen.queryByText('Needs API key')).not.toBeInTheDocument()
-    expect(screen.queryByText('Loading')).not.toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load')
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeVisible()
+    expect(screen.queryByText('First API request')).not.toBeInTheDocument()
   })
 })

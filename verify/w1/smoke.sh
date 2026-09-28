@@ -18,8 +18,8 @@ PORT=6792
 UPSTREAM_PORT=6803
 GOOD_KEY='sk-w1-good'
 BAD_KEY='sk-w1-bad'
-PBR_PW='Pbr-W1-Verify-Passw0rd!2026'
-LEGACY_PW='Pbr-W1-Legacy-Passw0rd!2026'
+PBR_PW='test123'
+LEGACY_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W1 单层化路由验收 @ $STAMP ==="

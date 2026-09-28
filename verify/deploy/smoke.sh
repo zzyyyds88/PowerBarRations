@@ -15,7 +15,7 @@ PORT=6796
 export PBR_PORT=$PORT
 UPSTREAM_PORT=6807
 GOOD_KEY='sk-deploy-verify'
-PBR_PW='Pbr-Deploy-Verify-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== 部署验收 @ $STAMP ==="

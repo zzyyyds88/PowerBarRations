@@ -12,7 +12,7 @@ UPSTREAM_PORT=6801
 
 exec > "$EVID" 2>&1
 echo "=== W0 smoke @ $STAMP ==="
-PW='Pbr-W0-Passw0rd!2026'
+PW='test123'
 
 cleanup() {
   pkill -f "$WORK/pbr" 2>/dev/null

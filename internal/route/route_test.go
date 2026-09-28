@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
@@ -58,6 +59,34 @@ func memberName(m *model.RouteMember) string {
 		return ""
 	}
 	return m.Channel
+}
+
+func TestStateNextPublishesUpstreamBurstOnce(t *testing.T) {
+	resolved := testRoute("burst-event", 1, 10)
+	SetUpstreamBurstDetector(events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{Threshold: 3, Window: time.Minute}))
+	t.Cleanup(func() {
+		SetUpstreamBurstDetector(events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{}))
+		events.SetSubscriber(nil)
+	})
+	var received []events.Event
+	events.SetSubscriber(func(event events.Event) { received = append(received, event) })
+	state := NewState(resolved)
+	member, _, ok := state.Next(nil)
+	require.True(t, ok)
+	for i := 0; i < 3; i++ {
+		member, _, ok = state.Next(apiError(http.StatusBadGateway, types.ErrorCodeDoRequestFailed, false))
+		require.True(t, ok)
+		require.NotNil(t, member)
+	}
+	var bursts []events.Event
+	for _, event := range received {
+		if event.Type == events.EventUpstreamBurst {
+			bursts = append(bursts, event)
+		}
+	}
+	require.Len(t, bursts, 1)
+	assert.Equal(t, "burst-event", bursts[0].Lane)
+	assert.Contains(t, bursts[0].Detail, "count=3")
 }
 
 // fakeClock 控制运行态的时间推进（冷却/熔断都依赖 Unix 毫秒）。

@@ -28,6 +28,7 @@ import {
 
 import { getSubmittableInputText } from '../../lib'
 import type {
+  ClientKeyOption,
   ModelOption,
   ParameterEnabled,
   PlaygroundConfig,
@@ -43,6 +44,8 @@ interface PlaygroundInputProps {
   disabled?: boolean
   isGenerating?: boolean
   models: ModelOption[]
+  clientKeys: ClientKeyOption[]
+  isClientKeyLoading?: boolean
   modelValue: string
   onModelChange: (value: string) => void
   isModelLoading?: boolean
@@ -66,6 +69,8 @@ export function PlaygroundInput({
   disabled,
   isGenerating,
   models,
+  clientKeys,
+  isClientKeyLoading = false,
   modelValue,
   onModelChange,
   isModelLoading = false,
@@ -90,7 +95,9 @@ export function PlaygroundInput({
     <div className='grid shrink-0 gap-4 px-1 md:pb-4'>
       <PlaygroundClientKeyField
         disabled={disabled}
+        isLoading={isClientKeyLoading}
         onChange={(value) => onConfigChange('clientKey', value)}
+        options={clientKeys}
         value={config.clientKey}
       />
       <PromptInput

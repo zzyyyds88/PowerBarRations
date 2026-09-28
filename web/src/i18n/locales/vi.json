@@ -1259,6 +1259,7 @@
     "Input": "Đầu vào",
     "Input price": "Giá đầu vào",
     "Input Tokens": "Token đầu vào",
+    "Input tokens": "Token đầu vào",
     "Inset": "Khung trong",
     "Install": "Cài đặt",
     "Instance": "Phiên bản",
@@ -1714,6 +1715,7 @@
     "Other Settings": "Cài đặt khác",
     "Output": "Đầu ra",
     "Output Tokens": "Token đầu ra",
+    "Output tokens": "Token đầu ra",
     "Outside these times: {{condition}}": "Ngoài các khung giờ: {{condition}}",
     "Overage limited": "Đã giới hạn vượt mức",
     "Overflow": "Tràn trên",
@@ -2027,6 +2029,7 @@
     "Upstream unit prices": "Upstream unit prices",
     "No cost data yet": "No cost data yet",
     "Failed to load statistics": "Failed to load statistics",
+    "Failed requests": "Yêu cầu thất bại",
     "Token count": "Token count",
     "Cache read": "Cache read",
     "Configure upstream unit prices in the channel to see cost accounting here.": "Configure upstream unit prices in the channel to see cost accounting here.",
@@ -2303,6 +2306,7 @@
     "succeeded": "thành công",
     "Success": "Thành công",
     "Success rate": "Tỷ lệ thành công",
+    "Successful requests": "Yêu cầu thành công",
     "Successfully created {{count}} API Key(s)": "Đã tạo thành công {{count}} khóa API",
     "Successfully deleted {{count}} API key(s)": "Đã xóa thành công {{count}} khóa API",
     "Successfully deleted {{count}} model(s)": "Đã xóa thành công {{count}} mô hình",
@@ -2596,6 +2600,9 @@
     "URL to your logo image (optional)": "URL hình ảnh logo của bạn (tùy chọn)",
     "Usage": "Sử dụng",
     "Usage at a glance": "Tổng quan mức dùng",
+    "Usage by lane": "Mức dùng theo lane",
+    "No usage in the last 24 hours": "Không có mức dùng trong 24 giờ qua",
+    "Derived from configured upstream prices": "Tính theo giá upstream đã cấu hình",
     "Usage logs": "Nhật ký sử dụng",
     "Usage Logs": "Nhật ký sử dụng",
     "Usage parameters": "Tham số sử dụng",
@@ -2957,6 +2964,7 @@
     "Drag to reorder": "Kéo để sắp xếp lại",
     "Member enabled for {{channel}}": "Bật thành viên cho {{channel}}",
     "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "Thành viên này đã bị tắt thủ công: nó vẫn nằm trong chuỗi nhưng bị bỏ qua khi định tuyến. Bật lại để khôi phục.",
-    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Thành viên này là thành viên đang hoạt động của làn manual và đã bị tắt, nên mô hình trả về \"không có thành viên khả dụng\"."
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Thành viên này là thành viên đang hoạt động của làn manual và đã bị tắt, nên mô hình trả về \"không có thành viên khả dụng\".",
+    "Select a client key": "Chọn khóa máy khách"
   }
 }

@@ -278,7 +278,7 @@
 
 > **根路径文档页不属于 OpenAPI 契约面**：`GET /doc`（面向 AI 的管理 API 手册，`text/markdown`；浏览器 `Accept: text/html` 时返回说明页）、`GET /llms.txt`（与 `/doc` 同源的纯文本手册）、`GET /doc/ui`（复用 Scalar 的交互式文档，指向 `/api/openapi.json`）三者**免鉴权**、返回手册/UI 页面而非可被工具解析的资源，因此**刻意不登记进 `openapi.json`**（其 `servers` 只声明 `/api`）。该边界由 `router/openapi_coverage_test.go` 的 `TestDocRoutesAreOutsideOpenAPI` 固化：三者必须已注册、且不得出现在 openapi 中。
 | GET | `/api/system/options` | 全局选项 |
-| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
+| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`upstream_burst_threshold`、`upstream_burst_window_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
 
 ### 5.2 车道
 
@@ -495,7 +495,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 }
 ```
 
-- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。`ts` 为毫秒时间戳，`member` 为 `channelId:upstreamModel`；`member` 为空时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
+- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）、`skip`（成员被选路跳过）、`channel_disabled`（渠道整体禁用）、`channel_enabled`（渠道整体启用）、`channel_deleted`（渠道删除）、`upstream_burst`（同一渠道 60 秒内 5xx 达到 5 次）。渠道事件的 `lane` 为空、`member` 为渠道 ID；`upstream_burst` 的 detail 含 `channel_id`、`count`、`threshold`、`window_seconds`、`status_code`。`ts` 为毫秒时间戳，路由成员 `member` 为 `channel/model`；`member` 为空时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
 
 投递记录响应（cursor 分页，按 ts 倒序）：
 

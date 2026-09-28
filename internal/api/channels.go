@@ -221,11 +221,13 @@ func PutChannel(c *gin.Context) {
 			return
 		}
 	} else {
+		beforeStatus := existing.Status
 		channel.UpdatedAt = time.Now().Unix()
 		if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Select("*").Omit("id", "created_time").Updates(channel).Error; err != nil {
 			writeAPIError(c, err)
 			return
 		}
+		model.NotifyChannelStatusChanged(channel, beforeStatus, channel.Status, "management upsert")
 	}
 	model.InitChannelCache()
 
@@ -302,7 +304,7 @@ func DeleteChannel(c *gin.Context) {
 		dryRunResult(c, "channels", "remove", name)
 		return
 	}
-	if err := model.DB.Delete(&model.Channel{}, ch.Id).Error; err != nil {
+	if err := ch.Delete(); err != nil {
 		writeAPIError(c, err)
 		return
 	}

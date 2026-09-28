@@ -16,7 +16,7 @@ PORT=6797
 UPSTREAM_PORT=6812
 GOOD_KEY="sk-hermes-good"
 LANE="hermes-lane"
-PBR_PW="Pbr-Hermes-Acceptance-Passw0rd!2026"
+PBR_PW="test123"
 
 exec > "$EVID" 2>&1
 echo "=== Hermes 档案级验收 @ $STAMP ==="

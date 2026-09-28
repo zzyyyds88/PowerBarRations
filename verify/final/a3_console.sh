@@ -16,7 +16,7 @@ EVID="$REPO/verify/final/a3-$STAMP.log"
 PORT=6821
 UPSTREAM_PORT=6822
 GOOD_KEY='sk-a3-good'
-PBR_PW='Pbr-A3-Walkthrough-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W8-A3 控制台逐页走查 @ $STAMP ==="

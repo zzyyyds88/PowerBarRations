@@ -1259,6 +1259,7 @@
     "Input": "Entrée",
     "Input price": "Prix d’entrée",
     "Input Tokens": "Tokens d'entrée",
+    "Input tokens": "Tokens d'entrée",
     "Inset": "Encastré",
     "Install": "Installer",
     "Instance": "Instance",
@@ -1714,6 +1715,7 @@
     "Other Settings": "Autres paramètres",
     "Output": "Sortie",
     "Output Tokens": "Tokens de sortie",
+    "Output tokens": "Tokens de sortie",
     "Outside these times: {{condition}}": "En dehors de ces périodes : {{condition}}",
     "Overage limited": "Dépassement limité",
     "Overflow": "Débordement",
@@ -2027,6 +2029,7 @@
     "Upstream unit prices": "Upstream unit prices",
     "No cost data yet": "No cost data yet",
     "Failed to load statistics": "Failed to load statistics",
+    "Failed requests": "Requêtes échouées",
     "Token count": "Token count",
     "Cache read": "Cache read",
     "Configure upstream unit prices in the channel to see cost accounting here.": "Configure upstream unit prices in the channel to see cost accounting here.",
@@ -2303,6 +2306,7 @@
     "succeeded": "réussi",
     "Success": "Succès",
     "Success rate": "Taux de réussite",
+    "Successful requests": "Requêtes réussies",
     "Successfully created {{count}} API Key(s)": "{{count}} clé(s) API créée(s) avec succès",
     "Successfully deleted {{count}} API key(s)": "{{count}} clé(s) API supprimée(s) avec succès",
     "Successfully deleted {{count}} model(s)": "{{count}} modèle(s) supprimé(s) avec succès",
@@ -2596,6 +2600,9 @@
     "URL to your logo image (optional)": "URL de votre image de logo (facultatif)",
     "Usage": "Utilisation",
     "Usage at a glance": "Vue d'ensemble de l'utilisation",
+    "Usage by lane": "Utilisation par voie",
+    "No usage in the last 24 hours": "Aucune utilisation au cours des dernières 24 heures",
+    "Derived from configured upstream prices": "Calculé selon les tarifs amont configurés",
     "Usage logs": "Journaux d'utilisation",
     "Usage Logs": "Journaux d'utilisation",
     "Usage parameters": "Paramètres d'utilisation",
@@ -2957,6 +2964,7 @@
     "Drag to reorder": "Glisser pour réordonner",
     "Member enabled for {{channel}}": "Membre activé pour {{channel}}",
     "This member is manually disabled: it stays in the chain but is skipped during routing. Re-enable it to bring it back.": "Ce membre est désactivé manuellement : il reste dans la chaîne mais est ignoré lors du routage. Réactivez-le pour le rétablir.",
-    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Ce membre est le membre actif d'une voie manual et il est désactivé : le modèle ne renvoie donc aucun membre disponible."
+    "This member is the active member of a manual lane and is disabled, so the model returns no available member.": "Ce membre est le membre actif d'une voie manual et il est désactivé : le modèle ne renvoie donc aucun membre disponible.",
+    "Select a client key": "Choisir une clé client"
   }
 }

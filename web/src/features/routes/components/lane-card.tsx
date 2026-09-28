@@ -107,8 +107,11 @@ export function LaneCard(props: LaneCardProps) {
   }
 
   return (
-    <Card className='flex min-h-0 flex-col overflow-hidden'>
-      <CardHeader className='flex-row items-start justify-between gap-2 py-3'>
+    <Card
+      data-card-hover='true'
+      className='flex min-h-0 flex-col overflow-hidden'
+    >
+      <CardHeader className='flex-row items-start justify-between gap-2 py-2.5'>
         <div className='flex min-w-0 items-center gap-1'>
           <CardTitle className='truncate font-mono text-sm' title={row.model}>
             {row.model}
@@ -174,7 +177,7 @@ export function LaneCard(props: LaneCardProps) {
           <LaneRuntimeCell snapshot={props.snapshot} now={props.now} />
         </div>
       </CardContent>
-      <div className='flex items-center justify-end gap-2 border-t px-4 py-2'>
+      <div className='flex items-center justify-end gap-1.5 border-t px-3 py-2'>
         <Button size='sm' variant='outline' onClick={props.onEdit}>
           <Pencil className='size-3.5' />
           {t('Edit members')}

@@ -93,7 +93,7 @@ export function PerformanceHealthPanel() {
   const hasData = models.length > 0
 
   return (
-    <section className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
+    <section className='bg-card rounded-panel shadow-panel overflow-hidden border'>
       <div className='flex items-center gap-2 border-b px-4 py-3 sm:px-5'>
         <IconBadge tone='success' size='sm'>
           <HeartPulse />
@@ -104,7 +104,7 @@ export function PerformanceHealthPanel() {
         </span>
       </div>
 
-      <div className='space-y-3 p-4 sm:p-5'>
+      <div className='flex flex-col gap-3 p-3 sm:p-4'>
         <div className='grid grid-cols-3 gap-2'>
           <MetricCell
             icon={HeartPulse}
@@ -130,14 +130,15 @@ export function PerformanceHealthPanel() {
           />
         </div>
 
-        {loading ? (
-          <div className='space-y-1'>
+        {loading && (
+          <div className='flex flex-col gap-1'>
             {['success', 'latency', 'throughput'].map((key) => (
               <Skeleton key={key} className='h-5 w-full rounded' />
             ))}
           </div>
-        ) : (
-          hasData && (
+        )}
+        {!loading && hasData && (
+          <div>
             <div>
               <span className='text-muted-foreground mb-1 block text-[11px] font-medium'>
                 {t('Top models by traffic')}
@@ -172,7 +173,12 @@ export function PerformanceHealthPanel() {
                 ))}
               </div>
             </div>
-          )
+          </div>
+        )}
+        {!loading && !hasData && (
+          <div className='text-muted-foreground rounded-control border border-dashed px-3 py-4 text-center text-xs'>
+            {t('No data available')}
+          </div>
         )}
       </div>
     </section>
@@ -189,7 +195,7 @@ function MetricCell(props: {
 }) {
   const Icon = props.icon
   return (
-    <div className='bg-muted/40 rounded-xl px-3 py-2.5'>
+    <div className='bg-muted/40 rounded-control px-3 py-2.5'>
       <div className='text-muted-foreground flex items-center gap-1.5 text-[11px] font-medium'>
         <IconBadge tone={props.tone} size='xs'>
           <Icon />

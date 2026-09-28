@@ -270,7 +270,7 @@ func TestDispatchFiltersAndMerges(t *testing.T) {
 	assert.Equal(t, 3, requests)
 }
 
-// 订阅入口：非白名单事件不入队；缓冲满时丢弃并计数（绝不阻塞调用方）。
+// 订阅入口：未知事件不入队；已登记事件进入队列；缓冲满时丢弃并计数。
 func TestEnqueueEventFiltersAndDropsWhenFull(t *testing.T) {
 	previousQueue := eventQueue
 	eventQueue = make(chan route.Event, 2)
@@ -281,8 +281,9 @@ func TestEnqueueEventFiltersAndDropsWhenFull(t *testing.T) {
 	enqueueEvent(route.Event{Type: "skip"})
 	select {
 	case ev := <-eventQueue:
-		t.Fatalf("非白名单事件不应入队：%v", ev)
+		assert.Equal(t, route.EventSkip, ev.Type)
 	default:
+		t.Fatal("已登记的 skip 事件必须入队")
 	}
 
 	enqueueEvent(route.Event{Type: route.EventCircuitOpen})

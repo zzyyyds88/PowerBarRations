@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"gorm.io/gorm"
 )
 
@@ -48,6 +49,24 @@ func TestUpdateChannelStatusPersistsMultiKeyState(t *testing.T) {
 	assert.Equal(t, "provider rejected key", stored.ChannelInfo.MultiKeyDisabledReason[0])
 	assert.NotZero(t, stored.ChannelInfo.MultiKeyDisabledTime[0])
 	assert.Equal(t, 1, stored.ChannelInfo.MultiKeyPollingIndex)
+}
+
+func TestUpdateChannelStatusPublishesWholeChannelTransitions(t *testing.T) {
+	setupChannelStatusTest(t)
+	channel := Channel{Name: "event-status", Key: "key", Status: common.ChannelStatusEnabled}
+	require.NoError(t, DB.Create(&channel).Error)
+	var received []events.Event
+	events.SetSubscriber(func(event events.Event) { received = append(received, event) })
+	t.Cleanup(func() { events.SetSubscriber(nil) })
+
+	assert.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusManuallyDisabled, "manual operation"))
+	assert.Len(t, received, 1)
+	assert.Equal(t, events.EventChannelDisabled, received[0].Type)
+	assert.Contains(t, received[0].Detail, "reason=manual operation")
+
+	assert.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusEnabled, "re-enabled"))
+	assert.Len(t, received, 2)
+	assert.Equal(t, events.EventChannelEnabled, received[1].Type)
 }
 
 func TestSaveStatusStateFromSingleKeySnapshotPreservesUnownedColumns(t *testing.T) {

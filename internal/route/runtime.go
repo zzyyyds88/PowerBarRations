@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
@@ -27,12 +28,13 @@ const (
 	CircuitHalfOpen = "half_open"
 
 	// 运行态事件的类型，供控制台与排障展示（带时间戳）。
-	EventCircuitOpen     = "circuit_open"
-	EventCircuitHalfOpen = "circuit_half_open"
-	EventCircuitClosed   = "circuit_closed"
-	EventCooldown        = "cooldown"
-	EventReset           = "reset"
-	EventSkip            = "skip"
+	EventCircuitOpen     = events.EventCircuitOpen
+	EventCircuitHalfOpen = events.EventCircuitHalfOpen
+	EventCircuitClosed   = events.EventCircuitClosed
+	EventCooldown        = events.EventCooldown
+	EventReset           = events.EventReset
+	EventSkip            = events.EventSkip
+	EventUpstreamBurst   = events.EventUpstreamBurst
 )
 
 // 故障权重：硬故障计数权重高、软故障（429）权重低，
@@ -91,7 +93,9 @@ const (
 	OptionLogRetentionDays = "PBRLogRetentionDays"
 	// OptionProbeConcurrency 探活并发上限（design-v1 §16.6，默认 4）：
 	// 避免一次性对上游造成突发压力。
-	OptionProbeConcurrency = "PBRProbeConcurrency"
+	OptionProbeConcurrency           = "PBRProbeConcurrency"
+	OptionUpstreamBurstThreshold     = "PBRUpstreamBurstThreshold"
+	OptionUpstreamBurstWindowSeconds = "PBRUpstreamBurstWindowSeconds"
 )
 
 // DefaultLogRetentionDays 明细日志默认保留天数（design-v1 §16.5）。
@@ -190,13 +194,7 @@ func (c *Circuit) rollingFailureTriggersOpen(settings CircuitSettings) bool {
 // Event 运行态事件（带时间戳，作为验收与排障证据）。
 // Lane 为事件所属车道的路由键；Lane 为空表示历史事件或测试注入
 // （design-v1 §16.10：webhook 事件的 lane 字段来自这里）。
-type Event struct {
-	Ts     int64  `json:"ts"`
-	Type   string `json:"type"`
-	Lane   string `json:"lane,omitempty"`
-	Member string `json:"member"`
-	Detail string `json:"detail,omitempty"`
-}
+type Event = events.Event
 
 // Runtime 一条车道（一个路由键）的运行态，全部请求共享。
 type Runtime struct {
@@ -573,17 +571,10 @@ func (r *Runtime) recordSuccess(key string, affinitySeconds int) {
 // 旁路挂接，internal/route 不反向依赖上层包）。订阅者必须自行缓冲且**绝不
 // 阻塞**——appendEvent 持有 Runtime 锁且在请求路径上，订阅者只允许做
 // 非阻塞动作（如投入带缓冲的 channel，缓冲满则丢弃并计数）。
-var eventSubscriber struct {
-	mu sync.RWMutex
-	fn func(Event)
-}
-
 // SetEventSubscriber 注册运行态事件订阅者；传 nil 注销。
 // 同一进程只应有一个订阅者（webhook 投递器），后注册者覆盖先注册者。
 func SetEventSubscriber(fn func(Event)) {
-	eventSubscriber.mu.Lock()
-	defer eventSubscriber.mu.Unlock()
-	eventSubscriber.fn = fn
+	events.SetSubscriber(fn)
 }
 
 func (r *Runtime) appendEvent(eventType, member, detail string) {
@@ -593,12 +584,7 @@ func (r *Runtime) appendEvent(eventType, member, detail string) {
 		r.Events = r.Events[len(r.Events)-200:]
 	}
 	// 旁路转发给订阅者（非阻塞；订阅者自行缓冲，见 eventSubscriber 注释）。
-	eventSubscriber.mu.RLock()
-	fn := eventSubscriber.fn
-	eventSubscriber.mu.RUnlock()
-	if fn != nil {
-		fn(event)
-	}
+	events.Publish(event)
 }
 
 // Reset 清空该车道的全部运行态（冷却/熔断/探测槽/亲和），返回被清除的

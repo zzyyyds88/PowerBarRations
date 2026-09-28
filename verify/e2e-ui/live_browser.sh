@@ -22,7 +22,7 @@ PBR_PORT=6890
 UP_PORT=6891
 VNC_PORT=5900
 NOVNC_PORT=6080
-PW="Pbr-Live-Manual-Passw0rd!2026"
+PW="test123"
 GOOD_KEY="sk-live-good"
 
 mkdir -p "$WORK"

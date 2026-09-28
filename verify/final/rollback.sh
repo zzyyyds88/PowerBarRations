@@ -16,7 +16,7 @@ EVID="$REPO/verify/final/rollback-$STAMP.log"
 OLD_PORT=6813     # 扮演"旧网关"的假上游
 PBR_PORT=6801     # 新网关
 GOOD_KEY='sk-rollback-good'
-PBR_PW='Pbr-Rollback-Rehearsal-Passw0rd!2026'
+PBR_PW='test123'
 
 exec > "$EVID" 2>&1
 echo "=== W8-H 回滚演练 @ $STAMP ==="

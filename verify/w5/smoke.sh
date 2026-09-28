@@ -17,7 +17,7 @@ PORT=6795
 UPSTREAM_PORT=6806
 GOOD_KEY='sk-w5-good'
 BAD_KEY='sk-w5-bad'
-PBR_PW='Pbr-W5-Verify-Passw0rd!2026'
+PBR_PW='test123'
 REQUESTS=20
 
 exec > "$EVID" 2>&1

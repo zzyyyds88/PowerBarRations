@@ -5,8 +5,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/service"
@@ -70,6 +72,26 @@ func init() {
 			}
 		}
 		return settings
+	})
+
+	route.SetUpstreamBurstConfigProvider(func() events.UpstreamBurstConfig {
+		config := events.UpstreamBurstConfig{
+			Threshold: events.DefaultUpstreamBurstThreshold,
+			Window:    events.DefaultUpstreamBurstWindow,
+		}
+		common.OptionMapRWMutex.RLock()
+		defer common.OptionMapRWMutex.RUnlock()
+		if raw, ok := common.OptionMap[route.OptionUpstreamBurstThreshold]; ok {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+				config.Threshold = parsed
+			}
+		}
+		if raw, ok := common.OptionMap[route.OptionUpstreamBurstWindowSeconds]; ok {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil {
+				config.Window = time.Duration(parsed) * time.Second
+			}
+		}
+		return config
 	})
 
 	model.SetLaneDefaultsProvider(configuredLaneDefaults)

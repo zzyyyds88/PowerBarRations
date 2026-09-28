@@ -23,7 +23,7 @@ PORT=6841
 UPSTREAM_PORT=6842
 GOOD_KEY="sk-ops-good"
 BAD_KEY="sk-ops-bad"
-PBR_PW="Pbr-Ops-Runbook-Passw0rd!2026"
+PBR_PW="test123"
 
 exec > "$EVID" 2>&1
 echo "=== L2 真实 API 运维 runbook @ $STAMP ==="
