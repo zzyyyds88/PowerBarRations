@@ -117,7 +117,9 @@ PBR 把路由运行态的故障事件（熔断/冷却/恢复）异步 POST 到�
 ```
 
 `event.type`：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、
-`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）。
+`circuit_closed`（恢复）、`cooldown`（进入冷却）、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）、
+`skip`（成员被选路跳过）、`channel_disabled`（渠道整体禁用）、`channel_enabled`（渠道整体启用）、
+`channel_deleted`（渠道删除）、`upstream_burst`（同一渠道 60 秒内 5xx 达到 5 次）。渠道事件的 `lane` 为空、`member` 为渠道 ID；`upstream_burst` detail 含 `channel_id`、`count`、`threshold`、`window_seconds`、`status_code`。
 `ts` 毫秒时间戳，`member` = `channelId:upstreamModel`。
 `member` 为空（车道级事件 `reset`）时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。
 

@@ -701,13 +701,18 @@ func DeleteChannel(c *gin.Context) {
 	channelName := ""
 	channelProxy := ""
 	channelLookupFailed := false
+	var existingChannel *model.Channel
 	if existing, err := model.GetChannelById(id, false); err == nil && existing != nil {
+		existingChannel = existing
 		channelName = existing.Name
 		channelProxy = existing.GetSetting().Proxy
 	} else {
 		channelLookupFailed = true
 	}
 	channel := model.Channel{Id: id}
+	if existingChannel != nil {
+		channel = *existingChannel
+	}
 	err := channel.Delete()
 	if err != nil {
 		common.ApiError(c, err)

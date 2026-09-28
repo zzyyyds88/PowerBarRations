@@ -4,7 +4,7 @@
 // 职责边界：PBR 只定义推送契约并投递；接收方的验签、路由、呈现由消费方
 // 自行实现，本包不含任何针对特定接收端的集成。
 //
-// 事件流：internal/route 的 appendEvent（运行态事件唯一出口）→ 进程级订阅
+// 事件流：internal/events 的共享事件总线（路由、渠道与上游健康生产者）→ 进程级订阅
 // 钩子 → 带缓冲 channel（非阻塞，缓冲满丢弃并计数）→ worker 读配置
 // （system/options 键 PBRWebhookTargets，进程内缓存、配置 PUT 即热更新）
 // → 对每个 enabled 且命中 events 白名单的 target 独立投递（各自含重试，
@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
-	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
@@ -51,13 +51,13 @@ type Target struct {
 }
 
 // allowedEventTypes 事件类型白名单取值域（api-spec §5.8）。
-var allowedEventTypes = map[string]bool{
-	route.EventCircuitOpen:     true,
-	route.EventCircuitHalfOpen: true,
-	route.EventCircuitClosed:   true,
-	route.EventCooldown:        true,
-	route.EventReset:           true,
-}
+var allowedEventTypes = func() map[string]bool {
+	allowed := make(map[string]bool)
+	for _, eventType := range events.SupportedEventTypes() {
+		allowed[eventType] = true
+	}
+	return allowed
+}()
 
 // ValidateTargets 校验目标列表：name 非空且唯一、url 必须是 http(s)、
 // events 取值必须在白名单内。返回供 400 validation_failed 使用的人读信息。
@@ -160,17 +160,22 @@ type webhookPayload struct {
 
 // eventTitles 事件类型的中文摘要（/doc §5.2 文案）。
 var eventTitles = map[string]string{
-	route.EventCircuitOpen:     "熔断打开",
-	route.EventCircuitHalfOpen: "半开探测开始",
-	route.EventCircuitClosed:   "熔断恢复",
-	route.EventCooldown:        "进入冷却",
-	route.EventReset:           "熔断与冷却已清空",
+	events.EventCircuitOpen:     "熔断打开",
+	events.EventCircuitHalfOpen: "半开探测开始",
+	events.EventCircuitClosed:   "熔断恢复",
+	events.EventCooldown:        "进入冷却",
+	events.EventReset:           "熔断与冷却已清空",
+	events.EventSkip:            "成员跳过",
+	events.EventChannelDisabled: "渠道禁用",
+	events.EventChannelEnabled:  "渠道启用",
+	events.EventChannelDeleted:  "渠道删除",
+	events.EventUpstreamBurst:   "上游错误爆发",
 }
 
 // summaryText 生成 text 摘要：`[PBR] {lane}/{member} {中文摘要}：{detail}`；
 // lane 缺失时退化为 `[PBR] {member} ...`，member 缺失（车道级事件如 reset）
 // 退化为 `[PBR] {lane} ...`（/doc §5.2 示例格式）。
-func summaryText(ev route.Event) string {
+func summaryText(ev events.Event) string {
 	title := eventTitles[ev.Type]
 	if title == "" {
 		title = ev.Type
@@ -233,7 +238,7 @@ type Result struct {
 }
 
 // eventQueue 运行态事件的缓冲队列；Start 时创建。
-var eventQueue chan route.Event
+var eventQueue chan events.Event
 
 // droppedEvents 缓冲满被丢弃的事件计数（排障观测）。
 var droppedEvents atomic.Int64
@@ -260,15 +265,15 @@ var (
 // 在 model.InitDB / InitOptionMap 之后调用（worker 读写 options 与投递日志）。
 func Start() {
 	startOnce.Do(func() {
-		eventQueue = make(chan route.Event, eventQueueSize)
-		route.SetEventSubscriber(enqueueEvent)
+		eventQueue = make(chan events.Event, eventQueueSize)
+		events.SetSubscriber(enqueueEvent)
 		go workerLoop()
 	})
 }
 
 // enqueueEvent 订阅钩子：只收白名单内的运行态事件，非阻塞入队，
 // 缓冲满丢弃并计数（绝不阻塞请求路径）。
-func enqueueEvent(ev route.Event) {
+func enqueueEvent(ev events.Event) {
 	if !allowedEventTypes[ev.Type] {
 		return
 	}
@@ -303,7 +308,7 @@ func runSafely(fn func()) {
 // target 独立 goroutine 投递（含重试）：一个不可达目标的重试（最长约
 // 3 分钟）不阻塞其他目标或其他事件的投递。风暴窗口检查保持同步——
 // 持锁便宜，且放行后再异步投递，保证同一窗口只出一条。
-func dispatch(ev route.Event) {
+func dispatch(ev events.Event) {
 	for _, target := range CurrentTargets() {
 		if !target.Enabled || !targetMatches(target, ev) {
 			continue
@@ -312,14 +317,14 @@ func dispatch(ev route.Event) {
 			continue
 		}
 		deliverWG.Add(1)
-		go func(target Target, ev route.Event) {
+		go func(target Target, ev events.Event) {
 			defer deliverWG.Done()
 			deliver(target, ev, summaryText(ev))
 		}(target, ev)
 	}
 }
 
-func targetMatches(t Target, ev route.Event) bool {
+func targetMatches(t Target, ev events.Event) bool {
 	if len(t.Events) == 0 {
 		return true // 空白名单 = 全部
 	}
@@ -338,7 +343,7 @@ var (
 	stormLast = map[string]int64{} // key -> 上次放行的 UnixNano
 )
 
-func stormKey(target string, ev route.Event) string {
+func stormKey(target string, ev events.Event) string {
 	return target + "\x1f" + ev.Lane + "\x1f" + ev.Member + "\x1f" + ev.Type
 }
 
@@ -367,7 +372,7 @@ func stormAllow(key string, now time.Time) bool {
 // deliver 向 target 投递事件：请求体 marshaled 一次，时间戳与签名只算一次
 // （重试复用同一请求体同一签名，api-spec §5.4）。每次投递的最终结果（含
 // 死信）落 webhook_deliveries。
-func deliver(target Target, ev route.Event, text string) Result {
+func deliver(target Target, ev events.Event, text string) Result {
 	payload := webhookPayload{
 		Type: "pbr",
 		Text: text,
@@ -438,7 +443,7 @@ func clampError(msg string) string {
 }
 
 // recordDelivery 投递结论落库（含重试耗尽的死信与测试投递）。
-func recordDelivery(ev route.Event, target Target, result Result) {
+func recordDelivery(ev events.Event, target Target, result Result) {
 	entry := &model.WebhookDelivery{
 		Ts:         nowFunc().Unix(),
 		Target:     target.Name,
@@ -461,9 +466,9 @@ func recordDelivery(ev route.Event, target Target, result Result) {
 // text 标注"测试事件"），同步等待最终结果（含重试）。测试投递是显式人工
 // 动作，不走防风暴窗口，但同样落投递日志。
 func DeliverTest(target Target) Result {
-	ev := route.Event{
+	ev := events.Event{
 		Ts:     nowFunc().UnixMilli(),
-		Type:   route.EventCircuitOpen,
+		Type:   events.EventCircuitOpen,
 		Detail: "manual_test",
 	}
 	text := fmt.Sprintf("[PBR] 测试事件：target=%s 配置验证", target.Name)

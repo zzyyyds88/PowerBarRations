@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/logger"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
@@ -527,6 +529,10 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 	if len(ids) == 0 {
 		return 0, nil
 	}
+	var deletedChannels []Channel
+	if err := DB.Where("id in ?", ids).Find(&deletedChannels).Error; err != nil {
+		return 0, err
+	}
 	// 使用事务 分批删除 channel 表
 	tx := DB.Begin()
 	if tx.Error != nil {
@@ -543,6 +549,9 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 	}
 	if err := tx.Commit().Error; err != nil {
 		return 0, err
+	}
+	for i := range deletedChannels {
+		NotifyChannelDeleted(&deletedChannels[i])
 	}
 	return deletedCount, nil
 }
@@ -748,7 +757,14 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	return DB.Delete(channel).Error
+	result := DB.Delete(channel)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		NotifyChannelDeleted(channel)
+	}
+	return nil
 }
 
 var channelStatusLock sync.Mutex
@@ -895,6 +911,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		if channel.Status == status {
 			return false
 		}
+		beforeStatus := channel.Status
 
 		if channel.ChannelInfo.IsMultiKey {
 			handlerMultiKeyUpdate(channel, usingKey, status, reason)
@@ -910,16 +927,80 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
 			return false
 		}
+		publishChannelStatusEvent(channel, beforeStatus, channel.Status, reason)
 	}
 	return true
 }
 
+func publishChannelStatusEvent(channel *Channel, beforeStatus, afterStatus int, reason string) {
+	if channel == nil || beforeStatus == afterStatus {
+		return
+	}
+	eventType := ""
+	switch {
+	case beforeStatus == common.ChannelStatusEnabled && afterStatus != common.ChannelStatusEnabled:
+		eventType = events.EventChannelDisabled
+	case beforeStatus != common.ChannelStatusEnabled && afterStatus == common.ChannelStatusEnabled:
+		eventType = events.EventChannelEnabled
+	}
+	if eventType == "" {
+		return
+	}
+	events.Publish(events.Event{
+		Ts:     common.GetTimestamp() * 1000,
+		Type:   eventType,
+		Member: strconv.Itoa(channel.Id),
+		Detail: fmt.Sprintf("channel_id=%d name=%q from_status=%d to_status=%d reason=%s", channel.Id, channel.Name, beforeStatus, afterStatus, strings.TrimSpace(reason)),
+	})
+}
+
+// NotifyChannelStatusChanged is for complete channel writes that also change
+// status (for example the management upsert path). UpdateChannelStatus uses
+// the same helper after its atomic status write.
+func NotifyChannelStatusChanged(channel *Channel, beforeStatus, afterStatus int, reason string) {
+	publishChannelStatusEvent(channel, beforeStatus, afterStatus, reason)
+}
+
+// NotifyChannelDeleted publishes after the row has been deleted. Secrets are
+// intentionally excluded from the event detail.
+func NotifyChannelDeleted(channel *Channel) {
+	if channel == nil {
+		return
+	}
+	events.Publish(events.Event{
+		Ts:     common.GetTimestamp() * 1000,
+		Type:   events.EventChannelDeleted,
+		Member: strconv.Itoa(channel.Id),
+		Detail: fmt.Sprintf("channel_id=%d name=%q status=%d", channel.Id, channel.Name, channel.Status),
+	})
+}
+
 func EnableChannelByTag(tag string) error {
-	return DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusEnabled).Error
+	var channels []Channel
+	if err := DB.Where("tag = ?", tag).Find(&channels).Error; err != nil {
+		return err
+	}
+	if err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusEnabled).Error; err != nil {
+		return err
+	}
+	for i := range channels {
+		publishChannelStatusEvent(&channels[i], channels[i].Status, common.ChannelStatusEnabled, "tag operation")
+	}
+	return nil
 }
 
 func DisableChannelByTag(tag string) error {
-	return DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusManuallyDisabled).Error
+	var channels []Channel
+	if err := DB.Where("tag = ?", tag).Find(&channels).Error; err != nil {
+		return err
+	}
+	if err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusManuallyDisabled).Error; err != nil {
+		return err
+	}
+	for i := range channels {
+		publishChannelStatusEvent(&channels[i], channels[i].Status, common.ChannelStatusManuallyDisabled, "tag operation")
+	}
+	return nil
 }
 
 // EditChannelByTag 按标签批量编辑渠道。渠道 priority/weight 与 abilities 表均已
@@ -980,8 +1061,18 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 }
 
 func DeleteDisabledChannel() (int64, error) {
+	var deletedChannels []Channel
+	if err := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Find(&deletedChannels).Error; err != nil {
+		return 0, err
+	}
 	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	if result.Error != nil {
+		return result.RowsAffected, result.Error
+	}
+	for i := range deletedChannels {
+		NotifyChannelDeleted(&deletedChannels[i])
+	}
+	return result.RowsAffected, nil
 }
 
 func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, error) {

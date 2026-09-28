@@ -23,33 +23,37 @@ import (
 // 关键词条目属部署数据，只经 API 读写，不进仓库（design-v1 §7.6）。
 
 type systemOptions struct {
-	CircuitFailureThreshold   float64  `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds        int      `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds     int      `json:"circuit_max_open_seconds"`
-	CircuitRollingMinSamples  int      `json:"circuit_rolling_min_samples"`
-	CircuitRollingFailureRate float64  `json:"circuit_rolling_failure_rate"`
-	LogRetentionDays          int      `json:"log_retention_days"`
-	ProbeConcurrency          int      `json:"probe_concurrency"`
-	AutomaticEnableChannel    bool     `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel   bool     `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords  []string `json:"automatic_disable_keywords"`
+	CircuitFailureThreshold    float64  `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds         int      `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds      int      `json:"circuit_max_open_seconds"`
+	CircuitRollingMinSamples   int      `json:"circuit_rolling_min_samples"`
+	CircuitRollingFailureRate  float64  `json:"circuit_rolling_failure_rate"`
+	UpstreamBurstThreshold     int      `json:"upstream_burst_threshold"`
+	UpstreamBurstWindowSeconds int      `json:"upstream_burst_window_seconds"`
+	LogRetentionDays           int      `json:"log_retention_days"`
+	ProbeConcurrency           int      `json:"probe_concurrency"`
+	AutomaticEnableChannel     bool     `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel    bool     `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords   []string `json:"automatic_disable_keywords"`
 	// LaneDefaults 默认六键：新建/一键固化车道写入的初值，也是车道未显式配置时的回落值。
 	// 指针用于区分"配置文件里没有这个字段"（保持原值）与"显式给了值"。
 	LaneDefaults *model.LaneRelayConfig `json:"lane_defaults,omitempty"`
 }
 
 type systemOptionsPatch struct {
-	CircuitFailureThreshold   *float64               `json:"circuit_failure_threshold"`
-	CircuitOpenSeconds        *int                   `json:"circuit_open_seconds"`
-	CircuitMaxOpenSeconds     *int                   `json:"circuit_max_open_seconds"`
-	CircuitRollingMinSamples  *int                   `json:"circuit_rolling_min_samples"`
-	CircuitRollingFailureRate *float64               `json:"circuit_rolling_failure_rate"`
-	LogRetentionDays          *int                   `json:"log_retention_days"`
-	ProbeConcurrency          *int                   `json:"probe_concurrency"`
-	AutomaticEnableChannel    *bool                  `json:"automatic_enable_channel_enabled"`
-	AutomaticDisableChannel   *bool                  `json:"automatic_disable_channel_enabled"`
-	AutomaticDisableKeywords  *[]string              `json:"automatic_disable_keywords"`
-	LaneDefaults              *model.LaneRelayConfig `json:"lane_defaults"`
+	CircuitFailureThreshold    *float64               `json:"circuit_failure_threshold"`
+	CircuitOpenSeconds         *int                   `json:"circuit_open_seconds"`
+	CircuitMaxOpenSeconds      *int                   `json:"circuit_max_open_seconds"`
+	CircuitRollingMinSamples   *int                   `json:"circuit_rolling_min_samples"`
+	CircuitRollingFailureRate  *float64               `json:"circuit_rolling_failure_rate"`
+	UpstreamBurstThreshold     *int                   `json:"upstream_burst_threshold"`
+	UpstreamBurstWindowSeconds *int                   `json:"upstream_burst_window_seconds"`
+	LogRetentionDays           *int                   `json:"log_retention_days"`
+	ProbeConcurrency           *int                   `json:"probe_concurrency"`
+	AutomaticEnableChannel     *bool                  `json:"automatic_enable_channel_enabled"`
+	AutomaticDisableChannel    *bool                  `json:"automatic_disable_channel_enabled"`
+	AutomaticDisableKeywords   *[]string              `json:"automatic_disable_keywords"`
+	LaneDefaults               *model.LaneRelayConfig `json:"lane_defaults"`
 }
 
 // validateLaneDefaults 校验默认六键：四个"必须为正"的时长/预算、两个允许为 0 的间隔。
@@ -109,18 +113,40 @@ func currentSystemOptions() systemOptions {
 	}
 	laneDefaults := model.DefaultLaneRelayConfig()
 	return systemOptions{
-		CircuitFailureThreshold:   settings.FailureThreshold,
-		CircuitOpenSeconds:        settings.OpenSeconds,
-		CircuitMaxOpenSeconds:     settings.MaxOpenSeconds,
-		CircuitRollingMinSamples:  settings.RollingMinSamples,
-		CircuitRollingFailureRate: settings.RollingFailureRate,
-		LogRetentionDays:          CurrentLogRetentionDays(),
-		ProbeConcurrency:          CurrentProbeConcurrency(),
-		AutomaticEnableChannel:    common.AutomaticEnableChannelEnabled,
-		AutomaticDisableChannel:   common.AutomaticDisableChannelEnabled,
-		AutomaticDisableKeywords:  keywords,
-		LaneDefaults:              &laneDefaults,
+		CircuitFailureThreshold:    settings.FailureThreshold,
+		CircuitOpenSeconds:         settings.OpenSeconds,
+		CircuitMaxOpenSeconds:      settings.MaxOpenSeconds,
+		CircuitRollingMinSamples:   settings.RollingMinSamples,
+		CircuitRollingFailureRate:  settings.RollingFailureRate,
+		UpstreamBurstThreshold:     currentUpstreamBurstThreshold(),
+		UpstreamBurstWindowSeconds: currentUpstreamBurstWindowSeconds(),
+		LogRetentionDays:           CurrentLogRetentionDays(),
+		ProbeConcurrency:           CurrentProbeConcurrency(),
+		AutomaticEnableChannel:     common.AutomaticEnableChannelEnabled,
+		AutomaticDisableChannel:    common.AutomaticDisableChannelEnabled,
+		AutomaticDisableKeywords:   keywords,
+		LaneDefaults:               &laneDefaults,
 	}
+}
+
+func currentUpstreamBurstThreshold() int {
+	common.OptionMapRWMutex.RLock()
+	raw := common.OptionMap[route.OptionUpstreamBurstThreshold]
+	common.OptionMapRWMutex.RUnlock()
+	if value, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && value > 0 {
+		return value
+	}
+	return 5
+}
+
+func currentUpstreamBurstWindowSeconds() int {
+	common.OptionMapRWMutex.RLock()
+	raw := common.OptionMap[route.OptionUpstreamBurstWindowSeconds]
+	common.OptionMapRWMutex.RUnlock()
+	if value, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && value > 0 {
+		return value
+	}
+	return 60
 }
 
 // CurrentLogRetentionDays 明细日志保留天数（design-v1 §16.5，默认 30）。
@@ -141,11 +167,13 @@ func CurrentLogRetentionDays() int {
 // applySystemOptions 全量写入选项（导入用）。
 func applySystemOptions(options systemOptions) error {
 	updates := map[string]string{
-		route.OptionCircuitFailureThreshold: strconv.FormatFloat(options.CircuitFailureThreshold, 'f', -1, 64),
-		route.OptionCircuitOpenSeconds:      strconv.Itoa(options.CircuitOpenSeconds),
-		route.OptionCircuitMaxOpenSeconds:   strconv.Itoa(options.CircuitMaxOpenSeconds),
-		"AutomaticEnableChannelEnabled":     strconv.FormatBool(options.AutomaticEnableChannel),
-		"AutomaticDisableChannelEnabled":    strconv.FormatBool(options.AutomaticDisableChannel),
+		route.OptionCircuitFailureThreshold:    strconv.FormatFloat(options.CircuitFailureThreshold, 'f', -1, 64),
+		route.OptionCircuitOpenSeconds:         strconv.Itoa(options.CircuitOpenSeconds),
+		route.OptionCircuitMaxOpenSeconds:      strconv.Itoa(options.CircuitMaxOpenSeconds),
+		route.OptionUpstreamBurstThreshold:     strconv.Itoa(options.UpstreamBurstThreshold),
+		route.OptionUpstreamBurstWindowSeconds: strconv.Itoa(options.UpstreamBurstWindowSeconds),
+		"AutomaticEnableChannelEnabled":        strconv.FormatBool(options.AutomaticEnableChannel),
+		"AutomaticDisableChannelEnabled":       strconv.FormatBool(options.AutomaticDisableChannel),
 	}
 	if options.LogRetentionDays > 0 {
 		updates[route.OptionLogRetentionDays] = strconv.Itoa(options.LogRetentionDays)
@@ -224,6 +252,20 @@ func PutSystemOptions(c *gin.Context) {
 			return
 		}
 		updates[route.OptionCircuitRollingFailureRate] = strconv.FormatFloat(*patch.CircuitRollingFailureRate, 'f', -1, 64)
+	}
+	if patch.UpstreamBurstThreshold != nil {
+		if *patch.UpstreamBurstThreshold <= 0 {
+			apierr.Validation(c, "upstream_burst_threshold must be > 0")
+			return
+		}
+		updates[route.OptionUpstreamBurstThreshold] = strconv.Itoa(*patch.UpstreamBurstThreshold)
+	}
+	if patch.UpstreamBurstWindowSeconds != nil {
+		if *patch.UpstreamBurstWindowSeconds <= 0 {
+			apierr.Validation(c, "upstream_burst_window_seconds must be > 0")
+			return
+		}
+		updates[route.OptionUpstreamBurstWindowSeconds] = strconv.Itoa(*patch.UpstreamBurstWindowSeconds)
 	}
 	if patch.LogRetentionDays != nil {
 		if *patch.LogRetentionDays <= 0 {

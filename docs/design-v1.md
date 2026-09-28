@@ -378,7 +378,7 @@ attempts(JSON), total_attempts, estimated_cost(仅折算)
 
 **明确不许有**：`quota` 扣减、余额变更、请求/响应正文、任何"余额不足拒服务"逻辑。
 
-**事件通知（Webhook）**：路由运行态的故障事件（熔断/冷却/恢复）可配置异步推送到外部 webhook 目标（本机通知中心等），投递语义与管理面见 §16.10 与 api-spec §5.8。
+**事件通知（Webhook）**：路由运行态、渠道状态与上游健康事件可配置异步推送到外部 webhook 目标（本机通知中心等），投递语义与管理面见 §16.10 与 api-spec §5.8。
 
 **成本折算**是可选能力：按**请求模型名**匹配**渠道级上游单价**（渠道 `setting.pbr_prices`，同一模型在不同上游可配不同采购价）；渠道未配价则**不折算（0）**。**没有全局默认单价层**（原 `PBRModelPrices` 全局表已移除——单用户自用每渠道自己定价即可）。**这是记账不是计费**——不参与准入、不扣余额；单价属部署数据。看板（概览/模型分析/成本统计）统一读 `GET /api/stats` 的聚合（`requests`/`successes`/`token`/`estimated_cost`）。
 
@@ -547,7 +547,9 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 **定位**：把路由运行态的故障事件推送给**任意外部消费方**，**只推事件、不承载指令**。这是管理 API 的一部分：PBR 只负责**定义推送契约并投递**，接收方的验签、路由、呈现一律由消费方自行实现（本机对接——如推给某 agent 的通知通道——由该 agent 侧做，PBR 不内置任何针对特定接收者的集成）。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
 
-**事件源**：`internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / `reset`）。`reset` 为**车道级**事件（`POST /lanes/{name}/circuits/reset` 手动复通时产生，`member` 为空）。经订阅钩子**异步旁路**投递，绝不阻塞请求路径。v1 不含探活启停事件。
+**事件源**：共享事件合同包含 `internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / `reset` / `skip`）、渠道状态事件（`channel_disabled` / `channel_enabled` / `channel_deleted`）和上游错误爆发事件（`upstream_burst`）。`reset` 为车道级事件（`member` 为空）；渠道事件为非车道事件（`lane` 为空，`member` 为渠道 ID）；删除事件 detail 保留删除前的渠道 ID、名称与状态，不含密钥。事件经共享订阅钩子异步旁路投递，绝不阻塞请求路径。
+
+`upstream_burst` 由模型面选路失败归属点统一观测，只统计同一渠道在 60 秒内的 HTTP 5xx，默认达到 5 次时发送一次事件；同一窗口内不重复发送，窗口内计数降到阈值以下后重新武装。detail 包含渠道 ID、计数、阈值、窗口、状态码和成员；它与成员级熔断事件并存，分别表达渠道级错误爆发和单成员熔断。
 
 **配置**（system/options 键 `PBRWebhookTargets`，JSON 数组）：`[{name, url, secret, enabled, events[]}]`；`events` 为事件类型白名单（空 = 全部）。管理面读配置时 `secret` 只回显掩码。
 
