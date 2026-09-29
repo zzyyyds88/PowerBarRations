@@ -8,8 +8,13 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+# 控制台构建产物：index.html 与 static/、图标一并纳入版本库
+# （目的：容器构建可离线内嵌已提交产物，见 Dockerfile 的 WEB_SOURCE=web-prebuilt）
 dist/*
 !dist/index.html
+!dist/static/
+!dist/favicon.ico
+!dist/logo.png
 dist-ssr
 *.local
 

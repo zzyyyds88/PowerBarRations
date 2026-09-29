@@ -20,6 +20,8 @@ services:
   pbr:
     build:
       context: .
+      # 构建变体：Dockerfile（默认，容器内 pnpm 重建前端）/ Dockerfile.prebuilt（内嵌仓库里已提交的 web/dist，免拉 npm 源）
+      dockerfile: ${PBR_DOCKERFILE:-Dockerfile}
       args:
         VERSION: ${PBR_VERSION:-dev}
         # 国内源为默认；如需改用官方代理：export PBR_GOPROXY=https://proxy.golang.org,direct

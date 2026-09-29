@@ -1,0 +1,1 @@
+"use strict";(self.rspackChunkpowerbar_rations_web=self.rspackChunkpowerbar_rations_web||[]).push([["o"],{Gu(r,s,e){e.r(s),e.d(s,{component:()=>t});var n=e("B"),o=e("w");let t=function(){return(0,n.jsx)(o.sv,{})}}}]);
