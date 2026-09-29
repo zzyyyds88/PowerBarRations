@@ -40,7 +40,7 @@ dist/
 pbr
 *.exe
 web/node_modules/
-web/dist
+# 注意：**不要**排除 web/dist —— 前端产物已纳入版本库，供 Dockerfile 的 WEB_SOURCE=web-prebuilt 离线内嵌
 
 # 编辑器与缓存
 .DS_Store

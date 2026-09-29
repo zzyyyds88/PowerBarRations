@@ -1,0 +1,1 @@
+"use strict";(self.rspackChunkpowerbar_rations_web=self.rspackChunkpowerbar_rations_web||[]).push([["w"],{OF(r,e,s){s.r(e);let a=s("yk").m;s.d(e,{},{component:a})}}]);
