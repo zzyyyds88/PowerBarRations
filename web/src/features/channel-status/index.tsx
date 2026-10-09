@@ -230,9 +230,9 @@ export function ChannelStatus() {
 
         <SectionPageLayout.Content>
           {statusQuery.isPending && (
-            <div className='flex flex-col gap-3'>
+            <div className='flex flex-col gap-(--density-grid)'>
               {['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((row) => (
-                <Skeleton key={row} className='h-10 w-full' />
+                <Skeleton key={row} className='rounded-control h-9 w-full' />
               ))}
             </div>
           )}
@@ -259,183 +259,190 @@ export function ChannelStatus() {
           )}
 
           {statusQuery.data && items.length > 0 && (
-            <div className='flex flex-col gap-3'>
+            <div className='flex flex-col gap-(--density-grid)'>
               {upstreamRejected && (
-                <p className='text-muted-foreground bg-muted/40 rounded-lg px-3 py-2 text-xs'>
+                <p className='text-muted-foreground bg-muted/60 rounded-control px-2.5 py-1.5 text-xs'>
                   {t('Upstream rejected the request (not a channel fault).')}
                 </p>
               )}
 
-              <Table className='text-xs'>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Channel')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Protocol')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Status')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Referenced lanes')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Members')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Degraded')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Requests')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Failures')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Success rate')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Cost (converted)')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Last error kind')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Last probe')}
-                    </TableHead>
-                    <TableHead className={HEAD_CLASS_NAME}>
-                      {t('Details')}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => {
-                    const protocolLabelKey = resolveProtocolLabelKey(
-                      consoleChannelsByName.get(item.channel),
-                      item.type
-                    )
-                    const isExpanded = expandedChannel === item.channel
-                    const isOpeningDetail =
-                      detailName === item.channel && !detailChannel
-                    return (
-                      <Fragment key={item.channel}>
-                        <TableRow>
-                          <TableCell>
-                            <Button
-                              type='button'
-                              variant='ghost'
-                              size='sm'
-                              className='-ml-2 gap-1'
-                              aria-expanded={isExpanded}
-                              onClick={() =>
-                                setExpandedChannel(
-                                  isExpanded ? null : item.channel
-                                )
-                              }
-                            >
-                              {isExpanded ? (
-                                <ChevronDown className='size-3.5' />
-                              ) : (
-                                <ChevronRight className='size-3.5' />
-                              )}
-                              <span className='truncate font-medium'>
-                                {item.channel}
-                              </span>
-                            </Button>
-                          </TableCell>
-                          <TableCell>
-                            {protocolLabelKey ? (
-                              t(protocolLabelKey)
-                            ) : (
-                              <span className='text-muted-foreground'>
-                                {item.type || '-'}
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <StatusBadge
-                              label={
-                                item.enabled ? t('Enabled') : t('Disabled')
-                              }
-                              variant={item.enabled ? 'success' : 'neutral'}
-                              size='sm'
-                              copyable={false}
-                            />
-                          </TableCell>
-                          <TableCell className='tabular-nums'>
-                            {formatNumber(item.lane_count)}
-                          </TableCell>
-                          <TableCell className='tabular-nums'>
-                            {formatMembers(item)}
-                          </TableCell>
-                          <TableCell>
-                            <StatusBadge
-                              label={
-                                item.degraded ? t('Degraded') : t('Normal')
-                              }
-                              variant={item.degraded ? 'warning' : 'success'}
-                              size='sm'
-                              copyable={false}
-                            />
-                          </TableCell>
-                          <TableCell className='tabular-nums'>
-                            {formatNumber(item.requests)}
-                          </TableCell>
-                          <TableCell className='tabular-nums'>
-                            {formatNumber(item.failures)}
-                          </TableCell>
-                          <TableCell className='tabular-nums'>
-                            {formatItemSuccessRate(item)}
-                          </TableCell>
-                          <TableCell className='tabular-nums'>
-                            {formatCostYuan(item.estimated_cost)}
-                          </TableCell>
-                          <TableCell>
-                            {item.last_error_kind ? (
-                              <span className='font-mono'>
-                                {item.last_error_kind}
-                              </span>
-                            ) : (
-                              <span className='text-muted-foreground text-xs'>
-                                -
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell className='whitespace-nowrap tabular-nums'>
-                            {formatLastProbe(item.last_probe)}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              disabled={isOpeningDetail}
-                              onClick={() => setDetailName(item.channel)}
-                            >
-                              {isOpeningDetail && (
-                                <Loader2 className='size-3.5 animate-spin' />
-                              )}
-                              {t('Details')}
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                        {isExpanded && (
+              {/* 卡片内的数据表：表头粘在卡片顶部，行超出时在卡内滚动，
+                  页面本身不出现第二根纵向滚动条。 */}
+              <div className='border-border bg-card rounded-panel overflow-hidden border'>
+                <Table
+                  stickyHeader
+                  containerClassName='max-h-[calc(100svh-var(--app-header-height,3.5rem)-12rem)]'
+                >
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Channel')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Protocol')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Status')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Referenced lanes')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Members')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Degraded')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Requests')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Failures')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Success rate')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Cost (converted)')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Last error kind')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Last probe')}
+                      </TableHead>
+                      <TableHead className={HEAD_CLASS_NAME}>
+                        {t('Details')}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((item) => {
+                      const protocolLabelKey = resolveProtocolLabelKey(
+                        consoleChannelsByName.get(item.channel),
+                        item.type
+                      )
+                      const isExpanded = expandedChannel === item.channel
+                      const isOpeningDetail =
+                        detailName === item.channel && !detailChannel
+                      return (
+                        <Fragment key={item.channel}>
                           <TableRow>
-                            <TableCell colSpan={13} className='bg-muted/20'>
-                              <ChannelStatusRowModels
-                                channel={item.channel}
-                                timeWindow={timeWindow}
+                            <TableCell>
+                              <Button
+                                type='button'
+                                variant='ghost'
+                                size='sm'
+                                className='-ml-2 gap-1'
+                                aria-expanded={isExpanded}
+                                onClick={() =>
+                                  setExpandedChannel(
+                                    isExpanded ? null : item.channel
+                                  )
+                                }
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className='size-3.5' />
+                                ) : (
+                                  <ChevronRight className='size-3.5' />
+                                )}
+                                <span className='truncate font-medium'>
+                                  {item.channel}
+                                </span>
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              {protocolLabelKey ? (
+                                t(protocolLabelKey)
+                              ) : (
+                                <span className='text-muted-foreground'>
+                                  {item.type || '-'}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge
+                                label={
+                                  item.enabled ? t('Enabled') : t('Disabled')
+                                }
+                                variant={item.enabled ? 'success' : 'neutral'}
+                                size='sm'
+                                copyable={false}
                               />
                             </TableCell>
+                            <TableCell className='tabular-nums'>
+                              {formatNumber(item.lane_count)}
+                            </TableCell>
+                            <TableCell className='tabular-nums'>
+                              {formatMembers(item)}
+                            </TableCell>
+                            <TableCell>
+                              <StatusBadge
+                                label={
+                                  item.degraded ? t('Degraded') : t('Normal')
+                                }
+                                variant={item.degraded ? 'warning' : 'success'}
+                                size='sm'
+                                copyable={false}
+                              />
+                            </TableCell>
+                            <TableCell className='tabular-nums'>
+                              {formatNumber(item.requests)}
+                            </TableCell>
+                            <TableCell className='tabular-nums'>
+                              {formatNumber(item.failures)}
+                            </TableCell>
+                            <TableCell className='tabular-nums'>
+                              {formatItemSuccessRate(item)}
+                            </TableCell>
+                            <TableCell className='tabular-nums'>
+                              {formatCostYuan(item.estimated_cost)}
+                            </TableCell>
+                            <TableCell>
+                              {item.last_error_kind ? (
+                                <span className='font-mono'>
+                                  {item.last_error_kind}
+                                </span>
+                              ) : (
+                                <span className='text-muted-foreground text-xs'>
+                                  -
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className='whitespace-nowrap tabular-nums'>
+                              {formatLastProbe(item.last_probe)}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type='button'
+                                variant='outline'
+                                size='sm'
+                                disabled={isOpeningDetail}
+                                onClick={() => setDetailName(item.channel)}
+                              >
+                                {isOpeningDetail && (
+                                  <Loader2 className='size-3.5 animate-spin' />
+                                )}
+                                {t('Details')}
+                              </Button>
+                            </TableCell>
                           </TableRow>
-                        )}
-                      </Fragment>
-                    )
-                  })}
-                </TableBody>
-              </Table>
+                          {isExpanded && (
+                            <TableRow>
+                              <TableCell colSpan={13} className='bg-muted/20'>
+                                <ChannelStatusRowModels
+                                  channel={item.channel}
+                                  timeWindow={timeWindow}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </SectionPageLayout.Content>

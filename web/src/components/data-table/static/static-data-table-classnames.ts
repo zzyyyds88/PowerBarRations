@@ -16,6 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+/**
+ * Data-dense table sizing: the 36px row rhythm comes from `TableBody`'s
+ * `--density-table-row-height`, so cell padding stays at 4px vertical and
+ * secondary text steps down to 12px.
+ */
 export const staticDataTableClassNames = {
   container: 'overflow-hidden rounded-md border',
   sectionContainer: 'border-border/60 rounded-lg',
@@ -25,22 +30,22 @@ export const staticDataTableClassNames = {
   mutedHeaderRow:
     '[background-color:var(--table-header)] hover:[background-color:var(--table-header-hover)]',
   compactHeaderCell:
-    'text-muted-foreground py-2 text-[10px] font-medium tracking-wider uppercase',
+    'text-muted-foreground py-1 text-xs font-medium tracking-wider uppercase',
   compactHeaderCellRight:
-    'text-muted-foreground py-2 text-right text-[10px] font-medium tracking-wider uppercase',
-  compactCell: 'py-2.5',
-  compactTopCell: 'py-2.5 align-top',
-  compactTopNumericCell: 'py-2.5 text-right align-top font-mono',
-  compactMutedCell: 'text-muted-foreground py-2.5',
-  compactMutedCodeCell: 'text-muted-foreground py-2.5 font-mono',
-  compactNumericCell: 'py-2.5 text-right font-mono',
-  compactMutedNumericCell: 'text-muted-foreground py-2.5 text-right font-mono',
-  topCell: 'py-2 align-top',
-  topMutedCell: 'text-muted-foreground py-2 align-top',
-  codeCell: 'font-mono text-sm',
-  mutedCell: 'text-muted-foreground text-sm',
-  mutedCodeCell: 'text-muted-foreground font-mono text-sm',
-  topNumericCell: 'py-2 text-right font-mono',
+    'text-muted-foreground py-1 text-right text-xs font-medium tracking-wider uppercase',
+  compactCell: 'py-1',
+  compactTopCell: 'py-1 align-top',
+  compactTopNumericCell: 'py-1 text-right align-top font-mono',
+  compactMutedCell: 'text-muted-foreground py-1',
+  compactMutedCodeCell: 'text-muted-foreground py-1 font-mono',
+  compactNumericCell: 'py-1 text-right font-mono',
+  compactMutedNumericCell: 'text-muted-foreground py-1 text-right font-mono',
+  topCell: 'py-1 align-top',
+  topMutedCell: 'text-muted-foreground py-1 align-top',
+  codeCell: 'font-mono text-xs',
+  mutedCell: 'text-muted-foreground text-xs',
+  mutedCodeCell: 'text-muted-foreground font-mono text-xs',
+  topNumericCell: 'py-1 text-right font-mono',
   mediumCell: 'font-medium',
   actionHeaderCell: 'w-auto max-w-none text-right',
   actionCell: 'w-auto max-w-none text-right',

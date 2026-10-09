@@ -45,14 +45,14 @@ export function MetricTile(props: {
   }
 
   return (
-    <div className='bg-muted/40 rounded-control min-w-0 px-3 py-2'>
-      <div className='text-muted-foreground truncate text-[11px] font-medium'>
+    <div className='bg-muted/60 rounded-control min-w-0 px-2.5 py-1.5'>
+      <div className='text-muted-foreground truncate text-xs font-medium'>
         {props.label}
       </div>
-      <div className='mt-1 truncate font-mono text-base font-semibold tabular-nums'>
+      <div className='mt-0.5 truncate font-mono text-base font-semibold tabular-nums'>
         {props.value}
       </div>
-      <div className={cn('mt-0.5 flex items-center gap-1 text-[11px]', tone)}>
+      <div className={cn('mt-0.5 flex items-center gap-1 text-xs', tone)}>
         <span aria-hidden='true'>{arrow}</span>
         <span className='shrink-0 tabular-nums'>
           {formatDeltaPercent(props.delta)}

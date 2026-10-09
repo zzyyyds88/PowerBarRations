@@ -148,7 +148,7 @@ export function TokenRankingCard(props: { range: PBRResolvedTimeRange }) {
                 {item.model}
               </span>
               {channel != null && (
-                <span className='text-muted-foreground block truncate text-[11px]'>
+                <span className='text-muted-foreground block truncate text-xs'>
                   {t('Served by {{channel}}', { channel })}
                 </span>
               )}

@@ -95,7 +95,10 @@ For commercial licensing, please contact support@quantumnous.com
     @apply overflow-x-hidden font-sans;
   }
   body {
-    @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
+    /* 14px body floor for the data-dense console: secondary text steps down
+     * to 12px (`text-xs`), headings step up. Keeps every page on the same
+     * 12-14px body rhythm instead of Tailwind's 16px default. */
+    @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full text-sm;
     /* Font is driven by the theme's font axis via `--font-body`
      * (defined in theme.css, swapped by `[data-theme-font='...']` blocks
      * in theme-presets.css). Defaults to the project's humanist sans. */
@@ -551,18 +554,19 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-/* Micro-interactions — Vercel-style subtle hover/active feedback */
+/* Micro-interactions — subtle hover/active feedback for a flat data surface */
 @media (prefers-reduced-motion: no-preference) {
   [data-slot='card'][data-card-hover='true'] {
     transition:
-      transform var(--motion-fast) ease,
+      border-color var(--motion-fast) ease,
       box-shadow var(--motion-fast) ease;
   }
 
   @media (min-width: 641px) {
+    /* Data-dense cards stay flat on hover: the hairline ring steps up one
+     * shade instead of the card lifting off the canvas with a shadow. */
     [data-slot='card'][data-card-hover='true']:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-popover);
+      border-color: color-mix(in oklch, var(--foreground) 18%, var(--border));
     }
   }
 

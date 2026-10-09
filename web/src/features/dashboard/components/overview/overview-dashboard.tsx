@@ -42,9 +42,9 @@ export function OverviewDashboard() {
   const range = useMemo(() => resolveTimeRange(selection), [selection])
 
   return (
-    <div className='flex flex-col gap-3'>
+    <div className='flex flex-col gap-(--density-grid)'>
       <TimeRangeSelector selection={selection} onChange={setSelection} />
-      <div className='grid grid-cols-1 gap-3 lg:grid-cols-6'>
+      <div className='grid grid-cols-1 gap-(--density-grid) lg:grid-cols-6'>
         <div className='lg:col-span-4'>
           <ModelAnalyticsCard range={range} />
         </div>

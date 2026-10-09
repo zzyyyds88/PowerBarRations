@@ -56,14 +56,14 @@ const SECTION_LABELS: Record<DashboardSectionId, string> = {
 
 function AnalyticsFallback() {
   return (
-    <div className='space-y-4'>
-      <div className='grid grid-cols-2 gap-2 sm:grid-cols-4'>
+    <div className='space-y-2'>
+      <div className='grid grid-cols-2 gap-(--density-grid) sm:grid-cols-4'>
         {['a', 'b', 'c', 'd'].map((key) => (
-          <Skeleton key={key} className='h-[68px] rounded-lg' />
+          <Skeleton key={key} className='rounded-panel h-[68px]' />
         ))}
       </div>
-      <Skeleton className='h-56 rounded-lg' />
-      <Skeleton className='h-64 rounded-lg' />
+      <Skeleton className='rounded-panel h-56' />
+      <Skeleton className='rounded-panel h-64' />
     </div>
   )
 }
@@ -88,7 +88,7 @@ export function Dashboard() {
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Dashboard')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='space-y-3 sm:space-y-4'>
+        <div className='space-y-2'>
           <Tabs value={activeSection} onValueChange={handleSectionChange}>
             <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
               {DASHBOARD_SECTION_IDS.map((section) => (

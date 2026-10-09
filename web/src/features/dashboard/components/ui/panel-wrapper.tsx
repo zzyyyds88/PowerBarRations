@@ -50,7 +50,7 @@ function PanelHeader(props: {
   )
 
   return (
-    <div className='border-b px-4 py-3 sm:px-5'>
+    <div className='border-b px-(--density-card-padding) py-2.5'>
       {props.actions != null ? (
         <div className='flex items-start justify-between gap-2'>
           {heading}
@@ -67,8 +67,9 @@ export function PanelWrapper(props: PanelWrapperProps) {
   const { t } = useTranslation()
   const resolvedEmptyMessage = props.emptyMessage ?? t('No data available')
   const height = props.height ?? 'h-64'
+  // Flat data panel: 8px radius, one hairline border, no elevation.
   const frameClassName = cn(
-    'overflow-hidden rounded-2xl border bg-card shadow-xs',
+    'border-border overflow-hidden rounded-panel border bg-card',
     props.className
   )
 
@@ -76,7 +77,9 @@ export function PanelWrapper(props: PanelWrapperProps) {
     return (
       <div className={frameClassName}>
         <PanelHeader title={props.title} description={props.description} />
-        <div className={cn('p-4 sm:p-5', props.contentClassName)}>
+        <div
+          className={cn('p-(--density-card-padding)', props.contentClassName)}
+        >
           <Skeleton className={`w-full ${height}`} />
         </div>
       </div>
@@ -89,7 +92,7 @@ export function PanelWrapper(props: PanelWrapperProps) {
         <PanelHeader title={props.title} description={props.description} />
         <div
           className={cn(
-            'text-muted-foreground flex items-center justify-center px-4 text-sm',
+            'text-muted-foreground flex items-center justify-center px-3 text-xs',
             height,
             props.contentClassName
           )}
@@ -107,7 +110,7 @@ export function PanelWrapper(props: PanelWrapperProps) {
         description={props.description}
         actions={props.headerActions}
       />
-      <div className={cn('p-4 sm:p-5', props.contentClassName)}>
+      <div className={cn('p-(--density-card-padding)', props.contentClassName)}>
         {props.children}
       </div>
     </div>

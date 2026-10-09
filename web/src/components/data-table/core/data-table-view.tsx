@@ -139,11 +139,16 @@ function SplitHeaderTableView<TData>({
       <div
         className={cn(
           'min-h-0 flex-1 overflow-auto',
+          /* Mark the scroll port so `TableHead` sticks its cells to the top of
+           * this box (cell-level sticky survives `border-collapse: collapse`,
+           * which the global table reset applies). */
+          'group/table',
           '**:data-[slot=table-header]:[--table-header-bg:var(--table-header)]',
           '**:data-[slot=table-header]:bg-(--table-header-bg)',
           props.splitHeaderScrollClassName,
           props.bodyContainerClassName
         )}
+        data-sticky-header='true'
       >
         <Table
           withContainer={false}

@@ -81,11 +81,9 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   return (
     <PageFooterProvider container={footerContainer}>
       <Main>
-        <div className='bg-background shrink-0 border-b px-4 py-4 sm:px-6 sm:py-5'>
-          {breadcrumb != null && (
-            <div className='mb-2 sm:mb-3'>{breadcrumb}</div>
-          )}
-          <div className='flex flex-wrap items-center justify-between gap-x-4 gap-y-3'>
+        <div className='bg-background shrink-0 border-b px-4 py-3 sm:px-5'>
+          {breadcrumb != null && <div className='mb-1.5'>{breadcrumb}</div>}
+          <div className='flex flex-wrap items-center justify-between gap-x-4 gap-y-2'>
             <div
               className={
                 props.stackActionsOnMobile
@@ -93,12 +91,12 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
                   : 'min-w-0 flex-1'
               }
             >
-              <h2 className='truncate text-lg font-semibold tracking-tight sm:text-xl'>
+              <h2 className='truncate text-base font-semibold tracking-tight sm:text-lg'>
                 {title}
               </h2>
             </div>
             {actions != null && (
-              <div className='flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2'>
+              <div className='flex shrink-0 flex-wrap items-center justify-end gap-1.5'>
                 {actions}
               </div>
             )}
@@ -108,8 +106,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={
             props.fixedContent
-              ? 'min-h-0 flex-1 overflow-hidden px-4 py-4 sm:px-6 sm:py-5'
-              : 'min-h-0 flex-1 overflow-auto px-4 py-4 sm:px-6 sm:py-5'
+              ? 'min-h-0 flex-1 overflow-hidden p-4 sm:p-5'
+              : 'min-h-0 flex-1 overflow-auto p-4 sm:p-5'
           }
         >
           {content}
@@ -117,7 +115,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-4 py-2.5 empty:hidden sm:px-6 sm:py-3'
+          className='bg-background shrink-0 border-t px-4 py-2 empty:hidden sm:px-5'
         />
       </Main>
     </PageFooterProvider>

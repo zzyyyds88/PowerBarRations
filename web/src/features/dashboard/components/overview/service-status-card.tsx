@@ -85,7 +85,7 @@ function SuccessRing(props: { rate: number }) {
 function MetricCell(props: { label: string; value: string }) {
   return (
     <span className='flex items-center gap-1 text-xs sm:justify-end'>
-      <span className='text-muted-foreground text-[10px] sm:hidden'>
+      <span className='text-muted-foreground text-xs sm:hidden'>
         {props.label}
       </span>
       <span className='font-mono tabular-nums'>{props.value}</span>
@@ -113,7 +113,7 @@ export function ServiceStatusCard(props: { range: PBRResolvedTimeRange }) {
         aria-hidden='true'
         className={cn(
           ROW_GRID,
-          'text-muted-foreground hidden border-b pb-1.5 text-[11px] font-medium sm:grid'
+          'text-muted-foreground hidden border-b pb-1.5 text-xs font-medium sm:grid'
         )}
       >
         <span>{t('Model')}</span>

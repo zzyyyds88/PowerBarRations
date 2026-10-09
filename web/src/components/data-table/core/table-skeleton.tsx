@@ -45,7 +45,7 @@ interface TableSkeletonProps<TData> {
 export function TableSkeleton<TData>({
   table,
   rowCount,
-  rowHeight = 'h-[52px]',
+  rowHeight = 'h-(--density-table-row-height)',
   keyPrefix = 'skeleton',
 }: TableSkeletonProps<TData>) {
   const visibleColumns = table.getVisibleLeafColumns()
@@ -67,7 +67,7 @@ export function TableSkeleton<TData>({
               SKELETON_WIDTHS.length
 
             return (
-              <TableCell key={column.id} className='py-3'>
+              <TableCell key={column.id} className='py-1'>
                 <Skeleton
                   className={cn(
                     'h-4 rounded-sm',
