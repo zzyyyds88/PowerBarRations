@@ -6,8 +6,8 @@
 #   2) 修好 → 半开窗口内自动复通（留时间戳证据）；
 #   3) probe 逐成员；
 #   4) 四模式各跑通一条。
-# 附加（design-v1 §7.5/§7.6、routing-spec §4.1）：429 不误伤、client_error 不冷却不换人、
-# 欠费 400 由关键词捕获。
+# 附加（design-v1 §7.5/§7.6、routing-spec §4.1）：429 不误伤、成员级拒绝（400/422）
+# 换成员且不冷却不计分、欠费 400 由关键词捕获。
 #
 # 全程本地：独立端口、独立 SQLite、内置假上游；不触碰任何现网容器与凭据。
 set -uo pipefail
@@ -108,10 +108,13 @@ OPTS=$(curl -s "${A[@]}" "$BASE/api/v1/system/options")
 check "选项已落库并可回读" "$OPTS" '"circuit_failure_threshold":1'
 
 echo "--- 6) 建两个渠道（同一假上游，"'"$GOOD_KEY"'"，PBR 渠道没有 priority）"
+# 渠道声明本脚本会用作**成员所选模型**的全部路由键（ADR 0008：成员只存所选模型，
+# 上游真名由渠道映射推导——成员载荷里不再有 upstream_model）。
+W2_MODELS='["mode-failover","mode-manual","mode-x","hang-a","hang-b","solo-model","rate-model","bad-model","quota-model"]'
 for ch in channel-a channel-b; do
   curl -s "${A[@]}" -X PUT -d '{
     "type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'",
-    "models":["mode-failover"],"enabled":true
+    "models":'"$W2_MODELS"',"enabled":true
   }' "$BASE/api/v1/channels/$ch" > /dev/null
 done
 echo "  渠道：$(curl -s "${A[@]}" "$BASE/api/v1/channels" | jq1 "','.join(c['name'] for c in d['items'])")"
@@ -144,14 +147,14 @@ curl -s "${A[@]}" -X PUT -d '{
   "config":{"member_max_attempts":1,"member_retry_interval_seconds":0,
             "member_non_stream_response_timeout_seconds":120,"member_stream_first_event_timeout_seconds":30,
             "member_cooldown_seconds":1,"member_affinity_seconds":0},
-  "members":[{"channel":"channel-a","upstream_model":"solo-model","priority":1}]
+  "members":[{"channel":"channel-a","model":"solo-model","priority":1}]
 }' "$BASE/api/v1/lanes/solo-model" > /dev/null
 curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"failover",
   "config":{"member_max_attempts":1,"member_retry_interval_seconds":0,
             "member_non_stream_response_timeout_seconds":120,"member_stream_first_event_timeout_seconds":30,
             "member_cooldown_seconds":1,"member_affinity_seconds":0},
-  "members":[{"channel":"channel-a","upstream_model":"rate-model","priority":1}]
+  "members":[{"channel":"channel-a","model":"rate-model","priority":1}]
 }' "$BASE/api/v1/lanes/rate-model" > /dev/null
 for m in bad-model quota-model; do
   curl -s "${A[@]}" -X PUT -d '{
@@ -159,7 +162,7 @@ for m in bad-model quota-model; do
     "config":{"member_max_attempts":1,"member_retry_interval_seconds":0,
               "member_non_stream_response_timeout_seconds":120,"member_stream_first_event_timeout_seconds":30,
               "member_cooldown_seconds":1,"member_affinity_seconds":0},
-    "members":[{"channel":"channel-a","upstream_model":"'"$m"'","priority":1}]
+    "members":[{"channel":"channel-a","model":"'"$m"'","priority":1}]
   }' "$BASE/api/v1/lanes/$m" > /dev/null
 done
 echo "  lanes: $(curl -s "${A[@]}" "$BASE/api/v1/lanes" | jq1 "','.join(l['name'] for l in d['items'])")"
@@ -215,8 +218,8 @@ echo "=== 验收门 3：probe 逐成员 ==="
 curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"failover",
   "members":[
-    {"channel":"channel-a","upstream_model":"mode-failover","priority":20},
-    {"channel":"channel-b","upstream_model":"mode-failover","priority":10}
+    {"channel":"channel-a","model":"mode-failover","priority":20},
+    {"channel":"channel-b","model":"mode-failover","priority":10}
   ]
 }' "$BASE/api/v1/lanes/mode-failover" > /dev/null
 PROBE=$(curl -s "${A[@]}" -X POST "$BASE/api/v1/lanes/mode-failover/probe")
@@ -234,8 +237,8 @@ echo "=== 验收门 4：两种现存模式各跑通一条；已删模式必须 4
 curl -s "${A[@]}" -X PUT -d '{
   "enabled":true,"mode":"manual","active_member":"channel-b/mode-failover",
   "members":[
-    {"channel":"channel-a","upstream_model":"mode-failover","priority":20},
-    {"channel":"channel-b","upstream_model":"mode-failover","priority":10}
+    {"channel":"channel-a","model":"mode-failover","priority":20},
+    {"channel":"channel-b","model":"mode-failover","priority":10}
   ]
 }' "$BASE/api/v1/lanes/mode-manual" > /dev/null
 # failover 车道用上游模型名 mode-failover，但请求名也叫 mode-failover，已在上一步建好。
@@ -253,7 +256,7 @@ echo "  -- 已删模式拒绝 --"
 for mode in weighted round_robin; do
   BODY=$(curl -s -o /tmp/pbr-w2-mode.json -w '%{http_code}' "${A[@]}" -X PUT -d '{
     "enabled":true,"mode":"'"$mode"'",
-    "members":[{"channel":"channel-a","upstream_model":"mode-x","priority":1}]
+    "members":[{"channel":"channel-a","model":"mode-x","priority":1}]
   }' "$BASE/api/v1/lanes/mode-rejected-$mode")
   check "$mode 被拒绝为 422" "$BODY" "422"
   check "$mode 错误码为 invalid_mode" "$(cat /tmp/pbr-w2-mode.json)" 'invalid_mode'
@@ -269,8 +272,8 @@ curl -s "${A[@]}" -X PUT -d '{
             "member_non_stream_response_timeout_seconds":120,"member_stream_first_event_timeout_seconds":1,
             "member_cooldown_seconds":5,"member_affinity_seconds":0},
   "members":[
-    {"channel":"channel-a","upstream_model":"hang-a","priority":20},
-    {"channel":"channel-b","upstream_model":"hang-b","priority":10}
+    {"channel":"channel-a","model":"hang-a","priority":20},
+    {"channel":"channel-b","model":"hang-b","priority":10}
   ]}' "$BASE/api/v1/lanes/hang-model" > /dev/null
 control '{"model":"hang-a","delay_ms":4000}'   # channel-a 的上游模型：4s 内不发响应头
 control '{"model":"hang-b","status":200}'      # channel-b 正常
@@ -290,7 +293,7 @@ assert_json "挂起成员进入冷却/熔断（未被静默放过）" "$H_HANG" 
 control '{"model":"hang-a","status":200,"delay_ms":0}'
 
 echo
-echo "=== 附加：错误分类（429 不误伤 / client_error 不冷却 / 欠费关键词） ==="
+echo "=== 附加：错误分类（429 不误伤 / 成员级拒绝换成员且不冷却 / 欠费关键词） ==="
 control '{"model":"rate-model","status":429}'
 for i in 1 2 3; do chat rate-model > /dev/null; sleep 1.2; done
 H_RATE=$(health rate-model)
@@ -298,13 +301,16 @@ echo "  rate health: $(echo "$H_RATE" | jq1 "json.dumps({m['member']:{'circuit':
 check_not "429 不打开熔断" "$H_RATE" '"circuit":"open"'
 check "429 归类为 soft_rate_limit" "$H_RATE" '"soft_rate_limit"'
 
+# 普通 400（非欠费关键词）：成员级拒绝（routing-spec §4.1）——单成员车道无成员可换，
+# 把上游 400 原样返回客户端（§4.2 例外，不合成 503）；不写冷却、不计熔断分。
 control '{"model":"bad-model","status":400,"body":"{\"error\":{\"message\":\"bad request\"}}"}'
-CODE=$(chat bad-model); echo "  client_error: HTTP $CODE $(head -c 120 "$WORK/body.json")"
-check "client_error 原样返回 400（不是 503）" "$CODE" "400"
+CODE=$(chat bad-model); echo "  upstream_reject: HTTP $CODE $(head -c 120 "$WORK/body.json")"
+check "全员拒绝时原样返回上游 400（不是 503）" "$CODE" "400"
 H_BAD=$(health bad-model)
-echo "  client_error health: $H_BAD"
-assert_json "client_error 不触发冷却" "$H_BAD" "all(m['cooldown_until'] is None for m in d['members'])"
-assert_json "client_error 不记熔断计分" "$H_BAD" "all(m['failure_score']==0 for m in d['members'])"
+echo "  upstream_reject health: $H_BAD"
+check "归类为 upstream_reject" "$H_BAD" '"upstream_reject"'
+assert_json "上游拒绝不触发冷却" "$H_BAD" "all(m['cooldown_until'] is None for m in d['members'])"
+assert_json "上游拒绝不记熔断计分" "$H_BAD" "all(m['failure_score']==0 for m in d['members'])"
 
 control '{"model":"quota-model","status":400,"body":"{\"error\":{\"message\":\"Your credit balance is too low\"}}"}'
 CODE=$(chat quota-model); echo "  quota: HTTP $CODE $(head -c 160 "$WORK/body.json")"
