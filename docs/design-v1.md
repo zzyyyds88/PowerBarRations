@@ -547,7 +547,9 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 **定位**：把路由运行态的故障事件推送给**任意外部消费方**，**只推事件、不承载指令**。这是管理 API 的一部分：PBR 只负责**定义推送契约并投递**，接收方的验签、路由、呈现一律由消费方自行实现（本机对接——如推给某 agent 的通知通道——由该 agent 侧做，PBR 不内置任何针对特定接收者的集成）。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
 
-**事件源**：共享事件合同包含 `internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / `reset` / `skip`）、渠道状态事件（`channel_disabled` / `channel_enabled` / `channel_deleted`）和上游错误爆发事件（`upstream_burst`）。`reset` 为车道级事件（`member` 为空）；渠道事件为非车道事件（`lane` 为空，`member` 为渠道 ID）；删除事件 detail 保留删除前的渠道 ID、名称与状态，不含密钥。事件经共享订阅钩子异步旁路投递，绝不阻塞请求路径。
+**事件源**：共享事件合同包含 `internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / **`member_recovered`** / `reset` / `skip` / **`lane_unavailable`** / **`lane_recovered`**）、渠道状态事件（`channel_disabled` / `channel_enabled` / `channel_deleted`）和上游错误爆发事件（`upstream_burst`）。`reset` / `lane_unavailable` / `lane_recovered` 为车道级事件（`member` 为空）；渠道事件为非车道事件（`lane` 为空，`member` 为渠道 ID）；删除事件 detail 保留删除前的渠道 ID、名称与状态，不含密钥。事件经共享订阅钩子异步旁路投递，绝不阻塞请求路径。
+
+**配对语义（合同的一部分，不是消费方自行约定）**：`cooldown` ↔ `member_recovered`（成员冷却→第一次成功服务）、`circuit_open` ↔ `circuit_closed`（熔断→恢复）、`lane_unavailable` ↔ `lane_recovered`（车道全成员不可选→第一次成功服务）。每个"开始"事件都有配对的"结束"事件，消费方据此做 ⚠/✅ 配对通知；`reset` 是人工终止态、`skip`/`upstream_burst` 是过程信号，均不配对。事件的判定与产生点以 routing-spec §7 为单处规范，投递契约为 api-spec §5.8。
 
 `upstream_burst` 由模型面选路失败归属点统一观测，只统计同一渠道在 60 秒内的 HTTP 5xx，默认达到 5 次时发送一次事件；同一窗口内不重复发送，窗口内计数降到阈值以下后重新武装。detail 包含渠道 ID、计数、阈值、窗口、状态码和成员；它与成员级熔断事件并存，分别表达渠道级错误爆发和单成员熔断。
 

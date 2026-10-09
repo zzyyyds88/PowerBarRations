@@ -285,12 +285,18 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
 
 - `circuit` ∈ `closed` / `open` / `half_open`；`cooldown_until` / `circuit_open_until` 是
   **RFC3339 字符串或 null**（不是 unix 毫秒 0）。`affinity` 是对象或 null。
-- `last_error_kind` 出现在有过失败的成员上，取值如 `hard_auth` / `soft_transient` /
-  `soft_rate_limit` / `client_error` / `network_error`。
+- `last_error_kind` 出现在有过失败的成员上，取值：`hard_auth` / `hard_quota` / `soft_transient` /
+  `soft_rate_limit` / `upstream_reject` / `client_error` / `bad_response` / `canceled`（分类口径见
+  routing-spec §4.1）。**`upstream_reject` = 该成员拒绝过这份请求（内容审查、参数不支持等），
+  不代表它故障**——这类拒绝不写冷却、不计熔断分，车道会自动换成员消化；只有全部成员都拒绝时
+  才会成为最终失败（此时返回的是上游原错误，不是 503）。
 - `rolling_success_rate` **冷启动为 0**（无样本），不要把它当成"上游有问题"。
-- **`events[]`** 是近期运行态事件（`type` = `cooldown` / `reset` / 熔断三态；`ts` 毫秒；
-  `member` = `<渠道id>:<上游真名>`；`detail` 如 `cooldown_until=<毫秒>`），排障价值高；
-  **无事件时是 `null`（不是 `[]`）**。
+- **`events[]`** 是近期运行态事件（`type` = `cooldown` / `member_recovered` / `lane_unavailable` /
+  `lane_recovered` / `reset` / 熔断三态；`ts` 毫秒；`member` = `<渠道id>:<上游真名>`；
+  `detail` 如 `cooldown_until=<毫秒>`），排障价值高；
+  **无事件时是 `null`（不是 `[]`）**。事件同时是 webhook 推送的事件流（§6.5），
+  配对关系：`cooldown`↔`member_recovered`、`circuit_open`↔`circuit_closed`、
+  `lane_unavailable`↔`lane_recovered`。
 - **判定"不可用/降级"的规则**：成员 `available=false`（或 `cooldown_until` 非 null、
   `circuit=open`）即不可选；全部成员不可选时 `GET /api/models` 的 `degraded=true`、
   `healthy_member_count=0`，但 **`routable` 仍为 true**（车道存在 ≠ 现在可用）。
@@ -430,8 +436,14 @@ PBR 把路由运行态事件（熔断/冷却/恢复）异步 POST 到你配置�
 - `PUT /api/webhooks` body：`{"targets":[{"name":"notify","url":"http://127.0.0.1:8645/hook",
   "secret":"<随机长串>","enabled":true,"events":[]}]}`（`events` 空 = 全部；`secret` 留空 = 保留原值，
   回显只给掩码 `****`+末 4 位）。
-- 事件体：`{"type":"pbr","text":"...","event":{"ts":<毫秒>,"type":"circuit_open|circuit_half_open|circuit_closed|cooldown",
+- 事件体：`{"type":"pbr","text":"...","event":{"ts":<毫秒>,"type":"<事件类型>",
   "lane":"...","member":"<channelId>:<upstreamModel>","detail":"..."}}`。
+  事件类型全集与配对关系：`cooldown`↔`member_recovered`、`circuit_open`↔`circuit_closed`
+  （另有 `circuit_half_open`、`lane_unavailable`↔`lane_recovered`、`reset`、`skip`、
+  `channel_disabled`/`channel_enabled`/`channel_deleted`、`upstream_burst`）；
+  渠道事件的 `lane` 为空、`member` 为渠道 ID；`reset`/车道级事件的 `member` 为空。
+  **要点**：需要"⚠/✅ 配对告警"就在 `events` 白名单里同时订阅配对的两端
+  （如 `["cooldown","member_recovered","lane_unavailable","lane_recovered"]`）。
 - **验签（接收端必做）**：读头 `X-Webhook-Timestamp`（Unix 秒）与 `X-Webhook-Signature-V2`，
   对**原始请求体字节**计算 `HMAC_SHA256(secret, "{ts}.{body}")` 的 hex 并常数时间比较；
   `ts` 与本地时间偏差 > ±300s 拒收。
