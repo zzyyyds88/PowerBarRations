@@ -306,7 +306,9 @@
 | GET | `/api/channels/{name}` | 详情 |
 | PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时若被移除的路由键命中同名车道且该车道有本渠道成员**：默认 409 `conflict`，**被引用的车道名在 `error.details.lanes`**（机器可判定，不要解析 message）；`?force=1` 继续，并在落库后把这些车道上的本渠道成员移除（成员清空的空车道整条删除）。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
 | DELETE | `/api/channels/{name}` | 删除；被车道引用时 409 `conflict`，引用它的车道名在 `error.details.lanes` |
-| POST | `/api/channels/{name}/test` | 单渠道探活 |
+| GET | `/api/channels/health` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.11；渠道表/健康页用它一次取全量徽章 |
+| GET | `/api/channels/{name}/health` | **单渠道健康详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.11 |
+| POST | `/api/channels/{name}/test` | 单渠道探活；**每次探活写一条探活记录**（`pbr_probe_logs`，见 §6.11），供健康页的"探活历史"。响应形状不变 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；若被移除的路由键正是某条车道的名字、且该车道有本渠道成员，则返回 409 并给出车道清单。`?force=1` 覆盖时**同样执行成员清理**（从命中车道移除本渠道成员，空车道删除），响应附带 `cleaned_lanes` / `deleted_lanes` |
 
 ### 5.3.1 渠道批量运维
@@ -845,6 +847,82 @@ X-Served-By: channel=12:channel-b, model=model-y
 HTTP/1.1 503 Service Unavailable
 { "error": { "message": "No available channel for model lane-alpha" } }
 ```
+
+### 6.12 渠道健康（单渠道详情与全量汇总）
+
+```bash
+curl -s "$PBR/api/channels/channel-a/health?window=24h" -H "Authorization: Bearer $ADMIN_KEY"
+```
+
+```json
+{
+  "channel": { "name": "channel-a", "enabled": true, "type": "openai",
+               "base_url": "https://vendor.example/v1", "key_set": true, "key_prefix": "sk-a",
+               "models": ["model-1"], "model_mapping": {} },
+  "reference": { "lanes": [ { "lane": "lane-alpha", "model": "model-1", "upstream_model": "model-1",
+                              "priority": 10, "enabled": true } ] },
+  "runtime": {
+    "member_count": 1, "available_count": 1,
+    "members": [ { "lane": "lane-alpha", "member": "channel-a:model-1", "enabled": true, "available": true,
+                   "circuit": "closed", "cooldown_until": null, "circuit_open_until": null,
+                   "consecutive_failures": 0, "failure_score": 0, "rolling_success_rate": 1,
+                   "last_error_kind": "" } ] },
+  "window": "24h",
+  "summary": { "requests": 120, "successes": 118, "failures": 2, "success_rate": 0.9833,
+               "avg_total_ms": 840, "avg_ttft_ms": 220, "estimated_cost": 0.12 },
+  "daily": [ { "date": "2026-10-04", "requests": 30, "successes": 30, "failures": 0,
+               "estimated_cost": 0.03 } ],
+  "recent_failures": [ { "id": 123, "ts": "2026-10-09T12:00:00Z", "lane": "lane-alpha",
+                         "model": "model-1", "upstream_model": "model-1", "http_status": 500,
+                         "error_kind": "soft_transient", "error_summary": "upstream 500" } ],
+  "probe_history": [ { "ts": "2026-10-09T12:00:00Z", "upstream_model": "model-1",
+                       "status": "success", "duration_ms": 320, "http_status": 200,
+                       "error_kind": "", "msg": "" } ],
+  "upstream_updates": { "last_check_ts": "2026-10-09T11:00:00Z",
+                        "pending_add": ["model-2"], "pending_remove": [] }
+}
+```
+
+**数据来源与口径（每条都可判定，不是估值）**：
+
+- `runtime` 来自**进程内运行态**（routing-spec §1.3）：把该渠道在所有车道里的成员
+  （键 = `channelId:upstreamModel`）聚合过来；**重启即清空**，与车道健康快照同源同义
+  （字段口径见 §6.5）。`available_count` 只计"渠道启用、成员未被人工停用、且不在冷却/熔断中"
+  的成员。渠道未被任何车道引用时 `runtime.members` 为空数组。
+- `summary` 与 `daily` 来自**小时聚合表**（`pbr_stats_hourly`，design §16.5）：
+  `summary.requests/successes/estimated_cost` 是窗口内合计，`success_rate = successes / requests`
+  （`requests = 0` 时为 `0`）；`daily` 是窗口按自然日（本地时区）切分的同一组数字，最多返回
+  窗口对应天数（`24h` → 2 个日期桶，`7d` → 7 个）。**`POST /logs/prune` 清理明细不影响它们。**
+- `summary.avg_total_ms` / `avg_ttft_ms` 来自**明细日志**（`pbr_request_logs`）在窗口内的均值
+  （`ttft_ms` 只计流式请求，无样本时为 `0`）——这两项**会被 `POST /logs/prune` 影响**，
+  清理后回落为 `0`；聚合表不存耗时，这是刻意的（不引入第二份耗时常量表）。
+- `recent_failures` 取该渠道**最近 N 条失败**（N=20）的明细日志（含 `error_kind` 与摘要；
+  `route_source=test` 的探活记录不计入失败列表）。
+- `probe_history` 取该渠道**最近 N 条探活记录**（N=20）——每次
+  `POST /api/channels/{name}/test` 落一条（表 `pbr_probe_logs`：`ts/channel/upstream_model/
+  status/duration_ms/http_status/error_kind/msg`）。**每渠道只保留最近 200 条**（写入时滚动裁剪），
+  `POST /logs/prune?before=` 同时按时间清理本表。
+- `upstream_updates` 取渠道设置里**上次"检测上游模型变动"的结果**（`pending_add` = 上次探测到的新增候选，
+  `pending_remove` = 上次探测到的将移除项；两者都是上次探测的快照，**本端点不访问上游、无副作用**；
+  从未探测过时 `last_check_ts` 为 `null`、两个数组为空）。
+- `window` 只接受 `24h` / `7d`，其余值 → 422 `validation_failed`。
+
+`GET /api/channels/health?window=24h`（全量汇总）返回：
+
+```json
+{ "window": "24h",
+  "items": [ { "channel": "channel-a", "enabled": true, "type": "openai",
+               "lane_count": 1, "member_count": 1, "available_count": 1, "degraded": false,
+               "requests": 120, "failures": 2, "success_rate": 0.9833, "estimated_cost": 0.12,
+               "last_error_kind": "", "last_probe": { "ts": "2026-10-09T12:00:00Z", "status": "success",
+                                                       "duration_ms": 320 } } ] }
+```
+
+- `lane_count` = 引用该渠道的车道数（去重）；`degraded` = 该渠道**至少一个成员当前不可选**
+  （冷却/熔断/人工停用；口径与 §5.7 的模型级 `degraded` 同源）；`last_error_kind` 取运行态中
+  最近一条失败留痕（无则空串）；`last_probe` 为最近一条探活记录（从未探活时省略该字段）。
+- 全量汇总**不含** `daily` / `recent_failures` / `probe_history`（那是详情端点的事）；
+  两个端点都是只读、无副作用、不访问上游。
 
 ---
 
