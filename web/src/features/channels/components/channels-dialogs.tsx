@@ -25,6 +25,7 @@ import { OllamaModelsDialog } from './dialogs/ollama-models-dialog'
 import { TagBatchEditDialog } from './dialogs/tag-batch-edit-dialog'
 import { UpstreamUpdateDialog } from './dialogs/upstream-update-dialog'
 import { ChannelMutateDialog } from './drawers/channel-mutate-dialog'
+import { ChannelStatusDrawer } from './drawers/channel-status-drawer'
 
 export function ChannelsDialogs() {
   const { open, setOpen, currentRow, upstream } = useChannels()
@@ -43,6 +44,15 @@ export function ChannelsDialogs() {
         open={open === 'test-channel'}
         onOpenChange={(v) => !v && setOpen(null)}
       />
+
+      {/* Channel Status Drawer（只读监控面；从行操作菜单「状态」进入） */}
+      {open === 'status-channel' && currentRow && (
+        <ChannelStatusDrawer
+          open
+          onOpenChange={(v) => !v && setOpen(null)}
+          channel={currentRow}
+        />
+      )}
 
       {/* Ollama Models Dialog */}
       <OllamaModelsDialog

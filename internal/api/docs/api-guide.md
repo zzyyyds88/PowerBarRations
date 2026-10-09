@@ -35,7 +35,10 @@
 > **加真实 HTTP 状态码**。**没有 `{success,message,data}` 包装，也没有"200 承载失败"**——按状态码 + `error.code` 分支。
 
 - 渠道：`GET /api/channels`、`GET|PUT|DELETE /api/channels/{name}`、
-  `POST /api/channels/{name}/test`、`POST /api/channels/{name}/sync-models`
+  `POST /api/channels/{name}/test`、`POST /api/channels/{name}/sync-models`、
+  `GET /api/channels/status`、`GET /api/channels/{name}/status`（只读状态类：全量汇总 / 单渠道详情，
+  `?window=24h|7d`；含成员运行态、窗口统计与逐日、最近失败、探活历史、上游模型变动提示；
+  每次 `POST .../test` 会写一条探活记录供该历史查阅）
 - 车道（唯一路由入口，ADR 0005）：`GET /api/lanes`、`GET|PUT|DELETE /api/lanes/{name}`、
   `GET /api/lanes/{name}/health`、`POST /api/lanes/{name}/probe`、
   `POST /api/lanes/{name}/circuits/reset`、`POST /api/lanes/cleanup-members`
@@ -44,6 +47,7 @@
 - 客户端密钥：`GET|POST /api/keys`、`GET|PUT|DELETE /api/keys/{name}`、
   `POST /api/keys/{name}/rotate`（权限用 `lane_policy:{mode:"all"|"allow",allow_lanes,deny_lanes}`，
   **没有 `allowed_models` 字段**；allow/deny 里的键必须是真实存在的路由键，否则 422）
+- 模型状态：`GET /api/model-status?from=&to=`（跨渠道按上游模型聚合：成功率 / 平均延迟 / 输出速度 tps / token 数）
 - 观测：`GET /api/logs`、`GET /api/logs/{id}`、`POST /api/logs/prune`、
   `GET /api/stats`（`group_by=lane|channel|key|model|channel_model`）、`GET /api/route-events`（SSE）
 - Webhook 事件通知：`GET|PUT /api/webhooks`、`POST /api/webhooks/test`、`GET /api/webhooks/deliveries`（见 §5）

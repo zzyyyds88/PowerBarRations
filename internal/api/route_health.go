@@ -202,6 +202,9 @@ func CurrentProbeConcurrency() int {
 }
 
 // TestChannel POST /api/v1/channels/{name}/test：单渠道探活。
+//
+// 每次探活写一条探活记录（`pbr_probe_logs`），供渠道健康详情的"探活历史"
+// （api-spec §6.12）。留痕失败不影响探活结论本身。
 func TestChannel(c *gin.Context) {
 	channel, err := findChannelByName(c.Param("name"))
 	if err != nil {
@@ -217,7 +220,28 @@ func TestChannel(c *gin.Context) {
 	}
 	result := probeChannel(c.Request.Context(), channel, testModel)
 	result.finish()
+	writeProbeRecord(channel, result)
 	c.JSON(http.StatusOK, result)
+}
+
+// writeProbeRecord 把一次探活落成探活记录（api-spec §6.12 的"探活历史"）。
+func writeProbeRecord(channel *model.Channel, result ProbeMember) {
+	msg := result.Msg
+	if len(msg) > model.ProbeLogMsgLimit {
+		msg = msg[:model.ProbeLogMsgLimit]
+	}
+	entry := &model.PBRProbeLog{
+		Ts:            time.Now().Unix(),
+		ChannelId:     channel.Id,
+		ChannelName:   channel.Name,
+		UpstreamModel: result.UpstreamModel,
+		Status:        result.Status,
+		DurationMs:    result.DurationMs,
+		HTTPStatus:    result.StatusCode,
+		ErrorKind:     result.ErrorKind,
+		Msg:           msg,
+	}
+	model.LogProbeWriteFailure(model.WriteProbeLog(entry))
 }
 
 // probeChannel 用 OpenAI Chat 形态发一个最小真实请求探活。

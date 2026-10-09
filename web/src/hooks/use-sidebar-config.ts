@@ -107,6 +107,8 @@ const URL_TO_CONFIG_MAP: Record<string, { section: string; module: string }> = {
   '/usage-logs/audit': { section: 'console', module: 'audit' },
   '/usage-logs/task': { section: 'console', module: 'task' },
   '/channels': { section: 'admin', module: 'channel' },
+  // 渠道状态页与渠道管理同属 channel 模块：隐藏「渠道管理」时一并隐藏（ui-spec §6.4A）。
+  '/channel-status': { section: 'admin', module: 'channel' },
   '/models': { section: 'admin', module: 'models' },
   '/models/metadata': { section: 'admin', module: 'models' },
   // 路由与故障切换页归属 models 模块：隐藏「模型」时一并隐藏（ui-spec §6.3）。

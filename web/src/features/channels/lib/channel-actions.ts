@@ -58,6 +58,10 @@ export const channelsQueryKeys = {
     [...channelsQueryKeys.lists(), params] as const,
   details: () => [...channelsQueryKeys.all, 'detail'] as const,
   detail: (id: number) => [...channelsQueryKeys.details(), id] as const,
+  // 渠道状态详情（api-spec §6.12）：按「渠道名 + window」分桶，切换窗口即新取数，
+  // 探活完成后 invalidate 同一前缀即可刷新历史与运行态。
+  status: (name: string, window: string) =>
+    [...channelsQueryKeys.all, 'status', name, window] as const,
 }
 
 /** 删除/批量删除被车道引用时的冲突信息，供确认框内联展示与跳转处理。 */

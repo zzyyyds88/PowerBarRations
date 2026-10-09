@@ -306,9 +306,9 @@
 | GET | `/api/channels/{name}` | 详情 |
 | PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时若被移除的路由键命中同名车道且该车道有本渠道成员**：默认 409 `conflict`，**被引用的车道名在 `error.details.lanes`**（机器可判定，不要解析 message）；`?force=1` 继续，并在落库后把这些车道上的本渠道成员移除（成员清空的空车道整条删除）。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
 | DELETE | `/api/channels/{name}` | 删除；被车道引用时 409 `conflict`，引用它的车道名在 `error.details.lanes` |
-| GET | `/api/channels/health` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.11；渠道表/健康页用它一次取全量徽章 |
-| GET | `/api/channels/{name}/health` | **单渠道健康详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.11 |
-| POST | `/api/channels/{name}/test` | 单渠道探活；**每次探活写一条探活记录**（`pbr_probe_logs`，见 §6.11），供健康页的"探活历史"。响应形状不变 |
+| GET | `/api/channels/status` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.12；控制台「渠道状态」页用它一次取全量 |
+| GET | `/api/channels/{name}/status` | **单渠道状态详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.12 |
+| POST | `/api/channels/{name}/test` | 单渠道探活；**每次探活写一条探活记录**（`pbr_probe_logs`，见 §6.11），供渠道状态页的"探活历史"。响应形状不变 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；若被移除的路由键正是某条车道的名字、且该车道有本渠道成员，则返回 409 并给出车道清单。`?force=1` 覆盖时**同样执行成员清理**（从命中车道移除本渠道成员，空车道删除），响应附带 `cleaned_lanes` / `deleted_lanes` |
 
 ### 5.3.1 渠道批量运维
@@ -848,10 +848,10 @@ HTTP/1.1 503 Service Unavailable
 { "error": { "message": "No available channel for model lane-alpha" } }
 ```
 
-### 6.12 渠道健康（单渠道详情与全量汇总）
+### 6.12 渠道状态（单渠道详情与全量汇总）
 
 ```bash
-curl -s "$PBR/api/channels/channel-a/health?window=24h" -H "Authorization: Bearer $ADMIN_KEY"
+curl -s "$PBR/api/channels/channel-a/status?window=24h" -H "Authorization: Bearer $ADMIN_KEY"
 ```
 
 ```json
@@ -863,13 +863,16 @@ curl -s "$PBR/api/channels/channel-a/health?window=24h" -H "Authorization: Beare
                               "priority": 10, "enabled": true } ] },
   "runtime": {
     "member_count": 1, "available_count": 1,
-    "members": [ { "lane": "lane-alpha", "member": "channel-a:model-1", "enabled": true, "available": true,
+    "members": [ { "lane": "lane-alpha", "member": "channel-a/model-1", "enabled": true, "available": true,
                    "circuit": "closed", "cooldown_until": null, "circuit_open_until": null,
                    "consecutive_failures": 0, "failure_score": 0, "rolling_success_rate": 1,
                    "last_error_kind": "" } ] },
   "window": "24h",
   "summary": { "requests": 120, "successes": 118, "failures": 2, "success_rate": 0.9833,
                "avg_total_ms": 840, "avg_ttft_ms": 220, "estimated_cost": 0.12 },
+  "models": [ { "model": "model-1", "requests": 120, "successes": 118, "failures": 2,
+                "success_rate": 0.9833, "avg_total_ms": 840, "avg_ttft_ms": 220,
+                "output_tps": 41.2, "tokens_out": 56000 } ],
   "daily": [ { "date": "2026-10-04", "requests": 30, "successes": 30, "failures": 0,
                "estimated_cost": 0.03 } ],
   "recent_failures": [ { "id": 123, "ts": "2026-10-09T12:00:00Z", "lane": "lane-alpha",
@@ -893,6 +896,13 @@ curl -s "$PBR/api/channels/channel-a/health?window=24h" -H "Authorization: Beare
   `summary.requests/successes/estimated_cost` 是窗口内合计，`success_rate = successes / requests`
   （`requests = 0` 时为 `0`）；`daily` 是窗口按自然日（本地时区）切分的同一组数字，最多返回
   窗口对应天数（`24h` → 2 个日期桶，`7d` → 7 个）。**`POST /logs/prune` 清理明细不影响它们。**
+- **`models[]`（渠道状态页的主表）**：该渠道在窗口内**按上游模型**的表现，一行一个模型
+  （按请求数降序）。字段：`model`（上游真名）/ `requests` / `successes` / `failures` /
+  `success_rate`（0~1）/ `avg_total_ms` / `avg_ttft_ms`（仅流式有样本，无则 `0`）/
+  **`output_tps`（输出速度，tokens/s）** / `tokens_out`（输出 token 总数）。
+  **输出速度口径**：`Σcompletion_tokens / Σ生成耗时`，生成耗时 = 流式取 `max(total_ms − ttft_ms, 1)`、
+  非流式取 `total_ms`——把首字等待排除在外，才是"吐字速度"。
+  同一取舍：数据源是明细日志，`POST /logs/prune` 清理后该表为空数组。
 - `summary.avg_total_ms` / `avg_ttft_ms` 来自**明细日志**（`pbr_request_logs`）在窗口内的均值
   （`ttft_ms` 只计流式请求，无样本时为 `0`）——这两项**会被 `POST /logs/prune` 影响**，
   清理后回落为 `0`；聚合表不存耗时，这是刻意的（不引入第二份耗时常量表）。
@@ -905,9 +915,9 @@ curl -s "$PBR/api/channels/channel-a/health?window=24h" -H "Authorization: Beare
 - `upstream_updates` 取渠道设置里**上次"检测上游模型变动"的结果**（`pending_add` = 上次探测到的新增候选，
   `pending_remove` = 上次探测到的将移除项；两者都是上次探测的快照，**本端点不访问上游、无副作用**；
   从未探测过时 `last_check_ts` 为 `null`、两个数组为空）。
-- `window` 只接受 `24h` / `7d`，其余值 → 422 `validation_failed`。
+- `window` 只接受 `24h` / `7d`，其余值 → 400 `validation_failed`（与 `/api/stats` 的 `group_by` 校验同口径：查询参数的取值校验走 400；422 保留给"选项值校验失败"那类，见 §3）。
 
-`GET /api/channels/health?window=24h`（全量汇总）返回：
+`GET /api/channels/status?window=24h`（全量汇总）返回：
 
 ```json
 { "window": "24h",
@@ -923,6 +933,30 @@ curl -s "$PBR/api/channels/channel-a/health?window=24h" -H "Authorization: Beare
   最近一条失败留痕（无则空串）；`last_probe` 为最近一条探活记录（从未探活时省略该字段）。
 - 全量汇总**不含** `daily` / `recent_failures` / `probe_history`（那是详情端点的事）；
   两个端点都是只读、无副作用、不访问上游。
+
+### 6.13 模型状态（跨渠道按模型聚合）
+
+```bash
+curl -s "$PBR/api/model-status?from=1789000000&to=1789600000" -H "Authorization: Bearer $ADMIN_KEY"
+```
+
+```json
+{ "from": 1789000000, "to": 1789600000,
+  "items": [ { "model": "model-1", "requests": 120, "successes": 118, "failures": 2,
+               "success_rate": 0.9833, "avg_total_ms": 840, "avg_ttft_ms": 220,
+               "output_tps": 41.2, "tokens_in": 12000, "tokens_out": 56000,
+               "tokens_total": 68000, "estimated_cost": 0.12 } ] }
+```
+
+- **用途**：控制台首页「服务状态」（逐模型 平均延迟 / 吞吐量 / 成功率）与「Token 排行榜」（按 `tokens_total` 降序）。
+- `from` / `to` 为 Unix 秒或 RFC3339，**都可省略**（省略 `from` = 最近 24 小时；省略 `to` = 现在）。
+- 字段口径与 §6.12 的 `models[]` **完全一致**（同一份实现）：`success_rate` 0~1；
+  `avg_ttft_ms` 只对流式有样本；`output_tps` = `Σcompletion_tokens / Σ生成耗时`（流式扣掉首字等待）；
+  按 `tokens_out` 降序返回；无数据时 `items` 为空数组。
+- 数据源是**明细日志**：`POST /logs/prune` 清理后该窗口的样本随之减少（这是刻意的取舍，
+  聚合表不存耗时与 token 的模型级细分）。
+
+---
 
 ---
 

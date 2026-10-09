@@ -20,6 +20,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { Row } from '@tanstack/react-table'
 import {
   MoreHorizontal,
+  Activity,
   Boxes,
   Pencil,
   PlugZap,
@@ -102,6 +103,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const handleTest = () => {
     setCurrentRow(channel)
     setOpen('test-channel')
+  }
+
+  const handleStatus = () => {
+    setCurrentRow(channel)
+    setOpen('status-channel')
   }
 
   const handleDirectTest = async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -256,6 +262,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             {t('Test Connection')}
             <DropdownMenuShortcut>
               <PlugZap size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
+          {/* Channel status (read-only monitoring drawer) */}
+          <DropdownMenuItem onClick={handleStatus}>
+            {t('Status')}
+            <DropdownMenuShortcut>
+              <Activity size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
 
