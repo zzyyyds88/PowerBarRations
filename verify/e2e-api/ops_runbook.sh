@@ -421,6 +421,27 @@ assert_json "整链 PUT /lanes/{name} 的开关写入落 resource=lane、action=
 assert_json "dry-run 预览同样落审计且 dry_run=true（写不静默，预览可追溯）" "$AUDIT_W3" "any(i['name']=='w3-model-x' and i['dry_run'] is True for i in d['items'])"
 
 echo
+echo "=== 运维 21：渠道状态（两个只读端点 + 探活历史；api-spec §6.12）==="
+# 用 runbook 已建好的渠道；先取一次基线，再探活，历史必须新增一条。
+CH_STATUS=$(curl -s "${A[@]}" "$BASE/api/v1/channels/ops-a/status?window=24h")
+CH_BEFORE=$(echo "$CH_STATUS" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d.get("probe_history") or []))' 2>/dev/null || echo -1)
+assert_json "详情含七块（channel/reference/runtime/summary/daily/recent_failures/probe_history/upstream_updates）" "$CH_STATUS" \
+  "all(k in d for k in ('channel','reference','runtime','window','summary','daily','recent_failures','probe_history','upstream_updates'))"
+assert_json "运行态成员与车道引用同源（成员键为 渠道/上游真名）" "$CH_STATUS" \
+  "all('/' in m['member'] and m['lane'] for m in d['runtime']['members'])"
+curl -s "${A[@]}" -X POST "$BASE/api/v1/channels/ops-a/test" > /dev/null
+CH_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/channels/ops-a/status")
+CH_AFTER_N=$(echo "$CH_AFTER" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d.get("probe_history") or []))' 2>/dev/null || echo -1)
+check "探活后探活历史 +1（$CH_BEFORE → $CH_AFTER_N）" "$CH_AFTER_N" "$((CH_BEFORE + 1))"
+assert_json "探活记录形状（ts/status/duration_ms）" "$CH_AFTER" \
+  "d['probe_history'][0]['status'] in ('success','failed') and d['probe_history'][0]['ts'] and 'duration_ms' in d['probe_history'][0]"
+CH_LIST=$(curl -s "${A[@]}" "$BASE/api/v1/channels/status?window=7d")
+assert_json "全量汇总含该渠道且窗口回显 7d" "$CH_LIST" \
+  "d['window']=='7d' and any(i['channel']=='ops-a' and 'degraded' in i and 'success_rate' in i for i in d['items'])"
+check "窗口取值非法 → 400 validation_failed" "$(curl -s -o /dev/null -w '%{http_code}' "${A[@]}" "$BASE/api/v1/channels/status?window=1h")" "400"
+check "未知名渠道 → 404" "$(curl -s -o /dev/null -w '%{http_code}' "${A[@]}" "$BASE/api/v1/channels/no-such-channel/status")" "404"
+
+echo
 echo "=== 结果：PASS=$PASS FAIL=$FAIL ==="
 if [[ $FAIL -eq 0 ]]; then echo "PASS: L2 真实 API 运维全部通过"; else
   echo "FAIL: 存在未通过项"; echo "--- pbr.log 末尾 ---"; tail -40 "$WORK/pbr.log"; exit 2
