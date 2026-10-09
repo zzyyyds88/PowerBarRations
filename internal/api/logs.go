@@ -284,6 +284,12 @@ func PruneLogs(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	// 探活记录同一保留期清理（api-spec §6.12：探活历史的清理入口就在这里）。
+	probeCount, err := model.CountProbeLogsBefore(before)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
 	if dryRun(c) {
 		// 干跑也留审计痕迹（api-spec §2.6 的 dry_run 字段）
 		writeAudit(c, "prune", "logs", "logs")
@@ -295,6 +301,7 @@ func PruneLogs(c *gin.Context) {
 			"deleted":                         0,
 			"would_delete":                    count,
 			"would_delete_webhook_deliveries": webhookCount,
+			"would_delete_probe_logs":         probeCount,
 			"diff":                            gin.H{"logs": gin.H{"remove": count}},
 		})
 		return
@@ -310,6 +317,11 @@ func PruneLogs(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	probeDeleted, err := model.PruneProbeLogsBefore(before)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
 	writeAudit(c, "prune", "logs", "logs")
 	c.JSON(http.StatusOK, gin.H{
 		"deleted":        deleted,
@@ -317,5 +329,7 @@ func PruneLogs(c *gin.Context) {
 		"retention_days": retentionDays,
 		// 投递日志清理条数（additive；design-v1 §16.10）
 		"webhook_deliveries_deleted": webhookDeleted,
+		// 探活记录清理条数（additive；api-spec §6.12）
+		"probe_logs_deleted": probeDeleted,
 	})
 }

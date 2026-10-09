@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  Activity,
   Box,
   ClipboardList,
   FileText,
@@ -89,6 +90,13 @@ export function useSidebarData(): SidebarData {
             title: t('Channel management'),
             url: '/channels',
             icon: Radio,
+          },
+          {
+            // 渠道状态独立成页（ui-spec §6.4A）：运维第一屏要看的是"所有渠道
+            // 现在怎么样"，而不是先点进某条渠道的抽屉。
+            title: t('Channel status'),
+            url: '/channel-status',
+            icon: Activity,
           },
           {
             title: t('Routing & Failover'),

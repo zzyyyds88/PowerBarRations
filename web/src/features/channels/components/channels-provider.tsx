@@ -38,6 +38,7 @@ type DialogType =
   | 'create-channel'
   | 'update-channel'
   | 'test-channel'
+  | 'status-channel'
   | 'ollama-models'
   | 'multi-key-manage'
   | 'tag-batch-edit'

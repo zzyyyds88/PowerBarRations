@@ -992,8 +992,21 @@ func openAPIPaths() gin.H {
 			"put":    secured("put", "渠道全量 upsert（key 只写不读）", append(pathParam("name"), dryRunParam))["put"],
 			"delete": secured("delete", "删除渠道", pathParam("name"))["delete"],
 		},
+		"/model-status": gin.H{
+			"get": secured("get", "按上游模型聚合的运行表现（只读）：成功率 / 平均延迟 / 输出速度(tps) / token 数",
+				[]gin.H{queryParam("from", "起始时间（RFC3339 或 Unix 秒；省略=最近 24 小时）"),
+					queryParam("to", "结束时间（同上）")})["get"],
+		},
+		"/channels/status": gin.H{
+			"get": secured("get", "全部渠道的状态汇总（只读；window=24h|7d）",
+				[]gin.H{queryParam("window", "统计窗口：24h（默认）或 7d")})["get"],
+		},
+		"/channels/{name}/status": gin.H{
+			"get": secured("get", "单渠道状态详情（只读）：运行态 / 窗口统计 / 最近失败 / 探活历史 / 上游变动提示",
+				append(pathParam("name"), queryParam("window", "统计窗口：24h（默认）或 7d")))["get"],
+		},
 		"/channels/{name}/test": gin.H{
-			"post": secured("post", "单渠道探活", pathParam("name"))["post"],
+			"post": secured("post", "单渠道探活（每次探活写一条探活记录，供渠道状态页历史）", pathParam("name"))["post"],
 		},
 		"/channels/{name}/sync-models": gin.H{
 			"post": secured("post", "从上游拉取模型清单", append(pathParam("name"), dryRunParam))["post"],

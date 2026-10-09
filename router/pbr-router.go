@@ -102,6 +102,8 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 		authed.POST("/import", api.PostImport)
 		authed.GET("/audit", api.ListAudit)
 
+		// 模型状态（只读；跨渠道按上游模型聚合，api-spec §6.13）
+		authed.GET("/model-status", api.GetModelStatus)
 		// 请求日志与统计（只读元数据）
 		authed.GET("/logs", api.ListLogs)
 		authed.GET("/logs/:id", api.GetLog)
@@ -113,7 +115,11 @@ func registerPBRAPIRoutes(group *gin.RouterGroup) {
 
 		// 渠道
 		authed.GET("/channels", api.ListChannels)
+		// 渠道状态（只读；api-spec §6.12）。静态段与 /channels/:name 同级共存，
+		// 由 gin 的静态优先规则命中本行；不做"渠道名恰为 status"的兼容（该名字保留给本端点）。
+		authed.GET("/channels/status", api.ListChannelStatus)
 		authed.GET("/channels/:name", api.GetChannel)
+		authed.GET("/channels/:name/status", api.GetChannelStatusByName)
 		authed.PUT("/channels/:name", api.PutChannel)
 		authed.DELETE("/channels/:name", api.DeleteChannel)
 		authed.POST("/channels/:name/test", api.TestChannel)

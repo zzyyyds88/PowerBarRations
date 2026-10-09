@@ -509,6 +509,18 @@ func AggregatePBRStats(from, until int64, granularity, groupBy string) ([]PBRSta
 // 区间，桶起点可能早于 from（例如 from 落在某小时中间），只比 bucket_ts 会把
 // "包含 from 的那个桶"整个丢掉。until 侧则按桶起点（起点晚于 until 的桶不含窗口内数据）。
 func AggregatePBRStatsFromHourly(from, until int64, granularity, groupBy string) ([]PBRStatBucket, error) {
+	return aggregatePBRStatsFromHourly(from, until, granularity, groupBy, "")
+}
+
+// AggregatePBRChannelStats 单渠道的小时/日聚合（渠道健康详情用，口径与 /api/stats 同源）。
+// groupKey 为空表示不按 key 过滤（等价于 AggregatePBRStatsFromHourly）。
+func AggregatePBRChannelStats(channelName string, from, until int64, granularity string) ([]PBRStatBucket, error) {
+	return aggregatePBRStatsFromHourly(from, until, granularity, "channel", channelName)
+}
+
+// aggregatePBRStatsFromHourly 是聚合读的唯一实现：groupKind 选维度，
+// groupKey 非空时再按该维度的键过滤（渠道健康只要一条渠道的桶）。
+func aggregatePBRStatsFromHourly(from, until int64, granularity, groupBy, groupKey string) ([]PBRStatBucket, error) {
 	groupKind := strings.ToLower(strings.TrimSpace(groupBy))
 	switch groupKind {
 	case "lane", "channel", "key", "model", "channel_model":
@@ -533,6 +545,9 @@ func AggregatePBRStatsFromHourly(from, until int64, granularity, groupBy string)
 		Where("group_kind = ?", groupKind).
 		Group(bucketExpr + ", group_key").
 		Order("bucket_ts desc")
+	if strings.TrimSpace(groupKey) != "" {
+		query = query.Where("group_key = ?", strings.TrimSpace(groupKey))
+	}
 	if from > 0 {
 		query = query.Where(bucketExpr+" + ? >= ?", windowSeconds, from)
 	}
@@ -546,6 +561,35 @@ func AggregatePBRStatsFromHourly(from, until int64, granularity, groupBy string)
 		rows = []PBRStatBucket{}
 	}
 	return rows, nil
+}
+
+// ChannelLatencyAverages 渠道在 [from, until) 内的平均总耗时与平均首字耗时（毫秒）。
+//
+// 数据源是**明细日志**（聚合表不存耗时——不为此引入第二份耗时常量表，是刻意的取舍，
+// api-spec §6.12 已明示）：`POST /logs/prune` 清理后这两个值回落 0。
+// ttft 只对流式请求有样本，无样本时返回 0。
+func ChannelLatencyAverages(channelName string, from, until int64) (avgTotalMs, avgTTFTMs float64, err error) {
+	if DB == nil || strings.TrimSpace(channelName) == "" {
+		return 0, 0, nil
+	}
+	var row struct {
+		AvgTotal float64
+		AvgTTFT  float64
+	}
+	query := DB.Model(&PBRRequestLog{}).
+		Select("COALESCE(AVG(total_ms), 0) AS avg_total, " +
+			"COALESCE(AVG(CASE WHEN is_stream THEN ttft_ms END), 0) AS avg_ttft").
+		Where("member_channel_name = ?", strings.TrimSpace(channelName))
+	if from > 0 {
+		query = query.Where("ts >= ?", from)
+	}
+	if until > 0 {
+		query = query.Where("ts < ?", until)
+	}
+	if err := query.Scan(&row).Error; err != nil {
+		return 0, 0, err
+	}
+	return row.AvgTotal, row.AvgTTFT, nil
 }
 
 // BackfillPBRChannelModelStats 一次性回填「渠道 × 模型」聚合桶（breakdown W9）。

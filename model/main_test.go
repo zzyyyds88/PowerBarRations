@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 		&PBRAuditLog{},
 		&PBRRequestLog{},
 		&PBRStatsHourly{},
+		&PBRProbeLog{},
 		&Option{},
 	); err != nil {
 		panic("failed to migrate: " + err.Error())
@@ -70,5 +71,6 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM pbr_audit_logs")
 		DB.Exec("DELETE FROM pbr_request_logs")
 		DB.Exec("DELETE FROM pbr_stats_hourly")
+		DB.Exec("DELETE FROM pbr_probe_logs")
 	})
 }

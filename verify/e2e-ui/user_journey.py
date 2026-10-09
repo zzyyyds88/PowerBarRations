@@ -184,9 +184,26 @@ class CDP:
         except Exception:
             pass
 
+    def click_at(self, x, y):
+        """在视口坐标上做一次**真实鼠标点击**（press + release）。
+
+        为什么不能用 JS 的 `el.click()`：Base UI 的 Menu 触发器在 `pointerdown`
+        上打开菜单（不是 click），合成 click 不会触发它（实测：渠道行操作菜单
+        永远打不开）。需要真实鼠标事件的交互一律走这里。
+        """
+        self.send("Input.dispatchMouseEvent", {
+            "type": "mousePressed", "x": int(x), "y": int(y),
+            "button": "left", "clickCount": 1,
+        })
+        time.sleep(0.05)
+        self.send("Input.dispatchMouseEvent", {
+            "type": "mouseReleased", "x": int(x), "y": int(y),
+            "button": "left", "clickCount": 1,
+        })
+        time.sleep(0.1)
+
     def drag(self, src, dst, drop_after=False):
         """真实鼠标拖拽（HTML5 DnD）——不是合成 drop 事件。
-
         headless Chromium 下原生 DnD 需要 `Input.setInterceptDrags` 接管：
         按下并移动后浏览器发出 `Input.dragIntercepted`，再由调用方用
         `Input.dispatchDragEvent` 把 drag 数据投递到目标点，这样页面收到的是
@@ -308,6 +325,49 @@ JS_CLICK_OPTION_CONTAINS = (
     "for(var i=0;i<os.length;i++){var s=(os[i].textContent||'').trim();"
     "if(s.indexOf(want)>=0){os[i].click();return s;}}return false;})()"
 )
+# 渠道条目操作菜单按钮的视口坐标（配合真实鼠标点击 click_at 使用）。
+#
+# 两个必须点：① Base UI 的 Menu 在 pointerdown 上打开，合成 click 无效；② 渠道页
+# 有表格/卡片两种布局（实测 L3 视口下是卡片布局），不能按 <tr> 定位——从"文本恰好
+# 等于渠道名"的元素往上找最近的、含菜单按钮的容器，两种布局通吃（实测卡片布局下按钮在
+# 名字元素上方第 8 层，故上限取 12）。
+# 失败时返回 {err:...} 供日志定位（而不是静默 null）。
+JS_ROW_MENU_RECT = (
+    "(function(){var name=%s;var all=document.querySelectorAll('*');var target=null;"
+    "for(var i=0;i<all.length;i++){var el=all[i];"
+    "if(el.children.length===0&&(el.textContent||'').trim()===name){target=el;break;}}"
+    "if(!target) return {err:'no-name-element'};"
+    "var node=target;"
+    "for(var d=0;d<12&&node;d++,node=node.parentElement){"
+    "var btn=node.querySelector?node.querySelector('button[aria-haspopup=menu]'):null;"
+    "if(btn){var r=btn.getBoundingClientRect();"
+    "if(r.width>0&&r.height>0) return {x:r.left+r.width/2,y:r.top+r.height/2};}}"
+    "return {err:'no-menu-button'};})()"
+)
+
+# 数据行内某个按钮的视口坐标：先按文案找到行（卡片/表格两种布局通吃），
+# 再在行内找文本匹配的按钮。用于"行内详情按钮"这类真实鼠标点击。
+JS_ROW_BUTTON_RECT = (
+    "(function(){var row=%s;var want=%s;var all=document.querySelectorAll('*');var target=null;"
+    "for(var i=0;i<all.length;i++){var el=all[i];"
+    "if(el.children.length===0&&(el.textContent||'').trim()===row){target=el;break;}}"
+    "if(!target) return {err:'no-row'};"
+    "var node=target;"
+    "for(var d=0;d<12&&node;d++,node=node.parentElement){"
+    "var bs=node.querySelectorAll?node.querySelectorAll('button'):[];"
+    "for(var j=0;j<bs.length;j++){var t=(bs[j].textContent||'').trim();"
+    "for(var k=0;k<want.length;k++){if(t.indexOf(want[k])>=0){var r=bs[j].getBoundingClientRect();"
+    "if(r.width>0&&r.height>0) return {x:r.left+r.width/2,y:r.top+r.height/2,text:t};}}}}"
+    "return {err:'no-button'};})()"
+)
+
+# 菜单项的视口坐标（同上，真实鼠标点击用）。
+JS_MENU_ITEM_RECT = (
+    "(function(){var want=%s;var items=[...document.querySelectorAll('[role=menuitem]')];"
+    "for(var i=0;i<items.length;i++){var s=(items[i].textContent||'').trim();"
+    "for(var j=0;j<want.length;j++){if(s.indexOf(want[j])>=0){var r=items[i].getBoundingClientRect();"
+    "return {x:r.left+r.width/2,y:r.top+r.height/2};}}}return null;})()"
+)
 
 # 按 aria-label 精确点击（编排器里的模型项按钮有首字符兜底图标，textContent 不可靠）。
 JS_CLICK_ARIA = (
@@ -397,6 +457,18 @@ def js_click_selector(selector):
 
 def js_click_option_contains(text):
     return JS_CLICK_OPTION_CONTAINS % json.dumps(text, ensure_ascii=False)
+
+
+def js_row_menu_rect(row_text):
+    return JS_ROW_MENU_RECT % json.dumps(row_text)
+
+
+def js_menu_item_rect(texts):
+    return JS_MENU_ITEM_RECT % json.dumps(texts, ensure_ascii=False)
+
+
+def js_row_button_rect(row_text, texts):
+    return JS_ROW_BUTTON_RECT % (json.dumps(row_text), json.dumps(texts, ensure_ascii=False))
 
 
 def js_click_dialog(texts):
@@ -974,6 +1046,46 @@ def main():
         items = {i.get("key"): i.get("value") for i in (allopts.get("items") or [])} if isinstance(allopts, dict) else {}
         check("保存后回读 SystemName 一致", s == 200 and items.get("SystemName") == SITE_NAME, (s, items.get("SystemName")))
         cdp.shot("10-settings")
+
+        # ---- 用户动作 9：渠道状态（侧边栏独立页 + 详情抽屉 + 立即探活）----
+        # test-spec §4 行 9 / ui-spec §6.4A / api-spec §6.12。
+        log("")
+        log("=== 用户动作 9：渠道状态（侧边栏独立页 → 详情抽屉 → 立即探活）===")
+        cdp.nav(base + "/channels", wait=3)
+        check("侧边栏有「Channel status」入口", "Channel status" in (cdp.val("document.body.innerText") or ""),
+              (cdp.val("document.body.innerText") or "")[:200])
+        cdp.nav(base + "/channel-status", wait=4)
+        check("进入渠道状态页（独立菜单页）", cdp.val("location.pathname") == "/channel-status",
+              cdp.val("location.pathname"))
+        body = cdp.val("document.body.innerText") or ""
+        check("状态表已渲染（含渠道名与成功率列）",
+              (CHANNEL in body) and ("Success rate" in body), body[:300])
+        # 行内「详情」→ 抽屉（真实鼠标点击，行/卡片两种布局都能命中）
+        detail_rect = cdp.val(js_row_button_rect(CHANNEL, ["Details", "详情"])) or {}
+        has_detail = isinstance(detail_rect, dict) and ("x" in detail_rect)
+        check("定位行内「详情」按钮", has_detail, detail_rect)
+        if has_detail:
+            cdp.click_at(detail_rect["x"], detail_rect["y"])
+        time.sleep(3)
+        body = cdp.val("document.body.innerText") or ""
+        check("抽屉出现（当前状态）", ("Channel status" in body) and ("Current status" in body), body[-400:])
+        # 部分小标题由 CSS 转成大写（innerText 反映 text-transform），按大小写无关匹配。
+        body_lower = body.lower()
+        check("四块内容在（窗口概览 / 最近失败 / 探活历史 / 成员运行态）",
+              all(k in body_lower for k in ("window overview", "recent failures", "probe history", "member runtime")),
+              body[-400:])
+        cdp.val(js_click_contains(["7d"]))
+        time.sleep(2)
+        body = cdp.val("document.body.innerText") or ""
+        check("切换 7d 后窗口概览仍在", "Window overview" in body, body[-300:])
+        s, before = req(base, "GET", "/api/v1/channels/" + CHANNEL + "/status", key=admin_key)
+        before_n = len(before.get("probe_history") or []) if isinstance(before, dict) else -1
+        cdp.val(js_click_contains(["Probe now"]))
+        time.sleep(5)
+        s, after = req(base, "GET", "/api/v1/channels/" + CHANNEL + "/status", key=admin_key)
+        after_n = len(after.get("probe_history") or []) if isinstance(after, dict) else -1
+        check("点「立即探活」后探活历史新增一条", after_n == before_n + 1, (before_n, after_n))
+        cdp.shot("11-channel-status")
 
         log("")
         log("=== 结果：PASS=%d FAIL=%d ===" % (PASS["n"], FAIL["n"]))
