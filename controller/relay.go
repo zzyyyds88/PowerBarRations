@@ -102,6 +102,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			carrier.ErrorKind = string(pbrroute.Classify(newAPIError))
 			// 用基座的脱敏版本：上游错误体可能回显凭据，而 error_summary 会经 API 原样返回
 			carrier.ErrorSummary = newAPIError.MaskSensitiveErrorWithStatusCode()
+		} else if msg := common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject); msg != "" {
+			// 提交后才收到的流内 error 帧（routing-spec §4.3/§4.4）：传输层如实记成功
+			// （客户端确实拿到了 200 流），但把失败标记补上，使这类此前完全不可见的
+			// 失败可被检索与统计。摘要按错误摘要的统一上限截断（design-v1 §8）。
+			if len(msg) > 2048 {
+				msg = msg[:2048]
+			}
+			carrier.ErrorKind = string(pbrroute.KindUpstreamReject)
+			carrier.ErrorSummary = msg
 		}
 		if pbrState := pbrroute.From(c); pbrState != nil {
 			// 失败尝试来自运行态历史，最后一次成功由这里补齐，形成完整链。
@@ -373,6 +382,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, pbrState *pbrroute.
 	// 重试选路由车道成员链推进（routing-spec §3）。
 	channel, ok := middleware.PBRNextChannel(c, pbrState, info.OriginModelName, info.LastError)
 	if !ok {
+		// 车道不可用：登记一次车道级事件（同一停摆期只发一次，routing-spec §7）。
+		pbrState.NoteLaneUnavailable()
+		// routing-spec §4.2 例外：最后一次尝试是 upstream_reject（每条试过的腿都拒绝了
+		// 这份请求）时，把该上游错误**原样返回客户端**，不合成 503——语义如实，
+		// 且下游按"不可重试"立刻降级，不会为必然失败的请求反复重打整条成员链。
+		if info.LastError != nil && pbrroute.Classify(info.LastError) == pbrroute.KindUpstreamReject {
+			return nil, info.LastError
+		}
 		return nil, pbrroute.NoAvailableError(info.OriginModelName)
 	}
 	return channel, nil

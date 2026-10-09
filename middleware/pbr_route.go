@@ -83,6 +83,9 @@ func PBRServe(c *gin.Context) bool {
 	if _, ok := PBRNextChannel(c, state, modelName, nil); !ok {
 		// 无任何渠道声明该模型，或全部成员都不可选，与"全部成员耗尽"同形
 		// （routing-spec §1.1 第 3 条）。
+		// 车道级事件：请求按"全部成员不可选"收尾时登记一次 lane_unavailable
+		// （同一停摆期只发一次；未配车道/停用车道是配置问题，内部会自行过滤，§7）。
+		state.NoteLaneUnavailable()
 		// 快抛前先落日志：事后要能解释"为什么是 503"（routing-spec §4.2）。
 		// 这里必须把**本次已选路记录**（被冷却/熔断跳过的成员）一并写入，
 		// 否则"为什么没用 P1"这一类关键证据在最需要它的快抛路径上丢失。

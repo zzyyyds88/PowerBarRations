@@ -140,7 +140,8 @@ func TestClassifyByStatusAndCode(t *testing.T) {
 		{"408 是软故障", apiError(http.StatusRequestTimeout, "", false), KindSoftTransient},
 		{"401 是硬鉴权故障", apiError(http.StatusUnauthorized, "", false), KindHardAuth},
 		{"403 是硬鉴权故障", apiError(http.StatusForbidden, "", false), KindHardAuth},
-		{"普通 400 是客户端错误", apiError(http.StatusBadRequest, "", false), KindClientError},
+		{"普通 400 是成员级拒绝（换成员、不冷却）", apiError(http.StatusBadRequest, "", false), KindUpstreamReject},
+		{"422 是成员级拒绝", apiError(http.StatusUnprocessableEntity, "", false), KindUpstreamReject},
 		{"显式 skip-retry 的错误按客户端错误处理", apiError(http.StatusBadRequest, "", true), KindClientError},
 		{"响应体不可解析属坏响应", apiError(0, types.ErrorCodeBadResponseBody, false), KindBadResponse},
 	}
@@ -170,12 +171,14 @@ func TestShouldSwitchMemberMatrix(t *testing.T) {
 	assert.True(t, ShouldSwitchMember(KindHardAuth))
 	assert.True(t, ShouldSwitchMember(KindHardQuota))
 	assert.True(t, ShouldSwitchMember(KindBadResponse))
+	assert.True(t, ShouldSwitchMember(KindUpstreamReject))
 	assert.False(t, ShouldSwitchMember(KindClientError))
 	assert.False(t, ShouldSwitchMember(KindCanceled))
 
 	assert.True(t, ShouldRetrySameMember(KindSoftRateLimit))
 	assert.True(t, ShouldRetrySameMember(KindSoftTransient))
 	assert.False(t, ShouldRetrySameMember(KindHardAuth))
+	assert.False(t, ShouldRetrySameMember(KindUpstreamReject))
 	assert.False(t, ShouldSwitchMember(ErrorKind("")))
 }
 

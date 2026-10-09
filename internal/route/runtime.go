@@ -35,6 +35,9 @@ const (
 	EventReset           = events.EventReset
 	EventSkip            = events.EventSkip
 	EventUpstreamBurst   = events.EventUpstreamBurst
+	EventMemberRecovered = events.EventMemberRecovered
+	EventLaneUnavailable = events.EventLaneUnavailable
+	EventLaneRecovered   = events.EventLaneRecovered
 )
 
 // 故障权重：硬故障计数权重高、软故障（429）权重低，
@@ -215,6 +218,12 @@ type Runtime struct {
 	Cooldowns map[string]int64
 	Circuits  map[string]*Circuit
 	Events    []Event
+
+	// laneDown 车道级停摆期标记：一次请求因"全部成员不可选"按 503 收尾时置位并
+	// 发出 lane_unavailable（同一停摆期只发一次），此后第一次成功服务发出
+	// lane_recovered 并复位（routing-spec §7 的配对事件）。
+	laneDown      bool
+	laneDownSince int64
 
 	// prunedInit/prunedSig/prunedVersion 记录最近一次成员集合变更的处理结果，
 	// 供 PruneStaleState 判定"是否需要清理"并拒绝过期配置的清理（routing-spec §1.3）。
@@ -499,6 +508,37 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 	}
 }
 
+// recordReject 记一次"成员级拒绝"（routing-spec §4.1）：只更新 last_error_kind
+// 供排障，**不计熔断分、不写冷却**——拒绝是上游对这份请求的判断，不是成员的故障
+// （下一个请求它可能完全正常）。亲和若粘在被拒绝的当前成员上，同样立即结束：
+// 本次请求已经离开它，继续粘着只会把后续选路拉回同一个拒绝者。
+func (r *Runtime) recordReject(key string, kind ErrorKind) {
+	if r.HasCurrent && r.CurrentMember == key {
+		if r.AffinityUntil != 0 {
+			r.appendEvent("affinity_end", key, "ended_by_reject")
+		}
+		r.AffinityUntil = 0
+		r.AffinityArmed = true
+	}
+	circuit := r.Circuits[key]
+	if circuit == nil {
+		circuit = &Circuit{State: CircuitClosed}
+		r.Circuits[key] = circuit
+	}
+	circuit.LastErrorKind = kind
+}
+
+// noteLaneUnavailable 登记"车道不可用"停摆期：置位并发出一次 lane_unavailable，
+// 同一停摆期内重复调用不重复发事件（routing-spec §7）。调用方持 Runtime 锁。
+func (r *Runtime) noteLaneUnavailable() {
+	if r.laneDown {
+		return
+	}
+	r.laneDown = true
+	r.laneDownSince = nowMs()
+	r.appendEvent(EventLaneUnavailable, "", "no_available_member")
+}
+
 // openCircuit 打开熔断，并按打开次数做指数退避（open_seconds × 2^k，设上限）。
 func (r *Runtime) openCircuit(key string, circuit *Circuit, now int64, memberCooldownSeconds int, settings CircuitSettings) {
 	base := settings.OpenSeconds
@@ -541,8 +581,11 @@ func (r *Runtime) recordProbeStart(key string, wasOpen bool) {
 }
 
 // recordSuccess 记一次成功：解除冷却、复位熔断；若此前发生过故障切换则启动亲和。
+// 同时收口两类配对事件（routing-spec §7）：成员级（hadCooldown 且熔断未打开过 →
+// member_recovered）与车道级（停摆期后的第一次成功 → lane_recovered）。
 func (r *Runtime) recordSuccess(key string, affinitySeconds int) {
 	now := nowMs()
+	_, hadCooldown := r.Cooldowns[key]
 	delete(r.Cooldowns, key)
 	circuit := r.Circuits[key]
 	if circuit == nil {
@@ -561,6 +604,17 @@ func (r *Runtime) recordSuccess(key string, affinitySeconds int) {
 		circuit.OpenCount = 0
 		circuit.LastTransitionAt = now
 		r.appendEvent(EventCircuitClosed, key, "recovered")
+	} else if hadCooldown {
+		// 只有冷却、没开过熔断的成员：由 member_recovered 收口（与 cooldown 配对）。
+		// 熔断打开过的成员由上一条 circuit_closed 收口，不再重复发本条——每个
+		// "开始"事件恰好一个"结束"事件（routing-spec §7 的配对语义）。
+		r.appendEvent(EventMemberRecovered, key, "from=cooldown")
+	}
+	if r.laneDown {
+		r.laneDown = false
+		detail := "down_ms=" + strconv.FormatInt(now-r.laneDownSince, 10)
+		r.laneDownSince = 0
+		r.appendEvent(EventLaneRecovered, "", detail)
 	}
 	r.releaseProbe(key)
 	if r.AffinityArmed && affinitySeconds > 0 {

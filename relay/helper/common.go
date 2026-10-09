@@ -74,6 +74,9 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	return nil
 }
 
+// 数据帧写入口。三个函数写出的是真正携带内容的 `data:` 帧，因此都要打"已提交"
+// 标记（routing-spec §3 第 6 步）：它是流式故障转移的提交判定，心跳（PingData 的
+// `: PING` 注释帧）与响应头不打标记——客户端可忽略注释帧，发过心跳不等于已交付。
 func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 	if requestContextDone(c) {
 		return
@@ -81,6 +84,7 @@ func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
+	MarkStreamCommitted(c)
 	_ = FlushWriter(c)
 }
 
@@ -91,6 +95,7 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
+	MarkStreamCommitted(c)
 	return FlushWriter(c)
 }
 
@@ -104,6 +109,7 @@ func StringData(c *gin.Context, str string) error {
 	}
 
 	c.Render(-1, common.CustomEvent{Data: "data: " + str})
+	MarkStreamCommitted(c)
 	return FlushWriter(c)
 }
 

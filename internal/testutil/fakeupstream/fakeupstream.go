@@ -163,6 +163,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "disconnect_stream":
 		writeChatStreamThenDisconnect(w, modelName)
 		return
+	case "stream_error_frame":
+		// 200 + text/event-stream，但流内吐一个 error 帧后收流：模拟内容审查类上游
+		// "先建流、再把拒绝写进流里"（routing-spec §4.4）。
+		writeChatStreamErrorFrame(w, modelName)
+		return
 	}
 
 	if behavior.Status != 0 && behavior.Status != http.StatusOK {
@@ -446,6 +451,26 @@ func writeChatStream(w http.ResponseWriter, modelName string, marker string) {
 	chunk(map[string]any{"role": "assistant", "content": content}, nil)
 	chunk(map[string]any{}, "stop")
 	_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+// writeChatStreamErrorFrame 建流后只发一个 error 帧并收流（无 [DONE]），
+// 模拟内容审查类上游的"200 + 流内拒绝"（routing-spec §4.4）。
+func writeChatStreamErrorFrame(w http.ResponseWriter, modelName string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+	payload, _ := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"message": "Output data may contain inappropriate content.",
+			"type":    "invalid_request_error",
+			"code":    "data_inspection_failed",
+		},
+	})
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 	if flusher != nil {
 		flusher.Flush()
 	}

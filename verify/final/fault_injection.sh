@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# W8 的 C 项：故障注入矩阵逐项验证（分类 / 冷却 / 换人 / 快抛 / 已提交后不转移）。
+# W8 的 C 项：故障注入矩阵逐项验证（分类 / 冷却 / 换人 / 快抛 / 已提交后不转移 /
+# 成员级拒绝逃逸 / 流内错误帧）。
 #
-# 覆盖：上游超时、流中途断流、坏响应、空响应、凭据失效、欠费关键词、连接失败。
+# 覆盖：上游超时、流中途断流、坏响应、空响应、凭据失效、欠费关键词、连接失败、
+# 普通 400 成员级拒绝（换成员、不冷却、全员拒绝原样返回）、流内 error 帧（提交前换成员）。
 # 全程本地：独立端口、独立 SQLite、内置假上游；不触碰任何现网容器与凭据。
 set -uo pipefail
 
@@ -218,6 +220,51 @@ echo "  复通前后：$CLOSED_BEFORE → $(echo "$H9B" | python3 -c 'import sys
 check "复通后恢复正常服务" "$CODE" "200"
 assert_json "熔断已回到 closed" "$H9B" "all(m['circuit']=='closed' for m in d['members'])"
 assert_json "有 circuit_open 事件时间戳" "$H9B" "any(e['type']=='circuit_open' and e['ts']>0 for e in d['events'])"
+
+echo
+echo "=== C10 上游 400（非关键词）：成员级拒绝换成员、不冷却（routing-spec §4.1/§4.2）==="
+# 400/422 默认是"上游对该成员的拒绝"（内容审查、参数不支持等）：必须换成员消化；
+# 成员本身无过错——不写冷却、不计熔断分；全部成员都拒绝时把上游错误原样返回客户端。
+reset_lane fi-model
+control '{"model":"fi-model","status":400,"body":"{\"error\":{\"message\":\"reasoning_effort must be low, high, xhigh, max or an integer within [1, 100]\",\"type\":\"invalid_request_error\"}}"}'
+CODE=$(chat '{"model":"fi-model","messages":[{"role":"user","content":"hi"}]}')
+H10=$(health fi-model)
+echo "  HTTP $CODE；health: $(echo "$H10" | python3 -c 'import sys,json;d=json.load(sys.stdin);print([(m["channel"],m["last_error_kind"],m["cooldown_until"] is not None) for m in d["members"]])')"
+check "全员拒绝时返回上游 400 报文（§4.2 例外，不合成 503）" "$CODE" "400"
+check "错误体保留上游报文" "$(cat "$WORK/body.json")" "reasoning_effort must be"
+assert_json "拒绝不写冷却、不计熔断分（circuit 全 closed、无冷却），但留痕 upstream_reject" "$H10" \
+  "all(m['cooldown_until'] is None and m['circuit']=='closed' for m in d['members']) and any(m['last_error_kind']=='upstream_reject' for m in d['members'])"
+control '{"model":"fi-model","status":200,"body":""}'
+
+echo
+echo "=== C11 流内 error 帧（提交前）：不转发、换成员（routing-spec §4.4）==="
+# 内容审查类上游：200 + text/event-stream，但流内吐 error 帧。提交前必须识别、
+# 不转发给客户端，并按成员级拒绝换下一成员；第二个成员（渠道映射到正常模型）服务成功。
+curl -s "${A[@]}" -X PUT -d '{"type":"openai","base_url":"http://127.0.0.1:'"$UPSTREAM_PORT"'","key":"'"$GOOD_KEY"'","models":["fi-stream"],"model_mapping":{"fi-stream":"fi-stream-ok"},"enabled":true}' "$BASE/api/v1/channels/channel-map" > /dev/null
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":2,"member_stream_first_event_timeout_seconds":2,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-a","model":"fi-stream","priority":20},{"channel":"channel-map","model":"fi-stream","priority":10}]}' "$BASE/api/v1/lanes/fi-stream" > /dev/null
+control '{"model":"fi-stream","mode":"stream_error_frame"}'
+STREAM_OUT="$WORK/stream-reject.out"
+CODE=$(curl -s -N --max-time 20 -o "$STREAM_OUT" -w '%{http_code}' -X POST "$BASE/v1/chat/completions" \
+  -H "Authorization: Bearer $CLIENT" -H 'Content-Type: application/json' \
+  -d '{"model":"fi-stream","messages":[{"role":"user","content":"hi"}],"stream":true}')
+H11=$(health fi-stream)
+echo "  HTTP $CODE；客户端输出: $(head -c 200 "$STREAM_OUT" | tr '\n' ' ')"
+check "换到下一成员后成功（200）" "$CODE" "200"
+check "客户端拿到的是正常内容（不是 error 帧）" "$(cat "$STREAM_OUT")" "pong"
+check "客户端输出不得包含上游拒绝报文" "$(python3 -c "print('LEAK' if 'inappropriate' in open('$STREAM_OUT').read() else 'CLEAN')")" "CLEAN"
+assert_json "流内拒绝归类 upstream_reject 且不写冷却" "$H11" \
+  "any(m['last_error_kind']=='upstream_reject' and m['cooldown_until'] is None for m in d['members'])"
+# 单成员车道（只有会吐 error 帧的成员）：客户端拿到 400 + 上游报文。
+control '{"model":"fi-stream-ok","mode":"stream_error_frame"}'
+control '{"model":"fi-stream","mode":""}'
+curl -s "${A[@]}" -X PUT -d '{"enabled":true,"mode":"failover","config":{"member_max_attempts":1,"member_retry_interval_seconds":0,"member_non_stream_response_timeout_seconds":2,"member_stream_first_event_timeout_seconds":2,"member_cooldown_seconds":1,"member_affinity_seconds":0},"members":[{"channel":"channel-map","model":"fi-stream","priority":10}]}' "$BASE/api/v1/lanes/fi-stream-solo" > /dev/null
+CODE=$(curl -s -o "$WORK/body.json" -w '%{http_code}' -X POST "$BASE/v1/chat/completions" \
+  -H "Authorization: Bearer $CLIENT" -H 'Content-Type: application/json' \
+  -d '{"model":"fi-stream-solo","messages":[{"role":"user","content":"hi"}],"stream":true}')
+echo "  单成员（自身吐 error 帧）→ HTTP $CODE"
+check "流内拒绝无成员可换时返回 400（§4.2 例外）" "$CODE" "400"
+check "错误体带上游报文" "$(cat "$WORK/body.json")" "inappropriate"
+control '{"model":"fi-stream-ok","mode":""}'
 
 echo
 echo "--- 私有数据自查"
