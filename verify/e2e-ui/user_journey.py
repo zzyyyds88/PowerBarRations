@@ -294,6 +294,21 @@ JS_CLICK_CONTAINS = (
     "return false;})()"
 )
 
+# 点击指定选择器命中的元素本身（不按文案找按钮）：用于打开下拉选择器的触发器。
+JS_CLICK_SELECTOR = (
+    "(function(){var el=document.querySelector(%s);if(!el) return false;el.click();return true;})()"
+)
+
+# 点击下拉选项（Base UI Select 的列表项，role=option 且经 portal 渲染），按文案包含匹配。
+# 试打台的客户端密钥是**受控下拉选择器**（web/src/features/playground/components/input/
+# playground-client-key-field.tsx），页面上不存在可写的文本输入框——必须"点开再点选"，
+# 直接往触发器写 value 不会改变其状态（旧脚本写法在现行控制台上必然失败）。
+JS_CLICK_OPTION_CONTAINS = (
+    "(function(){var want=%s;var os=[...document.querySelectorAll('[role=option]')];"
+    "for(var i=0;i<os.length;i++){var s=(os[i].textContent||'').trim();"
+    "if(s.indexOf(want)>=0){os[i].click();return s;}}return false;})()"
+)
+
 # 按 aria-label 精确点击（编排器里的模型项按钮有首字符兜底图标，textContent 不可靠）。
 JS_CLICK_ARIA = (
     "(function(){var name=%s;var bs=[...document.querySelectorAll('button[aria-label]')];"
@@ -374,6 +389,14 @@ def js_click_exact(texts):
 
 def js_click_contains(texts):
     return JS_CLICK_CONTAINS % json.dumps(texts, ensure_ascii=False)
+
+
+def js_click_selector(selector):
+    return JS_CLICK_SELECTOR % json.dumps(selector)
+
+
+def js_click_option_contains(text):
+    return JS_CLICK_OPTION_CONTAINS % json.dumps(text, ensure_ascii=False)
 
 
 def js_click_dialog(texts):
@@ -699,10 +722,14 @@ def main():
         cdp.nav(base + "/playground", wait=4)
         check("进入 /playground", cdp.val("location.pathname").startswith("/playground"), cdp.val("location.pathname"))
         if client_key:
-            # 在页面里填客户端密钥（#playground-client-key）与消息，点 Send。
-            cdp.val(js_set_selector("#playground-client-key", client_key))
+            # 客户端密钥是**下拉选择器**（Base UI Select）：点开触发器 → 点选本脚本刚建的密钥。
+            # 不能像文本输入那样写 value——那样 Send 会报"Fill in a client key"。
+            cdp.val(js_click_selector("#playground-client-key"))
+            time.sleep(0.8)
+            check("密钥下拉已打开（选项渲染）", bool(cdp.val(js_click_option_contains(KEYNAME))))
             time.sleep(0.4)
-            cdp.val(js_set_selector("textarea[name=message]", "你好"))
+            # 消息框是受控 textarea（data-slot=input-group-control），按原生 setter + input 事件写入。
+            cdp.val(js_set_selector("textarea[data-slot=input-group-control]", "你好"))
             time.sleep(0.4)
             cdp.val(js_click_contains(["Send", "发送"]))
             time.sleep(6)

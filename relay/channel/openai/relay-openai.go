@@ -132,9 +132,23 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var secondLastStreamData string // 保留倒数第二个stream data；部分兼容网关把完整usage放在倒数第二个事件
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
+	// streamRejectMsg 非空 = 在**提交前**检测到上游流内 error 帧（routing-spec §4.4）：
+	// 该帧不转发给客户端，本次尝试按成员级拒绝失败（upstream_reject），交车道换下一成员。
+	var streamRejectMsg string
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
+			if msg, isErr := helper.IsUpstreamErrorFrame([]byte(lastStreamData)); isErr {
+				if helper.StreamCommitted(c) {
+					// 已提交（内容已交付给客户端）：照常转发，只如实留痕（§4.3/§4.4）。
+					common.SetContextKey(c, constant.ContextKeyPBRStreamReject, msg)
+				} else {
+					// 提交前：不转发该帧，立即中止本次尝试，由车道换成员重试。
+					streamRejectMsg = msg
+					sr.Stop(fmt.Errorf("upstream stream rejected: %s", msg))
+					return
+				}
+			}
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())
 				sr.Error(err)
@@ -153,6 +167,25 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			}
 		}
 	})
+
+	// 最后一帧也要过一遍流内错误帧判定：错误帧作为**唯一帧**或**末帧**到达时，
+	// 回调里没有"下一帧"来触发转发路径，只能在这里检出（routing-spec §4.4）。
+	if streamRejectMsg == "" && lastStreamData != "" {
+		if msg, isErr := helper.IsUpstreamErrorFrame([]byte(lastStreamData)); isErr {
+			if helper.StreamCommitted(c) {
+				common.SetContextKey(c, constant.ContextKeyPBRStreamReject, msg)
+			} else {
+				streamRejectMsg = msg
+			}
+		}
+	}
+	if streamRejectMsg != "" {
+		// 成员级拒绝：不写冷却、不计熔断分；由 controller 的选路循环换下一成员
+		// （routing-spec §4.1）。全部成员都拒绝时，本错误原样交回客户端（§4.2 例外）。
+		err := types.NewOpenAIError(fmt.Errorf("upstream stream rejected: %s", streamRejectMsg),
+			types.ErrorCodeUpstreamReject, http.StatusBadRequest)
+		return nil, err
+	}
 
 	// 处理最后的响应
 	shouldSendLastResp := true

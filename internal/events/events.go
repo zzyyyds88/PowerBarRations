@@ -18,6 +18,14 @@ const (
 	EventCooldown        = "cooldown"
 	EventReset           = "reset"
 	EventSkip            = "skip"
+	// EventMemberRecovered 成员恢复：冷却/失败留痕之后第一次成功服务（与 EventCooldown 配对，
+	// routing-spec §7）。熔断打开过的成员由 EventCircuitClosed 收口，不重复发本条。
+	EventMemberRecovered = "member_recovered"
+	// EventLaneUnavailable 车道不可用：某次请求因"全部成员不可选"按 503 收尾时发出一次
+	// （同一停摆期不重复），与 EventLaneRecovered 配对。
+	EventLaneUnavailable = "lane_unavailable"
+	// EventLaneRecovered 车道恢复：不可用期后第一次成功服务。
+	EventLaneRecovered = "lane_recovered"
 
 	// 渠道与上游健康事件。
 	EventChannelDisabled = "channel_disabled"
@@ -46,6 +54,9 @@ var supportedTypes = map[string]struct{}{
 	EventCooldown:        {},
 	EventReset:           {},
 	EventSkip:            {},
+	EventMemberRecovered: {},
+	EventLaneUnavailable: {},
+	EventLaneRecovered:   {},
 	EventChannelDisabled: {},
 	EventChannelEnabled:  {},
 	EventChannelDeleted:  {},

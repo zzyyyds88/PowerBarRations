@@ -1,10 +1,14 @@
 package route
 
 import (
+	"errors"
 	"net/http"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,13 +20,16 @@ import (
 // --- P2-1：4xx 分类收敛，只有 400/422 是 client_error ---
 
 func TestClassifyNarrowClientErrorTo400And422(t *testing.T) {
+	// routing-spec §4.1（本轮修订）：400/422 默认是**成员级拒绝**（上游对该成员的判断：
+	// 内容审查、参数不支持、上下文超限等，换条腿可能就过，且成员无过错）；client_error
+	// 收窄为"我方可证明请求本身不合法"的 skipRetry 内部错误。
 	cases := []struct {
 		name   string
 		status int
 		want   ErrorKind
 	}{
-		{"400 是客户端错误", http.StatusBadRequest, KindClientError},
-		{"422 是客户端错误", http.StatusUnprocessableEntity, KindClientError},
+		{"400 是成员级拒绝（换成员、不冷却）", http.StatusBadRequest, KindUpstreamReject},
+		{"422 是成员级拒绝（换成员、不冷却）", http.StatusUnprocessableEntity, KindUpstreamReject},
 		{"404 成员无此模型应按可逃逸的瞬时失败", http.StatusNotFound, KindSoftTransient},
 		{"405 方法不对应按瞬时失败", http.StatusMethodNotAllowed, KindSoftTransient},
 		{"409 冲突应按瞬时失败", http.StatusConflict, KindSoftTransient},
@@ -34,8 +41,126 @@ func TestClassifyNarrowClientErrorTo400And422(t *testing.T) {
 	}
 	// routing-spec §4.1：404 这类失败必须能换人（否则会撞死在高优先级成员上）。
 	assert.True(t, ShouldSwitchMember(Classify(apiError(http.StatusNotFound, "", false))))
+	// 成员级拒绝也必须换人，但**不得原地重试同一成员**（确定性拒绝）。
+	rejectKind := Classify(apiError(http.StatusBadRequest, "", false))
+	assert.True(t, ShouldSwitchMember(rejectKind))
+	assert.False(t, ShouldRetrySameMember(rejectKind))
 	// 带 skipRetry 的是我方内部错误，仍按 client_error（不换人、不冷却）。
 	assert.Equal(t, KindClientError, Classify(apiError(http.StatusNotFound, "", true)))
+	assert.Equal(t, KindClientError, Classify(apiError(http.StatusBadRequest, "", true)))
+}
+
+// 200 + 响应体内 error 对象（上游用 200 承载自己的拒绝）按成员级拒绝归类。
+func TestClassifyInBodyErrorOn200IsUpstreamReject(t *testing.T) {
+	err := types.WithOpenAIError(types.OpenAIError{
+		Message: "Output data may contain inappropriate content.",
+		Type:    "invalid_request_error",
+	}, http.StatusOK)
+	assert.Equal(t, KindUpstreamReject, Classify(err))
+	assert.True(t, ShouldSwitchMember(KindUpstreamReject))
+	assert.False(t, ShouldRetrySameMember(KindUpstreamReject))
+}
+
+// 流内 error 帧（提交前）以专用错误码上报，归类为成员级拒绝。
+func TestClassifyStreamRejectCode(t *testing.T) {
+	err := types.NewOpenAIError(errors.New("upstream stream rejected"), types.ErrorCodeUpstreamReject, http.StatusBadRequest)
+	assert.Equal(t, KindUpstreamReject, Classify(err))
+}
+
+// 成员级拒绝不得写冷却、不得计熔断分；同一成员在本请求内不再被选中。
+func TestUpstreamRejectSwitchesMemberWithoutCooldown(t *testing.T) {
+	withFakeClock(t)
+	state := NewState(testRoute("lane-reject", 2, 1))
+
+	first, _, ok := state.Next(nil)
+	require.True(t, ok)
+	require.Equal(t, "channel-a", memberName(first))
+
+	second, _, ok := state.Next(apiError(http.StatusBadRequest, "", false))
+	require.True(t, ok, "成员级拒绝必须换下一成员")
+	assert.Equal(t, "channel-b", memberName(second))
+
+	// 不冷却、不计分：留痕仍在（供排障），但熔断计分与冷却条目必须为零。
+	key := memberKeyOf(first)
+	var score, consecutive float64
+	var lastKind ErrorKind
+	var hasCooldown bool
+	state.Runtime.withLock(func() {
+		_, hasCooldown = state.Runtime.Cooldowns[key]
+		if c := state.Runtime.Circuits[key]; c != nil {
+			score = c.Score
+			consecutive = float64(c.ConsecutiveFailures)
+			lastKind = c.LastErrorKind
+		}
+	})
+	assert.False(t, hasCooldown, "成员级拒绝不得写冷却")
+	assert.Zero(t, score, "成员级拒绝不得计入熔断分")
+	assert.Zero(t, consecutive, "成员级拒绝不得计入连续失败")
+	assert.Equal(t, KindUpstreamReject, lastKind, "留痕仍要记，供排障")
+
+	// 被拒绝的成员在本请求内不再被选中：第二个成员也失败后，请求应报"无可用"
+	// （若拒绝会冷却失效、A 又被选中，这里会拿到 A 而不是 false）。
+	_, _, ok = state.Next(apiError(http.StatusInternalServerError, "", false))
+	assert.False(t, ok, "被拒绝成员本请求内不得再被选中")
+}
+
+// 全部成员都拒绝：尝试链走完即"无可用"，由调用方按 §4.2 例外把最后一次上游错误返回。
+func TestUpstreamRejectAllMembersExhausts(t *testing.T) {
+	withFakeClock(t)
+	state := NewState(testRoute("lane-reject-all", 2, 1))
+
+	_, _, ok := state.Next(nil)
+	require.True(t, ok)
+	_, _, ok = state.Next(apiError(http.StatusBadRequest, "", false))
+	require.True(t, ok)
+	_, _, ok = state.Next(apiError(http.StatusBadRequest, "", false))
+	assert.False(t, ok, "全部成员拒绝后应报无可用；最后一次错误由调用方原样返回")
+
+	// 拒绝不留任何运行态：下一份请求从头开始（成员仍然可用）。
+	state2 := NewState(testRoute("lane-reject-all", 2, 1))
+	first, _, ok := state2.Next(nil)
+	require.True(t, ok)
+	assert.Equal(t, "channel-a", memberName(first), "拒绝不是故障，不冷却，下一份请求仍从 P1 开始")
+}
+
+// --- 配对事件（routing-spec §7）：cooldown↔member_recovered、lane_unavailable↔lane_recovered ---
+
+func TestMemberRecoveredPairsCooldown(t *testing.T) {
+	withFakeClock(t)
+	state := NewState(testRoute("lane-pair-member", 1, 1))
+	_, _, ok := state.Next(nil)
+	require.True(t, ok)
+	// 5xx：预算耗尽 → 冷却事件。
+	_, _, ok = state.Next(apiError(http.StatusInternalServerError, "", false))
+	require.False(t, ok)
+
+	key := memberKeyOf(&state.Route.Members[0])
+	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0) })
+
+	assert.Equal(t, []string{EventCooldown, EventMemberRecovered}, eventTypes(state.Runtime))
+	if assert.Len(t, state.Runtime.Events, 2) {
+		assert.Equal(t, key, state.Runtime.Events[0].Member)
+		assert.Equal(t, key, state.Runtime.Events[1].Member, "member_recovered 必须指向同一成员，消费方才能配对")
+	}
+}
+
+func TestLaneUnavailableAndRecoveredPair(t *testing.T) {
+	withFakeClock(t)
+	state := NewState(testRoute("lane-pair-lane", 1, 1))
+	// 模拟"全部成员不可选"的 503 收尾：登记一次 + 重复调用不重复发。
+	state.NoteLaneUnavailable()
+	state.NoteLaneUnavailable()
+	assert.Equal(t, []string{EventLaneUnavailable}, eventTypes(state.Runtime))
+
+	// 恢复：第一次成功服务收口。
+	key := memberKeyOf(&state.Route.Members[0])
+	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0) })
+	assert.Equal(t, []string{EventLaneUnavailable, EventLaneRecovered}, eventTypes(state.Runtime))
+
+	// 未配车道（unconfigured）不发车道级事件：那是配置问题，不是运行态故障。
+	unconfigured := NewState(&model.ResolvedRoute{RouteKey: "no-lane", Model: "no-lane", Source: model.RouteSourceUnconfigured})
+	unconfigured.NoteLaneUnavailable()
+	assert.Empty(t, unconfigured.Runtime.Events, "unconfigured 不得发 lane_unavailable")
 }
 
 // 404 在尝试循环里应触发 failover，而不是不换人地结束请求。

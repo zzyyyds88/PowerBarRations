@@ -75,6 +75,10 @@ const (
 	ErrorCodeAwsInvokeError         ErrorCode = "aws_invoke_error"
 	ErrorCodeModelNotFound          ErrorCode = "model_not_found"
 	ErrorCodePromptBlocked          ErrorCode = "prompt_blocked"
+	// ErrorCodeUpstreamReject 上游对该成员的拒绝（routing-spec §4.4）：
+	// 在响应流内检测到 error 帧（HTTP 200 之后），且尚未向客户端提交任何数据帧。
+	// 归类为成员级拒绝（换成员、不冷却、不计熔断分），不是传输层失败。
+	ErrorCodeUpstreamReject ErrorCode = "upstream_reject"
 
 	// sql error
 	ErrorCodeQueryDataError  ErrorCode = "query_data_error"

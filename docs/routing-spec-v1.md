@@ -161,12 +161,14 @@ type LaneRuntime struct {
    6. 本轮结束（成功取得可提交响应 / 失败 / 超时 / 客户端取消）。
 5. 成功且**尚未提交** → 记成功、按 §5/§6 更新运行态、复制上游响应头、写响应。
 6. **提交点**：流式=向客户端写出第一个事件；非流式=写出完整响应体。提交后**不再允许故障转移**：此后任何错误原样传给客户端（§4.3）。
+   - 提交判定用**数据帧口径**：只有真正写给客户端的 `data:` 帧才算提交；SSE 注释/心跳帧（`: PING`）不算——它不携带内容、客户端可忽略，不能因此关掉故障转移。流式路径在提交前识别"流内错误帧"（§4.4），那类帧不得计入提交。
 
 ### 3.1 失败计数与重试
 
 - 以"**同一成员在本请求内的连续失败次数**"计数；成员改变则从 1 重新计数（对齐线上）。
 - 未达该成员的 `max_attempts`（默认取车道六键，可用成员级覆盖）→ 等待 `retry_interval` 后**重试同一成员**。
 - 达到 → 该成员进入冷却，立即重新选路（下一轮会选下一个成员）。
+- **`upstream_reject` 不走上面两条**：它不原地重试（同一份请求体再打仍是拒绝），而是**一次性耗尽该成员在本请求内的尝试预算**（下一轮选路直接跳过它、且不写冷却），立即换下一成员——这是"拒绝要逃逸、但不能把成员打冷"的实现口径。
 - 客户端取消/断开 → 不计失败、不冷却，归还探测占用（对齐线上）。
 - 人工中止本轮（不适用 PBR 的 HTTP 场景）→ 不计失败，重试。
 
@@ -182,14 +184,20 @@ type LaneRuntime struct {
 |---|---|---|---|---|
 | `soft_rate_limit` | HTTP 429 / 明确的限流体 | 是（预算内） | 计数权重低，不单凭它打开熔断 | 是 |
 | `soft_transient` | 408、5xx、连接超时/EOF、上游空响应 | 是（预算内） | 是 | 是 |
-| `hard_auth` | 401 / 403（非欠费类）、key 失效 | 否，立即 | 是，冷却取较长档 | 是 |
-| `hard_quota` | 命中欠费/额度关键词（如 `arrearage` 等，条目属部署数据） | 否，立即 | 是 | 是 |
-| `client_error` | 400/422 且**未命中**关键词（请求本身不合法） | 否 | **否** | **否**，原样返回客户端 |
+| `hard_auth` | 401 / 403（非欠费类）、key 失效 | 否，立即 | 是，冷却取较长档（§6） | 是 |
+| `hard_quota` | 命中欠费/额度关键词（如 `arrearage` 等，条目属部署数据） | 否，立即 | 是，冷却取较长档（§6） | 是 |
+| `upstream_reject` | **上游对"该成员"的拒绝**：400/422（未命中欠费关键词、非我方校验错误），或**流内 error 帧**（§4.4，提交前） | 否（同一份请求体再打一次仍是拒绝） | **否**——成员无过错 | **是** |
+| `client_error` | **仅限我方可判定的"请求本身不合法"**：我方校验类错误（skipRetry）、请求体解析失败 | 否 | **否** | **否**，原样返回客户端 |
 | `bad_response` | 200 但响应体不合法/无法解析 | 是（预算内） | 是 | 是 |
 | `canceled` | 客户端断开 / 上下文取消 | 否 | 否 | 否，静默结束 |
 
 - **关键词优先于状态码**：欠费类上游以 400 到达且不在默认重试码集内，关键词是唯一捕获路径（design-v1 §7.6）。
 - `client_error` 不得触发冷却，也不得换成员——否则一个错误请求会把健康成员打冷。
+- **`upstream_reject` 与 `client_error` 的分野**（这条此前混在一起，是"内容审查/参数不支持把请求推下 fallback"的根因）：
+  - 400/422 **默认属于 `upstream_reject`**（成员级）——上游的 400 绝大多数是它自己的判断：内容审查、参数不支持（如某渠道不认某个 `reasoning_effort` 档）、上下文超限、模型已下线等。这些判定**因厂商而异**，同一份请求体换一条腿常常就能过；且**成员本身没有故障**（下一份请求它可能完全正常），所以既不冷却、也不计熔断分。
+  - 只有**我方能证明"请求本身不合法"**的错误才是 `client_error`：我方校验路径以 skipRetry 标记的内部错误、请求体解析失败等。它们的共同点是"再打任何成员都一样失败"。
+  - `upstream_reject` **必须换成员**：这是本规格要的"车道内部消化上游拒绝"——下游（harness）不该因为某一条腿的内容审查而整体降级。
+  - 同一成员在本请求内**不再重试**：确定性拒绝，重试只是浪费。（选路据此一次性吃掉该成员在本请求内的尝试预算，见 §3.1、§9。）
 
 ### 4.2 全部成员耗尽
 
@@ -201,11 +209,24 @@ type LaneRuntime struct {
 
 - **这是对线上的明确偏离**：线上在无可选成员时是"等待并轮询重试"，会造成请求悬挂至客户端超时。PBR 采用快抛，因为下游 harness 的 fallback 分类依赖这个 503 体，且悬挂会让上游故障表现为本地卡死。
 - 快抛前必须已把本次所有尝试写入日志（含 `cooldown` / `circuit_break` 状态），便于事后定位。
+- **唯一例外（`upstream_reject` 收尾）**：若本次请求的**最后一次尝试**分类为 `upstream_reject`（§4.1），说明不是"网关无路可走"，而是"每条试过的腿都拒绝了这份请求"——此时把**该次上游错误原样返回客户端**（保留上游状态码与报文，如 400 + 内容审查报文），**不合成 503**。理由：① 语义如实（是请求被上游拒绝，不是车道故障）；② 下游对 400 按"不可重试"处理，避免为必然失败的请求反复重打整个成员链；③ 内容审查/参数不支持这类拒绝，503 会让排障误判成"上游全挂"。
 
 ### 4.3 已提交后的错误
 
 - 一旦提交（首字节已写出），错误**原样转发**给客户端并结束请求；不换成员、不重试。
 - 流式响应在上游发出结束事件后，即使连接未立即关闭，也要按聚合结果正常收尾（不能把"已完整交付"误判为取消）。
+- **提交后出现的流内 error 帧同样原样转发**（此时内容已交付，无法也不应故障转移）；但日志必须如实记录：`error_kind=upstream_reject` + 上游报文摘要（§4.4），使"客户端拿到了 200 流、流内却被上游判拒"这种此前**在 PBR 侧完全不可见**的失败可被检索与统计。
+
+### 4.4 流内错误帧（HTTP 200 之后的拒绝）
+
+某些上游（内容审查类尤为典型）先以 `200 + text/event-stream` 建流，再把拒绝**写进流里**——例如输出侧审查在生成过程中判定违规，向流内注入一个 error 帧后收流。这类失败此前对 PBR 完全不可见（传输层 200、记 success），故障转移无从谈起；下游 harness 收到流内 error 帧后被推下备用模型，而网关日志里看不到任何失败。
+
+- **判定（收敛到共享实现，仅识别这两种形态，避免误判）**：`data:` 帧为合法 JSON，且满足其一——
+  1. 含**非空** `error` 对象（`{"error":{...}}`；`"error": null` 不算）；
+  2. `type` 字段为 `error` 或 `upstream_error`。
+- **提交前**（本请求尚无任何 `data:` 帧写给客户端）：该帧**不得转发给客户端**；按 §4.1 记一次 `upstream_reject` 失败（含 `msg` = 从帧内提取的上游报文），立即换下一成员。心跳/注释帧不计入提交判定（§3 第 6 步）。
+- **提交后**：按 §4.3 原样透传并如实记日志。
+- 适用范围：本节的分类语义对所有入站格式一致；**流内错误帧的识别当前实现在 OpenAI 兼容 chat 流式路径**，其它格式（anthropic / gemini / responses）沿用各自管道既有行为，接入时按本节判定口径复用共享实现。
 
 ---
 
@@ -237,7 +258,7 @@ type LaneRuntime struct {
 
 ## 6. 冷却与亲和（线上语义，照搬）
 
-- 成员尝试预算耗尽 → `Cooldowns[memberID] = now + member_cooldown_seconds`。
+- 成员尝试预算耗尽 → `Cooldowns[memberID] = now + member_cooldown_seconds`。**时长按分类取值**（单处公式，实现为 `cooldownSecondsFor`）：`hard_auth` / `hard_quota` = **2 × `member_cooldown_seconds`**（硬故障倍率，凭据失效不会秒级自愈）；`soft_transient` / `soft_rate_limit` 等按配置原值；**`upstream_reject` 不写冷却**（§4.1）。
 - 冷却到期 → 只放行一个探测请求（`ProbeMemberID` 单槽）；探测成功即解除冷却。
 - 探测槽是**车道级单槽**，但归还必须按占用者归属（见 §2.2）；实现上请求态需记录"本次请求占用了哪个成员的探测位"，收尾时只归还自己占的那个。
 - **亲和**：故障切换后的**首次成功**才启动（`AffinityArmed`），持续 `member_affinity_seconds`；期间整个车道沿用当前成员，不提前切回高优先级成员。亲和期内当前成员失败 → 立即结束亲和。
@@ -248,7 +269,8 @@ type LaneRuntime struct {
 
 ## 7. 运行态对外的暴露
 
-- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind` / **`enabled`（布尔，恒回；§1.2 的人工停用态，被停用为 `false`。API 面一律正向命名，取反只存在于 Go 存储字段，见 api-spec §4.2）**，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无退避/无亲和为 `null`。
+- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / `last_error_kind` / **`enabled`（布尔，恒回；§1.2 的人工停用态，被停用为 `false`。API 面一律正向命名，取反只存在于 Go 存储字段，见 api-spec §4.2）**，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无退避/无亲和为 `null`。`last_error_kind` 取值域 = §4.1 的七个分类（`soft_rate_limit` / `soft_transient` / `hard_auth` / `hard_quota` / `upstream_reject` / `client_error` / `bad_response` / `canceled`）。
+- **运行态事件（`events[]` 与 webhook 同一份事件流）**：成员级 `cooldown` / `circuit_open` / `circuit_half_open` / `circuit_closed` / **`member_recovered`（成员自失败态恢复：在冷却/失败留痕之后**第一次成功服务**时发出，与 `cooldown` 成对）**；车道级 `reset` / **`lane_unavailable`（选路判定全部成员不可选、请求按 §4.2 收尾时发出一次，同一停摆期不重复）** / **`lane_recovered`（停摆期后第一次成功服务时发出）**；渠道级与上游健康事件见 api-spec §5.8。成对语义是硬要求：**每个"开始"事件都有配对的"结束"事件**（`cooldown`↔`member_recovered`、`circuit_open`↔`circuit_closed`、`lane_unavailable`↔`lane_recovered`），供消费方做 ⚠/✅ 配对通知。
 - **人工关闭的成员 `available=false`**（它当前确实不可选），但其 `circuit` / `cooldown_until` / `consecutive_failures` 等运行态字段**照常如实给出，不因人工关闭而归零或省略**——排障时要能同时看到"我把它关了"和"关之前它是什么状态"。`enabled` 与 `available` 是两件事：`available=false` 不蕴含任何故障结论，`enabled=false` 才说明是人工关的。
 - **`GET /api/models` 的聚合可辨识性**：`degraded` 的判定**保持既有定义不变**——成员总数 > 0 且**当前可选成员数 == 0**（可选 = 运行态可选，即上面 `available` 的口径）。另**新增 `disabled_member_count`**（被关闭成员数），使"全部成员被人工关闭"与"上游全挂"这两种 `degraded=true` 可区分。"渠道存在且启用"口径的 `available_member_count` 计数**必须同时排除被关闭成员**。
 - 车道全部成员被关闭时：模型**仍在 `/api/models` 清单里列出**（不隐藏、不删除），模型面调用按 §4.2 返回 503——与"上游全挂"**同形**，**不新增第三种错误语义**（§1.1 第 3 条的取向不变）。
@@ -279,6 +301,8 @@ type LaneRuntime struct {
 ```
 
 `status ∈ success | failed | cooldown | circuit_break | skipped | disabled`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）。
+
+- **`upstream_reject` 的留痕**：被拒绝成员照常落一条 `failed`，`error_kind=upstream_reject`、`msg` 为上游报文（流内错误帧则从帧内提取），后续选路跳过它**不**再补 `skipped` 记录（该成员的"为什么没继续用"已由这条失败解释，§ markAttempted 去重口径）。
 
 - `disabled` = 该成员被**人工停用**（§1.2）而跳过，与 `cooldown` / `circuit_break` / `skipped` **并列且必须可区分**：排障时要能一眼分清"是运维关的"还是"上游出故障了"，**禁止**用 `skipped` 或 `cooldown` 顶替。
 - **`disabled` 是配置态结论，因此原因必须由选路调用方显式给出**：运行态的"该成员为什么被跳过"推断只能看见熔断表与冷却表两张表，拿不到车道配置（§1.3、§5.3）。所以谁判定出"被人工关闭"，谁就负责把原因连同跳过动作一起交出；**禁止**把配置态开关并入运行态的可用性/原因推断逻辑——那会让运行态函数反向依赖车道配置，并把"人工关的"误报成一种故障。
