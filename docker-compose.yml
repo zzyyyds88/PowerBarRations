@@ -29,6 +29,10 @@ services:
     image: powerbar-rations:${PBR_VERSION:-dev}
     container_name: pbr
     restart: unless-stopped
+    # 停机宽限必须 ≥ 服务自身的优雅关闭窗口（SHUTDOWN_TIMEOUT_SECONDS，默认 120s）：
+    # docker 默认的 stop 超时只有 10s，到点直接 SIGKILL——在途的流式请求会被腰斩，
+    # 服务内的 drain 根本来不及跑完（2026-10-06 迁移窗口的 APIConnectionError 即此类）。
+    stop_grace_period: ${PBR_STOP_GRACE:-130s}
     ports:
       - "${PBR_PORT:-5700}:5700"
     environment:
