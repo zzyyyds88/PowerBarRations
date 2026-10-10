@@ -1,5 +1,5 @@
-/*! LICENSE: 7f.9cc62f38a8.js.LICENSE.txt */
-"use strict";(self.rspackChunkpowerbar_rations_web=self.rspackChunkpowerbar_rations_web||[]).push([["7f"],{Ny(e,t,r){r.d(t,{K:()=>x});var s=r("B"),a=r("iDI"),n=r("h"),l=r("YV");let o=`
+/*! LICENSE: 7.7d8bd4b353.js.LICENSE.txt */
+"use strict";(self.rspackChunkpowerbar_rations_web=self.rspackChunkpowerbar_rations_web||[]).push([[7],{Ny(e,t,r){r.d(t,{K:()=>x});var s=r("B"),a=r("iDI"),n=r("h"),l=r("YV");let o=`
 <style>
   :host {
     display: block;
