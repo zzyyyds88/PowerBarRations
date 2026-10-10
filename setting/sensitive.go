@@ -2,7 +2,13 @@ package setting
 
 import "strings"
 
-var CheckSensitiveEnabled = true
+// 敏感词拦截的**默认值是关闭**（2026-10-10 董事长令）：PBR 是自用网关，
+// 默认不对任何请求做词表拦截——拦截要么是上游厂商的事（内容审查由它返回 4xx，
+// 由车道按成员级拒绝处理），要么由使用者在系统选项里显式打开并自带词表。
+//
+// 打开方式（运行时开关，无需改代码）：`PUT /api/system/options/all`
+// `{"key":"CheckSensitiveEnabled","value":"true"}`，并按需写入 `SensitiveWords`。
+var CheckSensitiveEnabled = false
 var CheckSensitiveOnPromptEnabled = true
 
 //var CheckSensitiveOnCompletionEnabled = true
@@ -13,11 +19,12 @@ var StopOnSensitiveEnabled = true
 // StreamCacheQueueLength 流模式缓存队列长度，0表示无缓存
 var StreamCacheQueueLength = 0
 
-// SensitiveWords 敏感词
-// var SensitiveWords []string
-var SensitiveWords = []string{
-	"test_sensitive",
-}
+// SensitiveWords 敏感词。
+//
+// **默认为空**：词表是部署方自己的数据（design-v1 §14.9 文档纪律），
+// 仓库不预置任何具体词——曾预置的测试词 `test_sensitive` 会让"打开开关"
+// 立刻误伤，已移除。
+var SensitiveWords = []string{}
 
 func SensitiveWordsToString() string {
 	return strings.Join(SensitiveWords, "\n")

@@ -298,6 +298,11 @@ GET  /api/v1/openapi.json               # 完整契约
 - **日志**：只存元数据（车道、成员、尝试链、token 数、耗时、折算金额），
   不存请求/响应正文，不存密钥明文，不存余额。
 - **升级**：`docker compose up -d --build`；数据库结构由启动时的迁移自动补齐。
+- **敏感词拦截：默认关闭**（自用网关，默认不对请求做词表拦截）。需要时经系统选项打开并自带词表：
+  `PUT /api/system/options/all` `{"key":"CheckSensitiveEnabled","value":"true"}`（词表用同一个端点的
+  `SensitiveWords`，一行一词；**仓库不预置任何词**——词表属部署方自己的数据）。
+  拦截开着时命中的请求会得到 500 `sensitive_words_detected`；上游厂商的内容审查是另一回事
+  （那是 4xx，由车道按成员级拒绝在内部消化，见上文「上游拒绝」）。
 - **停机与重启（在途请求的处置）**：收到 `SIGTERM` 后服务**停止接收新连接、等在途请求跑完**
   （上限 `SHUTDOWN_TIMEOUT_SECONDS`，默认 120s），随后退出；运行态（冷却/熔断/亲和）随之清空，
   配置与请求日志都在 SQLite 里、不受影响。
