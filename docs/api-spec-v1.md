@@ -896,12 +896,20 @@ curl -s "$PBR/api/channels/channel-a/status?window=24h" -H "Authorization: Beare
   `summary.requests/successes/estimated_cost` 是窗口内合计，`success_rate = successes / requests`
   （`requests = 0` 时为 `0`）；`daily` 是窗口按自然日（本地时区）切分的同一组数字，最多返回
   窗口对应天数（`24h` → 2 个日期桶，`7d` → 7 个）。**`POST /logs/prune` 清理明细不影响它们。**
+  **窗口边界**：`until = 现在`，`from =（现在 − 24h/7d）向下取整到整点`。聚合表只有小时桶，
+  窗口合计只能由小时桶相加得出；起点若不落在桶边界上，边界桶会被整份计入，把窗口悄悄拉长
+  最多一小时（实测曾让 24h 档把前一整天的量算进来）。对齐到整点后，`summary` 与 `models[]`
+  （明细日志按 `ts` 精确过滤）取同一对边界、数字互相自洽，且
+  **Σ`daily[].requests` 恒等于 `summary.requests`**（逐日由同一批小时桶在内存里折叠）。
+  代价是窗口起点最多早于"此刻减 24h"不到一小时，对 24h/7d 档可忽略。
 - **`models[]`（渠道状态页的主表）**：该渠道在窗口内**按上游模型**的表现，一行一个模型
   （按请求数降序）。字段：`model`（上游真名）/ `requests` / `successes` / `failures` /
   `success_rate`（0~1）/ `avg_total_ms` / `avg_ttft_ms`（仅流式有样本，无则 `0`）/
   **`output_tps`（输出速度，tokens/s）** / `tokens_out`（输出 token 总数）。
   **输出速度口径**：`Σcompletion_tokens / Σ生成耗时`，生成耗时 = 流式取 `max(total_ms − ttft_ms, 1)`、
   非流式取 `total_ms`——把首字等待排除在外，才是"吐字速度"。
+  `ttft_ms` 在**第一帧数据转发给客户端**时打点（`relay/helper.MarkFirstByte`，只记一次），
+  故升级前的历史行 `ttft_ms` 为 `0`，这些行只影响"平均首字"的样本量，不影响成功率与请求数。
   同一取舍：数据源是明细日志，`POST /logs/prune` 清理后该表为空数组。
 - `summary.avg_total_ms` / `avg_ttft_ms` 来自**明细日志**（`pbr_request_logs`）在窗口内的均值
   （`ttft_ms` 只计流式请求，无样本时为 `0`）——这两项**会被 `POST /logs/prune` 影响**，

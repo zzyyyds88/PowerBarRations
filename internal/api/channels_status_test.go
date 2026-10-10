@@ -270,3 +270,118 @@ func mustRaw(t *testing.T, obj map[string]json.RawMessage, path ...string) []byt
 	}
 	return nil
 }
+
+// 窗口边界：起点必须落在小时桶边界上。
+//
+// 聚合读的过滤语义是"桶与窗口相交"（画图正确），但把相交的桶**相加成窗口总数**时，
+// 落在窗口起点之前的那个桶会被整份计入。曾因此让 24h 档把前一天整天的量算进来
+// （线上实测某渠道 922 → 1905）。对齐到小时边界后，窗口总数可精确复算。
+func TestChannelStatusWindowBoundsAreHourAligned(t *testing.T) {
+	now := time.Date(2026, 10, 10, 19, 37, 42, 0, time.Local)
+
+	from, until := channelStatusWindowBounds(now, 24*3600)
+	assert.Zero(t, from%3600, "窗口起点必须对齐到小时桶边界")
+	assert.Equal(t, now.Unix(), until)
+	assert.Equal(t, time.Date(2026, 10, 9, 19, 0, 0, 0, time.Local).Unix(), from)
+	// 下取整对齐会让窗口比标称长不到一小时，但绝不会更短（不会漏数据）。
+	assert.LessOrEqual(t, now.Unix()-from, int64(24*3600+3600))
+	assert.Greater(t, now.Unix()-from, int64(24*3600-1), "窗口不得短于标称时长")
+
+	from7d, _ := channelStatusWindowBounds(now, 7*24*3600)
+	assert.Zero(t, from7d%3600)
+	assert.Equal(t, time.Date(2026, 10, 3, 19, 0, 0, 0, time.Local).Unix(), from7d)
+}
+
+// 24h 档不得把窗口起点之前的同一天数据算进总数（回归：日粒度求和的虚高）。
+func TestChannelStatusListExcludesBucketsBeforeWindow(t *testing.T) {
+	db := setupAPITestDB(t)
+	ch := &model.Channel{Name: "win-sum-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled,
+		Group: "default", Models: "m"}
+	require.NoError(t, db.Create(ch).Error)
+
+	now := time.Now()
+	from, _ := channelStatusWindowBounds(now, 24*3600)
+	// 窗口内两小时：2 条成功。
+	require.NoError(t, db.Create(&model.PBRStatsHourly{BucketTs: from, GroupKind: "channel",
+		GroupKey: ch.Name, Requests: 1, Successes: 1}).Error)
+	require.NoError(t, db.Create(&model.PBRStatsHourly{BucketTs: from + 3600, GroupKind: "channel",
+		GroupKey: ch.Name, Requests: 1, Successes: 1}).Error)
+	// 同一"天"但在窗口起点之前一小时：1 条失败。日粒度会把它整份算进来。
+	require.NoError(t, db.Create(&model.PBRStatsHourly{BucketTs: from - 3600, GroupKind: "channel",
+		GroupKey: ch.Name, Requests: 1, Successes: 0}).Error)
+
+	recorder := getChannelStatusList(t, "")
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var resp struct {
+		Items []struct {
+			Channel     string  `json:"channel"`
+			Requests    int64   `json:"requests"`
+			Successes   int64   `json:"successes"`
+			Failures    int64   `json:"failures"`
+			SuccessRate float64 `json:"success_rate"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+
+	var got *struct {
+		Channel     string  `json:"channel"`
+		Requests    int64   `json:"requests"`
+		Successes   int64   `json:"successes"`
+		Failures    int64   `json:"failures"`
+		SuccessRate float64 `json:"success_rate"`
+	}
+	for i := range resp.Items {
+		if resp.Items[i].Channel == ch.Name {
+			got = &resp.Items[i]
+		}
+	}
+	require.NotNil(t, got)
+	// 列表项只暴露 requests/failures/success_rate（api-spec §6.12），没有 successes 字段。
+	assert.EqualValues(t, 2, got.Requests, "只应统计窗口内的两个小时桶")
+	assert.EqualValues(t, 0, got.Failures)
+	assert.InDelta(t, 1.0, got.SuccessRate, 1e-9)
+}
+
+// 详情页：逐日序列由窗口内的小时桶折叠而来，Σ逐日必须等于窗口总数
+// （图表与概览不能互相打脸）；窗口外的桶不参与。
+func TestChannelStatusDetailDailySeriesMatchesSummary(t *testing.T) {
+	db := setupAPITestDB(t)
+	ch := &model.Channel{Name: "win-daily-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled,
+		Group: "default", Models: "m"}
+	require.NoError(t, db.Create(ch).Error)
+
+	from, _ := channelStatusWindowBounds(time.Now(), 24*3600)
+	require.NoError(t, db.Create(&model.PBRStatsHourly{BucketTs: from, GroupKind: "channel",
+		GroupKey: ch.Name, Requests: 3, Successes: 3}).Error)
+	require.NoError(t, db.Create(&model.PBRStatsHourly{BucketTs: from + 7200, GroupKind: "channel",
+		GroupKey: ch.Name, Requests: 5, Successes: 4}).Error)
+	// 窗口外（起点前一小时）：不得出现在逐日序列里。
+	require.NoError(t, db.Create(&model.PBRStatsHourly{BucketTs: from - 3600, GroupKind: "channel",
+		GroupKey: ch.Name, Requests: 100, Successes: 100}).Error)
+
+	recorder := getChannelStatus(t, ch.Name, "")
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var resp struct {
+		Summary struct {
+			Requests    int64   `json:"requests"`
+			Successes   int64   `json:"successes"`
+			SuccessRate float64 `json:"success_rate"`
+		} `json:"summary"`
+		Daily []struct {
+			Requests  int64 `json:"requests"`
+			Successes int64 `json:"successes"`
+			Failures  int64 `json:"failures"`
+		} `json:"daily"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+
+	assert.EqualValues(t, 8, resp.Summary.Requests)
+	assert.EqualValues(t, 7, resp.Summary.Successes)
+	assert.InDelta(t, 7.0/8.0, resp.Summary.SuccessRate, 1e-9)
+
+	var dailyRequests int64
+	for _, d := range resp.Daily {
+		dailyRequests += d.Requests
+	}
+	assert.EqualValues(t, resp.Summary.Requests, dailyRequests, "Σ逐日 必须等于窗口总数")
+}

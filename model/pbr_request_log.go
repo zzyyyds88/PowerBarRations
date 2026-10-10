@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -147,8 +148,13 @@ func EnsurePBRLogCarrier(c *gin.Context) *PBRLogCarrier {
 	if carrier := GetPBRLogCarrier(c); carrier != nil {
 		return carrier
 	}
-	carrier := &PBRLogCarrier{StartedAtMs: time.Now().UnixMilli()}
+	now := time.Now()
+	carrier := &PBRLogCarrier{StartedAtMs: now.UnixMilli()}
 	c.Set(ContextKeyPBRLogCarrier, carrier)
+	// 起始时刻同时写进上下文：首字耗时（relay/helper.MarkFirstByte）要用它算
+	// "请求开始 → 第一帧数据"的间隔。此前这个键**只有读没有写**，基座几处读者
+	// 只能各自兜底 time.Now()（耗时恒为 0）；在这里补上写点，两边同时受益。
+	common.SetContextKey(c, constant.ContextKeyRequestStartTime, now)
 	return carrier
 }
 
@@ -549,10 +555,14 @@ func aggregatePBRStatsFromHourly(from, until int64, granularity, groupBy, groupK
 		query = query.Where("group_key = ?", strings.TrimSpace(groupKey))
 	}
 	if from > 0 {
-		query = query.Where(bucketExpr+" + ? >= ?", windowSeconds, from)
+		// 严格相交：桶 [bucket_ts, bucket_ts+窗长) 与 [from, until) 有交集才算。
+		// 用 `>` 而不是 `>=`——桶正好在 from 处**结束**时并不含窗口内的数据，
+		// 放进来会让"把桶相加成窗口总数"的调用方多算一整个桶（注释与实现必须同义）。
+		query = query.Where(bucketExpr+" + ? > ?", windowSeconds, from)
 	}
 	if until > 0 {
-		query = query.Where("bucket_ts <= ?", until)
+		// 同理：桶起点正好等于 until 的桶不含窗口内数据。
+		query = query.Where("bucket_ts < ?", until)
 	}
 	if err := query.Scan(&rows).Error; err != nil {
 		return nil, err

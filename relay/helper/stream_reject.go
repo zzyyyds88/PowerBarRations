@@ -3,6 +3,7 @@ package helper
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
@@ -74,7 +75,29 @@ func MarkStreamCommitted(c *gin.Context) {
 	if c == nil {
 		return
 	}
+	MarkFirstByte(c)
 	common.SetContextKey(c, constant.ContextKeyPBRStreamCommitted, true)
+}
+
+// MarkFirstByte 记录首字耗时（TTFT）：从请求起始到第一帧数据写出。
+//
+// 幂等——只在第一次写入；请求起始时间取不到时留空（不猜）。
+// 挂在这里是因为这三个写入口就是"第一帧数据"的唯一通道，且都只用于流式响应，
+// 非流式请求不会误记。
+func MarkFirstByte(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	if common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs) > 0 {
+		return
+	}
+	start := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+	if start.IsZero() {
+		return
+	}
+	if ms := time.Since(start).Milliseconds(); ms > 0 {
+		common.SetContextKey(c, constant.ContextKeyPBRTTFTMs, int(ms))
+	}
 }
 
 // StreamCommitted 本请求是否已向客户端提交过数据帧（routing-spec §4.4 的

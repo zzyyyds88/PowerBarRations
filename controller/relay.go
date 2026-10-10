@@ -135,6 +135,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				carrier.TotalMs = time.Now().UnixMilli() - carrier.StartedAtMs
 			}
 		}
+		// 首字耗时：由流式写入口在**第一帧数据**写出时打点（relay/helper.MarkFirstByte）。
+		// 非流式请求没有这个点，保持 0——渠道状态页据此只对流式样本计算输出速度。
+		if carrier.TTFTMs == 0 {
+			carrier.TTFTMs = int64(common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs))
+		}
 		// 无论以哪条路径结束都归还探测槽：client_error/canceled 不换人，
 		// 不会再有下一轮 getChannel，槽必须在收尾时释放（routing-spec §3.1）。
 		if pbrState := pbrroute.From(c); pbrState != nil {

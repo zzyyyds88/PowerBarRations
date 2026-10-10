@@ -57,6 +57,10 @@ const (
 	// 此时不能故障转移，但日志必须如实记录 error_kind=upstream_reject + 该报文，
 	// 使"客户端拿到 200 流、流内却被上游判拒"的失败可被检索（此前完全不可见）。
 	ContextKeyPBRStreamReject ContextKey = "pbr_stream_reject"
+	// ContextKeyPBRTTFTMs 本请求的**首字耗时**（毫秒）：从请求起始（ContextKeyRequestStartTime）
+	// 到第一帧数据转发给客户端。只记第一次，恒为流式请求；没走到数据帧（报错/取消）时为空。
+	// 渠道状态页的"输出速度"用它把首字等待从生成耗时里剔除——不剔除就只能算端到端速度。
+	ContextKeyPBRTTFTMs ContextKey = "pbr_ttft_ms"
 
 	/* user related keys */
 	ContextKeyUserId      ContextKey = "id"

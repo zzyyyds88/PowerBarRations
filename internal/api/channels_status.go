@@ -72,6 +72,42 @@ func parseChannelStatusWindow(c *gin.Context) (label string, seconds int64, ok b
 	}
 }
 
+// channelStatusWindowBounds 窗口的 [from, until) 边界（秒）。
+//
+// `from` **按小时下取整对齐**。聚合表只有小时桶，窗口总数只能由小时桶相加得出：
+// 起点若落在桶中间，聚合读的"桶与窗口相交"语义会把该桶整份计入，把窗口悄悄拉长
+// 最多一小时（实测 24h 档因此把前一天整天的量算了进来，渠道请求数虚高近一倍）。
+// 对齐到桶边界后，"最近 N 小时"成为可精确复算的口径，且与逐模型明细（明细日志
+// 按 ts 精确过滤）、平均耗时取同一对边界，页面上的数字彼此自洽。
+//
+// 代价是窗口起点最多早于"此刻减 N 小时"不到一小时；对 24h/7d 档位可忽略。
+func channelStatusWindowBounds(now time.Time, seconds int64) (from, until int64) {
+	return now.Add(-time.Duration(seconds) * time.Second).Truncate(time.Hour).Unix(), now.Unix()
+}
+
+// channelStatusBucketStats 把小时桶按 group_key 汇总成窗口总数。
+//
+// 只接受 `hour` 粒度的桶：日粒度桶的起点被上卷到当天 00:00，边界桶同样会整份计入
+// （与上面同一条坑）。逐日序列另由小时桶在内存里折叠，保证 Σ逐日 == 窗口总数。
+func channelStatusBucketStats(buckets []model.PBRStatBucket) map[string]channelStatusSummary {
+	totals := make(map[string]channelStatusSummary, len(buckets))
+	for _, b := range buckets {
+		acc := totals[b.GroupKey]
+		acc.Requests += b.Requests
+		acc.Successes += b.Successes
+		acc.EstimatedCost += b.EstimatedCost
+		totals[b.GroupKey] = acc
+	}
+	for key, acc := range totals {
+		acc.Failures = acc.Requests - acc.Successes
+		if acc.Requests > 0 {
+			acc.SuccessRate = float64(acc.Successes) / float64(acc.Requests)
+		}
+		totals[key] = acc
+	}
+	return totals
+}
+
 // channelRefsAndRuntime 遍历全部车道，收集该渠道的配置引用与运行态成员。
 //
 // 运行态取自进程内注册表（route.Default.Get，**只读不创建**）：车道登记过运行态就用
@@ -162,25 +198,51 @@ func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef,
 }
 
 // channelWindowStats 窗口内的统计汇总与逐日序列（小时聚合表，对 prune 免疫）。
+//
+// 汇总读**小时桶**再相加（口径见 channelStatusWindowBounds）；逐日序列由同一批小时桶
+// 在内存里按天折叠，所以 Σ逐日恒等于 summary.Requests，图表与概览不会互相打脸。
+// 窗口边界所在的两天是"部分天"，其数值只覆盖窗口内的小时。
 func channelWindowStats(channelName string, from, until int64) (channelStatusSummary, []gin.H) {
 	summary := channelStatusSummary{}
 	daily := []gin.H{}
-	buckets, err := model.AggregatePBRChannelStats(channelName, from, until, "day")
+	buckets, err := model.AggregatePBRChannelStats(channelName, from, until, "hour")
 	if err != nil {
 		return summary, daily
 	}
-	// 聚合按 bucket_ts 倒序返回；逐日序列按时间正序输出（旧 → 新）。
-	sort.SliceStable(buckets, func(a, b int) bool { return buckets[a].BucketTs < buckets[b].BucketTs })
+	type dayAcc struct {
+		requests  int64
+		successes int64
+		cost      float64
+	}
+	days := map[int64]*dayAcc{}
 	for _, b := range buckets {
 		summary.Requests += b.Requests
 		summary.Successes += b.Successes
 		summary.EstimatedCost += b.EstimatedCost
+		day := b.BucketTs / 86400 * 86400
+		acc := days[day]
+		if acc == nil {
+			acc = &dayAcc{}
+			days[day] = acc
+		}
+		acc.requests += b.Requests
+		acc.successes += b.Successes
+		acc.cost += b.EstimatedCost
+	}
+	// 逐日序列按时间正序输出（旧 → 新）。
+	ordered := make([]int64, 0, len(days))
+	for day := range days {
+		ordered = append(ordered, day)
+	}
+	sort.Slice(ordered, func(a, b int) bool { return ordered[a] < ordered[b] })
+	for _, day := range ordered {
+		acc := days[day]
 		daily = append(daily, gin.H{
-			"date":           time.Unix(b.BucketTs, 0).Format("2006-01-02"),
-			"requests":       b.Requests,
-			"successes":      b.Successes,
-			"failures":       b.Requests - b.Successes,
-			"estimated_cost": b.EstimatedCost,
+			"date":           time.Unix(day, 0).Format("2006-01-02"),
+			"requests":       acc.requests,
+			"successes":      acc.successes,
+			"failures":       acc.requests - acc.successes,
+			"estimated_cost": acc.cost,
 		})
 	}
 	summary.Failures = summary.Requests - summary.Successes
@@ -342,9 +404,7 @@ func GetChannelStatusByName(c *gin.Context) {
 	if !ok {
 		return
 	}
-	now := time.Now()
-	from := now.Add(-time.Duration(seconds) * time.Second).Unix()
-	until := now.Unix() + 1
+	from, until := channelStatusWindowBounds(time.Now(), seconds)
 
 	refs, members, _, totalMembers, availableCount := channelRefsAndRuntime(channel)
 	summary, daily := channelWindowStats(channel.Name, from, until)
@@ -380,25 +440,18 @@ func ListChannelStatus(c *gin.Context) {
 	if !ok {
 		return
 	}
-	now := time.Now()
-	from := now.Add(-time.Duration(seconds) * time.Second).Unix()
-	until := now.Unix() + 1
+	from, until := channelStatusWindowBounds(time.Now(), seconds)
 
 	channels, err := model.GetAllChannels(0, 0, true, false)
 	if err != nil {
 		writeAPIError(c, err)
 		return
 	}
-	// 一次取全量渠道的窗口桶，再按渠道名分发（渠道数量级很小）。
+	// 一次取全量渠道的窗口小时桶，再按渠道名分发（渠道数量级很小）。
+	// 必须用 `hour` 粒度：日粒度会把边界那天整份算进来（见 channelStatusWindowBounds）。
 	bucketTotals := map[string]channelStatusSummary{}
-	if buckets, err := model.AggregatePBRStatsFromHourly(from, until, "day", "channel"); err == nil {
-		for _, b := range buckets {
-			acc := bucketTotals[b.GroupKey]
-			acc.Requests += b.Requests
-			acc.Successes += b.Successes
-			acc.EstimatedCost += b.EstimatedCost
-			bucketTotals[b.GroupKey] = acc
-		}
+	if buckets, err := model.AggregatePBRStatsFromHourly(from, until, "hour", "channel"); err == nil {
+		bucketTotals = channelStatusBucketStats(buckets)
 	}
 	ids := make([]int, 0, len(channels))
 	for _, ch := range channels {
@@ -419,12 +472,9 @@ func ListChannelStatus(c *gin.Context) {
 				lastErrorKind = string(m.LastErrorKind)
 			}
 		}
+		// channelStatusBucketStats 已把 failures/success_rate 一并算好，
+		// 这里直接取用，避免同一个口径在两处各写一份。
 		acc := bucketTotals[ch.Name]
-		failures := acc.Requests - acc.Successes
-		rate := 0.0
-		if acc.Requests > 0 {
-			rate = float64(acc.Successes) / float64(acc.Requests)
-		}
 		item := gin.H{
 			"channel":         ch.Name,
 			"enabled":         ch.Status == common.ChannelStatusEnabled,
@@ -434,8 +484,8 @@ func ListChannelStatus(c *gin.Context) {
 			"available_count": availableCount,
 			"degraded":        degraded,
 			"requests":        acc.Requests,
-			"failures":        failures,
-			"success_rate":    rate,
+			"failures":        acc.Failures,
+			"success_rate":    acc.SuccessRate,
 			"estimated_cost":  acc.EstimatedCost,
 			"last_error_kind": lastErrorKind,
 		}
