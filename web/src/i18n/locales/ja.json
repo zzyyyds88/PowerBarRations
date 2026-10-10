@@ -3032,6 +3032,11 @@
     "vs previous period": "前期比",
     "No data in the selected range": "選択期間にデータがありません",
     "Served by {{channel}}": "{{channel}} が提供",
-    "Throughput (tps)": "スループット (tps)"
+    "Throughput (tps)": "スループット (tps)",
+    "Statistical cost": "集計範囲内の換算コスト",
+    "Statistical count": "集計範囲内のリクエスト数",
+    "Statistical tokens": "集計範囲内のトークン数",
+    "Requests per minute": "1 分あたりのリクエスト数",
+    "Tokens per minute": "1 分あたりのトークン数"
   }
 }

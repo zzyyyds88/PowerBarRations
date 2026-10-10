@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { toIntlLocale } from '@/i18n/languages'
 import dayjs from '@/lib/dayjs'
 
 import {
@@ -320,10 +321,13 @@ export function stringToColor(str: string): string {
  */
 export function formatTokenAmount(value: number, locale?: string): string {
   if (!Number.isFinite(value) || value <= 0) return '0'
-  if ((locale ?? '').toLowerCase().startsWith('zh')) {
+  // i18next 的 `zhCN`/`zhTW` 是非标准 tag，直接喂 Intl 会抛
+  // `Invalid language tag`（曾把整页打成 500）——统一用共享的 toIntlLocale 折成 BCP-47。
+  const tag = toIntlLocale(locale)
+  if ((locale ?? '').trim().toLowerCase().startsWith('zh')) {
     if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(2)} 亿`
     if (value >= 10_000) return `${(value / 10_000).toFixed(2)} 万`
-    return new Intl.NumberFormat(locale).format(Math.round(value))
+    return new Intl.NumberFormat(tag).format(Math.round(value))
   }
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`

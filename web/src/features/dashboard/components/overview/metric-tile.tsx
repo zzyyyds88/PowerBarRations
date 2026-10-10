@@ -16,11 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// 「模型数据分析」卡的指标格（ui-spec §6.2A）。
+// 首页概览指标条的单个格子（ui-spec §6.2A）。
 //
-// 值 + 与上一等长窗口的环比：正数绿升、负数红降、无基准（或持平）为灰。
-// 数据缺失时环比显示 `-`，不伪造 0%。
+// 一格 = 图标 + 小写标签（CSS 全大写）+ 大数字 + 口径副标题 + 环比。
+// 口径副标题说明这个数字"算的是什么"（如"每分钟请求数"），避免只看大数字猜口径。
+//
+// 环比沿用既有呈现：正数绿升、负数红降、无基准（或持平）为灰；
+// 数据缺失时显示 `-`，不伪造 0%。
 
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -31,6 +35,10 @@ export function MetricTile(props: {
   label: string
   value: string
   delta: number | null
+  /** 口径副标题：这个数字算的是什么（可选）。 */
+  caption?: string
+  /** 格子的语义图标（装饰性，标签已给出语义）。 */
+  icon?: IconSvgElement
 }) {
   const { t } = useTranslation()
 
@@ -45,13 +53,35 @@ export function MetricTile(props: {
   }
 
   return (
-    <div className='border-border/70 shadow-control rounded-control bg-muted/50 min-w-0 border px-2.5 py-1.5'>
-      <div className='text-muted-foreground truncate text-xs font-medium'>
-        {props.label}
+    <div
+      data-slot='metric-tile'
+      className='border-border/70 shadow-control rounded-control bg-muted/50 min-w-0 border px-2.5 py-1.5'
+    >
+      <div className='flex items-center gap-1.5'>
+        {props.icon != null && (
+          <HugeiconsIcon
+            icon={props.icon}
+            size={14}
+            strokeWidth={2}
+            className='text-muted-foreground shrink-0'
+            aria-hidden='true'
+          />
+        )}
+        <span className='text-muted-foreground truncate text-xs font-medium uppercase'>
+          {props.label}
+        </span>
       </div>
       <div className='mt-0.5 truncate font-mono text-base font-semibold tabular-nums'>
         {props.value}
       </div>
+      {props.caption != null && (
+        <div
+          className='text-muted-foreground mt-0.5 truncate text-xs'
+          title={props.caption}
+        >
+          {props.caption}
+        </div>
+      )}
       <div className={cn('mt-0.5 flex items-center gap-1 text-xs', tone)}>
         <span aria-hidden='true'>{arrow}</span>
         <span className='shrink-0 tabular-nums'>

@@ -41,6 +41,7 @@ import {
   getPBRStats,
   type PBRStatBucket,
 } from '../../pbr-stats-api'
+import { PanelTotal } from '../ui/panel-total'
 import { PanelWrapper } from '../ui/panel-wrapper'
 
 const TOP_LIMIT = 10
@@ -125,6 +126,18 @@ export function TokenRankingCard(props: { range: PBRResolvedTimeRange }) {
   const isEmpty =
     !statusQuery.isLoading && !statusQuery.isError && rows.length === 0
 
+  // 标题右侧挂**窗口内全部模型**的 token 总量（不只是 Top 10 的和），
+  // 口径与指标条的「Token 总量」一致——排行榜是其中的前 10 名。
+  // 数据未到位时为 null（不显示伪造的 `Total: 0`）。
+  const totalTokens = useMemo(() => {
+    if (statusQuery.data == null) return null
+    let sum = 0
+    for (const item of statusQuery.data.items) {
+      sum += item.tokens_total || 0
+    }
+    return sum
+  }, [statusQuery.data])
+
   let body = (
     <ul className='flex flex-col gap-2.5' aria-label={t('Token ranking')}>
       {rows.map((item) => {
@@ -178,6 +191,15 @@ export function TokenRankingCard(props: { range: PBRResolvedTimeRange }) {
       empty={isEmpty}
       emptyMessage={t('No data in the selected range')}
       height='h-[320px]'
+      headerActions={
+        <PanelTotal
+          value={
+            totalTokens == null
+              ? null
+              : formatTokenAmount(totalTokens, i18n.language)
+          }
+        />
+      }
     >
       {body}
     </PanelWrapper>

@@ -3032,6 +3032,11 @@
     "vs previous period": "so với kỳ trước",
     "No data in the selected range": "Không có dữ liệu trong khoảng đã chọn",
     "Served by {{channel}}": "Được cung cấp bởi {{channel}}",
-    "Throughput (tps)": "Thông lượng (tps)"
+    "Throughput (tps)": "Thông lượng (tps)",
+    "Statistical cost": "Chi phí quy đổi trong kỳ",
+    "Statistical count": "Số yêu cầu trong kỳ",
+    "Statistical tokens": "Số token trong kỳ",
+    "Requests per minute": "Yêu cầu mỗi phút",
+    "Tokens per minute": "Token mỗi phút"
   }
 }

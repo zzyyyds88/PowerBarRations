@@ -37,6 +37,17 @@ describe('formatTokenAmount', () => {
     expect(formatTokenAmount(999, 'en')).toBe('999')
   })
 
+  it('项目自己的非标准 tag（zhCN / zhTW）不得抛异常——曾把整页打成 500', () => {
+    expect(() => formatTokenAmount(286_900_000, 'zhCN')).not.toThrow()
+    expect(formatTokenAmount(286_900_000, 'zhCN')).toBe('2.87 亿')
+    expect(formatTokenAmount(286_900_000, 'zhTW')).toBe('2.87 亿')
+    expect(formatTokenAmount(15_000, 'zhCN')).toBe('1.50 万')
+    // 小数量走 Intl 千分位：此处最容易踩 `Invalid language tag`
+    expect(formatTokenAmount(9_999, 'zhCN')).toBe('9,999')
+    // 未知语言不得抛，回落 Intl 默认
+    expect(() => formatTokenAmount(1_000_000, 'xx-YY')).not.toThrow()
+  })
+
   it('缺省语言与边界值', () => {
     expect(formatTokenAmount(1_510_000_000)).toBe('1.5B')
     expect(formatTokenAmount(0, 'zh')).toBe('0')

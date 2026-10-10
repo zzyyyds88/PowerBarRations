@@ -18,8 +18,9 @@ For commercial licensing, please contact support@quantumnous.com
 */
 // 首页概览面板（ui-spec §6.2A）。
 //
-// 顶部是整页共用的时间分档选择器，换算成 from/to（Unix 秒）后驱动下面三块卡片：
-// 模型数据分析（左 2/3）+ Token 排行榜（右 1/3），下一行左半是服务状态。
+// 顶部是整页共用的时间分档选择器，换算成 from/to（Unix 秒）后驱动下面所有内容：
+// 指标条（一行五格：折算成本 / 调用次数 / Token 总量 / RPM / TPM）+ 三块卡片
+// ——模型数据分析（左 2/3）+ Token 排行榜（右 1/3），下一行左半是服务状态。
 // 卡片自适应高度、内容不被裁切；长列表在卡内滚动，不做整页横向滚动。
 
 import { useMemo, useState } from 'react'
@@ -28,6 +29,7 @@ import {
   resolveTimeRange,
   type PBRTimeRangeSelection,
 } from '../../lib/time-range'
+import { MetricStrip } from './metric-strip'
 import { ModelAnalyticsCard } from './model-analytics-card'
 import { ServiceStatusCard } from './service-status-card'
 import { TimeRangeSelector } from './time-range-selector'
@@ -44,6 +46,7 @@ export function OverviewDashboard() {
   return (
     <div className='flex flex-col gap-(--density-grid)'>
       <TimeRangeSelector selection={selection} onChange={setSelection} />
+      <MetricStrip range={range} />
       <div className='grid grid-cols-1 gap-(--density-grid) lg:grid-cols-6'>
         <div className='lg:col-span-4'>
           <ModelAnalyticsCard range={range} />

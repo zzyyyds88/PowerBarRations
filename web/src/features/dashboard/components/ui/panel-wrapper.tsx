@@ -50,7 +50,10 @@ function PanelHeader(props: {
   )
 
   return (
-    <div className='border-b px-(--density-card-padding) py-2.5'>
+    <div
+      data-slot='panel-header'
+      className='border-b px-(--density-card-padding) py-2.5'
+    >
       {props.actions != null ? (
         <div className='flex items-start justify-between gap-2'>
           {heading}
@@ -77,7 +80,11 @@ export function PanelWrapper(props: PanelWrapperProps) {
   if (props.loading) {
     return (
       <div className={frameClassName}>
-        <PanelHeader title={props.title} description={props.description} />
+        <PanelHeader
+          title={props.title}
+          description={props.description}
+          actions={props.headerActions}
+        />
         <div
           className={cn('p-(--density-card-padding)', props.contentClassName)}
         >
@@ -90,7 +97,11 @@ export function PanelWrapper(props: PanelWrapperProps) {
   if (props.empty) {
     return (
       <div className={frameClassName}>
-        <PanelHeader title={props.title} description={props.description} />
+        <PanelHeader
+          title={props.title}
+          description={props.description}
+          actions={props.headerActions}
+        />
         <div
           className={cn(
             'text-muted-foreground flex items-center justify-center px-3 text-xs',

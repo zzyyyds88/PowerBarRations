@@ -3032,6 +3032,11 @@
     "vs previous period": "к предыдущему периоду",
     "No data in the selected range": "Нет данных за выбранный период",
     "Served by {{channel}}": "Обслуживает {{channel}}",
-    "Throughput (tps)": "Пропускная способность (tps)"
+    "Throughput (tps)": "Пропускная способность (tps)",
+    "Statistical cost": "Приведённая стоимость за период",
+    "Statistical count": "Запросы за период",
+    "Statistical tokens": "Токены за период",
+    "Requests per minute": "Запросов в минуту",
+    "Tokens per minute": "Токенов в минуту"
   }
 }

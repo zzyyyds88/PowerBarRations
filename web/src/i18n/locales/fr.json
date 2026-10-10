@@ -3032,6 +3032,11 @@
     "vs previous period": "vs période précédente",
     "No data in the selected range": "Aucune donnée sur la période sélectionnée",
     "Served by {{channel}}": "Fourni par {{channel}}",
-    "Throughput (tps)": "Débit (tps)"
+    "Throughput (tps)": "Débit (tps)",
+    "Statistical cost": "Coût converti sur la période",
+    "Statistical count": "Requêtes sur la période",
+    "Statistical tokens": "Jetons sur la période",
+    "Requests per minute": "Requêtes par minute",
+    "Tokens per minute": "Jetons par minute"
   }
 }

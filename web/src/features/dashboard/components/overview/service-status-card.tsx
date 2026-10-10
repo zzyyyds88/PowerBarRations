@@ -30,12 +30,14 @@ import { getSuccessRateColor } from '@/features/performance-metrics/lib/format'
 import { cn } from '@/lib/utils'
 
 import {
+  formatCount,
   formatLatencyMs,
   formatSuccessRate,
   formatThroughputTps,
 } from '../../lib/format'
 import type { PBRResolvedTimeRange } from '../../lib/time-range'
 import { getPBRModelStatus } from '../../model-status-api'
+import { PanelTotal } from '../ui/panel-total'
 import { PanelWrapper } from '../ui/panel-wrapper'
 
 const MAX_ROWS = 50
@@ -105,6 +107,9 @@ export function ServiceStatusCard(props: { range: PBRResolvedTimeRange }) {
   })
 
   const rows = (query.data?.items ?? []).slice(0, MAX_ROWS)
+  // 标题右侧挂**窗口内全部模型数**（不只是表里截断的前 50 行），
+  // 让读者知道这张表覆盖了多少个模型、是否还有未显示的。数据未到位时为 null。
+  const totalModels = query.data == null ? null : query.data.items.length
   const isEmpty = !query.isLoading && !query.isError && rows.length === 0
 
   let body = (
@@ -168,6 +173,11 @@ export function ServiceStatusCard(props: { range: PBRResolvedTimeRange }) {
       empty={isEmpty}
       emptyMessage={t('No data in the selected range')}
       height='h-[300px]'
+      headerActions={
+        <PanelTotal
+          value={totalModels == null ? null : formatCount(totalModels)}
+        />
+      }
     >
       {body}
     </PanelWrapper>

@@ -18,14 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 // 首页概览「模型数据分析」卡（ui-spec §6.2A 第 1 块，左 2/3）。
 //
-// 胶囊 tab（消耗分布 / 调用趋势 / 调用次数分布 / 调用次数排行）+ 三个指标
-// （折算成本 / 调用次数 / 模型数，带与上一等长窗口的环比）+ 柱状图。
+// 胶囊 tab（调用趋势 / 消耗分布 / 调用次数分布 / 调用次数排行）+ 柱状图；
+// 标题右侧挂当前窗口的主指标汇总（消耗 tab 是金额、其余 tab 是次数），随 tab 变。
+// 窗口级指标（折算成本 / 调用次数 / Token 总量 / RPM / TPM）已提到面板级指标条，
+// 本卡不再重复渲染。
 //
 // 数据源是 GET /api/stats（聚合表，长期保留、不受日志清理影响）：
-// - 三个指标恒按 group_by=model 统计当前窗口，切 tab 不跳动；
-// - 环比用同一维度、紧邻的前一等长窗口；
-// - 「调用次数分布」按 group_by=channel 回答"流量落在哪个渠道"，
-//   其余 tab 按 group_by=model。粒度由区间跨度决定（> 2 天用 day）。
+// - 汇总恒按当前窗口统计，切 tab 不换窗口；
+// - 「调用次数分布」按 group_by=channel 回答"流量落在哪个渠道"，其余 tab 按 group_by=model；
+//   粒度由区间跨度决定（> 2 天用 day）。
+// - 查询键与指标条共用（见 lib/overview-query），同一窗口只发一次请求。
 
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
@@ -35,7 +37,8 @@ import { ErrorState } from '@/components/error-state'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { formatCostYuan } from '@/features/keys/lib/cost'
 
-import { deltaPercent, formatCount } from '../../lib/format'
+import { formatCount } from '../../lib/format'
+import { overviewStatsQueryKey } from '../../lib/overview-query'
 import {
   buildBucketAxis,
   type PBRResolvedTimeRange,
@@ -46,14 +49,15 @@ import {
   type PBRStatBucket,
   type PBRStatsGroupBy,
 } from '../../pbr-stats-api'
+import { PanelTotal } from '../ui/panel-total'
 import { PanelWrapper } from '../ui/panel-wrapper'
 import { OverviewBarChart, type OverviewBarChartDatum } from './bar-chart'
-import { MetricTile } from './metric-tile'
 
 type AnalyticsTab = 'cost' | 'trend' | 'requests' | 'ranking'
 type AnalyticsMetric = 'cost' | 'requests'
 
-const TAB_VALUES: AnalyticsTab[] = ['cost', 'trend', 'requests', 'ranking']
+/** tab 顺序向外部看板对齐：趋势 → 分布 → 排行（默认第一个）。 */
+const TAB_VALUES: AnalyticsTab[] = ['trend', 'cost', 'requests', 'ranking']
 /** 每个 tab 的维度与主指标：不同 tab 取不同 group_by（api-spec §5.5）。 */
 const TAB_DIMENSIONS: Record<
   AnalyticsTab,
@@ -69,22 +73,16 @@ const TOP_GROUP_LIMIT = 10
 const EMPTY_BUCKETS: PBRStatBucket[] = []
 const STALE_TIME_MS = 60 * 1000
 
-interface AnalyticsTotals {
-  cost: number
-  requests: number
-  models: number
+function sumRequests(items: PBRStatBucket[]): number {
+  let requests = 0
+  for (const item of items) requests += item.requests || 0
+  return requests
 }
 
-function sumBuckets(items: PBRStatBucket[]): AnalyticsTotals {
+function sumCost(items: PBRStatBucket[]): number {
   let cost = 0
-  let requests = 0
-  const models = new Set<string>()
-  for (const item of items) {
-    cost += item.estimated_cost || 0
-    requests += item.requests || 0
-    if (item.group) models.add(item.group)
-  }
-  return { cost, requests, models: models.size }
+  for (const item of items) cost += item.estimated_cost || 0
+  return cost
 }
 
 function formatBucketLabel(
@@ -107,21 +105,15 @@ function formatBucketLabel(
 
 export function ModelAnalyticsCard(props: { range: PBRResolvedTimeRange }) {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<AnalyticsTab>('cost')
+  // 默认 tab = 趋势（对外部看板的 tab 顺序：趋势 → 分布 → 排行）。
+  const [tab, setTab] = useState<AnalyticsTab>('trend')
   const range = props.range
   const usesChannel = TAB_DIMENSIONS[tab].dimension === 'channel'
 
-  // 当前窗口（按模型）：三个指标与多数 tab 的主数据源。
+  // 当前窗口（按模型）：趋势图、排行与标题汇总的主数据源。
+  // 键与指标条共用同一份（见 lib/overview-query），同一窗口只发一次请求。
   const modelQuery = useQuery({
-    queryKey: [
-      'dashboard',
-      'overview',
-      'analytics',
-      'model',
-      range.from,
-      range.to,
-      range.granularity,
-    ],
+    queryKey: overviewStatsQueryKey('model', range),
     queryFn: () =>
       getPBRStats({
         granularity: range.granularity,
@@ -133,39 +125,9 @@ export function ModelAnalyticsCard(props: { range: PBRResolvedTimeRange }) {
     refetchOnWindowFocus: false,
   })
 
-  // 上一等长窗口（同维度）：环比基准。
-  const previousQuery = useQuery({
-    queryKey: [
-      'dashboard',
-      'overview',
-      'analytics',
-      'model-previous',
-      range.previousFrom,
-      range.previousTo,
-      range.granularity,
-    ],
-    queryFn: () =>
-      getPBRStats({
-        granularity: range.granularity,
-        from: range.previousFrom,
-        to: range.previousTo,
-        groupBy: 'model',
-      }),
-    staleTime: STALE_TIME_MS,
-    refetchOnWindowFocus: false,
-  })
-
   // 渠道维度：只有「调用次数分布」需要。
   const channelQuery = useQuery({
-    queryKey: [
-      'dashboard',
-      'overview',
-      'analytics',
-      'channel',
-      range.from,
-      range.to,
-      range.granularity,
-    ],
+    queryKey: overviewStatsQueryKey('channel', range),
     enabled: usesChannel,
     queryFn: () =>
       getPBRStats({
@@ -179,17 +141,19 @@ export function ModelAnalyticsCard(props: { range: PBRResolvedTimeRange }) {
   })
 
   const modelItems = modelQuery.data?.items ?? EMPTY_BUCKETS
-  const previousItems = previousQuery.data?.items ?? EMPTY_BUCKETS
   const channelItems = channelQuery.data?.items ?? EMPTY_BUCKETS
   const activeItems = usesChannel ? channelItems : modelItems
 
-  const totals = useMemo(() => sumBuckets(modelItems), [modelItems])
-  const previousTotals = useMemo(
-    () => sumBuckets(previousItems),
-    [previousItems]
-  )
-
   const activeConfig = TAB_DIMENSIONS[tab]
+  // 标题汇总跟随当前 tab 的主指标：消耗 tab 给金额，其余 tab 给次数。
+  // 数据未到位（加载中/失败）时为 null，标题右侧留空——不显示伪造的 `Total: 0`。
+  let headerTotal: string | null = null
+  if (activeItems.length > 0) {
+    headerTotal =
+      activeConfig.metric === 'cost'
+        ? formatCostYuan(sumCost(activeItems))
+        : formatCount(sumRequests(activeItems))
+  }
   const chartData = useMemo((): OverviewBarChartDatum[] => {
     if (tab === 'trend') {
       const step = range.granularity === 'day' ? 86400 : 3600
@@ -239,7 +203,6 @@ export function ModelAnalyticsCard(props: { range: PBRResolvedTimeRange }) {
 
   const handleRetry = () => {
     void modelQuery.refetch()
-    void previousQuery.refetch()
     if (usesChannel) void channelQuery.refetch()
   }
 
@@ -280,6 +243,7 @@ export function ModelAnalyticsCard(props: { range: PBRResolvedTimeRange }) {
       title={t('Model analytics')}
       loading={isLoading}
       height='h-[320px]'
+      headerActions={<PanelTotal value={headerTotal} />}
     >
       <div className='flex flex-col gap-3'>
         <Tabs
@@ -294,23 +258,6 @@ export function ModelAnalyticsCard(props: { range: PBRResolvedTimeRange }) {
             ))}
           </TabsList>
         </Tabs>
-        <div className='grid grid-cols-1 gap-2 sm:grid-cols-3'>
-          <MetricTile
-            label={t('Converted cost')}
-            value={formatCostYuan(totals.cost)}
-            delta={deltaPercent(totals.cost, previousTotals.cost)}
-          />
-          <MetricTile
-            label={t('Call count')}
-            value={formatCount(totals.requests)}
-            delta={deltaPercent(totals.requests, previousTotals.requests)}
-          />
-          <MetricTile
-            label={t('Model count')}
-            value={formatCount(totals.models)}
-            delta={deltaPercent(totals.models, previousTotals.models)}
-          />
-        </div>
         {body}
       </div>
     </PanelWrapper>

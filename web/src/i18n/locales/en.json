@@ -3032,6 +3032,11 @@
     "vs previous period": "vs previous period",
     "No data in the selected range": "No data in the selected range",
     "Served by {{channel}}": "Served by {{channel}}",
-    "Throughput (tps)": "Throughput (tps)"
+    "Throughput (tps)": "Throughput (tps)",
+    "Statistical cost": "Statistical cost",
+    "Statistical count": "Statistical count",
+    "Statistical tokens": "Statistical tokens",
+    "Requests per minute": "Requests per minute",
+    "Tokens per minute": "Tokens per minute"
   }
 }

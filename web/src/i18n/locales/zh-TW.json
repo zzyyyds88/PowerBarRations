@@ -2509,7 +2509,7 @@
     "Total Cost": "總費用",
     "Total earned": "累計獲得",
     "Total Log Size": "日誌總大小",
-    "Total tokens": "總 Token",
+    "Total tokens": "Token 總量",
     "Total:": "總計：",
     "TPM": "TPM",
     "Track per-request consumption to power usage analytics. Keeping this on increases database writes.": "追蹤每個請求的消耗，以支援使用情況分析。保持開啟會增加資料庫寫入。",
@@ -3032,6 +3032,11 @@
     "vs previous period": "環比",
     "No data in the selected range": "所選區間暫無數據",
     "Served by {{channel}}": "由 {{channel}} 提供",
-    "Throughput (tps)": "吞吐量 (tps)"
+    "Throughput (tps)": "吞吐量 (tps)",
+    "Statistical cost": "統計口徑內的折算成本",
+    "Statistical count": "統計口徑內的請求數",
+    "Statistical tokens": "統計口徑內的 Token 數",
+    "Requests per minute": "每分鐘請求數",
+    "Tokens per minute": "每分鐘 Token 數"
   }
 }
