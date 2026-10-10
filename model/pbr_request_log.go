@@ -577,7 +577,7 @@ func ChannelLatencyAverages(channelName string, from, until int64) (avgTotalMs, 
 		AvgTTFT  float64
 	}
 	query := DB.Model(&PBRRequestLog{}).
-		Select("COALESCE(AVG(total_ms), 0) AS avg_total, " +
+		Select("COALESCE(AVG(total_ms), 0) AS avg_total, "+
 			"COALESCE(AVG(CASE WHEN is_stream THEN ttft_ms END), 0) AS avg_ttft").
 		Where("member_channel_name = ?", strings.TrimSpace(channelName))
 	if from > 0 {

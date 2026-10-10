@@ -217,6 +217,13 @@ export type DataTablePageProps<TData> = {
   applyHeaderSize?: boolean
 
   /**
+   * Let cell content wrap instead of forcing `whitespace-nowrap`, and drop the
+   * `min-width` floor built from the column `size` values. Use it on pages whose
+   * columns would otherwise force a horizontal scroll on narrower viewports.
+   */
+  wrap?: boolean
+
+  /**
    * Optional skeleton key prefix for stable React keys across re-renders.
    */
   skeletonKeyPrefix?: string
@@ -436,6 +443,7 @@ function renderDesktop<TData>(
       skeletonKeyPrefix={props.skeletonKeyPrefix}
       renderRow={props.renderRow}
       applyHeaderSize={props.applyHeaderSize}
+      wrap={props.wrap}
       splitHeader={fixedHeight}
       tableContainerClassName={fixedHeight ? 'h-full min-h-0' : undefined}
       tableHeaderClassName={cn(

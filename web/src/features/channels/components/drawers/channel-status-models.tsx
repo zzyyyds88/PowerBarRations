@@ -48,8 +48,6 @@ import {
 } from '../../lib/channel-status-display'
 import type { ChannelStatusModelStat } from '../../status-api'
 
-const HEAD_CLASS_NAME = 'whitespace-nowrap'
-
 /** 模型状态表本体（抽屉与状态页行内展开共用，列与口径只有这一处）。 */
 export function ChannelStatusModelsTable(props: {
   models: ChannelStatusModelStat[]
@@ -68,21 +66,13 @@ export function ChannelStatusModelsTable(props: {
     <Table className='text-xs'>
       <TableHeader>
         <TableRow>
-          <TableHead className={HEAD_CLASS_NAME}>{t('Model')}</TableHead>
-          <TableHead className={HEAD_CLASS_NAME}>{t('Requests')}</TableHead>
-          <TableHead className={HEAD_CLASS_NAME}>{t('Success rate')}</TableHead>
-          <TableHead className={HEAD_CLASS_NAME}>
-            {t('Average duration')}
-          </TableHead>
-          <TableHead className={HEAD_CLASS_NAME}>
-            {t('Average first token latency')}
-          </TableHead>
-          <TableHead className={HEAD_CLASS_NAME}>
-            {t('Output speed (tps)')}
-          </TableHead>
-          <TableHead className={HEAD_CLASS_NAME}>
-            {t('Output tokens')}
-          </TableHead>
+          <TableHead>{t('Model')}</TableHead>
+          <TableHead>{t('Requests')}</TableHead>
+          <TableHead>{t('Success rate')}</TableHead>
+          <TableHead>{t('Average duration')}</TableHead>
+          <TableHead>{t('Average first token latency')}</TableHead>
+          <TableHead>{t('Output speed (tps)')}</TableHead>
+          <TableHead>{t('Output tokens')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

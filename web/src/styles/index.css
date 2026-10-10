@@ -751,6 +751,69 @@ For commercial licensing, please contact support@quantumnous.com
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Table width control: opt-in wrapping ──────────────────────────────
+ * `TableHead` / `TableCell` ship `whitespace-nowrap`, which holds every cell at
+ * its max-content width. That is a hard floor under the table: a wide table
+ * answers a shrinking viewport with a horizontal scrollbar instead of tighter
+ * columns, no matter how much room the page has. `wrap` on `<Table>` writes
+ * `data-wrap="true"` on the `<table>` and lifts that floor.
+ *
+ * `overflow-wrap: anywhere` (rather than `break-word`) is the load-bearing
+ * half: only `anywhere` also lowers the cell's min-content contribution, which
+ * is what stops an unbreakable token — a 40-char API key, a route, a model
+ * name — from pinning the column, and therefore the table, wide open.
+ *
+ * A single cell can opt back out with `data-wrap="false"`, e.g. a timestamp
+ * that reads badly once split across two lines. */
+[data-wrap='true'] :is(th, td) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+[data-wrap='true'] :is(th, td)[data-wrap='false'] {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* ── Table horizontal overflow: trailing edge fade ─────────────────────
+ * The hint that the table continues past the right edge. `TableScrollHint`
+ * renders the zero-height `sticky` anchor this bar hangs off; the anchor keeps
+ * it against the port's trailing edge while the table scrolls underneath.
+ *
+ * `z-index: 0` puts it above ordinary cells but under the sticky header (z-10)
+ * and the pinned columns (z-10 / z-30), so those keep their opaque bands and
+ * only the scrolling cells behind them get the fade.
+ *
+ * `container-type: scroll-state` on the port does not affect layout or sticky
+ * positioning; it only gives the query below something to ask, so the fade
+ * exists exactly while there is more table to the right. Engines without
+ * `scroll-state` support simply never match and never show the fade. */
+[data-scroll-port='true'] {
+  container-type: scroll-state;
+}
+
+[data-slot='table-scroll-hint-bar'] {
+  opacity: 0;
+  background-image: linear-gradient(
+    to left,
+    color-mix(in oklab, var(--foreground) 12%, transparent),
+    transparent
+  );
+  transition: opacity var(--motion-fast) ease-out;
+}
+
+@container scroll-state(scrollable: right) {
+  [data-slot='table-scroll-hint-bar'] {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='table-scroll-hint-bar'] {
+    transition: none;
+  }
+}
+
 /* Long list rendering optimization */
 .content-auto {
   content-visibility: auto;

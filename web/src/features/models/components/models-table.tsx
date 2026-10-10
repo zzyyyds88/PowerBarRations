@@ -137,6 +137,7 @@ export function ModelsTable() {
       }
       skeletonKeyPrefix='model-skeleton'
       applyHeaderSize
+      wrap
       pinnedColumns={[
         { columnId: 'model_name', side: 'left' },
         { columnId: 'actions', side: 'right' },

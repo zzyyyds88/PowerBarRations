@@ -54,8 +54,6 @@ import type {
   ChannelStatusRecentFailure,
 } from '../../status-api'
 
-const HEAD_CLASS_NAME = 'whitespace-nowrap'
-
 /** `upstream_reject` 是"上游拒绝过这份请求"，不是渠道故障（api-spec §4.6）。 */
 function UpstreamRejectNotice() {
   const { t } = useTranslation()
@@ -89,16 +87,12 @@ function ChannelStatusFailuresSection(props: {
         <Table className='text-xs'>
           <TableHeader>
             <TableRow>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Time')}</TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Lane')}</TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Model')}</TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>
-                {t('Status code')}
-              </TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>
-                {t('Error kind')}
-              </TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Summary')}</TableHead>
+              <TableHead>{t('Time')}</TableHead>
+              <TableHead>{t('Lane')}</TableHead>
+              <TableHead>{t('Model')}</TableHead>
+              <TableHead>{t('Status code')}</TableHead>
+              <TableHead>{t('Error kind')}</TableHead>
+              <TableHead>{t('Summary')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -192,16 +186,12 @@ function ChannelStatusProbesSection(props: {
         <Table className='text-xs'>
           <TableHeader>
             <TableRow>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Time')}</TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>
-                {t('Upstream model')}
-              </TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Result')}</TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Duration')}</TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>
-                {t('Status code')}
-              </TableHead>
-              <TableHead className={HEAD_CLASS_NAME}>{t('Error')}</TableHead>
+              <TableHead>{t('Time')}</TableHead>
+              <TableHead>{t('Upstream model')}</TableHead>
+              <TableHead>{t('Result')}</TableHead>
+              <TableHead>{t('Duration')}</TableHead>
+              <TableHead>{t('Status code')}</TableHead>
+              <TableHead>{t('Error')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

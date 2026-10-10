@@ -190,9 +190,9 @@ type Lane struct {
 
 // LaneMember 车道成员：渠道 + 上游真名。
 type LaneMember struct {
-	Id        int    `json:"id" gorm:"primaryKey"`
-	LaneId    int    `json:"lane_id" gorm:"not null;index"`
-	ChannelId int    `json:"channel_id" gorm:"not null"`
+	Id        int `json:"id" gorm:"primaryKey"`
+	LaneId    int `json:"lane_id" gorm:"not null;index"`
+	ChannelId int `json:"channel_id" gorm:"not null"`
 	// Model 是该成员**所选、由该渠道声明的模型名**（列名 `model`）。
 	//
 	// 成员**不存上游真名**：真名一律由 Model 推导（`Channel.ModelMapping[Model] ?? Model`，

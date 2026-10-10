@@ -53,8 +53,6 @@ import {
 import type { ChannelStatusDetail } from '../../status-api'
 import type { Channel } from '../../types'
 
-const HEAD_CLASS_NAME = 'whitespace-nowrap'
-
 /** 单元格占位符：无值时统一 '-' 语义（与列表页的占位一致）。 */
 function EmptyCell() {
   return <span className='text-muted-foreground text-xs'>-</span>
@@ -132,12 +130,10 @@ export function ChannelStatusCurrentSection(props: {
           <Table className='text-xs'>
             <TableHeader>
               <TableRow>
-                <TableHead className={HEAD_CLASS_NAME}>{t('Lane')}</TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>{t('Member')}</TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Priority')}
-                </TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>{t('Status')}</TableHead>
+                <TableHead>{t('Lane')}</TableHead>
+                <TableHead>{t('Member')}</TableHead>
+                <TableHead>{t('Priority')}</TableHead>
+                <TableHead>{t('Status')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -197,26 +193,14 @@ export function ChannelStatusCurrentSection(props: {
           <Table className='text-xs'>
             <TableHeader>
               <TableRow>
-                <TableHead className={HEAD_CLASS_NAME}>{t('Lane')}</TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>{t('Member')}</TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Available')}
-                </TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Cooldown until')}
-                </TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Circuit')}
-                </TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Consecutive failures')}
-                </TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Rolling success rate')}
-                </TableHead>
-                <TableHead className={HEAD_CLASS_NAME}>
-                  {t('Last error kind')}
-                </TableHead>
+                <TableHead>{t('Lane')}</TableHead>
+                <TableHead>{t('Member')}</TableHead>
+                <TableHead>{t('Available')}</TableHead>
+                <TableHead>{t('Cooldown until')}</TableHead>
+                <TableHead>{t('Circuit')}</TableHead>
+                <TableHead>{t('Consecutive failures')}</TableHead>
+                <TableHead>{t('Rolling success rate')}</TableHead>
+                <TableHead>{t('Last error kind')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

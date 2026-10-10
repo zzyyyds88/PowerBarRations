@@ -14,6 +14,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
@@ -48,7 +49,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 
 	adaptor.Init(info)
 
-	if info.ChannelSetting.SystemPrompt != "" {
+	// 渠道系统提示词注入默认关闭（setting.ChannelSystemPromptEnabled=false）：
+	// 关着时整个注入块跳过，请求原样转发。
+	if setting.ShouldInjectChannelSystemPrompt() && info.ChannelSetting.SystemPrompt != "" {
 		if request.SystemInstructions == nil {
 			request.SystemInstructions = &dto.GeminiChatContent{
 				Parts: []dto.GeminiPart{

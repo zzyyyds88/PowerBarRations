@@ -22,15 +22,23 @@ import type * as React from 'react'
 import { isContentSizedColumn } from './content-sized-columns'
 
 export function getTableSizeStyle<TData>(
-  table: TanstackTable<TData>
+  table: TanstackTable<TData>,
+  wrap?: boolean
 ): React.CSSProperties {
   const width = table
     .getVisibleLeafColumns()
     .filter((column) => !isContentSizedColumn(column))
     .reduce((total, column) => total + column.getSize(), 0)
 
+  /* Column `size` values feed two things: this `min-width` floor, and — through
+   * `DataTableColgroup` — the proportions the browser lays the columns out by.
+   *
+   * `wrap` drops the floor. The whole point of wrapping is to let a column get
+   * narrower than its content, and a floor built from the sizes re-imposes
+   * exactly the overflow the caller opted out of. The sizes keep driving the
+   * proportions, so the wide-viewport layout is unchanged. */
   return {
-    minWidth: `max(100%, ${width}px)`,
+    minWidth: wrap || width <= 0 ? '100%' : `max(100%, ${width}px)`,
     tableLayout: 'auto',
     width: '100%',
   }

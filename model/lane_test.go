@@ -96,10 +96,10 @@ func TestExplicitLaneOverridesMembers(t *testing.T) {
 		Enabled: true,
 		Mode:    LaneModeFailover,
 		Members: []LaneMember{{
-			ChannelId:     channelA.Id,
-			Model: "vendor-real-name",
-			Priority:      1,
-			Overrides:     `{"member_max_attempts":1}`,
+			ChannelId: channelA.Id,
+			Model:     "vendor-real-name",
+			Priority:  1,
+			Overrides: `{"member_max_attempts":1}`,
 		}},
 	}))
 

@@ -48,3 +48,20 @@ func ShouldCheckPromptSensitive() bool {
 //func ShouldCheckCompletionSensitive() bool {
 //	return CheckSensitiveEnabled && CheckSensitiveOnCompletionEnabled
 //}
+
+// ChannelSystemPromptEnabled 是否允许**渠道级系统提示词注入**
+// （`ChannelSettings.SystemPrompt` / `SystemPromptOverride`）。
+//
+// **默认关闭**（2026-10-10 董事长令）：PBR 是自用网关，中转时不应悄悄改写
+// 模型看到的提示词——这类"内置提示词"是接管的基座能力，只在明确需要时开启。
+// 关闭时注入路径整体短路：请求原样转发，绝不前插/拼接任何 system 内容。
+//
+// 打开方式（运行时，无需改代码）：`PUT /api/system/options/all`
+// `{"key":"ChannelSystemPromptEnabled","value":"true"}`。
+var ChannelSystemPromptEnabled = false
+
+// ShouldInjectChannelSystemPrompt 注入路径的唯一判据（调用方只判这个，
+// 不要各自读变量，否则将来改默认值会漏改）。
+func ShouldInjectChannelSystemPrompt() bool {
+	return ChannelSystemPromptEnabled
+}

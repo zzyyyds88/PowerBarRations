@@ -17,6 +17,7 @@ import (
 	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	relaytypes "github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/setting"
 )
 
 func TestIsResponsesEventStreamContentType(t *testing.T) {
@@ -144,6 +145,10 @@ func TestApplySystemPromptIfNeededSkipsToolLoadingMessages(t *testing.T) {
 		},
 	}
 
+	// 该组用例验证「开关打开时」的注入语义；默认关闭的行为另有用例。
+	setting.ChannelSystemPromptEnabled = true
+	t.Cleanup(func() { setting.ChannelSystemPromptEnabled = false })
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
@@ -179,4 +184,46 @@ func TestApplySystemPromptIfNeededSkipsToolLoadingMessages(t *testing.T) {
 			assert.Equal(t, tt.wantOverride, overrideSet)
 		})
 	}
+}
+
+// 渠道系统提示词注入**默认关闭**（2026-10-10 董事长令）：关着时即使渠道配了
+// system_prompt / override，请求也一个字节都不改，且不置 override 上下文。
+func TestChannelSystemPromptInjectionIsOffByDefault(t *testing.T) {
+	setting.ChannelSystemPromptEnabled = false
+
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelSetting: dto.ChannelSettings{
+				SystemPrompt:         "Answer in English.",
+				SystemPromptOverride: true,
+			},
+		},
+	}
+
+	// 情形一：请求本来没有 system 消息（关闭时不得前插）
+	plain := &dto.GeneralOpenAIRequest{
+		Model:    "m",
+		Messages: []dto.Message{{Role: "user", Content: "hi"}},
+	}
+	applySystemPromptIfNeeded(c, info, plain)
+	require.Len(t, plain.Messages, 1)
+	assert.Equal(t, "user", plain.Messages[0].Role)
+	assert.Equal(t, "hi", plain.Messages[0].Content)
+
+	// 情形二：请求已有 system 消息（关闭时不得拼接）
+	withSystem := &dto.GeneralOpenAIRequest{
+		Model: "m",
+		Messages: []dto.Message{
+			{Role: "system", Content: "You are Kimi."},
+			{Role: "user", Content: "hi"},
+		},
+	}
+	applySystemPromptIfNeeded(c, info, withSystem)
+	assert.Equal(t, "You are Kimi.", withSystem.Messages[0].Content)
+
+	_, overrideSet := common.GetContextKey(c, constant.ContextKeySystemPromptOverride)
+	assert.False(t, overrideSet, "关闭时不得置 override 上下文")
 }

@@ -73,8 +73,6 @@ import { getServerErrorMessage } from '@/lib/server-error-message'
 /** 控制台渠道列表一次取回量（服务端上限即 100），用于协议与抽屉记录。 */
 const CONSOLE_CHANNEL_PAGE_SIZE = 100
 
-const HEAD_CLASS_NAME = 'whitespace-nowrap'
-
 const statusListQueryKey = (window: ChannelStatusWindow) =>
   [...channelsQueryKeys.all, 'status-list', window] as const
 const consoleChannelsQueryKey = () =>
@@ -285,49 +283,24 @@ export function ChannelStatus() {
               <div className='border-border shadow-panel rounded-panel bg-card overflow-hidden border [background-image:var(--surface-card)]'>
                 <Table
                   stickyHeader
+                  wrap
                   containerClassName='max-h-[calc(100svh-var(--app-header-height,3.5rem)-12rem)]'
                 >
                   <TableHeader>
                     <TableRow>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Channel')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Protocol')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Status')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Referenced lanes')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Members')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Degraded')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Requests')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Failures')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Success rate')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Cost (converted)')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Last error kind')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Last probe')}
-                      </TableHead>
-                      <TableHead className={HEAD_CLASS_NAME}>
-                        {t('Details')}
-                      </TableHead>
+                      <TableHead>{t('Channel')}</TableHead>
+                      <TableHead>{t('Protocol')}</TableHead>
+                      <TableHead>{t('Status')}</TableHead>
+                      <TableHead>{t('Referenced lanes')}</TableHead>
+                      <TableHead>{t('Members')}</TableHead>
+                      <TableHead>{t('Degraded')}</TableHead>
+                      <TableHead>{t('Requests')}</TableHead>
+                      <TableHead>{t('Failures')}</TableHead>
+                      <TableHead>{t('Success rate')}</TableHead>
+                      <TableHead>{t('Cost (converted)')}</TableHead>
+                      <TableHead>{t('Last error kind')}</TableHead>
+                      <TableHead>{t('Last probe')}</TableHead>
+                      <TableHead>{t('Details')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

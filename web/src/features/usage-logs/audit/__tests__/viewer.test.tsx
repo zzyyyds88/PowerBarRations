@@ -456,7 +456,12 @@ it('filters own access history by result, generation and time and resets paginat
     })
   )
   expect(screen.queryByLabelText('Username')).not.toBeInTheDocument()
-  expect(screen.getByRole('table').style.minWidth).toMatch(/max\(100%, \d+px\)/)
+  /* The audit table opts into `wrap`, which deliberately drops the px
+   * `min-width` floor: the floor is what used to push Details out of view on
+   * narrower viewports. Assert the opt-in rather than the old floor. */
+  const table = screen.getByRole('table')
+  expect(table).toHaveAttribute('data-wrap', 'true')
+  expect(table.style.minWidth).toBe('100%')
 })
 
 it('a failed history query exposes retry and no empty history claim', async () => {

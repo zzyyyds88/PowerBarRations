@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import type { Row, Table as TanstackTable } from '@tanstack/react-table'
 import * as React from 'react'
 
-import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+  TableScrollHint,
+  useTableScrollPort,
+} from '@/components/ui/table'
 import { cn } from '@/lib/utils'
 
 import {
@@ -101,7 +108,11 @@ function UnifiedTableView<TData>({
 
   return (
     <div className={props.tableContainerClassName}>
-      <Table className={props.tableClassName} style={tableSizing.style}>
+      <Table
+        wrap={props.wrap}
+        className={props.tableClassName}
+        style={tableSizing.style}
+      >
         {tableSizing.colgroup}
         <DataTableHeader
           table={props.table}
@@ -128,6 +139,7 @@ function SplitHeaderTableView<TData>({
   getColumnClassName: DataTableColumnClassName
 }) {
   const tableSizing = getTableSizing(props)
+  const portRef = useTableScrollPort()
 
   return (
     <div
@@ -137,6 +149,7 @@ function SplitHeaderTableView<TData>({
       )}
     >
       <div
+        ref={portRef}
         className={cn(
           'min-h-0 flex-1 overflow-auto',
           /* Mark the scroll port so `TableHead` sticks its cells to the top of
@@ -150,8 +163,10 @@ function SplitHeaderTableView<TData>({
         )}
         data-sticky-header='true'
       >
+        <TableScrollHint />
         <Table
           withContainer={false}
+          wrap={props.wrap}
           className={props.tableClassName}
           style={tableSizing.style}
         >
@@ -243,7 +258,7 @@ function getTableSizing<TData>(props: DataTableViewProps<TData>): {
 
   return {
     colgroup: <DataTableColgroup table={props.table} />,
-    style: getTableSizeStyle(props.table),
+    style: getTableSizeStyle(props.table, props.wrap),
   }
 }
 

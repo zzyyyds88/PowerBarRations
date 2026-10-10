@@ -60,7 +60,12 @@ function getPinnedColumnClassName(
 ) {
   /* `hsl(var(--foreground))` used to wrap a hex token in an HSL function, which
    * made the whole shadow declaration invalid; the pinned edge had no shadow
-   * at all. Feed the token straight in so the edge reads as a real layer. */
+   * at all. Feed the token straight in so the edge reads as a real layer.
+   *
+   * This shadow is what separates the pinned column from the data columns
+   * passing underneath it, so it is part of the pinned contract rather than
+   * decoration: without it a `sticky right-0` column reads as just another
+   * column and the operator cannot tell which cells are pinned. */
   const edgeClassName =
     pinnedColumn.side === 'left'
       ? 'shadow-[8px_0_10px_-10px_var(--foreground)]'

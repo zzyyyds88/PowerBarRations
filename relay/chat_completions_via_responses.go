@@ -15,12 +15,17 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting"
 
 	"github.com/gin-gonic/gin"
 )
 
 func applySystemPromptIfNeeded(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) {
 	if info == nil || request == nil {
+		return
+	}
+	// 全局开关默认关闭：中转不改写提示词（setting.ShouldInjectChannelSystemPrompt）。
+	if !setting.ShouldInjectChannelSystemPrompt() {
 		return
 	}
 	if info.ChannelSetting.SystemPrompt == "" {

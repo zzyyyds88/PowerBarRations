@@ -56,6 +56,13 @@ export type DataTableViewProps<TData> = {
   getColumnClassName?: DataTableColumnClassName
   pinnedColumns?: DataTablePinnedColumn[]
   applyHeaderSize?: boolean
+  /**
+   * Let cell content wrap instead of forcing `whitespace-nowrap`, and drop the
+   * `min-width` floor built from the column `size` values. Use it on tables
+   * whose column widths would otherwise force a horizontal scroll on narrower
+   * viewports. Off by default so existing pages keep single-line rows.
+   */
+  wrap?: boolean
   tableClassName?: string
   tableHeaderClassName?: string
   tableHeaderRowClassName?: string

@@ -340,6 +340,7 @@ export function ApiKeysTable() {
       )}
       skeletonKeyPrefix='api-keys-skeleton'
       applyHeaderSize
+      wrap
       toolbarProps={{
         searchPlaceholder: t('Filter by name...'),
         searchDebounceMs: 500,
