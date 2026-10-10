@@ -182,7 +182,14 @@ export function LaneCard(props: LaneCardProps) {
           <Pencil className='size-3.5' />
           {t('Edit members')}
         </Button>
-        <Button size='sm' variant='ghost' onClick={props.onDelete}>
+        {/* Destructive action: tinted like every other destructive affordance in
+          the console so it does not read as a peer of "Edit members". */}
+        <Button
+          size='sm'
+          variant='ghost'
+          className='text-destructive hover:text-destructive'
+          onClick={props.onDelete}
+        >
           <Trash2 className='size-3.5' />
           {t('Delete lane')}
         </Button>

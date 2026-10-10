@@ -137,7 +137,7 @@ function ChannelStatusRowModels(props: {
 
   return (
     <div className='flex flex-col gap-2'>
-      <h4 className='text-muted-foreground text-xs font-medium tracking-wide uppercase'>
+      <h4 className='text-muted-foreground px-2 text-xs font-medium tracking-wide uppercase'>
         {t('Model status')}
       </h4>
       <ChannelStatusModelsTable models={query.data?.models ?? []} />
@@ -230,10 +230,24 @@ export function ChannelStatus() {
 
         <SectionPageLayout.Content>
           {statusQuery.isPending && (
-            <div className='flex flex-col gap-(--density-grid)'>
-              {['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((row) => (
-                <Skeleton key={row} className='rounded-control h-9 w-full' />
-              ))}
+            // 加载态与真实表格同形：同一张卡片框 + 表头条 + 与数据行同高的占位行。
+            // （原来是 8 根不带卡片框的横条，加载完成时卡片从 352px 塌到 106px。）
+            <div className='border-border shadow-panel rounded-panel bg-card overflow-hidden border [background-image:var(--surface-card)]'>
+              <div className='border-border flex items-center gap-2 border-b px-2 py-2.5'>
+                {['a', 'b', 'c', 'd', 'e'].map((cell) => (
+                  <Skeleton key={cell} className='rounded-control h-3 w-16' />
+                ))}
+              </div>
+              <div className='flex flex-col'>
+                {['a', 'b', 'c', 'd'].map((row) => (
+                  <div
+                    key={row}
+                    className='border-border flex items-center gap-2 border-b px-2 py-2 last:border-b-0'
+                  >
+                    <Skeleton className='rounded-control h-5 w-full' />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -429,7 +443,13 @@ export function ChannelStatus() {
                           </TableRow>
                           {isExpanded && (
                             <TableRow>
-                              <TableCell colSpan={13} className='bg-muted/20'>
+                              {/* 展开区去掉单元格自身的左右内边距：内层表自己的
+                                  px-2 已经留出 8px，双层叠加会让内层首列比外层
+                                  「Channel」列再缩进 8px（269 → 277）。 */}
+                              <TableCell
+                                colSpan={13}
+                                className='bg-muted/20 px-0'
+                              >
                                 <ChannelStatusRowModels
                                   channel={item.channel}
                                   timeWindow={timeWindow}

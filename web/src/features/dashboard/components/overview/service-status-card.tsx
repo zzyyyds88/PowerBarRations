@@ -109,11 +109,13 @@ export function ServiceStatusCard(props: { range: PBRResolvedTimeRange }) {
 
   let body = (
     <div className='max-h-[300px] overflow-y-auto'>
+      {/* 表头在卡内滚动时吸顶：模型多到需要滚动（最多 50 行）时列语义不能跟着滚走。
+          背景与卡片一致（bg-card + surface-card 渐变），滚过的行不会透出来。 */}
       <div
         aria-hidden='true'
         className={cn(
           ROW_GRID,
-          'text-muted-foreground hidden border-b pb-1.5 text-xs font-medium sm:grid'
+          'text-muted-foreground bg-card sticky top-0 z-10 hidden border-b pb-1.5 text-xs font-medium [background-image:var(--surface-card)] sm:grid'
         )}
       >
         <span>{t('Model')}</span>

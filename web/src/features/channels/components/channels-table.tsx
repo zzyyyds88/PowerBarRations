@@ -311,6 +311,9 @@ export function ChannelsTable() {
     }
   }, [batchMode, table])
 
+  // Card view: two columns until there is room for three cards wide enough for
+  // the full row-action bar (~450px). Three narrower columns used to push the
+  // trailing menu button out of its own card.
   return (
     <DataTablePage
       table={table}
@@ -330,7 +333,7 @@ export function ChannelsTable() {
       renderCard={(row, { isSelected }) => (
         <ChannelCard row={row} isSelected={isSelected} />
       )}
-      cardGridClassName='grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3'
+      cardGridClassName='grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2 min-[1800px]:grid-cols-3'
       applyHeaderSize
       toolbarProps={{
         collapsibleOnMobile: true,

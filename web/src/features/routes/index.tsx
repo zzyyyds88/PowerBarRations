@@ -253,6 +253,7 @@ export function Routes() {
       />
 
       <ConfirmDialog
+        destructive
         open={cleanupOpen}
         onOpenChange={setCleanupOpen}
         title={t('Clean up orphan members?')}

@@ -93,7 +93,11 @@ function ChannelCardComponent({
             )}
             <div className='min-w-0 overflow-hidden'>{typeCell}</div>
           </div>
-          <div className='flex shrink-0 items-center gap-1.5'>
+          {/* `min-w-0 shrink` (instead of `shrink-0`) lets the row-action bar wrap
+            inside the card when the card is narrower than the action bar, so the
+            trailing menu button can never escape the card and overlap the
+            neighbouring card. */}
+          <div className='flex min-w-0 shrink items-center justify-end gap-1.5'>
             {showStatusBadge && statusCell}
             {actionsCell}
           </div>
@@ -119,8 +123,10 @@ function ChannelCardComponent({
 
           {/* Right column (sits on the right, content left-aligned). A single
             grid with content-sized columns keeps Response/Last Tested aligned
-            without wasting horizontal space. */}
-          <div className='grid shrink-0 grid-cols-[auto_auto] items-center gap-x-3 gap-y-1'>
+            without wasting horizontal space. The first column keeps a 5rem
+            floor so the Response badge is not squeezed down to the width of the
+            shorter "Response" header label (which truncated "Not tested"). */}
+          <div className='grid shrink-0 grid-cols-[minmax(5rem,auto)_auto] items-center gap-x-3 gap-y-1'>
             <span className={labelClass}>{fieldLabels.response_time}</span>
             <span className={labelClass}>{fieldLabels.test_time}</span>
             <div className='overflow-hidden text-sm'>

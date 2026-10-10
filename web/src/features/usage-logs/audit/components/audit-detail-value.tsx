@@ -41,8 +41,8 @@ export function AuditDetailValue(props: {
       {(props.copyable || props.value.length > 48) && (
         <CopyButton
           value={props.value}
-          className='size-5'
-          iconClassName='size-3'
+          className='size-6'
+          iconClassName='size-3.5'
           aria-label={t('Copy {{field}}', { field: props.label })}
         />
       )}

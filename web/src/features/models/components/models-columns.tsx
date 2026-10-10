@@ -107,7 +107,9 @@ export function useModelsColumns(): ColumnDef<Model>[] {
               <div className='flex min-w-0 items-center gap-1'>
                 <Button
                   variant='link'
-                  className='text-foreground h-auto min-w-0 shrink justify-start p-0 font-mono text-sm'
+                  // min-h-6 keeps the (primary) name trigger at the 24px minimum
+                  // pointer target; h-auto + p-0 alone rendered a 22px box.
+                  className='text-foreground h-auto min-h-6 min-w-0 shrink justify-start p-0 font-mono text-sm'
                   title={model.model_name}
                   onClick={() => {
                     setCurrentRow(model)

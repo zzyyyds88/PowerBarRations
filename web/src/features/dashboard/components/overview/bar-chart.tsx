@@ -36,6 +36,12 @@ export interface OverviewBarChartDatum {
 const PLOT_HEIGHT_CLASS = 'h-[200px]'
 /** X 轴最多显示的标签数量（其余靠悬停 title 读取）。 */
 const X_LABEL_LIMIT = 6
+/** 柱子最大宽度：1~2 个分组时柱子不会撑成一整块背景板（48px）。 */
+const BAR_MAX_WIDTH_CLASS = 'max-w-12'
+/** 标签最大宽度：可见标签间距至少是绘图区的 1/6，留 2rem 余量即不会互相压叠（128px）。 */
+const X_LABEL_MAX_WIDTH_CLASS = 'max-w-32'
+/** 超过这个柱数，末位柱离绘图区右沿已不足半个标签宽，末位标签要贴右沿不能居中。 */
+const DENSE_AXIS_BAR_COUNT = 12
 const NICE_STEPS = [1, 2, 2.5, 5, 10]
 
 /** 把 0~max 抬到「好看」的轴顶（4 等分，刻度落在整数级步长上）。 */
@@ -101,42 +107,71 @@ export function OverviewBarChart(props: {
           <div
             role='img'
             aria-label={props.ariaLabel}
-            className='absolute inset-0 flex items-end gap-1'
+            className='absolute inset-0 flex gap-1'
           >
             {props.data.map((datum) => {
               const ratio = axisMax > 0 ? datum.value / axisMax : 0
               return (
+                // 外层是「分组槽」：撑满绘图区高度并居中柱子，因此柱子宽度可以有上限
+                // （1 个分组时柱子仍是 48px 而不是 818px 宽的一整块）。
                 <div
                   key={datum.key}
                   title={
                     datum.title ??
                     `${datum.label} · ${props.valueFormatter(datum.value)}`
                   }
-                  className={cn(
-                    'bg-success/70 hover:bg-success min-w-[2px] flex-1 rounded-t-sm transition-colors',
-                    ratio <= 0 && 'bg-muted'
-                  )}
-                  style={{
-                    height: ratio > 0 ? `${Math.max(2, ratio * 100)}%` : '2px',
-                  }}
-                />
+                  className='flex min-w-0 flex-1 items-end justify-center'
+                >
+                  <div
+                    className={cn(
+                      'bg-success/70 hover:bg-success w-full rounded-t-sm transition-colors',
+                      BAR_MAX_WIDTH_CLASS,
+                      ratio <= 0 && 'bg-muted'
+                    )}
+                    style={{
+                      height:
+                        ratio > 0 ? `${Math.max(2, ratio * 100)}%` : '2px',
+                    }}
+                  />
+                </div>
               )
             })}
           </div>
         </div>
+        {/* X 轴标签绝对定位到各自柱子的中心：可见标签之间至少隔 1/6 个绘图区宽度，
+            所以标签可以有真实宽度。原来是每根柱子一个 flex-1 槽，25 根小时柱每槽只有
+            30px，标签全被截成 "Oct ..."。末位标签在密集轴上贴右沿（居中会越出绘图区），
+            稀疏轴上仍居中在柱子上；标签过宽时由 overflow-hidden 兜底。 */}
         <div
           aria-hidden='true'
-          className='text-muted-foreground mt-1 flex gap-1 text-[10px] leading-tight'
+          className='text-muted-foreground relative mt-1 h-3.5 overflow-hidden text-[10px] leading-tight'
         >
-          {props.data.map((datum, index) => (
-            <span
-              key={datum.key}
-              className='min-w-0 flex-1 truncate text-center'
-              title={datum.label}
-            >
-              {labelIndexes.has(index) ? datum.label : '\u00A0'}
-            </span>
-          ))}
+          {props.data.map((datum, index) => {
+            if (!labelIndexes.has(index)) return null
+            const clampToRightEdge =
+              index === props.data.length - 1 &&
+              props.data.length > DENSE_AXIS_BAR_COUNT
+            return (
+              <span
+                key={datum.key}
+                title={datum.label}
+                className={cn(
+                  'absolute top-0 truncate',
+                  X_LABEL_MAX_WIDTH_CLASS,
+                  !clampToRightEdge && '-translate-x-1/2'
+                )}
+                style={
+                  clampToRightEdge
+                    ? { right: 0 }
+                    : {
+                        left: `${((index + 0.5) / props.data.length) * 100}%`,
+                      }
+                }
+              >
+                {datum.label}
+              </span>
+            )
+          })}
         </div>
       </div>
     </div>

@@ -52,6 +52,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { MODEL_FETCHABLE_TYPES } from '../constants'
@@ -174,7 +175,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   }
 
   return (
-    <div className='-ml-1.5 flex items-center gap-1'>
+    <div
+      className={cn(
+        '-ml-1.5 flex items-center gap-1',
+        // In card view the bar shares the row with the card title and would
+        // overflow a narrow card; wrap it instead (see channel-card.tsx).
+        layout === 'card' && 'min-w-0 flex-wrap justify-end'
+      )}
+    >
       {layout !== 'card' && (
         <Button
           variant='ghost'

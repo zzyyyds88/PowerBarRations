@@ -174,25 +174,29 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name='Logo'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Logo URL')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('https://example.com/logo.png')}
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('URL to your logo image (optional)')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {/* Full-row span: as the third half-width field it left a ragged
+                empty cell on the 2-column grid. */}
+              <SettingsFormGridItem span='full'>
+                <FormField
+                  control={form.control}
+                  name='Logo'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Logo URL')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('https://example.com/logo.png')}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('URL to your logo image (optional)')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </SettingsFormGridItem>
 
               <FormField
                 control={form.control}

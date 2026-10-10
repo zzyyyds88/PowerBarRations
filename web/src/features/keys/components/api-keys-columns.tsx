@@ -41,6 +41,9 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
+  // Sizes are a width budget: their sum has to stay under the table container
+  // (~1318px at a 1600px viewport). Exceeding it makes the table scroll and
+  // lets the pinned Actions column paint over the trailing Expires column.
   return [
     {
       id: 'select',
@@ -63,7 +66,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       ),
       enableSorting: false,
       enableHiding: false,
-      size: 40,
+      size: 32,
     },
     {
       accessorKey: 'name',
@@ -71,7 +74,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       cell: ({ row }) => (
         <span className='font-medium'>{row.getValue('name')}</span>
       ),
-      size: 180,
+      size: 150,
       meta: { mobileTitle: true },
     },
     {
@@ -90,7 +93,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
         )
       },
       filterFn: (row, id, value) => value.includes(String(row.getValue(id))),
-      size: 120,
+      size: 100,
       meta: { mobileBadge: true },
     },
     {
@@ -99,7 +102,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       header: t('API Key'),
       cell: ({ row }) => <ApiKeyCell apiKey={row.original} />,
       enableSorting: false,
-      size: 260,
+      size: 250,
     },
     {
       id: 'cost',
@@ -107,8 +110,8 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       // 消耗 = 该令牌的上游折算花费（元）；列头固定 ¥，后端 cost 即以元计。
       header: `${t('Consumed')} (¥)`,
       cell: ({ row }) => <ApiKeyCostCell apiKey={row.original} />,
-      size: 180,
-      minSize: 180,
+      size: 130,
+      minSize: 120,
     },
     {
       id: 'model_limits',
@@ -116,7 +119,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       header: t('Models'),
       cell: ({ row }) => <ModelLimitsCell apiKey={row.original} />,
       enableSorting: false,
-      size: 160,
+      size: 120,
       meta: { mobileHidden: true },
     },
     {
@@ -125,7 +128,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       header: t('IP Restriction'),
       cell: ({ row }) => <IpRestrictionsCell apiKey={row.original} />,
       enableSorting: false,
-      size: 160,
+      size: 120,
       meta: { mobileHidden: true },
     },
     {
@@ -133,7 +136,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       accessorKey: 'created_time',
       header: t('Time'),
       cell: ({ row }) => <ApiKeyActivityCell apiKey={row.original} now={now} />,
-      size: 220,
+      size: 240,
       meta: { mobileHidden: true },
     },
     {
@@ -165,7 +168,7 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
           />
         )
       },
-      size: 180,
+      size: 140,
       meta: { mobileHidden: true },
     },
     {
