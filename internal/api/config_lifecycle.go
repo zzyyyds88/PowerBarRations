@@ -54,8 +54,8 @@ type LaneMemberConfig struct {
 	Channel     string `json:"channel"`
 	Model       string `json:"model"`
 	PublicAlias string `json:"public_alias,omitempty"`
-	Priority      int    `json:"priority"`
-	Overrides     any    `json:"overrides,omitempty"`
+	Priority    int    `json:"priority"`
+	Overrides   any    `json:"overrides,omitempty"`
 	// Enabled 可空三态：导出恒给出（非 nil），导入文件省略时按 api-spec §4.2 的
 	// 三态规则处理（新建成员=启用、命中既有成员=保留原值）。若这里用裸 bool，
 	// "省略"会被读成 false，一次"导出→清空→导入"就会把运维人工停用的成员

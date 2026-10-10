@@ -85,7 +85,7 @@ func TestChannelStatusDetailShapeWithRuntimeAndHistory(t *testing.T) {
 	recorder := getChannelStatus(t, ch.Name, "")
 	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
 	var resp struct {
-		Channel  map[string]any `json:"channel"`
+		Channel   map[string]any `json:"channel"`
 		Reference struct {
 			Lanes []struct {
 				Lane     string `json:"lane"`
@@ -118,8 +118,8 @@ func TestChannelStatusDetailShapeWithRuntimeAndHistory(t *testing.T) {
 		RecentFailures []map[string]any `json:"recent_failures"`
 		ProbeHistory   []map[string]any `json:"probe_history"`
 		Upstream       struct {
-			LastCheckTS  any      `json:"last_check_ts"`
-			PendingAdd   []string `json:"pending_add"`
+			LastCheckTS   any      `json:"last_check_ts"`
+			PendingAdd    []string `json:"pending_add"`
 			PendingRemove []string `json:"pending_remove"`
 		} `json:"upstream_updates"`
 	}
@@ -213,14 +213,14 @@ func TestChannelStatusListSummary(t *testing.T) {
 	var resp struct {
 		Window string `json:"window"`
 		Items  []struct {
-			Channel        string  `json:"channel"`
-			Enabled        bool    `json:"enabled"`
-			Type           string  `json:"type"`
-			LaneCount      int     `json:"lane_count"`
-			MemberCount    int     `json:"member_count"`
-			AvailableCount int     `json:"available_count"`
-			Degraded       bool    `json:"degraded"`
-			LastErrorKind  string  `json:"last_error_kind"`
+			Channel        string `json:"channel"`
+			Enabled        bool   `json:"enabled"`
+			Type           string `json:"type"`
+			LaneCount      int    `json:"lane_count"`
+			MemberCount    int    `json:"member_count"`
+			AvailableCount int    `json:"available_count"`
+			Degraded       bool   `json:"degraded"`
+			LastErrorKind  string `json:"last_error_kind"`
 			LastProbe      *struct {
 				Status     string `json:"status"`
 				DurationMs int64  `json:"duration_ms"`
