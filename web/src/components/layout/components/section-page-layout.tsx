@@ -81,7 +81,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   return (
     <PageFooterProvider container={footerContainer}>
       <Main>
-        <div className='bg-background shrink-0 border-b px-4 py-3 sm:px-5'>
+        <div className='border-border bg-card shrink-0 border-b [background-image:linear-gradient(180deg,color-mix(in_oklab,var(--foreground)_2%,transparent),transparent)] px-4 py-3 sm:px-5'>
           {breadcrumb != null && <div className='mb-1.5'>{breadcrumb}</div>}
           <div className='flex flex-wrap items-center justify-between gap-x-4 gap-y-2'>
             <div

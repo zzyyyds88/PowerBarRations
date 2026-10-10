@@ -134,7 +134,7 @@ export function TokenRankingCard(props: { range: PBRResolvedTimeRange }) {
             <span
               aria-hidden='true'
               className={cn(
-                'flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold',
+                'shadow-control flex size-8 shrink-0 items-center justify-center rounded-control text-xs font-semibold',
                 getAvatarColorClass(item.model)
               )}
             >

@@ -16,26 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Loading03Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
-
 import { cn } from '@/lib/utils'
 
-type SpinnerProps = Omit<
-  React.ComponentProps<typeof HugeiconsIcon>,
-  'icon' | 'strokeWidth'
-> & {
+type SpinnerProps = Omit<React.ComponentProps<'span'>, 'children'> & {
+  /** Kept for API compatibility with the previous icon-rendered spinner. */
   strokeWidth?: number
 }
 
-function Spinner({ className, strokeWidth = 2, ...props }: SpinnerProps) {
+/*
+ * Conic-gradient loading ring (`.spinner-ring` in index.css): the arc is the
+ * gradient, the silhouette is a radial mask, so the spinner is a single
+ * element and follows `--primary` on every theme and preset.
+ */
+function Spinner({ className, strokeWidth, ...props }: SpinnerProps) {
+  void strokeWidth
   return (
-    <HugeiconsIcon
-      icon={Loading03Icon}
-      strokeWidth={strokeWidth}
+    <span
       role='status'
       aria-label='Loading'
-      className={cn('size-4 animate-spin', className)}
+      className={cn('spinner-ring block size-4 animate-spin', className)}
       {...props}
     />
   )

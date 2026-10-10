@@ -107,7 +107,7 @@ function formatBucket(ts: number, granularity: 'hour' | 'day'): string {
 
 function statCard(label: string, value: string) {
   return (
-    <div className='bg-card/60 rounded-lg border px-4 py-3'>
+    <div className='border-border shadow-panel rounded-control bg-card border [background-image:var(--surface-card)] px-4 py-3'>
       <div className='text-muted-foreground text-xs'>{label}</div>
       <div className='mt-1 font-mono text-lg font-semibold tabular-nums'>
         {value}
@@ -269,7 +269,7 @@ export function PbrAnalyticsDashboard(props: {
   } else {
     body = (
       <>
-        <div className='bg-card/60 rounded-lg border p-4'>
+        <div className='border-border shadow-panel rounded-control bg-card border [background-image:var(--surface-card)] p-4'>
           <div className='text-muted-foreground mb-3 text-xs'>
             {t('Cost over time')}
           </div>
@@ -281,7 +281,7 @@ export function PbrAnalyticsDashboard(props: {
                 title={`${formatBucket(item.ts, range.granularity)} · ${formatCost(item.cost)}`}
               >
                 <div
-                  className='w-full rounded-sm bg-sky-500/70'
+                  className='bg-chart-1/70 w-full rounded-sm'
                   style={{
                     height:
                       maxBucketCost > 0
@@ -306,7 +306,7 @@ export function PbrAnalyticsDashboard(props: {
           </div>
         </div>
 
-        <div className='bg-card/60 overflow-x-auto rounded-lg border'>
+        <div className='border-border shadow-panel rounded-control bg-card overflow-x-auto border [background-image:var(--surface-card)]'>
           {groupBy === 'channel_model' ? (
             <table className='w-full text-sm'>
               <thead>

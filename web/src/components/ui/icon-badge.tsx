@@ -26,17 +26,17 @@ const iconBadgeVariants = cva(
   {
     variants: {
       tone: {
-        neutral: 'bg-muted text-muted-foreground',
-        primary: 'bg-primary/10 text-primary',
-        success: 'bg-success/10 text-success',
-        warning: 'bg-warning/10 text-warning',
-        info: 'bg-info/10 text-info',
-        destructive: 'bg-destructive/10 text-destructive',
-        'chart-1': 'bg-chart-1/10 text-chart-1',
-        'chart-2': 'bg-chart-2/10 text-chart-2',
-        'chart-3': 'bg-chart-3/10 text-chart-3',
-        'chart-4': 'bg-chart-4/10 text-chart-4',
-        'chart-5': 'bg-chart-5/10 text-chart-5',
+        neutral: 'pbr-tile pbr-tone-neutral border text-muted-foreground',
+        primary: 'pbr-tile pbr-tone-primary border text-primary',
+        success: 'pbr-tile pbr-tone-success border text-success',
+        warning: 'pbr-tile pbr-tone-warning border text-warning',
+        info: 'pbr-tile pbr-tone-info border text-info',
+        destructive: 'pbr-tile pbr-tone-destructive border text-destructive',
+        'chart-1': 'pbr-tile pbr-tone-chart-1 border text-chart-1',
+        'chart-2': 'pbr-tile pbr-tone-chart-2 border text-chart-2',
+        'chart-3': 'pbr-tile pbr-tone-chart-3 border text-chart-3',
+        'chart-4': 'pbr-tile pbr-tone-chart-4 border text-chart-4',
+        'chart-5': 'pbr-tile pbr-tone-chart-5 border text-chart-5',
       },
       size: {
         xs: 'size-5 rounded-md [&>svg]:size-3',

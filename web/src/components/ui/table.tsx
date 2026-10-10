@@ -26,9 +26,12 @@ import { cn } from '@/lib/utils'
  * Data-dense table primitives:
  *   - 36px body rows / 32px header cells, driven by the `--density-*` tokens.
  *   - Header cells are sticky against whatever scrolls them (the card body on
- *     `stickyHeader` tables, the page content area otherwise) and carry the
- *     opaque `--table-header` band so rows never bleed through.
- *   - Rows highlight on hover via `--table-row-hover`.
+ *     `stickyHeader` tables, the page content area otherwise). They keep the
+ *     opaque `--table-header` band as the no-blur fallback and swap to the
+ *     frosted `--surface-glass` band (plus `backdrop-blur`) where supported,
+ *     so rows never bleed through.
+ *   - Rows highlight on hover with a blue wash that fades out to the right
+ *     (`--surface-row-hover`).
  */
 function Table({
   className,
@@ -81,7 +84,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<'thead'>) {
         /* Belt and braces with the sticky `th` rule: engines differ on whether
          * sticky applies to the table section or only to the cells once
          * `border-collapse: collapse` is in play. */
-        'group-data-[sticky-header=true]/table:sticky group-data-[sticky-header=true]/table:top-0 group-data-[sticky-header=true]/table:z-10 group-data-[sticky-header=true]/table:bg-(--table-header)',
+        'group-data-[sticky-header=true]/table:sticky group-data-[sticky-header=true]/table:top-0 group-data-[sticky-header=true]/table:z-10 group-data-[sticky-header=true]/table:bg-(--table-header) group-data-[sticky-header=true]/table:supports-backdrop-filter:bg-(--surface-glass) group-data-[sticky-header=true]/table:supports-backdrop-filter:backdrop-blur-md',
         className
       )}
       {...props}
@@ -120,7 +123,7 @@ function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
     <tr
       data-slot='table-row'
       className={cn(
-        'group data-[state=selected]:bg-muted border-b transition-colors hover:[background-color:var(--table-row-hover)] has-aria-expanded:[background-color:var(--table-row-hover)]',
+        'group data-[state=selected]:bg-muted border-b transition-colors hover:[background-image:var(--surface-row-hover)] has-aria-expanded:[background-color:var(--table-row-hover)]',
         className
       )}
       {...props}

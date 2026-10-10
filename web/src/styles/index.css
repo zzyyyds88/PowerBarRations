@@ -180,9 +180,115 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
+/* Conic-gradient loading ring. The arc is painted by the conic gradient and
+ * the ring silhouette by a radial mask, so the whole spinner is one element
+ * with no SVG asset and it inherits `currentColor`-free primary tokens. */
+.spinner-ring {
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 90deg,
+    transparent 0deg 150deg,
+    color-mix(in oklab, var(--primary) 30%, transparent) 220deg,
+    var(--primary) 345deg,
+    transparent 360deg
+  );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 0
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The ring must still convey "busy", so it is slowed rather than frozen. */
+  .spinner-ring {
+    animation-duration: 2.4s !important;
+  }
+}
+
+/* ── Active sidebar item ──────────────────────────────────────────────────
+ * The active nav item is a translucent primary wash with a soft inner
+ * highlight, a 3px primary bar hugging the leading edge and a tinted icon.
+ * Authored here (not in the cva) because it needs the `::before` bar and a
+ * child `svg` selector; both read from theme tokens so presets follow. */
+[data-sidebar='menu-button'][data-active] {
+  position: relative;
+  background-image: var(--surface-sidebar-active);
+  box-shadow: inset 0 1px 0 var(--surface-highlight);
+}
+
+[data-sidebar='menu-button'][data-active]::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.25rem;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-end-radius: 9999px;
+  border-end-end-radius: 9999px;
+  background: var(--surface-sidebar-bar);
+}
+
+[data-sidebar='menu-button'][data-active] svg {
+  color: var(--sidebar-primary);
+}
+
 @utility container {
   margin-inline: auto;
   padding-inline: 2rem;
+}
+
+/* ── Tonal tiles ──────────────────────────────────────────────────────────
+ * Shared premium recipe for soft tonal surfaces (icon badges, tonal pills):
+ * a same-hue translucent wash, a same-hue hairline and the inner 1px
+ * highlight. The hue is injected per tone via `--tone-hue`, so a preset that
+ * repaints `--primary` / `--chart-*` repaints these tiles too. Authored as
+ * component classes (not utilities) so the wash can never be half-applied:
+ * `--tone-hue` and the surface always travel together. */
+@layer components {
+  .pbr-tile {
+    border-color: color-mix(in oklab, var(--tone-hue) 24%, var(--border));
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--tone-hue) 16%, transparent),
+      color-mix(in oklab, var(--tone-hue) 5%, transparent)
+    );
+    box-shadow: inset 0 1px 0 var(--surface-highlight);
+  }
+
+  .pbr-tone-neutral {
+    --tone-hue: var(--neutral);
+  }
+  .pbr-tone-primary {
+    --tone-hue: var(--primary);
+  }
+  .pbr-tone-success {
+    --tone-hue: var(--success);
+  }
+  .pbr-tone-warning {
+    --tone-hue: var(--warning);
+  }
+  .pbr-tone-info {
+    --tone-hue: var(--info);
+  }
+  .pbr-tone-destructive {
+    --tone-hue: var(--destructive);
+  }
+  .pbr-tone-chart-1 {
+    --tone-hue: var(--chart-1);
+  }
+  .pbr-tone-chart-2 {
+    --tone-hue: var(--chart-2);
+  }
+  .pbr-tone-chart-3 {
+    --tone-hue: var(--chart-3);
+  }
+  .pbr-tone-chart-4 {
+    --tone-hue: var(--chart-4);
+  }
+  .pbr-tone-chart-5 {
+    --tone-hue: var(--chart-5);
+  }
 }
 
 @utility max-w-container {
@@ -554,29 +660,41 @@ For commercial licensing, please contact support@quantumnous.com
   }
 }
 
-/* Micro-interactions — subtle hover/active feedback for a flat data surface */
+/* Micro-interactions — premium hover feedback for clickable surfaces.
+ * The resting elevation comes from the `shadow-panel` utility on the card;
+ * hover deepens it and tints the hairline toward the primary hue. Only the
+ * 1px lift is motion-gated, so reduced-motion users still get the state
+ * change without any movement. */
+[data-slot='card'][data-card-hover='true'] {
+  transition:
+    border-color var(--motion-base) var(--motion-ease),
+    box-shadow var(--motion-base) var(--motion-ease),
+    transform var(--motion-base) var(--motion-ease);
+}
+
+@media (min-width: 641px) {
+  [data-slot='card'][data-card-hover='true']:hover {
+    border-color: var(--border-accent-hover);
+    box-shadow: var(--pbr-shadow-panel-hover);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (min-width: 641px) {
+  [data-slot='card'][data-card-hover='true']:hover {
+    transform: translateY(-1px);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
-  [data-slot='card'][data-card-hover='true'] {
-    transition:
-      border-color var(--motion-fast) ease,
-      box-shadow var(--motion-fast) ease;
-  }
-
-  @media (min-width: 641px) {
-    /* Data-dense cards stay flat on hover: the hairline ring steps up one
-     * shade instead of the card lifting off the canvas with a shadow. */
-    [data-slot='card'][data-card-hover='true']:hover {
-      border-color: color-mix(in oklch, var(--foreground) 18%, var(--border));
-    }
-  }
-
   button:not(:disabled):active,
   [role='button']:not(:disabled):active {
     transform: scale(0.98);
   }
 
   [data-slot='table'] tr {
-    transition: background-color 120ms ease;
+    transition:
+      background-color var(--motion-fast) ease-out,
+      background-image var(--motion-fast) ease-out;
   }
 
   /* Stagger is opt-in for short visual lists; operational tables stay still

@@ -67,9 +67,10 @@ export function PanelWrapper(props: PanelWrapperProps) {
   const { t } = useTranslation()
   const resolvedEmptyMessage = props.emptyMessage ?? t('No data available')
   const height = props.height ?? 'h-64'
-  // Flat data panel: 8px radius, one hairline border, no elevation.
+  // Premium data panel: 10px radius, one hairline border, glass face and the
+  // shared panel elevation (inner highlight + soft drop).
   const frameClassName = cn(
-    'border-border overflow-hidden rounded-panel border bg-card',
+    'border-border shadow-panel overflow-hidden rounded-panel border bg-card [background-image:var(--surface-card)]',
     props.className
   )
 

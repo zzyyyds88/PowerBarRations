@@ -66,7 +66,10 @@ export function TitledCard({
       className={cn('gap-0 overflow-hidden py-0', className)}
     >
       <CardHeader
-        className={cn('border-b p-(--density-card-padding)', headerClassName)}
+        className={cn(
+          'border-b p-(--density-card-padding) [background-image:linear-gradient(180deg,color-mix(in_oklab,var(--foreground)_3%,transparent),transparent)]',
+          headerClassName
+        )}
       >
         <div className='flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between'>
           <div className='flex min-w-0 items-center gap-2'>

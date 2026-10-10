@@ -211,7 +211,7 @@ function StatCardDetails(props: { details: StatCardDetail[] }) {
       {props.details.map((detail) => (
         <div
           key={detail.label}
-          className='bg-muted/60 rounded-control px-2 py-1.5'
+          className='border-border/70 shadow-control rounded-control bg-muted/50 border px-2 py-1.5'
         >
           <div className='text-muted-foreground truncate text-xs leading-none font-medium'>
             {detail.label}

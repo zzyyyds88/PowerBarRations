@@ -96,12 +96,35 @@ For commercial licensing, please contact support@quantumnous.com
   --radius-4xl: calc(var(--radius) * 2.6);
   --radius-control: var(--pbr-radius-control);
   --radius-panel: var(--pbr-radius-panel);
+  /* ── Premium elevation utilities ──────────────────────────────────────
+   * Every shadow (including the inner 1px highlight) is a token so features
+   * never restate a colour or a blur radius. Utilities generated here:
+   *   shadow-panel          card / panel face + inner highlight
+   *   shadow-panel-hover    the same face, lifted one step for hover
+   *   shadow-popover        menus, popovers, tooltips, dialogs
+   *   shadow-control        raised secondary controls (buttons)
+   *   shadow-input          recessed inputs / selects / segment tracks
+   *   shadow-capsule        floating capsule (selected tab)
+   *   shadow-primary        filled primary button
+   *   shadow-primary-hover  filled primary button, hover ring + lift
+   *   shadow-primary-sm     small primary surfaces (checkbox / switch)
+   *   shadow-glow           bare focus glow ring in the primary hue
+   * The source values live in `:root` / `.dark` below. */
   --shadow-panel: var(--pbr-shadow-panel);
+  --shadow-panel-hover: var(--pbr-shadow-panel-hover);
   --shadow-popover: var(--pbr-shadow-popover);
+  --shadow-control: var(--pbr-shadow-control);
+  --shadow-input: var(--pbr-shadow-input);
+  --shadow-capsule: var(--pbr-shadow-capsule);
+  --shadow-primary: var(--pbr-shadow-primary);
+  --shadow-primary-hover: var(--pbr-shadow-primary-hover);
+  --shadow-primary-sm: var(--pbr-shadow-primary-sm);
+  --shadow-glow: var(--pbr-shadow-glow);
+  --ease-premium: var(--motion-ease);
 }
 
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   /* ── Data-dense dashboard density scale ──────────────────────────────
    * The console is laid out as a BI-style data dashboard, so the density
    * spec lives here as real tokens instead of being restated per component:
@@ -113,8 +136,10 @@ For commercial licensing, please contact support@quantumnous.com
   --density-table-row-height: 2.25rem;
   --density-table-head-height: 2rem;
   --density-header-height: 3.5rem;
-  /* Compact operational surfaces use the semantic shape tokens above. */
-  --pbr-radius-control: calc(var(--radius) * 0.75);
+  /* Compact operational surfaces use the semantic shape tokens above.
+   * 10px panel / 8px control keeps the premium roundness without releasing
+   * the density spec. */
+  --pbr-radius-control: calc(var(--radius) * 0.8);
   --pbr-radius-panel: var(--radius);
   --app-header-height: var(--density-header-height);
   /* Static build-channel fallback consumed when JS hasn't booted yet. */
@@ -124,22 +149,25 @@ For commercial licensing, please contact support@quantumnous.com
    * in theme-presets.css. Default mirrors `--font-sans` so behavior is
    * identical when no font preference is set. */
   --font-body: var(--font-sans);
-  /* Neutral BI canvas: #F5F5F5 page floor, white card faces, #333333 ink.
-   * Ink/canvas pair is ~11.6:1, and `--muted-foreground` stays above the
-   * WCAG AA 4.5:1 floor on both the page and the card face. */
-  --background: #f5f5f5;
-  --foreground: #333333;
+  /* ── Deep-blue glass canvas ──────────────────────────────────────────
+   * Cool gray floor (#F6F7F9) with white glass card faces and slate ink
+   * (#1F2937). Ink/canvas is ~13.7:1 and `--muted-foreground` stays at
+   * 5.1:1 on the floor / 5.5:1 on a card face, both above the WCAG AA 4.5:1
+   * floor. */
+  --background: #f6f7f9;
+  --foreground: #1f2937;
   --card: #ffffff;
-  --card-foreground: #333333;
+  --card-foreground: #1f2937;
   --popover: #ffffff;
-  --popover-foreground: #333333;
-  /* Data-console blue: white label on it clears 4.5:1. */
+  --popover-foreground: #1f2937;
+  /* Data-console blue: white label on it clears 4.5:1, and the button
+   * gradient's light stop is capped in oklab so it keeps clearing it. */
   --primary: #2563eb;
   --primary-foreground: #ffffff;
-  --secondary: #f0f0f0;
-  --secondary-foreground: #333333;
-  --muted: #f1f1f1;
-  --muted-foreground: #6b6b6b;
+  --secondary: #f1f3f5;
+  --secondary-foreground: #1f2937;
+  --muted: #f1f3f5;
+  --muted-foreground: #5b6b7c;
   --accent: color-mix(in oklch, var(--primary) 10%, var(--background));
   --accent-foreground: #1d4ed8;
   --destructive: #ef4444;
@@ -152,8 +180,76 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: #ffffff;
   --neutral: #8a8a8a;
   --neutral-foreground: #ffffff;
-  --border: #ececec;
-  --input: #e0e0e0;
+  /* ── Tonal ink ─────────────────────────────────────────────────────
+   * Label color for a same-hue tonal wash (status pills / badges / tiles).
+   * Derived from the hue itself mixed toward the theme ink — never a fixed
+   * hex — so a preset that repaints `--primary` / `--chart-*` repaints the
+   * label with it and the pair can never drift out of contrast.
+   * `--tone-ink-mix` is the hue share, capped at the largest value that
+   * keeps every slot ≥4.5:1 on a 16% wash over the lightest surface this
+   * theme can place a pill on (page / card / muted in light; card /
+   * elevated / raised in dark). Measured worst case: 4.90:1 light and
+   * 4.77:1 dark. Both blocks restate the tokens instead of letting `.dark`
+   * override only `--tone-ink-mix`, because a custom property containing
+   * `var()` is substituted on the element that declares it. */
+  --tone-ink-mix: 45%;
+  --tone-neutral-text: color-mix(
+    in oklab,
+    var(--neutral) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-primary-text: color-mix(
+    in oklab,
+    var(--primary) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-success-text: color-mix(
+    in oklab,
+    var(--success) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-warning-text: color-mix(
+    in oklab,
+    var(--warning) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-info-text: color-mix(
+    in oklab,
+    var(--info) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-destructive-text: color-mix(
+    in oklab,
+    var(--destructive) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-1-text: color-mix(
+    in oklab,
+    var(--chart-1) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-2-text: color-mix(
+    in oklab,
+    var(--chart-2) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-3-text: color-mix(
+    in oklab,
+    var(--chart-3) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-4-text: color-mix(
+    in oklab,
+    var(--chart-4) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-5-text: color-mix(
+    in oklab,
+    var(--chart-5) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --border: #e8eaed;
+  --input: #dde3ea;
   --ring: #2563eb;
   /* Data series lead with blue / green / red, then amber and violet for
    * the tail of the palette. */
@@ -166,50 +262,133 @@ For commercial licensing, please contact support@quantumnous.com
   --overview-accent-2: var(--chart-2);
   --overview-accent-3: var(--chart-3);
   --sidebar: #ffffff;
-  --sidebar-foreground: #333333;
+  --sidebar-foreground: #1f2937;
   --sidebar-primary: #2563eb;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: color-mix(in oklch, var(--primary) 8%, var(--background));
   --sidebar-accent-foreground: #1d4ed8;
-  --sidebar-border: #ececec;
+  --sidebar-border: #e8eaed;
   --sidebar-ring: #2563eb;
-  --skeleton-base: #ededed;
-  --skeleton-highlight: #f7f7f7;
-  /* Rows sit on the white card face; headers are a flat, fully opaque band
-   * so they can stay legible while sticking inside a scrolling card. */
+  --skeleton-base: #e9ebef;
+  --skeleton-highlight: #f7f8fa;
+  /* Rows sit on the card face; the header band stays a fully opaque color
+   * for engines without `backdrop-filter`, and swaps to the frosted glass
+   * token when blur is available (see `--surface-glass`). */
   --table-row: var(--card);
-  --table-header: #f3f3f3;
-  --table-header-hover: #ededed;
-  --table-row-hover: #f3f3f3;
+  --table-header: #f2f4f7;
+  --table-header-hover: #eaedf1;
+  --table-row-hover: #f3f5f8;
   /* Disabled rows: kept subtle so they read as "quiet", not as a colored
      alert state. */
-  --table-disabled: #f7f7f7;
-  --table-disabled-hover: #f2f2f2;
+  --table-disabled: #f7f8fa;
+  --table-disabled-hover: #f2f4f7;
   --table-disabled-border: #dcdcdc;
-  /* Flat data surfaces: a hairline ring replaces elevation. */
-  --pbr-shadow-panel: none;
-  --pbr-shadow-popover: 0 8px 24px oklch(0 0 0 / 0.12);
+
+  /* ── Premium surface system ──────────────────────────────────────────
+   * Derived from the semantic palette so presets keep tinting the surfaces
+   * they own: the card face is a barely-there vertical sheen over `--card`,
+   * never a hardcoded white. */
+  --surface-highlight: inset 0 1px 0 #ffffff;
+  --surface-card-bottom: color-mix(in oklab, var(--card) 98%, #0f172a);
+  --surface-popover-bottom: color-mix(in oklab, var(--popover) 97%, #0f172a);
+  --surface-card: linear-gradient(
+    180deg,
+    var(--card),
+    var(--surface-card-bottom)
+  );
+  --surface-popover: linear-gradient(
+    180deg,
+    var(--popover),
+    var(--surface-popover-bottom)
+  );
+  /* Capsule float (selected segment / tab) sits a step above the track. */
+  --surface-raised: #ffffff;
+  --surface-hover: #f8fafc;
+  /* Row hover: a blue wash that fades out to the right. */
+  --surface-row-hover: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 6%, transparent),
+    transparent
+  );
+  /* Sidebar active item: light blue wash + a 3px primary bar. */
+  --surface-sidebar-active: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 14%, transparent),
+    color-mix(in oklab, var(--primary) 2%, transparent)
+  );
+  --surface-sidebar-bar: var(--primary);
+  /* Frosted sticky table header / toolbar glass. */
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --border-hover: #dde3ea;
+  --border-accent-hover: color-mix(in oklab, var(--primary) 26%, var(--border));
+  --border-focus: #93c5fd;
+  /* Primary fill gradient. The light stop is mixed in oklab so a preset
+   * repaints the button along with `--primary`; at 6% white the label keeps
+   * ≥4.5:1 contrast in the default palette. */
+  --gradient-primary-top: color-mix(in oklab, var(--primary) 94%, #ffffff);
+  --gradient-primary-bottom: var(--primary);
+  --gradient-primary: linear-gradient(
+    180deg,
+    var(--gradient-primary-top),
+    var(--gradient-primary-bottom)
+  );
+  --gradient-primary-hover: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--gradient-primary-top) 94%, #ffffff),
+    color-mix(in oklab, var(--gradient-primary-bottom) 94%, #ffffff)
+  );
+
+  /* ── Elevation ───────────────────────────────────────────────────────
+   * Soft, wide, low-opacity shadows (never a hard black drop). */
+  --pbr-shadow-panel:
+    var(--surface-highlight), 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  --pbr-shadow-panel-hover:
+    var(--surface-highlight), 0 2px 4px rgba(16, 24, 40, 0.06),
+    0 14px 30px -12px rgba(16, 24, 40, 0.18);
+  --pbr-shadow-popover:
+    0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -8px rgba(16, 24, 40, 0.18);
+  --pbr-shadow-control:
+    var(--surface-highlight), 0 1px 2px rgba(16, 24, 40, 0.05);
+  --pbr-shadow-input: inset 0 1px 2px rgba(16, 24, 40, 0.05);
+  --pbr-shadow-capsule:
+    var(--surface-highlight), 0 1px 2px rgba(16, 24, 40, 0.08),
+    0 2px 6px -2px rgba(16, 24, 40, 0.06);
+  --pbr-shadow-primary:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px color-mix(in oklab, var(--primary) 35%, transparent),
+    0 8px 20px -8px color-mix(in oklab, var(--primary) 45%, transparent);
+  --pbr-shadow-primary-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 0 0 3px color-mix(in oklab, var(--primary) 22%, transparent),
+    0 2px 4px color-mix(in oklab, var(--primary) 38%, transparent),
+    0 10px 24px -8px color-mix(in oklab, var(--primary) 50%, transparent);
+  --pbr-shadow-primary-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px color-mix(in oklab, var(--primary) 40%, transparent);
+  --pbr-shadow-glow: 0 0 0 3px
+    color-mix(in oklab, var(--primary) 20%, transparent);
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-fast: 150ms;
   --motion-base: 200ms;
 }
 
 .dark {
-  /* Data-dense console in the dark: deep charcoal canvas (never pure black),
-     one step lighter card face, same density tokens and semantic hues as the
-     light theme. Ink/canvas pair is ~12.4:1; `--muted-foreground` clears
-     4.5:1 on both the canvas and the card face. */
-  --background: #1e1e1e;
-  --foreground: #e8e8e8;
-  --card: #262626;
-  --card-foreground: #e8e8e8;
-  --popover: #2b2b2b;
-  --popover-foreground: #e8e8e8;
+  /* Deep-blue glass console in the dark: #14161A canvas (never pure black),
+   * a #1B1E24 glass card face and #E6E8EB ink. Ink/canvas is ~13.5:1;
+   * `--muted-foreground` clears 7.2:1 on the canvas and 6.6:1 on a card. */
+  --background: #14161a;
+  --foreground: #e6e8eb;
+  --card: #1b1e24;
+  --card-foreground: #e6e8eb;
+  --popover: #1f232a;
+  --popover-foreground: #e6e8eb;
   --primary: #3b82f6;
   --primary-foreground: #ffffff;
-  --secondary: #333333;
-  --secondary-foreground: #e8e8e8;
-  --muted: #2e2e2e;
-  --muted-foreground: #a3a3a3;
+  --secondary: #23272f;
+  --secondary-foreground: #e6e8eb;
+  --muted: #1f232a;
+  --muted-foreground: #9aa4b2;
   --accent: color-mix(in oklch, var(--primary) 22%, var(--background));
   --accent-foreground: #dbeafe;
   --destructive: #ef4444;
@@ -222,10 +401,68 @@ For commercial licensing, please contact support@quantumnous.com
   --info-foreground: #ffffff;
   --neutral: #a3a3a3;
   --neutral-foreground: #1e1e1e;
-  --border: #3a3a3a;
-  --input: #454545;
+  /* Tonal ink, dark pass: the hue share drops so every slot keeps ≥4.5:1 on
+   * a 16% wash over `--card` / `--popover` / `--surface-raised`. */
+  --tone-ink-mix: 62%;
+  --tone-neutral-text: color-mix(
+    in oklab,
+    var(--neutral) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-primary-text: color-mix(
+    in oklab,
+    var(--primary) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-success-text: color-mix(
+    in oklab,
+    var(--success) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-warning-text: color-mix(
+    in oklab,
+    var(--warning) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-info-text: color-mix(
+    in oklab,
+    var(--info) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-destructive-text: color-mix(
+    in oklab,
+    var(--destructive) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-1-text: color-mix(
+    in oklab,
+    var(--chart-1) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-2-text: color-mix(
+    in oklab,
+    var(--chart-2) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-3-text: color-mix(
+    in oklab,
+    var(--chart-3) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-4-text: color-mix(
+    in oklab,
+    var(--chart-4) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-5-text: color-mix(
+    in oklab,
+    var(--chart-5) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --border: #2a2f38;
+  --input: #333945;
   --ring: #3b82f6;
-  /* Same blue / green / red spine, lifted for legibility on charcoal. */
+  /* Same blue / green / red spine, lifted for legibility on the dark glass. */
   --chart-1: #60a5fa; /* blue */
   --chart-2: #4ade80; /* green */
   --chart-3: #f87171; /* red */
@@ -234,23 +471,78 @@ For commercial licensing, please contact support@quantumnous.com
   --overview-accent-1: var(--chart-1);
   --overview-accent-2: var(--chart-2);
   --overview-accent-3: var(--chart-3);
-  --sidebar: #232323;
-  --sidebar-foreground: #e8e8e8;
+  --sidebar: #171a1f;
+  --sidebar-foreground: #e6e8eb;
   --sidebar-primary: #3b82f6;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: color-mix(in oklch, var(--primary) 20%, var(--background));
   --sidebar-accent-foreground: #bfdbfe;
-  --sidebar-border: #333333;
+  --sidebar-border: #2a2f38;
   --sidebar-ring: #3b82f6;
-  --skeleton-base: #2e2e2e;
-  --skeleton-highlight: #3d3d3d;
+  --skeleton-base: #23272f;
+  --skeleton-highlight: #2f353f;
   --table-row: var(--card);
-  --table-header: #2e2e2e;
-  --table-header-hover: #363636;
-  --table-row-hover: #2e2e2e;
-  --table-disabled: #2a2a2a;
-  --table-disabled-hover: #303030;
-  --table-disabled-border: #4a4a4a;
-  --pbr-shadow-panel: none;
-  --pbr-shadow-popover: 0 8px 24px oklch(0 0 0 / 0.45);
+  --table-header: #20242b;
+  --table-header-hover: #262b33;
+  --table-row-hover: #20242b;
+  --table-disabled: #1e222a;
+  --table-disabled-hover: #23272f;
+  --table-disabled-border: #3a4150;
+
+  /* Dark glass surfaces: the inner highlight drops to 4% white and the card
+   * sheen darkens toward the bottom instead of lightening. */
+  --surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --surface-card-bottom: color-mix(in oklab, var(--card) 94%, #000000);
+  --surface-popover-bottom: color-mix(in oklab, var(--popover) 94%, #000000);
+  --surface-raised: #2a2f38;
+  --surface-hover: #23272f;
+  --surface-row-hover: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 10%, transparent),
+    transparent
+  );
+  --surface-sidebar-active: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 22%, transparent),
+    color-mix(in oklab, var(--primary) 4%, transparent)
+  );
+  --border-hover: #3a4150;
+  --border-focus: #60a5fa;
+  /* The dark button fill shifts the whole gradient one step down so the
+   * white label keeps ≥4.5:1 on the lightest pixel of the fill, while the
+   * bright #60A5FA accent lives on in glow rings and iconography. */
+  --gradient-primary-top: color-mix(in oklab, var(--primary) 87%, #0b0e14);
+  --gradient-primary-bottom: color-mix(in oklab, var(--primary) 74%, #0b0e14);
+  --gradient-primary-hover: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--gradient-primary-top) 90%, #ffffff),
+    color-mix(in oklab, var(--gradient-primary-bottom) 90%, #ffffff)
+  );
+
+  --pbr-shadow-panel:
+    var(--surface-highlight), 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 10px 28px -12px rgba(0, 0, 0, 0.55);
+  --pbr-shadow-panel-hover:
+    var(--surface-highlight), 0 2px 6px rgba(0, 0, 0, 0.4),
+    0 16px 36px -12px rgba(0, 0, 0, 0.62);
+  --pbr-shadow-popover:
+    0 1px 2px rgba(0, 0, 0, 0.5), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  --pbr-shadow-control: var(--surface-highlight), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --pbr-shadow-input: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  --pbr-shadow-capsule:
+    var(--surface-highlight), 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 2px 6px -2px rgba(0, 0, 0, 0.3);
+  --pbr-shadow-primary:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 1px 2px color-mix(in oklab, var(--primary) 30%, transparent),
+    0 8px 20px -8px color-mix(in oklab, var(--primary) 40%, transparent);
+  --pbr-shadow-primary-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 3px color-mix(in oklab, #60a5fa 25%, transparent),
+    0 2px 4px color-mix(in oklab, var(--primary) 34%, transparent),
+    0 10px 24px -8px color-mix(in oklab, var(--primary) 46%, transparent);
+  --pbr-shadow-primary-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px color-mix(in oklab, var(--primary) 36%, transparent);
+  --pbr-shadow-glow: 0 0 0 3px color-mix(in oklab, #60a5fa 25%, transparent);
 }

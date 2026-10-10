@@ -21,10 +21,12 @@ import * as React from 'react'
 import { cn } from '@/lib/utils'
 
 /*
- * Data-dense card face: 8px radius, one hairline border, flat (no elevation),
- * 12px inner padding and an 8px rhythm between header / body / footer.
- * Padding comes from `--density-card-padding` so the whole console can be
- * re-tuned from the theme layer.
+ * Premium glass card face: 10px panel radius, one hairline border, a soft
+ * two-layer elevation (inner 1px highlight + wide low-opacity drop) and a
+ * barely-there vertical sheen, all driven by `--surface-card` /
+ * `--pbr-shadow-panel`. 12px inner padding and an 8px rhythm between
+ * header / body / footer. Padding comes from `--density-card-padding` so
+ * the whole console can be re-tuned from the theme layer.
  */
 function Card({
   className,
@@ -37,7 +39,7 @@ function Card({
       data-size={size}
       data-card-hover='false'
       className={cn(
-        'group/card border-border bg-card text-card-foreground flex flex-col gap-2 overflow-hidden rounded-panel border py-(--density-card-padding) text-sm has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-1.5 data-[size=sm]:py-2 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-panel *:[img:last-child]:rounded-b-panel',
+        'group/card border-border bg-card text-card-foreground shadow-panel flex flex-col gap-2 overflow-hidden rounded-panel border py-(--density-card-padding) text-sm [background-image:var(--surface-card)] has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-1.5 data-[size=sm]:py-2 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-panel *:[img:last-child]:rounded-b-panel',
         className
       )}
       {...props}

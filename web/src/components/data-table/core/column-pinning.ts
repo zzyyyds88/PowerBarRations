@@ -58,10 +58,13 @@ function getPinnedColumnClassName(
   pinnedColumn: DataTablePinnedColumn,
   kind: 'header' | 'cell'
 ) {
+  /* `hsl(var(--foreground))` used to wrap a hex token in an HSL function, which
+   * made the whole shadow declaration invalid; the pinned edge had no shadow
+   * at all. Feed the token straight in so the edge reads as a real layer. */
   const edgeClassName =
     pinnedColumn.side === 'left'
-      ? 'shadow-[8px_0_10px_-10px_hsl(var(--foreground))]'
-      : 'shadow-[-8px_0_10px_-10px_hsl(var(--foreground))]'
+      ? 'shadow-[8px_0_10px_-10px_var(--foreground)]'
+      : 'shadow-[-8px_0_10px_-10px_var(--foreground)]'
 
   return cn(
     'sticky whitespace-nowrap',

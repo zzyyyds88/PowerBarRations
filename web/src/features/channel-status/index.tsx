@@ -261,14 +261,14 @@ export function ChannelStatus() {
           {statusQuery.data && items.length > 0 && (
             <div className='flex flex-col gap-(--density-grid)'>
               {upstreamRejected && (
-                <p className='text-muted-foreground bg-muted/60 rounded-control px-2.5 py-1.5 text-xs'>
+                <p className='text-muted-foreground border-border/70 shadow-control rounded-control bg-muted/50 border px-2.5 py-1.5 text-xs'>
                   {t('Upstream rejected the request (not a channel fault).')}
                 </p>
               )}
 
               {/* 卡片内的数据表：表头粘在卡片顶部，行超出时在卡内滚动，
                   页面本身不出现第二根纵向滚动条。 */}
-              <div className='border-border bg-card rounded-panel overflow-hidden border'>
+              <div className='border-border shadow-panel rounded-panel bg-card overflow-hidden border [background-image:var(--surface-card)]'>
                 <Table
                   stickyHeader
                   containerClassName='max-h-[calc(100svh-var(--app-header-height,3.5rem)-12rem)]'

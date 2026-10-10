@@ -94,7 +94,7 @@ export function OverviewBarChart(props: {
             <div
               key={tick.ratio}
               aria-hidden='true'
-              className='border-border/60 absolute inset-x-0 border-t'
+              className='absolute inset-x-0 border-t border-[color-mix(in_oklab,var(--border)_60%,transparent)]'
               style={{ top: `${(1 - tick.ratio) * 100}%` }}
             />
           ))}

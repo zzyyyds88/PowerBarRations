@@ -45,7 +45,7 @@ export function MetricTile(props: {
   }
 
   return (
-    <div className='bg-muted/60 rounded-control min-w-0 px-2.5 py-1.5'>
+    <div className='border-border/70 shadow-control rounded-control bg-muted/50 min-w-0 border px-2.5 py-1.5'>
       <div className='text-muted-foreground truncate text-xs font-medium'>
         {props.label}
       </div>
