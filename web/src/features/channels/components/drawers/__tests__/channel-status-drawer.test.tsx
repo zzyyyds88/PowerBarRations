@@ -267,9 +267,9 @@ describe('ChannelStatusDrawer 六块内容', () => {
     expect(screen.getByText('Model status')).toBeInTheDocument()
     expect(screen.getByText('Output speed (tps)')).toBeInTheDocument()
     expect(screen.getByText('Output tokens')).toBeInTheDocument()
-    // 41.2 tps 与 56,000 输出 token 只来自模型行。
+    // 41.2 tps 与输出 token 只来自模型行（token 走数量级格式化：英文语言包 → 56.0K）。
     expect(screen.getByText('41.2')).toBeInTheDocument()
-    expect(screen.getByText('56,000')).toBeInTheDocument()
+    expect(screen.getByText('56.0K')).toBeInTheDocument()
     // 成功率与输出速度都出现在模型行（无样本的 model-2 显示占位符，不显示 0）。
     expect(screen.getAllByText('98.33%').length).toBeGreaterThanOrEqual(2)
     // 无样本模型（model-2）：成功率/平均延迟/平均首字/输出速度四个占位符，

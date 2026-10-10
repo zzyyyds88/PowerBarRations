@@ -23,13 +23,8 @@ For commercial licensing, please contact support@quantumnous.com
 const EMPTY = '-'
 
 /** Token 总数缩写：`15.1B` / `556.4M` / `12.3K`。 */
-export function formatTokenAmount(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '0'
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
-  return String(Math.round(value))
-}
+/** Token 数量级：委托共享实现（中文 亿/万、其它 B/M/K，见 `@/lib/format`）。 */
+export { formatTokenAmount } from '@/lib/format'
 
 /** 平均延迟：`840ms` / `1.20s`；无样本为 `-`。 */
 export function formatLatencyMs(value: number): string {

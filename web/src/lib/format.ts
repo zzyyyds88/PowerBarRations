@@ -310,3 +310,23 @@ export function stringToColor(str: string): string {
 
   return `hsl(${hue}, ${saturation}%, ${lightness}%)`
 }
+
+/**
+ * Token 数量级：中文界面用「亿 / 万」，其它语言用 B / M / K。
+ *
+ * 为什么按语言分：中文读者对「1 亿」的直觉远强于「100M」（董事长 2026-10-10
+ * 参考外部看板提出的口径）；而英文界面 B/M/K 才是习惯写法，两者不该混用。
+ * 小于 1 万（中文）/1 千（英文）时给带千分位的整数。
+ */
+export function formatTokenAmount(value: number, locale?: string): string {
+  if (!Number.isFinite(value) || value <= 0) return '0'
+  if ((locale ?? '').toLowerCase().startsWith('zh')) {
+    if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(2)} 亿`
+    if (value >= 10_000) return `${(value / 10_000).toFixed(2)} 万`
+    return new Intl.NumberFormat(locale).format(Math.round(value))
+  }
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`
+  return String(Math.round(value))
+}

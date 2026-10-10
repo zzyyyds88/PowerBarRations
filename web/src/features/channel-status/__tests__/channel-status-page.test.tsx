@@ -276,7 +276,8 @@ describe('渠道状态页', () => {
     expect(await screen.findByText('Model status')).toBeInTheDocument()
     expect(screen.getByText('Output speed (tps)')).toBeInTheDocument()
     expect(screen.getByText('41.2')).toBeInTheDocument()
-    expect(screen.getByText('56,000')).toBeInTheDocument()
+    // token 列走数量级格式化：测试环境为英文语言包 → B/M/K 口径
+    expect(screen.getByText('56.0K')).toBeInTheDocument()
     const detailCalls = mockedGet.mock.calls.filter(
       ([url]) => url === CONSOLE_CHANNEL_DETAIL_URL
     )

@@ -76,7 +76,7 @@ function dominantChannelByModel(items: PBRStatBucket[]): Map<string, string> {
 }
 
 export function TokenRankingCard(props: { range: PBRResolvedTimeRange }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const range = props.range
 
   const statusQuery = useQuery({
@@ -154,7 +154,7 @@ export function TokenRankingCard(props: { range: PBRResolvedTimeRange }) {
               )}
             </span>
             <span className='shrink-0 font-mono text-xs font-semibold tabular-nums'>
-              {formatTokenAmount(item.tokens_total)}
+              {formatTokenAmount(item.tokens_total, i18n.language)}
             </span>
           </li>
         )

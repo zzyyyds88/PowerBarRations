@@ -39,7 +39,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { formatNumber } from '@/lib/format'
+import { formatNumber, formatTokenAmount } from '@/lib/format'
 
 import {
   formatDurationMs,
@@ -54,7 +54,7 @@ const HEAD_CLASS_NAME = 'whitespace-nowrap'
 export function ChannelStatusModelsTable(props: {
   models: ChannelStatusModelStat[]
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
   if (props.models.length === 0) {
     return (
@@ -107,7 +107,7 @@ export function ChannelStatusModelsTable(props: {
               {formatOutputTps(model.output_tps)}
             </TableCell>
             <TableCell className='tabular-nums'>
-              {formatNumber(model.tokens_out)}
+              {formatTokenAmount(model.tokens_out, i18n.language)}
             </TableCell>
           </TableRow>
         ))}
