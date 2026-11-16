@@ -1,0 +1,262 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useCallback, useEffect, useState } from 'react'
+import { SSE } from 'sse.js'
+
+import { API_ENDPOINTS, ERROR_MESSAGES } from '../constants'
+import {
+  getStreamReadyStateError,
+  isStreamClosedReadyState,
+  isStreamDoneMessage,
+  parseStreamErrorDetails,
+  parseStreamMessageUpdates,
+} from '../lib'
+import { servedByFromStreamHeaders } from '../lib/streaming/served-by'
+import type { ChatCompletionRequest } from '../types'
+
+interface StreamEventSource {
+  readyState?: number
+  addEventListener: (
+    type: string,
+    listener: (
+      event: Event & {
+        data?: string
+        readyState?: number
+        headers?: Record<string, string | string[]>
+      }
+    ) => void
+  ) => void
+  close: () => void
+  stream: () => void
+}
+
+interface StreamRequestCallbacks {
+  onUpdate: (type: 'reasoning' | 'content', chunk: string) => void
+  onComplete: () => void
+  onError: (error: string, errorCode?: string) => void
+  /** 收到响应头时回调实际命中的上游（X-Served-By）；缺失则不回调。 */
+  onServedBy?: (servedBy: string) => void
+}
+
+interface StreamRequestControllerRuntime {
+  getHeaders: () => Promise<Record<string, string>>
+  createSource: (
+    payload: ChatCompletionRequest,
+    headers: Record<string, string>
+  ) => StreamEventSource
+  setStreaming: (streaming: boolean) => void
+}
+
+export function createStreamRequestController(
+  runtime: StreamRequestControllerRuntime
+) {
+  let source: StreamEventSource | null = null
+  let generation = 0
+
+  const closeActiveSource = (target: StreamEventSource) => {
+    target.close()
+    if (source === target) {
+      source = null
+      runtime.setStreaming(false)
+    }
+  }
+
+  const send = async (
+    payload: ChatCompletionRequest,
+    callbacks: StreamRequestCallbacks,
+    headersOverride?: Record<string, string>
+  ) => {
+    const requestGeneration = generation + 1
+    generation = requestGeneration
+    const previousSource = source
+    source = null
+    previousSource?.close()
+    runtime.setStreaming(false)
+
+    let headers: Record<string, string>
+    if (headersOverride) {
+      headers = headersOverride
+    } else {
+      try {
+        headers = await runtime.getHeaders()
+      } catch (error: unknown) {
+        if (generation !== requestGeneration) return
+        callbacks.onError(
+          error instanceof Error
+            ? error.message
+            : ERROR_MESSAGES.STREAM_START_ERROR
+        )
+        return
+      }
+    }
+    if (generation !== requestGeneration) return
+
+    const nextSource = runtime.createSource(payload, headers)
+    source = nextSource
+    runtime.setStreaming(true)
+    let completed = false
+
+    const isCurrent = () =>
+      generation === requestGeneration && source === nextSource
+
+    const handleError = (errorMessage: string, errorCode?: string) => {
+      if (!isCurrent() || completed) return
+      completed = true
+      callbacks.onError(errorMessage, errorCode)
+      closeActiveSource(nextSource)
+    }
+
+    // 响应头到达时（sse.js 的 open 事件）取 X-Served-By：这是流式路径唯一能拿到
+    // 响应头的时机（ui-spec §6.8）。缺失或为空则不回调，展示层不渲染。
+    nextSource.addEventListener('open', (event) => {
+      if (!isCurrent()) return
+      const servedBy = servedByFromStreamHeaders(event.headers)
+      if (servedBy) callbacks.onServedBy?.(servedBy)
+    })
+
+    nextSource.addEventListener('message', (event) => {
+      if (!isCurrent() || completed) return
+      const data = event.data ?? ''
+      if (isStreamDoneMessage(data)) {
+        completed = true
+        closeActiveSource(nextSource)
+        callbacks.onComplete()
+        return
+      }
+
+      try {
+        const updates = parseStreamMessageUpdates(data)
+
+        for (const update of updates) {
+          callbacks.onUpdate(update.type, update.chunk)
+        }
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error('Failed to parse SSE message:', error)
+        handleError(ERROR_MESSAGES.PARSE_ERROR)
+      }
+    })
+
+    nextSource.addEventListener('error', (event) => {
+      if (!isCurrent() || completed) return
+      if (!isStreamClosedReadyState(nextSource.readyState)) {
+        // eslint-disable-next-line no-console
+        console.error('SSE Error:', event)
+        const { errorCode, errorMessage } = parseStreamErrorDetails(event.data)
+        handleError(errorMessage, errorCode)
+      }
+    })
+
+    nextSource.addEventListener('readystatechange', (event) => {
+      if (!isCurrent() || completed) return
+      const errorMessage = getStreamReadyStateError(
+        event.readyState,
+        nextSource
+      )
+
+      if (errorMessage) {
+        handleError(errorMessage)
+      }
+    })
+
+    try {
+      if (!isCurrent()) return
+      nextSource.stream()
+    } catch (error: unknown) {
+      if (!isCurrent() || completed) return
+      // eslint-disable-next-line no-console
+      console.error('Failed to start SSE stream:', error)
+      handleError(ERROR_MESSAGES.STREAM_START_ERROR)
+    }
+  }
+
+  const cancel = (notify: boolean) => {
+    generation += 1
+    const activeSource = source
+    source = null
+    activeSource?.close()
+    if (notify) runtime.setStreaming(false)
+  }
+
+  const stop = () => cancel(true)
+  const dispose = () => cancel(false)
+
+  return { send, stop, dispose }
+}
+
+/**
+ * Hook for handling streaming chat completion requests
+ *
+ * `getHeaders` 由调用方注入：模型面必须带**客户端密钥**（`Authorization: Bearer pbr-...`），
+ * 而管理面会话对模型面无效（token-spec §1）。每次发送都把当前 headers 传下去，
+ * 因此密钥变化无需重建 controller。
+ */
+export function useStreamRequest(
+  getHeaders: () => Record<string, string> = () => ({
+    'Content-Type': 'application/json',
+  })
+) {
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [controller] = useState(() =>
+    createStreamRequestController({
+      getHeaders: async () => getHeaders(),
+      createSource: (payload, headers) =>
+        new SSE(API_ENDPOINTS.CHAT_COMPLETIONS, {
+          headers,
+          method: 'POST',
+          payload: JSON.stringify(payload),
+        }) as StreamEventSource,
+      setStreaming: setIsStreaming,
+    })
+  )
+
+  const sendStreamRequest = useCallback(
+    (
+      payload: ChatCompletionRequest,
+      onUpdate: (type: 'reasoning' | 'content', chunk: string) => void,
+      onComplete: () => void,
+      onError: (error: string, errorCode?: string) => void,
+      onServedBy?: (servedBy: string) => void
+    ) =>
+      controller.send(
+        payload,
+        {
+          onUpdate,
+          onComplete,
+          onError,
+          onServedBy,
+        },
+        // 每次发送都取当前密钥：密钥改了不必重建 controller。
+        getHeaders()
+      ),
+    [controller, getHeaders]
+  )
+
+  const stopStream = useCallback(() => {
+    controller.stop()
+  }, [controller])
+
+  useEffect(() => () => controller.dispose(), [controller])
+
+  return {
+    sendStreamRequest,
+    stopStream,
+    isStreaming,
+  }
+}

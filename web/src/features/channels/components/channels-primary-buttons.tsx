@@ -1,0 +1,400 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import {
+  Plus,
+  MoreHorizontal,
+  Settings2,
+  Trash2,
+  Tags,
+  TestTube,
+  ListChecks,
+  RefreshCw,
+  ArrowUpFromLine,
+} from 'lucide-react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { useAuthStore } from '@/stores/auth-store'
+
+import {
+  type ChannelActionFailure,
+  handleDeleteAllDisabled,
+  handleFixAbilities,
+  handleTestAllChannels,
+} from '../lib'
+import { useChannels } from './channels-provider'
+
+export function ChannelsPrimaryButtons() {
+  const { t } = useTranslation()
+  const {
+    setOpen,
+    setCurrentRow,
+    enableTagMode,
+    setEnableTagMode,
+    batchMode,
+    setBatchMode,
+    upstream,
+  } = useChannels()
+  const queryClient = useQueryClient()
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [showConsistencyDialog, setShowConsistencyDialog] = useState(false)
+  const [showApplyAllConfirm, setShowApplyAllConfirm] = useState(false)
+  const [isRepairingConsistency, setIsRepairingConsistency] = useState(false)
+  const [isDeletingDisabled, setIsDeletingDisabled] = useState(false)
+  const [deleteDisabledFailure, setDeleteDisabledFailure] =
+    useState<ChannelActionFailure | null>(null)
+  const currentUser = useAuthStore((s) => s.auth.user)
+  const canEditSensitive = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+  )
+
+  const handleTagModeToggle = (checked: boolean) => {
+    localStorage.setItem('pbr_enable-tag-mode', String(checked))
+    setEnableTagMode(checked)
+  }
+
+  const handleBatchModeToggle = (checked: boolean) => {
+    setBatchMode(checked)
+  }
+
+  return (
+    <>
+      <div className='flex items-center gap-2'>
+        {/* Desktop: Toggle switches visible */}
+        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
+          <ListChecks className='text-muted-foreground h-4 w-4' />
+          <Label
+            htmlFor='channel-batch-mode'
+            className='cursor-pointer text-sm'
+          >
+            {t('Batch Operations')}
+          </Label>
+          <Switch
+            id='channel-batch-mode'
+            checked={batchMode}
+            onCheckedChange={handleBatchModeToggle}
+          />
+        </div>
+
+        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
+          <Tags className='text-muted-foreground h-4 w-4' />
+          <Label htmlFor='tag-mode' className='cursor-pointer text-sm'>
+            {t('Tag Mode')}
+          </Label>
+          <Switch
+            id='tag-mode'
+            checked={enableTagMode}
+            onCheckedChange={handleTagModeToggle}
+          />
+        </div>
+
+        {/* Create Channel */}
+        <Tooltip>
+          <TooltipTrigger render={<span className='inline-flex' />}>
+            <Button
+              onClick={() => {
+                if (!canEditSensitive) return
+                setCurrentRow(null)
+                setOpen('create-channel')
+              }}
+              size='sm'
+              disabled={!canEditSensitive}
+            >
+              <Plus className='h-4 w-4' />
+              <span className='max-sm:hidden'>{t('Create Channel')}</span>
+              <span className='sm:hidden'>{t('Create')}</span>
+            </Button>
+          </TooltipTrigger>
+          {!canEditSensitive && (
+            <TooltipContent>
+              {t('No permission to perform this action')}
+            </TooltipContent>
+          )}
+        </Tooltip>
+
+        {/* More Actions */}
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant='outline' size='sm' />}>
+            <MoreHorizontal className='h-4 w-4' />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='end' className='w-56'>
+            {/* Mobile-only: toggle switches */}
+            <DropdownMenuCheckboxItem
+              className='sm:hidden'
+              checked={batchMode}
+              onCheckedChange={handleBatchModeToggle}
+            >
+              <ListChecks className='mr-2 h-4 w-4' />
+              {t('Batch Operations')}
+            </DropdownMenuCheckboxItem>
+
+            <DropdownMenuCheckboxItem
+              className='sm:hidden'
+              checked={enableTagMode}
+              onCheckedChange={handleTagModeToggle}
+            >
+              <Tags className='mr-2 h-4 w-4' />
+              {t('Tag Mode')}
+            </DropdownMenuCheckboxItem>
+
+            <DropdownMenuSeparator className='sm:hidden' />
+
+            <DropdownMenuItem
+              onClick={() => {
+                handleTestAllChannels(queryClient)
+              }}
+            >
+              {t('Test All Channels')}
+              <DropdownMenuShortcut>
+                <TestTube className='h-4 w-4' />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onClick={() => upstream.detectAllUpdates()}
+              disabled={upstream.detectAllLoading}
+            >
+              {t('Detect All Upstream Updates')}
+              <DropdownMenuShortcut>
+                <RefreshCw className='h-4 w-4' />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+
+            <DropdownMenuItem
+              onSelect={(event) => {
+                event.preventDefault()
+                if (!canEditSensitive) return
+                setShowApplyAllConfirm(true)
+              }}
+              disabled={upstream.applyAllLoading}
+            >
+              {t('Apply All Upstream Updates')}
+              <DropdownMenuShortcut>
+                <ArrowUpFromLine className='h-4 w-4' />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault()
+                setShowConsistencyDialog(true)
+              }}
+            >
+              {t('Repair Channel Consistency')}
+              <DropdownMenuShortcut>
+                <Settings2 className='h-4 w-4' />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault()
+                if (!canEditSensitive) return
+                setDeleteDisabledFailure(null)
+                setShowDeleteDialog(true)
+              }}
+              disabled={!canEditSensitive}
+              className='text-destructive focus:text-destructive'
+            >
+              {t('Delete All Disabled')}
+              <DropdownMenuShortcut>
+                <Trash2 className='h-4 w-4' />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <ConfirmDialog
+        open={showDeleteDialog}
+        onOpenChange={(nextOpen) => {
+          setShowDeleteDialog(nextOpen)
+          if (!nextOpen) setDeleteDisabledFailure(null)
+        }}
+        title={t('Delete All Disabled Channels?')}
+        desc={t(
+          'This will permanently delete all manually and automatically disabled channels. This action cannot be undone.'
+        )}
+        destructive
+        isLoading={isDeletingDisabled}
+        handleConfirm={async () => {
+          if (!canEditSensitive) return
+          setIsDeletingDisabled(true)
+          try {
+            const failure = await handleDeleteAllDisabled(queryClient)
+            if (failure) {
+              // 被车道引用：整批拒绝，保留确认框并列出被引用渠道与车道。
+              setDeleteDisabledFailure(failure)
+            } else {
+              setDeleteDisabledFailure(null)
+              setShowDeleteDialog(false)
+            }
+          } finally {
+            setIsDeletingDisabled(false)
+          }
+        }}
+      >
+        {deleteDisabledFailure && (
+          <Alert variant='destructive'>
+            <AlertDescription>
+              <p>
+                {deleteDisabledFailure.message ||
+                  t('Failed to delete disabled channels')}
+              </p>
+              {deleteDisabledFailure.lanes.length > 0 && (
+                <div className='mt-2'>
+                  <p className='font-medium'>{t('Lanes')}</p>
+                  <ul className='list-disc space-y-1 ps-5'>
+                    {deleteDisabledFailure.lanes.map((lane) => (
+                      <li key={lane}>{lane}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {deleteDisabledFailure.groups.length > 0 && (
+                <div className='mt-2'>
+                  <p className='font-medium'>{t('Member groups')}</p>
+                  <ul className='list-disc space-y-1 ps-5'>
+                    {deleteDisabledFailure.groups.map((group) => (
+                      <li key={group}>{group}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {Object.entries(deleteDisabledFailure.blocked).length > 0 && (
+                <ul className='mt-2 space-y-2'>
+                  {Object.entries(deleteDisabledFailure.blocked).map(
+                    ([name, lanes]) => (
+                      <li key={name}>
+                        <span className='font-medium'>{name}</span>
+                        <ul className='list-disc space-y-1 ps-5'>
+                          {lanes.map((lane) => (
+                            <li key={lane}>{lane}</li>
+                          ))}
+                        </ul>
+                      </li>
+                    )
+                  )}
+                </ul>
+              )}
+              {Object.entries(deleteDisabledFailure.blockedGroups).length >
+                0 && (
+                <div className='mt-2 space-y-2'>
+                  <p className='font-medium'>{t('Member groups')}</p>
+                  <ul className='space-y-2'>
+                    {Object.entries(deleteDisabledFailure.blockedGroups).map(
+                      ([name, groups]) => (
+                        <li key={name}>
+                          <span className='font-medium'>{name}</span>
+                          <ul className='list-disc space-y-1 ps-5'>
+                            {groups.map((group) => (
+                              <li key={group}>{group}</li>
+                            ))}
+                          </ul>
+                        </li>
+                      )
+                    )}
+                  </ul>
+                </div>
+              )}
+              <Link
+                to='/routes'
+                search={{}}
+                className='mt-3 inline-block font-medium underline underline-offset-2'
+              >
+                {t('Routing & Failover')}
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={showConsistencyDialog}
+        onOpenChange={setShowConsistencyDialog}
+        title={t('Repair channel consistency?')}
+        desc={t(
+          'This will rebuild the channel routing index from every channel configuration, including supported models and groups. Routing may be briefly incomplete while the rebuild is running. Continue?'
+        )}
+        confirmText={t('Repair')}
+        isLoading={isRepairingConsistency}
+        handleConfirm={async () => {
+          setIsRepairingConsistency(true)
+          try {
+            // 成功/失败反馈由 handleFixAbilities 内部统一 toast，无需再打日志。
+            await handleFixAbilities(queryClient)
+            setShowConsistencyDialog(false)
+          } finally {
+            setIsRepairingConsistency(false)
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={showApplyAllConfirm}
+        onOpenChange={setShowApplyAllConfirm}
+        title={t('Apply all upstream model updates?')}
+        desc={t(
+          'This will apply every staged add/remove across all enabled channels. Channels whose removals are still referenced by lanes or member groups are skipped and reported as failed. Review staged changes first if you are unsure.'
+        )}
+        confirmText={t('Apply all')}
+        destructive
+        isLoading={upstream.applyAllLoading}
+        handleConfirm={async () => {
+          setShowApplyAllConfirm(false)
+          await upstream.applyAllUpdates()
+        }}
+      />
+    </>
+  )
+}

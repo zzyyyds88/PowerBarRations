@@ -1,0 +1,555 @@
+package model
+
+import (
+	"errors"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/zzyyyds88/PowerBarRations/common"
+
+	"gorm.io/gorm"
+)
+
+const (
+	NameRuleExact = iota
+	NameRulePrefix
+	NameRuleContains
+	NameRuleSuffix
+)
+
+type BoundChannel struct {
+	Name string `json:"name"`
+	Type int    `json:"type"`
+}
+
+type Model struct {
+	Id                 int            `json:"id"`
+	ModelName          string         `json:"model_name" gorm:"size:128;not null;uniqueIndex:uk_model_name_delete_at,priority:1"`
+	Description        string         `json:"description,omitempty" gorm:"type:text"`
+	Icon               string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
+	Tags               string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
+	Endpoints          string         `json:"endpoints,omitempty" gorm:"type:text"`
+	SupportedEndpoints []string       `json:"supported_endpoints,omitempty" gorm:"-"`
+	Status             int            `json:"status" gorm:"default:1"`
+	SyncOfficial       int            `json:"sync_official" gorm:"default:1"`
+	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
+	UpdatedTime        int64          `json:"updated_time" gorm:"bigint"`
+	DeletedAt          gorm.DeletedAt `json:"-" gorm:"index;uniqueIndex:uk_model_name_delete_at,priority:2"`
+
+	BoundChannels []BoundChannel `json:"bound_channels,omitempty" gorm:"-"`
+	EnableGroups  []string       `json:"enable_groups,omitempty" gorm:"-"`
+	QuotaTypes    []int          `json:"quota_types,omitempty" gorm:"-"`
+	NameRule      int            `json:"name_rule" gorm:"default:0"`
+	// ContextWindow 是该模型（或规则命中集）的上下文窗口 token 数，
+	// 0 = 未知。只服务用量页的窗口填充率，不参与选路、限流或拒绝。
+	ContextWindow int `json:"context_window" gorm:"default:0"`
+
+	MatchedModels []string `json:"matched_models,omitempty" gorm:"-"`
+	MatchedCount  int      `json:"matched_count,omitempty" gorm:"-"`
+
+	HasMetadata            bool `json:"has_metadata" gorm:"-"`
+	ConfiguredChannelCount int  `json:"configured_channel_count" gorm:"-"`
+}
+
+// MatchesName applies a metadata rule to a concrete channel model name.
+func (mi *Model) MatchesName(name string) bool {
+	switch mi.NameRule {
+	case NameRulePrefix:
+		return strings.HasPrefix(name, mi.ModelName)
+	case NameRuleSuffix:
+		return strings.HasSuffix(name, mi.ModelName)
+	case NameRuleContains:
+		return strings.Contains(name, mi.ModelName)
+	default:
+		return name == mi.ModelName
+	}
+}
+
+// resolveModelMetadata preserves catalog precedence: exact, prefix, suffix,
+// then contains. The first matching record within a rule type wins.
+func resolveModelMetadata(records []Model, names []string) map[string]*Model {
+	resolved := make(map[string]*Model)
+	for i := range records {
+		if records[i].NameRule == NameRuleExact {
+			resolved[records[i].ModelName] = &records[i]
+		}
+	}
+	for _, rule := range []int{NameRulePrefix, NameRuleSuffix, NameRuleContains} {
+		for i := range records {
+			metadata := &records[i]
+			if metadata.NameRule != rule {
+				continue
+			}
+			for _, name := range names {
+				if _, exists := resolved[name]; !exists && metadata.MatchesName(name) {
+					resolved[name] = metadata
+				}
+			}
+		}
+	}
+	return resolved
+}
+
+// GetConfiguredModelChannels includes disabled channels and reads no credentials.
+func GetConfiguredModelChannels() (map[string][]int, error) {
+	var channels []Channel
+	if err := DB.Select("id", "models").Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	configured := make(map[string][]int)
+	for _, channel := range channels {
+		for _, name := range normalizeLookupValues(channel.GetModels()) {
+			configured[name] = append(configured[name], channel.Id)
+		}
+	}
+	return configured, nil
+}
+
+// SearchModelsWithChannels augments metadata with concrete configured names.
+// Synthetic rows never persist and never affect the public pricing catalog.
+func SearchModelsWithChannels(keyword, status, syncOfficial string, offset, limit int) ([]*Model, int64, error) {
+	records, _, err := SearchModels(keyword, status, syncOfficial, 0, -1)
+	if err != nil {
+		return nil, 0, err
+	}
+	_, filterStatus := parseModelStatusFilter(status)
+	_, filterSync := parseModelSyncFilter(syncOfficial)
+	if !filterStatus && !filterSync {
+		configured, err := GetConfiguredModelChannels()
+		if err != nil {
+			return nil, 0, err
+		}
+		var exactNames []string
+		if err := DB.Model(&Model{}).Where("name_rule = ?", NameRuleExact).Pluck("model_name", &exactNames).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, name := range exactNames {
+			delete(configured, name)
+		}
+		names := make([]string, 0, len(configured))
+		for name := range configured {
+			if keyword == "" || strings.Contains(strings.ToLower(name), strings.ToLower(keyword)) {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			records = append(records, &Model{ModelName: name, NameRule: NameRuleExact})
+		}
+	}
+	total := len(records)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return []*Model{}, int64(total), nil
+	}
+	end := total
+	if limit >= 0 && limit < total-offset {
+		end = offset + limit
+	}
+	return records[offset:end], int64(total), nil
+}
+
+func (mi *Model) Insert() error {
+	return metadataTransaction(func(tx *gorm.DB) error {
+		now := common.GetTimestamp()
+		mi.CreatedTime, mi.UpdatedTime = now, now
+		status, syncOfficial := mi.Status, mi.SyncOfficial
+		if err := tx.Create(mi).Error; err != nil {
+			return err
+		}
+		mi.Status, mi.SyncOfficial = status, syncOfficial
+		return tx.Model(&Model{}).Where("id = ?", mi.Id).Updates(map[string]any{"status": status, "sync_official": syncOfficial}).Error
+	})
+}
+
+func IsModelNameDuplicated(id int, name string) (bool, error) {
+	if name == "" {
+		return false, nil
+	}
+	var cnt int64
+	err := DB.Model(&Model{}).Where("model_name = ? AND id <> ?", name, id).Count(&cnt).Error
+	return cnt > 0, err
+}
+
+func (mi *Model) Update() error {
+	return metadataTransaction(func(tx *gorm.DB) error {
+		mi.UpdatedTime = common.GetTimestamp()
+		return tx.Model(&Model{}).Where("id = ?", mi.Id).
+			Select("model_name", "description", "icon", "tags", "endpoints", "status", "sync_official", "name_rule", "updated_time").Updates(mi).Error
+	})
+}
+
+func (mi *Model) Delete() error {
+	_, err := DeleteModelMetadata([]int{mi.Id}, false, false)
+	return err
+}
+
+type ModelDeleteResult struct {
+	DeletedCount       int      `json:"deleted_count"`
+	UpdatedChannels    int      `json:"updated_channels"`
+	CleanedLanes       []string `json:"cleaned_lanes,omitempty"`
+	DeletedLanes       []string `json:"deleted_lanes,omitempty"`
+	ManualLanesCleared []string `json:"manual_lanes_cleared,omitempty"`
+}
+
+// DeleteModelMetadata optionally removes exact model names from every channel.
+// Channel removal requires exact-match metadata records. Pricing removal
+// clears the selected names without expanding metadata matching rules.
+// LaneReferenceError 表示"要移除的模型仍被车道或成员组引用"，携带
+// 渠道名 → 车道名 与 渠道名 → 成员组名 两份清单（ADR 0009：车道可以只引用
+// 成员组，单看车道成员会漏掉整组引用）。
+// 调用方据此返回 conflict 包络，避免"模型已删、路由页仍显示可调用"的静默不一致。
+type LaneReferenceError struct {
+	Blocked map[string][]string
+	Groups  map[string][]string
+	// Models 是本次删除涉及的模型名，供调用方定位"哪个模型"触发冲突。
+	Models []string
+}
+
+func (e *LaneReferenceError) Error() string {
+	names := make([]string, 0, len(e.Blocked)+len(e.Groups))
+	seen := map[string]bool{}
+	for name := range e.Blocked {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	for name := range e.Groups {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return "models still referenced by lanes or member groups on channels: " + strings.Join(names, ", ")
+}
+
+func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (ModelDeleteResult, error) {
+	return DeleteModelMetadataWithOptions(ids, removeFromChannels, removePricing, false)
+}
+
+// DeleteModelMetadataWithOptions 是 DeleteModelMetadata 的扩展入口。force 只允许
+// 清理**散车道成员**；成员组引用始终拒绝（组是跨车道复用单元，必须显式编辑）。
+func DeleteModelMetadataWithOptions(ids []int, removeFromChannels, removePricing, force bool) (ModelDeleteResult, error) {
+	result := ModelDeleteResult{}
+	if len(ids) == 0 || len(ids) > 1000 {
+		return result, errors.New("select between 1 and 1000 models")
+	}
+	selected := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return result, errors.New("invalid model ID")
+		}
+		selected[id] = struct{}{}
+	}
+	modelIDs := make([]int, 0, len(selected))
+	for id := range selected {
+		modelIDs = append(modelIDs, id)
+	}
+	sort.Ints(modelIDs)
+	names := make(map[string]struct{}, len(modelIDs))
+	deleteRecords := func(tx *gorm.DB) error {
+		var records []Model
+		if err := lockForUpdate(tx).Where("id IN ?", modelIDs).Order("id").Find(&records).Error; err != nil {
+			return err
+		}
+		if len(records) != len(modelIDs) {
+			return errors.New("selected models changed; reload before deleting")
+		}
+		for _, record := range records {
+			if removeFromChannels && record.NameRule != NameRuleExact {
+				return errors.New("only exact-match models can be removed from channels")
+			}
+			names[record.ModelName] = struct{}{}
+		}
+		if removeFromChannels {
+			var channels []Channel
+			// Read only routing fields. Lock channels in a consistent order, then
+			// update models and abilities in the same transaction as metadata.
+			if err := lockForUpdate(tx).Select("id", "name", "models", "status", "group", "tag").Order("id").Find(&channels).Error; err != nil {
+				return err
+			}
+			// 车道 / 成员组引用守卫：按成员所选模型判定，并同时检查组内引用
+			// （ADR 0009）。任一项非空都拒绝，避免"模型已删、路由页仍显示可调用"
+			// 或"组内成员静默悬空"（与渠道编辑/sync-models 同口径）。
+			blocked := map[string][]string{}
+			blockedGroups := map[string][]string{}
+			for _, channel := range channels {
+				removedHere := make([]string, 0)
+				for _, name := range channel.GetModels() {
+					if trimmed := strings.TrimSpace(name); trimmed != "" {
+						if _, remove := names[trimmed]; remove {
+							removedHere = append(removedHere, trimmed)
+						}
+					}
+				}
+				if len(removedHere) == 0 {
+					continue
+				}
+				refs, refErr := removedModelReferencesWith(tx, channel.Id, removedHere)
+				if refErr != nil {
+					return refErr
+				}
+				if len(refs.Lanes) > 0 {
+					blocked[channel.Name] = refs.Lanes
+				}
+				if len(refs.Groups) > 0 {
+					blockedGroups[channel.Name] = refs.Groups
+				}
+			}
+			if len(blockedGroups) > 0 || (len(blocked) > 0 && !force) {
+				models := make([]string, 0, len(names))
+				for name := range names {
+					models = append(models, name)
+				}
+				sort.Strings(models)
+				return &LaneReferenceError{Blocked: blocked, Groups: blockedGroups, Models: models}
+			}
+			for _, channel := range channels {
+				models := channel.GetModels()
+				remaining := make([]string, 0, len(models))
+				removedHere := make([]string, 0)
+				for _, name := range models {
+					trimmed := strings.TrimSpace(name)
+					if _, remove := names[trimmed]; !remove {
+						remaining = append(remaining, name)
+					} else {
+						removedHere = append(removedHere, trimmed)
+					}
+				}
+				if len(remaining) == len(models) {
+					continue
+				}
+				channel.Models = strings.Join(remaining, ",")
+				if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("models", channel.Models).Error; err != nil {
+					return err
+				}
+				result.UpdatedChannels++
+				if force {
+					cleaned, deleted, cleanupErr := CleanupLanesForRemovedModelsTx(tx, channel.Id, removedHere)
+					if cleanupErr != nil {
+						return cleanupErr
+					}
+					result.CleanedLanes = append(result.CleanedLanes, cleaned...)
+					result.DeletedLanes = append(result.DeletedLanes, deleted...)
+				}
+			}
+		}
+		if err := tx.Where("id IN ?", modelIDs).Delete(&Model{}).Error; err != nil {
+			return err
+		}
+		result.DeletedCount = len(records)
+		return nil
+	}
+	var err error
+	if removePricing {
+		// Use the pricing mutation path so both option persistence and runtime
+		// publication stay serialized with ordinary pricing saves. All database
+		// writes share one transaction; runtime prices publish only after commit.
+		metadataMutationMu.Lock()
+		defer metadataMutationMu.Unlock()
+		err = mutateModelPricingOptions(func(tx *gorm.DB, values map[string]map[string]any) error {
+			if err := lockMetadataMutation(tx); err != nil {
+				return err
+			}
+			if err := deleteRecords(tx); err != nil {
+				return err
+			}
+			for _, entries := range values {
+				for name := range names {
+					delete(entries, name)
+				}
+			}
+			return nil
+		})
+	} else {
+		err = metadataTransaction(deleteRecords)
+	}
+	if err != nil {
+		return ModelDeleteResult{}, err
+	}
+	if len(result.DeletedLanes) > 0 {
+		sort.Strings(result.DeletedLanes)
+		deletedSet := make(map[string]bool, len(result.DeletedLanes))
+		for _, name := range result.DeletedLanes {
+			deletedSet[name] = true
+		}
+		filtered := result.CleanedLanes[:0]
+		for _, name := range result.CleanedLanes {
+			if !deletedSet[name] {
+				filtered = append(filtered, name)
+			}
+		}
+		result.CleanedLanes = filtered
+	}
+	if len(result.CleanedLanes) > 0 {
+		sort.Strings(result.CleanedLanes)
+		result.ManualLanesCleared, _ = ReconcileManualActiveMembersByNames(result.CleanedLanes)
+	}
+	if result.UpdatedChannels > 0 {
+		InitChannelCache()
+	}
+	RefreshPricing()
+	return result, nil
+}
+
+func GetAllModels(offset int, limit int) ([]*Model, error) {
+	models, _, err := SearchModels("", "", "", offset, limit)
+	return models, err
+}
+
+// ModelConnection describes an enabled channel declaration independently of
+// catalog visibility or price. abilities 表已删除：这里直接展开启用渠道的
+// (分组, 模型) 声明，仅供管理面元数据/渠道计数展示使用，不参与路由。
+type ModelConnection struct {
+	ChannelId   int    `json:"channel_id"`
+	ChannelName string `json:"channel_name"`
+	ChannelType int    `json:"channel_type"`
+	Group       string `json:"group"`
+	Model       string `json:"model"`
+}
+
+func GetModelConnections() ([]ModelConnection, error) {
+	rows, err := getEnabledChannelCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	connections := make([]ModelConnection, 0, len(rows))
+	for _, row := range rows {
+		connections = append(connections, ModelConnection{
+			ChannelId:   row.ChannelId,
+			ChannelName: row.ChannelName,
+			ChannelType: row.ChannelType,
+			Group:       row.Group,
+			Model:       row.Model,
+		})
+	}
+	sort.SliceStable(connections, func(i, j int) bool {
+		if connections[i].Model != connections[j].Model {
+			return connections[i].Model < connections[j].Model
+		}
+		return connections[i].ChannelId < connections[j].ChannelId
+	})
+	return connections, nil
+}
+
+func normalizeLookupValues(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	return normalized
+}
+
+// GetPreferredModelOwnerChannelTypes 返回"模型名 → 首选归属渠道类型"。
+//
+// abilities 表已删除：归属直接由启用渠道的声明推导，同一模型命中多个渠道时
+// 取渠道 id 最小者（旧 priority/weight 排序随基座选路一起删除）。
+func GetPreferredModelOwnerChannelTypes(modelNames []string, groups []string) (map[string]int, error) {
+	result := make(map[string]int)
+	modelNames = normalizeLookupValues(modelNames)
+	if len(modelNames) == 0 {
+		return result, nil
+	}
+	wanted := make(map[string]bool, len(modelNames))
+	for _, name := range modelNames {
+		wanted[name] = true
+	}
+	groups = normalizeLookupValues(groups)
+	groupSet := make(map[string]bool, len(groups))
+	for _, group := range groups {
+		groupSet[group] = true
+	}
+
+	rows, err := getEnabledChannelCapabilities()
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if !wanted[row.Model] {
+			continue
+		}
+		if len(groupSet) > 0 && !groupSet[row.Group] {
+			continue
+		}
+		if _, ok := result[row.Model]; ok {
+			continue
+		}
+		result[row.Model] = row.ChannelType
+	}
+	return result, nil
+}
+
+func SearchModels(keyword string, status string, syncOfficial string, offset int, limit int) ([]*Model, int64, error) {
+	var models []*Model
+	db := DB.Model(&Model{})
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where("model_name LIKE ? OR description LIKE ? OR tags LIKE ?", like, like, like)
+	}
+	if statusValue, ok := parseModelStatusFilter(status); ok {
+		db = db.Where("models.status = ?", statusValue)
+	}
+	if syncValue, ok := parseModelSyncFilter(syncOfficial); ok {
+		db = db.Where("models.sync_official = ?", syncValue)
+	}
+	var total int64
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := db.Order("models.id DESC").Offset(offset).Limit(limit).Find(&models).Error; err != nil {
+		return nil, 0, err
+	}
+	return models, total, nil
+}
+
+// parseModelStatusFilter maps UI/API status values to the models.status column.
+// Returns ok=false when no status filter should be applied.
+func parseModelStatusFilter(status string) (value int, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "all":
+		return 0, false
+	case "enabled", "1":
+		return 1, true
+	case "disabled", "0":
+		return 0, true
+	default:
+		n, err := strconv.Atoi(status)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+}
+
+// parseModelSyncFilter maps UI/API sync values to the models.sync_official column.
+// Returns ok=false when no sync filter should be applied.
+func parseModelSyncFilter(syncOfficial string) (value int, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(syncOfficial)) {
+	case "", "all":
+		return 0, false
+	case "yes", "1":
+		return 1, true
+	case "no", "0":
+		return 0, true
+	default:
+		n, err := strconv.Atoi(syncOfficial)
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+}

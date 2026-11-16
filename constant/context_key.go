@@ -1,0 +1,100 @@
+package constant
+
+type ContextKey string
+
+const (
+	ContextKeyTokenCountMeta  ContextKey = "token_count_meta"
+	ContextKeyPromptTokens    ContextKey = "prompt_tokens"
+	ContextKeyEstimatedTokens ContextKey = "estimated_tokens"
+
+	ContextKeyOriginalModel    ContextKey = "original_model"
+	ContextKeyRequestStartTime ContextKey = "request_start_time"
+
+	/* token related keys */
+	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"
+	ContextKeyTokenKey               ContextKey = "token_key"
+	ContextKeyTokenId                ContextKey = "token_id"
+	ContextKeyTokenGroup             ContextKey = "token_group"
+	ContextKeyTokenModelLimitEnabled ContextKey = "token_model_limit_enabled"
+	ContextKeyTokenModelLimit        ContextKey = "token_model_limit"
+
+	/* channel related keys */
+	ContextKeyChannelId                ContextKey = "channel_id"
+	ContextKeyChannelName              ContextKey = "channel_name"
+	ContextKeyChannelCreateTime        ContextKey = "channel_create_time"
+	ContextKeyChannelBaseUrl           ContextKey = "base_url"
+	ContextKeyChannelType              ContextKey = "channel_type"
+	ContextKeyChannelSetting           ContextKey = "channel_setting"
+	ContextKeyChannelOtherSetting      ContextKey = "channel_other_setting"
+	ContextKeyChannelParamOverride     ContextKey = "param_override"
+	ContextKeyChannelHeaderOverride    ContextKey = "header_override"
+	ContextKeyChannelOrganization      ContextKey = "channel_organization"
+	ContextKeyChannelAutoBan           ContextKey = "auto_ban"
+	ContextKeyChannelModelMapping      ContextKey = "model_mapping"
+	ContextKeyChannelStatusCodeMapping ContextKey = "status_code_mapping"
+	ContextKeyChannelIsMultiKey        ContextKey = "channel_is_multi_key"
+	ContextKeyChannelMultiKeyIndex     ContextKey = "channel_multi_key_index"
+	ContextKeyChannelKey               ContextKey = "channel_key"
+
+	/* PBR 路由相关键 */
+	// ContextKeyPBRUpstreamModel 成员声明的上游真名；为空时回落到 original_model。
+	// 见 docs/design-v1.md §3.3：改名能力下沉到成员级，取代厂商层 model_mapping。
+	ContextKeyPBRUpstreamModel ContextKey = "pbr_upstream_model"
+	// ContextKeyPBRServedBy 记录本次实际服务者，用于 X-Served-By 响应头。
+	ContextKeyPBRServedBy ContextKey = "pbr_served_by"
+	// ContextKeyPBRNonStreamTimeout 本次尝试的非流式整响应超时（秒），0 = 不设。
+	ContextKeyPBRNonStreamTimeout ContextKey = "pbr_non_stream_timeout"
+	// ContextKeyPBRStreamFirstEventTimeout 本次尝试的流式首事件超时（秒），0 = 不设。
+	ContextKeyPBRStreamFirstEventTimeout ContextKey = "pbr_stream_first_event_timeout"
+	// ContextKeyPBRKeyId / ContextKeyPBRKeyName 模型面本次使用的客户端密钥身份（分账与日志归属）。
+	ContextKeyPBRKeyId   ContextKey = "pbr_key_id"
+	ContextKeyPBRKeyName ContextKey = "pbr_key_name"
+	// ContextKeyPBRStreamCommitted 本请求是否已向客户端写出过**数据帧**（`data:`）。
+	// 流式故障转移的提交判定用它，而不是"写过任何字节"：SSE 注释/心跳帧（`: PING`）
+	// 不携带内容、客户端可忽略，不能因为发过心跳就关掉故障转移（routing-spec §3 第 6 步、§4.4）。
+	ContextKeyPBRStreamCommitted ContextKey = "pbr_stream_committed"
+	// ContextKeyPBRStreamReject 提交后收到的流内 error 帧报文（routing-spec §4.3/§4.4）：
+	// 此时不能故障转移，但日志必须如实记录 error_kind=upstream_reject + 该报文，
+	// 使"客户端拿到 200 流、流内却被上游判拒"的失败可被检索（此前完全不可见）。
+	ContextKeyPBRStreamReject ContextKey = "pbr_stream_reject"
+	// ContextKeyPBRTTFTMs 本请求的**首字耗时**（毫秒）：从请求起始（ContextKeyRequestStartTime）
+	// 到第一帧数据转发给客户端。只记第一次，恒为流式请求；没走到数据帧（报错/取消）时为空。
+	// 渠道状态页的"输出速度"用它把首字等待从生成耗时里剔除——不剔除就只能算端到端速度。
+	ContextKeyPBRTTFTMs ContextKey = "pbr_ttft_ms"
+
+	/* user related keys */
+	ContextKeyUserId      ContextKey = "id"
+	ContextKeyUserSetting ContextKey = "user_setting"
+	ContextKeyUserQuota   ContextKey = "user_quota"
+	ContextKeyUserStatus  ContextKey = "user_status"
+	ContextKeyUserEmail   ContextKey = "user_email"
+	ContextKeyUserGroup   ContextKey = "user_group"
+	ContextKeyUsingGroup  ContextKey = "group"
+	ContextKeyUserName    ContextKey = "username"
+
+	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
+
+	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
+
+	// ContextKeyFileSourcesToCleanup stores file sources that need cleanup when request ends
+	ContextKeyFileSourcesToCleanup ContextKey = "file_sources_to_cleanup"
+
+	// ContextKeyAdminRejectReason stores an admin-only reject/block reason extracted from upstream responses.
+	// It is not returned to end users, but can be persisted into consume/error logs for debugging.
+	ContextKeyAdminRejectReason ContextKey = "admin_reject_reason"
+
+	// ContextKeyLanguage stores the user's language preference for i18n
+	ContextKeyLanguage ContextKey = "language"
+	ContextKeyIsStream ContextKey = "is_stream"
+
+	// ContextKeyAuditLogged marks that the current request has already recorded
+	// a manage/operation audit log inside the handler. When set, the admin-audit
+	// fallback in authHelper (finishAdminAudit) skips its record to avoid
+	// duplicate entries.
+	ContextKeyAuditLogged ContextKey = "audit_logged"
+
+	// ContextKeyTokenAuditParams contains only the API token operation's safe metadata.
+	ContextKeyTokenAuditParams ContextKey = "token_audit_params"
+	// ContextKeyTokenAuditSucceeded disambiguates token responses that exceed the audit buffer.
+	ContextKeyTokenAuditSucceeded ContextKey = "token_audit_succeeded"
+)

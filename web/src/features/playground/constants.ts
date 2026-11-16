@@ -1,0 +1,104 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import type { PlaygroundConfig, ParameterEnabled } from './types'
+
+// Message constants
+export const MESSAGE_ROLES = {
+  USER: 'user',
+  ASSISTANT: 'assistant',
+  SYSTEM: 'system',
+} as const
+
+export const MESSAGE_STATUS = {
+  LOADING: 'loading',
+  STREAMING: 'streaming',
+  COMPLETE: 'complete',
+  ERROR: 'error',
+} as const
+
+// API endpoints
+//
+// 试打台走**模型面**：`/v1/chat/completions` + 客户端密钥（Bearer）。
+// 基座的 `/pg/chat/completions`（登录用户试玩）已随多用户面删除，不得再使用。
+export const API_ENDPOINTS = {
+  CHAT_COMPLETIONS: '/v1/chat/completions',
+  MODELS: '/api/models',
+} as const
+
+// Default configuration
+export const DEFAULT_CONFIG: PlaygroundConfig = {
+  model: 'gpt-4o',
+  clientKey: '',
+  temperature: 0.7,
+  top_p: 1,
+  max_tokens: 4096,
+  frequency_penalty: 0,
+  presence_penalty: 0,
+  seed: null,
+  stream: true,
+}
+
+export const DEFAULT_PARAMETER_ENABLED: ParameterEnabled = {
+  temperature: true,
+  top_p: true,
+  max_tokens: false,
+  frequency_penalty: true,
+  presence_penalty: true,
+  seed: false,
+}
+
+// Storage keys（ui-spec §2：localStorage 键名统一 pbr_ 前缀）
+export const STORAGE_KEYS = {
+  CONFIG: 'pbr_playground_config',
+  MESSAGES: 'pbr_playground_messages',
+  PARAMETER_ENABLED: 'pbr_playground_parameter_enabled',
+  // clientKey 是模型面的客户端密钥，只存 sessionStorage，见 storage.ts。
+  CLIENT_KEY: 'pbr_playground_client_key',
+} as const
+
+// Error messages
+export const ERROR_MESSAGES = {
+  API_REQUEST_ERROR: 'Request error occurred',
+  NETWORK_ERROR: 'Network connection failed or server not responding',
+  PARSE_ERROR: 'Error parsing response data',
+  STREAM_START_ERROR: 'Error establishing connection',
+  CONNECTION_CLOSED: 'Connection closed',
+  INTERRUPTED: 'Generation was interrupted',
+  MISSING_CLIENT_KEY: 'Fill in a client key before sending a message',
+} as const
+
+// Message action button styles
+export const MESSAGE_ACTION_BUTTON_STYLES = {
+  BASE: 'size-7 text-muted-foreground hover:text-foreground',
+  DELETE: 'size-7 text-muted-foreground hover:text-destructive',
+  ICON: 'size-4',
+} as const
+
+// Message action labels
+export const MESSAGE_ACTION_LABELS = {
+  COPY: 'Copy',
+  COPIED: 'Copied!',
+  REGENERATE: 'Regenerate',
+  SHOW_PREVIEW: 'Show preview',
+  SHOW_SOURCE: 'Show source',
+  EDIT: 'Edit',
+  DELETE: 'Delete',
+  NO_CONTENT: 'No content to copy',
+  WAIT_GENERATION: 'Please wait for the current generation to complete',
+} as const

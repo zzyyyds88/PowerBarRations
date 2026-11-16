@@ -1,0 +1,185 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+export type SystemOption = {
+  key: string
+  value: string
+}
+
+/** `GET /api/option/`（基座面）成功即裸选项数组；`/api/system/options/all` 是 `{items}`。 */
+export type SystemOptionsResponse = SystemOption[] | { items: SystemOption[] }
+
+export type UpdateOptionRequest = {
+  key: string
+  value: string | boolean | number
+}
+
+/** `PUT /api/option/` 成功无实体（204）。 */
+export type UpdateOptionResponse = void
+
+export type SystemTaskStatus = 'pending' | 'running' | 'succeeded' | 'failed'
+
+export type SystemTask<
+  TPayload = Record<string, unknown>,
+  TState = Record<string, unknown>,
+  TResult = Record<string, unknown>,
+> = {
+  id: number
+  task_id: string
+  type: string
+  status: SystemTaskStatus
+  active_key?: string
+  payload?: TPayload
+  state?: TState
+  result?: TResult
+  error?: string
+  locked_by?: string
+  locked_until?: number
+  created_at: number
+  updated_at: number
+}
+
+export type LogCleanupTaskPayload = {
+  target_timestamp: number
+  batch_size: number
+}
+
+export type LogCleanupTaskState = {
+  total: number
+  processed: number
+  progress: number
+  remaining: number
+}
+
+export type LogCleanupTaskResult = {
+  deleted_count: number
+}
+
+export type LogCleanupTask = SystemTask<
+  LogCleanupTaskPayload,
+  LogCleanupTaskState,
+  LogCleanupTaskResult
+>
+
+/** `GET /api/system-task/{id}` 成功即裸任务对象（204 表示不存在）。 */
+export type SystemTaskResponse<TTask = SystemTask | null> = TTask
+
+/** `GET /api/system-task/list` 成功即裸任务数组。 */
+export type SystemTaskListResponse = SystemTask[]
+
+export type SiteSettings = {
+  SystemName: string
+  Logo: string
+  Footer: string
+  About: string
+  HomePageContent: string
+  ServerAddress: string
+  'legal.user_agreement': string
+  'legal.privacy_policy': string
+  HeaderNavModules: string
+  SidebarModulesAdmin: string
+}
+
+export type ContentSettings = {
+  Chats: string
+}
+
+export type ModelSettings = {
+  'global.pass_through_request_enabled': boolean
+  'global.thinking_model_blacklist': string
+  'global.chat_completions_to_responses_policy': string
+  'general_setting.ping_interval_enabled': boolean
+  'general_setting.ping_interval_seconds': number
+  'gemini.safety_settings': string
+  'gemini.version_settings': string
+  'gemini.supported_imagine_models': string
+  'gemini.thinking_adapter_enabled': boolean
+  'gemini.thinking_adapter_budget_tokens_percentage': number
+  'gemini.function_call_thought_signature_enabled': boolean
+  'gemini.remove_function_response_id_enabled': boolean
+  'claude.model_headers_settings': string
+  'claude.default_max_tokens': string
+  'claude.thinking_adapter_enabled': boolean
+  'claude.thinking_adapter_budget_tokens_percentage': number
+  'grok.violation_deduction_enabled': boolean
+  'grok.violation_deduction_amount': number
+  ModelPrice: string
+  ModelRatio: string
+  CacheRatio: string
+  CreateCacheRatio: string
+  CompletionRatio: string
+  ImageRatio: string
+  AudioRatio: string
+  AudioCompletionRatio: string
+  'billing_setting.billing_mode': string
+  'billing_setting.billing_expr': string
+  'tool_price_setting.prices': string
+  TopupGroupRatio: string
+  GroupRatio: string
+  UserUsableGroups: string
+  GroupGroupRatio: string
+  'group_ratio_setting.group_special_usable_group': string
+  ChannelDisableThreshold: string
+  AutomaticDisableChannelEnabled: boolean
+  AutomaticEnableChannelEnabled: boolean
+  AutomaticDisableKeywords: string
+  AutomaticDisableStatusCodes: string
+  'monitor_setting.auto_test_channel_enabled': boolean
+  'monitor_setting.auto_test_channel_minutes': number
+  'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.channel_test_mode':
+    | 'scheduled_all'
+    | 'auto_ban_only'
+    | 'passive_recovery'
+}
+
+export type OperationsSettings = {
+  DefaultCollapseSidebar: boolean
+  SelfUseModeEnabled: boolean
+  QuotaRemindThreshold: string
+  SMTPServer: string
+  SMTPPort: string
+  SMTPAccount: string
+  SMTPFrom: string
+  SMTPToken: string
+  SMTPSSLEnabled: boolean
+  SMTPStartTLSEnabled: boolean
+  SMTPInsecureSkipVerify: boolean
+  SMTPForceAuthLogin: boolean
+  WorkerUrl: string
+  WorkerValidKey: string
+  WorkerAllowHttpImageRequestEnabled: boolean
+  LogConsumeEnabled: boolean
+  'performance_setting.disk_cache_enabled': boolean
+  'performance_setting.disk_cache_threshold_mb': number
+  'performance_setting.disk_cache_max_size_mb': number
+  'performance_setting.disk_cache_path': string
+  'performance_setting.monitor_enabled': boolean
+  'performance_setting.monitor_cpu_threshold': number
+  'performance_setting.monitor_memory_threshold': number
+  'performance_setting.monitor_disk_threshold': number
+  'perf_metrics_setting.enabled': boolean
+  'perf_metrics_setting.flush_interval': number
+  'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
+  'perf_metrics_setting.retention_days': number
+}
+export type TestResult = {
+  name: string
+  status: 'success' | 'error'
+  error?: string
+}

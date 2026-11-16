@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# pre-commit 闸口：拦截会被判为凭据的暂存内容。
+#
+# 两道检查互补：
+#   1. gitleaks —— 通用密钥形状（AWS/GitHub/Stripe/Slack/私钥/DB URI…），
+#      规则来自上游 ~150 条，只对仓库内已核实的测试夹具做 allowlist。
+#   2. check-public-secrets.py —— 针对 GitHub secret scanning **实际会报**的
+#      那几类形状（MongoDB Atlas URI、完整 PEM 等）。两者覆盖面不同，都要跑。
+#
+# 安装：
+#   bash scripts/install-hooks.sh
+#
+# 临时跳过（仅在确认是误报、且来不及加 allowlist 时用）：
+#   SKIP_SECRET_SCAN=1 git commit ...
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT" || exit 1
+
+if [[ "${SKIP_SECRET_SCAN:-}" == "1" ]]; then
+  echo "pre-commit: SKIP_SECRET_SCAN=1，跳过凭据检查" >&2
+  exit 0
+fi
+
+failed=0
+
+# ── 1. gitleaks：只扫本次暂存的内容 ────────────────────────────────────────
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks git --pre-commit --staged --no-banner --redact \
+      -c "$REPO_ROOT/.gitleaks.toml" >/tmp/.pbr-gitleaks.log 2>&1; then
+    echo "" >&2
+    echo "✗ gitleaks 发现疑似凭据（已暂存）：" >&2
+    grep -vE '^(INF|WRN)' /tmp/.pbr-gitleaks.log >&2 || true
+    failed=1
+  fi
+elif [[ -x "$HOME/go/bin/gitleaks" ]]; then
+  if ! "$HOME/go/bin/gitleaks" git --pre-commit --staged --no-banner --redact \
+      -c "$REPO_ROOT/.gitleaks.toml" >/tmp/.pbr-gitleaks.log 2>&1; then
+    echo "" >&2
+    echo "✗ gitleaks 发现疑似凭据（已暂存）：" >&2
+    grep -vE '^(INF|WRN)' /tmp/.pbr-gitleaks.log >&2 || true
+    failed=1
+  fi
+else
+  echo "pre-commit: 未安装 gitleaks，跳过该层（安装：go install github.com/zricethezav/gitleaks/v8@latest）" >&2
+fi
+
+# ── 2. 项目自己的形状检查（GitHub secret scanning 口径）────────────────────
+if [[ -x "$REPO_ROOT/scripts/check-public-secrets.py" ]]; then
+  if ! python3 "$REPO_ROOT/scripts/check-public-secrets.py" --staged; then
+    failed=1
+  fi
+fi
+
+if [[ "$failed" -ne 0 ]]; then
+  cat >&2 <<'EOF'
+
+────────────────────────────────────────────────────────────────────
+提交已阻止。处理方式：
+
+  1. 若这是真实凭据：立即在对应平台**轮换**它，再从提交里移除。
+     撤换比清理历史更重要——历史里的旧值泄露后只有撤换才有意义。
+
+  2. 若这是测试夹具/示例值：优先拆成 "前缀" + "其余" 的运行时拼接
+     （见 AGENTS.md「密钥字形同样要避开」），这样既不触发本地扫描，
+     也不会触发 GitHub secret scanning。
+
+  3. 确需保留完整字面量时，在 .gitleaks.toml 里加**精准**的 allowlist
+     条目（写明理由，禁止用 path 通配掩盖整片目录）。
+
+  4. 确认是误报且来不及改：SKIP_SECRET_SCAN=1 git commit ...
+     这只是本地跳过，服务端 push protection 仍会拦。
+
+────────────────────────────────────────────────────────────────────
+EOF
+  exit 1
+fi
+
+exit 0

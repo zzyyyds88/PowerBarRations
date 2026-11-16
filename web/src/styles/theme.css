@@ -1,0 +1,576 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: 'Public Sans', sans-serif;
+  /* Editorial serif token — the body face used by the `serif` font axis
+   * and by presets that opt in (currently Anthropic). Lora carries only
+   * Latin glyphs, so the stack walks through CJK serifs (Noto / Source Han
+   * / Songti / SimSun) before the generic `serif` fallback. Without these
+   * explicit CJK fonts the browser's generic-serif pick on Windows is
+   * non-deterministic at small sizes and often appears sans-like. */
+  --font-serif:
+    'Lora Variable', 'Lora', 'Source Serif Pro', 'Source Serif 4',
+    'Noto Serif SC', 'Noto Serif TC', 'Noto Serif JP', 'Noto Serif KR',
+    'Source Han Serif SC', 'Source Han Serif TC', 'Source Han Serif',
+    'Songti SC', 'STSong', 'STSongti-SC-Regular', 'PingFang SC', 'SimSun',
+    'NSimSun', '宋体', 'FangSong', '仿宋', 'KaiTi', '楷体', Georgia,
+    'Times New Roman', Cambria, 'Liberation Serif', serif;
+  --font-inter:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --font-manrope:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-neutral: var(--neutral);
+  --color-neutral-foreground: var(--neutral-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-table-header: var(--table-header);
+  --color-table-row: var(--table-row);
+  --color-table-row-hover: var(--table-row-hover);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-overview-accent-1: var(--overview-accent-1);
+  --color-overview-accent-2: var(--overview-accent-2);
+  --color-overview-accent-3: var(--overview-accent-3);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-control: var(--pbr-radius-control);
+  --radius-panel: var(--pbr-radius-panel);
+  /* ── Console layout scale (ui-spec §11) ───────────────────────────────
+   * One source for the shell's spacing and type rhythm. The 4/8/12/16/24/
+   * 32/48 ladder is Tailwind's `--spacing` base (0.25rem) times
+   * 1/2/3/4/6/8/12; the named tokens below cover the shell's recurring
+   * steps so pages do not restate arbitrary pixel values. */
+  --spacing-page: 1.25rem; /* 20px desktop page gutter */
+  --spacing-page-mobile: 1rem; /* 16px mobile page gutter */
+  --spacing-panel: 0.75rem; /* 12px panel padding */
+  --spacing-stack: 0.5rem; /* 8px stacked controls */
+  --spacing-inline: 0.375rem; /* 6px inline gaps */
+  /* Type scale: 12 / 13 / 14 / 16 / 18 / 24. Shared shell and chart
+   * surfaces use these tokens instead of arbitrary `text-[Npx]` values. */
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.35;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.4;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.5;
+  --text-title: 1rem;
+  --text-title--line-height: 1.4;
+  --text-subhead: 1.125rem;
+  --text-subhead--line-height: 1.35;
+  --text-display: 1.5rem;
+  --text-display--line-height: 1.25;
+  /* Shared chart geometry (ui-spec §11). Every bar/line chart uses this
+   * plot height so cards do not drift between 200/240/320px. */
+  --chart-plot-height: 12.5rem;
+  /* ── Premium elevation utilities ──────────────────────────────────────
+   * Every shadow (including the inner 1px highlight) is a token so features
+   * never restate a colour or a blur radius. Utilities generated here:
+   *   shadow-panel          card / panel face + inner highlight
+   *   shadow-panel-hover    the same face, lifted one step for hover
+   *   shadow-popover        menus, popovers, tooltips, dialogs
+   *   shadow-control        raised secondary controls (buttons)
+   *   shadow-input          recessed inputs / selects / segment tracks
+   *   shadow-capsule        floating capsule (selected tab)
+   *   shadow-primary        filled primary button
+   *   shadow-primary-hover  filled primary button, hover ring + lift
+   *   shadow-primary-sm     small primary surfaces (checkbox / switch)
+   *   shadow-glow           bare focus glow ring in the primary hue
+   * The source values live in `:root` / `.dark` below. */
+  --shadow-panel: var(--pbr-shadow-panel);
+  --shadow-panel-hover: var(--pbr-shadow-panel-hover);
+  --shadow-popover: var(--pbr-shadow-popover);
+  --shadow-control: var(--pbr-shadow-control);
+  --shadow-input: var(--pbr-shadow-input);
+  --shadow-capsule: var(--pbr-shadow-capsule);
+  --shadow-primary: var(--pbr-shadow-primary);
+  --shadow-primary-hover: var(--pbr-shadow-primary-hover);
+  --shadow-primary-sm: var(--pbr-shadow-primary-sm);
+  --shadow-glow: var(--pbr-shadow-glow);
+  --ease-premium: var(--motion-ease);
+}
+
+:root {
+  --radius: 0.625rem;
+  /* ── Data-dense dashboard density scale ──────────────────────────────
+   * The console is laid out as a BI-style data dashboard, so the density
+   * spec lives here as real tokens instead of being restated per component:
+   * 8px grid rhythm, 12px card padding, 44px desktop table rows, 40px
+   * compact rows, 32px table head, 56px top bar. Shared components consume
+   * these via `p-(--token)` / `h-(--token)` so retuning the console is a
+   * one-line change. Compact tables opt in with `data-density='compact'`
+   * (see the rule in index.css). */
+  --density-grid: 0.5rem;
+  --density-card-padding: 0.75rem;
+  --density-table-row-height: 2.75rem;
+  --density-table-row-height-compact: 2.5rem;
+  --density-table-head-height: 2rem;
+  --density-header-height: 3.5rem;
+  /* Shape ladder (ui-spec §11): 6px small, 10px control, 14px panel. */
+  --pbr-radius-control: var(--radius);
+  --pbr-radius-panel: calc(var(--radius) * 1.4);
+  --app-header-height: var(--density-header-height);
+  /* Static build-channel fallback consumed when JS hasn't booted yet. */
+  --app-rev: '2k6e8r7p';
+  /* Currently active body font. The font axis swaps this between
+   * `--font-sans` and `--font-serif` via `[data-theme-font='...']` blocks
+   * in theme-presets.css. Default mirrors `--font-sans` so behavior is
+   * identical when no font preference is set. */
+  --font-body: var(--font-sans);
+  /* ── Deep-blue glass canvas ──────────────────────────────────────────
+   * Cool gray floor (#F6F7F9) with white glass card faces and slate ink
+   * (#1F2937). Ink/canvas is ~13.7:1 and `--muted-foreground` stays at
+   * 5.1:1 on the floor / 5.5:1 on a card face, both above the WCAG AA 4.5:1
+   * floor. */
+  --background: #f6f7f9;
+  --foreground: #1f2937;
+  --card: #ffffff;
+  --card-foreground: #1f2937;
+  --popover: #ffffff;
+  --popover-foreground: #1f2937;
+  /* Data-console blue: white label on it clears 4.5:1, and the button
+   * gradient's light stop is capped in oklab so it keeps clearing it. */
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f3f5;
+  --secondary-foreground: #1f2937;
+  --muted: #f1f3f5;
+  --muted-foreground: #5b6b7c;
+  --accent: color-mix(in oklch, var(--primary) 10%, var(--background));
+  --accent-foreground: #1d4ed8;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --success: #22c55e;
+  --success-foreground: #14532d;
+  --warning: #f59e0b;
+  --warning-foreground: #333333;
+  --info: #3b82f6;
+  --info-foreground: #ffffff;
+  --neutral: #8a8a8a;
+  --neutral-foreground: #ffffff;
+  /* ── Tonal ink ─────────────────────────────────────────────────────
+   * Label color for a same-hue tonal wash (status pills / badges / tiles).
+   * Derived from the hue itself mixed toward the theme ink — never a fixed
+   * hex — so a preset that repaints `--primary` / `--chart-*` repaints the
+   * label with it and the pair can never drift out of contrast.
+   * `--tone-ink-mix` is the hue share, capped at the largest value that
+   * keeps every slot ≥4.5:1 on a 16% wash over the lightest surface this
+   * theme can place a pill on (page / card / muted in light; card /
+   * elevated / raised in dark). Measured worst case: 4.90:1 light and
+   * 4.77:1 dark. Both blocks restate the tokens instead of letting `.dark`
+   * override only `--tone-ink-mix`, because a custom property containing
+   * `var()` is substituted on the element that declares it. */
+  --tone-ink-mix: 45%;
+  --tone-neutral-text: color-mix(
+    in oklab,
+    var(--neutral) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-primary-text: color-mix(
+    in oklab,
+    var(--primary) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-success-text: color-mix(
+    in oklab,
+    var(--success) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-warning-text: color-mix(
+    in oklab,
+    var(--warning) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-info-text: color-mix(
+    in oklab,
+    var(--info) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-destructive-text: color-mix(
+    in oklab,
+    var(--destructive) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-1-text: color-mix(
+    in oklab,
+    var(--chart-1) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-2-text: color-mix(
+    in oklab,
+    var(--chart-2) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-3-text: color-mix(
+    in oklab,
+    var(--chart-3) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-4-text: color-mix(
+    in oklab,
+    var(--chart-4) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-5-text: color-mix(
+    in oklab,
+    var(--chart-5) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --border: #e8eaed;
+  --input: #dde3ea;
+  --ring: #2563eb;
+  /* Data series lead with blue / green / red, then amber and violet for
+   * the tail of the palette. */
+  --chart-1: #2563eb; /* blue */
+  --chart-2: #22c55e; /* green */
+  --chart-3: #ef4444; /* red */
+  --chart-4: #f59e0b; /* amber */
+  --chart-5: #8b5cf6; /* violet */
+  --overview-accent-1: var(--chart-1);
+  --overview-accent-2: var(--chart-2);
+  --overview-accent-3: var(--chart-3);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1f2937;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: color-mix(in oklch, var(--primary) 8%, var(--background));
+  --sidebar-accent-foreground: #1d4ed8;
+  --sidebar-border: #e8eaed;
+  --sidebar-ring: #2563eb;
+  --skeleton-base: #e9ebef;
+  --skeleton-highlight: #f7f8fa;
+  /* Rows sit on the card face; the header band stays a fully opaque color
+   * for engines without `backdrop-filter`, and swaps to the frosted glass
+   * token when blur is available (see `--surface-glass`). */
+  --table-row: var(--card);
+  --table-header: #f2f4f7;
+  --table-header-hover: #eaedf1;
+  --table-row-hover: #f3f5f8;
+  /* Disabled rows: kept subtle so they read as "quiet", not as a colored
+     alert state. */
+  --table-disabled: #f7f8fa;
+  --table-disabled-hover: #f2f4f7;
+  --table-disabled-border: #dcdcdc;
+
+  /* ── Premium surface system ──────────────────────────────────────────
+   * Derived from the semantic palette so presets keep tinting the surfaces
+   * they own: the card face is a barely-there vertical sheen over `--card`,
+   * never a hardcoded white. */
+  --surface-highlight: inset 0 1px 0 #ffffff;
+  --surface-card-bottom: color-mix(in oklab, var(--card) 98%, #0f172a);
+  --surface-popover-bottom: color-mix(in oklab, var(--popover) 97%, #0f172a);
+  --surface-card: linear-gradient(
+    180deg,
+    var(--card),
+    var(--surface-card-bottom)
+  );
+  --surface-popover: linear-gradient(
+    180deg,
+    var(--popover),
+    var(--surface-popover-bottom)
+  );
+  /* Capsule float (selected segment / tab) sits a step above the track. */
+  --surface-raised: #ffffff;
+  --surface-hover: #f8fafc;
+  /* Row hover: a blue wash that fades out to the right. */
+  --surface-row-hover: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 6%, transparent),
+    transparent
+  );
+  /* Sidebar active item: light blue wash + a 3px primary bar. */
+  --surface-sidebar-active: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 14%, transparent),
+    color-mix(in oklab, var(--primary) 2%, transparent)
+  );
+  --surface-sidebar-bar: var(--primary);
+  /* Frosted sticky table header / toolbar glass. */
+  --surface-glass: rgba(255, 255, 255, 0.72);
+  --border-hover: #dde3ea;
+  --border-accent-hover: color-mix(in oklab, var(--primary) 26%, var(--border));
+  --border-focus: #93c5fd;
+  /* Primary fill gradient. The light stop is mixed in oklab so a preset
+   * repaints the button along with `--primary`; at 6% white the label keeps
+   * ≥4.5:1 contrast in the default palette. */
+  --gradient-primary-top: color-mix(in oklab, var(--primary) 94%, #ffffff);
+  --gradient-primary-bottom: var(--primary);
+  --gradient-primary: linear-gradient(
+    180deg,
+    var(--gradient-primary-top),
+    var(--gradient-primary-bottom)
+  );
+  --gradient-primary-hover: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--gradient-primary-top) 94%, #ffffff),
+    color-mix(in oklab, var(--gradient-primary-bottom) 94%, #ffffff)
+  );
+
+  /* ── Elevation ───────────────────────────────────────────────────────
+   * Soft, wide, low-opacity shadows (never a hard black drop). */
+  --pbr-shadow-panel:
+    var(--surface-highlight), 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 8px 24px -12px rgba(16, 24, 40, 0.12);
+  --pbr-shadow-panel-hover:
+    var(--surface-highlight), 0 2px 4px rgba(16, 24, 40, 0.06),
+    0 14px 30px -12px rgba(16, 24, 40, 0.18);
+  --pbr-shadow-popover:
+    0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -8px rgba(16, 24, 40, 0.18);
+  --pbr-shadow-control:
+    var(--surface-highlight), 0 1px 2px rgba(16, 24, 40, 0.05);
+  --pbr-shadow-input: inset 0 1px 2px rgba(16, 24, 40, 0.05);
+  --pbr-shadow-capsule:
+    var(--surface-highlight), 0 1px 2px rgba(16, 24, 40, 0.08),
+    0 2px 6px -2px rgba(16, 24, 40, 0.06);
+  --pbr-shadow-primary:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px color-mix(in oklab, var(--primary) 35%, transparent),
+    0 8px 20px -8px color-mix(in oklab, var(--primary) 45%, transparent);
+  --pbr-shadow-primary-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 0 0 3px color-mix(in oklab, var(--primary) 22%, transparent),
+    0 2px 4px color-mix(in oklab, var(--primary) 38%, transparent),
+    0 10px 24px -8px color-mix(in oklab, var(--primary) 50%, transparent);
+  --pbr-shadow-primary-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px color-mix(in oklab, var(--primary) 40%, transparent);
+  --pbr-shadow-glow: 0 0 0 3px
+    color-mix(in oklab, var(--primary) 20%, transparent);
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+}
+
+.dark {
+  /* Deep-blue glass console in the dark: #14161A canvas (never pure black),
+   * a #1B1E24 glass card face and #E6E8EB ink. Ink/canvas is ~13.5:1;
+   * `--muted-foreground` clears 7.2:1 on the canvas and 6.6:1 on a card. */
+  --background: #14161a;
+  --foreground: #e6e8eb;
+  --card: #1b1e24;
+  --card-foreground: #e6e8eb;
+  --popover: #1f232a;
+  --popover-foreground: #e6e8eb;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --secondary: #23272f;
+  --secondary-foreground: #e6e8eb;
+  --muted: #1f232a;
+  --muted-foreground: #9aa4b2;
+  --accent: color-mix(in oklch, var(--primary) 22%, var(--background));
+  --accent-foreground: #dbeafe;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --success: #22c55e;
+  --success-foreground: #0f2e1a;
+  --warning: #f59e0b;
+  --warning-foreground: #1e1e1e;
+  --info: #3b82f6;
+  --info-foreground: #ffffff;
+  --neutral: #a3a3a3;
+  --neutral-foreground: #1e1e1e;
+  /* Tonal ink, dark pass: the hue share drops so every slot keeps ≥4.5:1 on
+   * a 16% wash over `--card` / `--popover` / `--surface-raised`. */
+  --tone-ink-mix: 62%;
+  --tone-neutral-text: color-mix(
+    in oklab,
+    var(--neutral) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-primary-text: color-mix(
+    in oklab,
+    var(--primary) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-success-text: color-mix(
+    in oklab,
+    var(--success) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-warning-text: color-mix(
+    in oklab,
+    var(--warning) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-info-text: color-mix(
+    in oklab,
+    var(--info) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-destructive-text: color-mix(
+    in oklab,
+    var(--destructive) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-1-text: color-mix(
+    in oklab,
+    var(--chart-1) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-2-text: color-mix(
+    in oklab,
+    var(--chart-2) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-3-text: color-mix(
+    in oklab,
+    var(--chart-3) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-4-text: color-mix(
+    in oklab,
+    var(--chart-4) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --tone-chart-5-text: color-mix(
+    in oklab,
+    var(--chart-5) var(--tone-ink-mix),
+    var(--foreground)
+  );
+  --border: #2a2f38;
+  --input: #333945;
+  --ring: #3b82f6;
+  /* Same blue / green / red spine, lifted for legibility on the dark glass. */
+  --chart-1: #60a5fa; /* blue */
+  --chart-2: #4ade80; /* green */
+  --chart-3: #f87171; /* red */
+  --chart-4: #fbbf24; /* amber */
+  --chart-5: #a78bfa; /* violet */
+  --overview-accent-1: var(--chart-1);
+  --overview-accent-2: var(--chart-2);
+  --overview-accent-3: var(--chart-3);
+  --sidebar: #171a1f;
+  --sidebar-foreground: #e6e8eb;
+  --sidebar-primary: #3b82f6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: color-mix(in oklch, var(--primary) 20%, var(--background));
+  --sidebar-accent-foreground: #bfdbfe;
+  --sidebar-border: #2a2f38;
+  --sidebar-ring: #3b82f6;
+  --skeleton-base: #23272f;
+  --skeleton-highlight: #2f353f;
+  --table-row: var(--card);
+  --table-header: #20242b;
+  --table-header-hover: #262b33;
+  --table-row-hover: #20242b;
+  --table-disabled: #1e222a;
+  --table-disabled-hover: #23272f;
+  --table-disabled-border: #3a4150;
+
+  /* Dark glass surfaces: the inner highlight drops to 4% white and the card
+   * sheen darkens toward the bottom instead of lightening. */
+  --surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --surface-card-bottom: color-mix(in oklab, var(--card) 94%, #000000);
+  --surface-popover-bottom: color-mix(in oklab, var(--popover) 94%, #000000);
+  --surface-raised: #2a2f38;
+  --surface-hover: #23272f;
+  --surface-row-hover: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 10%, transparent),
+    transparent
+  );
+  --surface-sidebar-active: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--primary) 22%, transparent),
+    color-mix(in oklab, var(--primary) 4%, transparent)
+  );
+  --border-hover: #3a4150;
+  --border-focus: #60a5fa;
+  /* The dark button fill shifts the whole gradient one step down so the
+   * white label keeps ≥4.5:1 on the lightest pixel of the fill, while the
+   * bright #60A5FA accent lives on in glow rings and iconography. */
+  --gradient-primary-top: color-mix(in oklab, var(--primary) 87%, #0b0e14);
+  --gradient-primary-bottom: color-mix(in oklab, var(--primary) 74%, #0b0e14);
+  --gradient-primary-hover: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--gradient-primary-top) 90%, #ffffff),
+    color-mix(in oklab, var(--gradient-primary-bottom) 90%, #ffffff)
+  );
+
+  --pbr-shadow-panel:
+    var(--surface-highlight), 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 10px 28px -12px rgba(0, 0, 0, 0.55);
+  --pbr-shadow-panel-hover:
+    var(--surface-highlight), 0 2px 6px rgba(0, 0, 0, 0.4),
+    0 16px 36px -12px rgba(0, 0, 0, 0.62);
+  --pbr-shadow-popover:
+    0 1px 2px rgba(0, 0, 0, 0.5), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+  --pbr-shadow-control: var(--surface-highlight), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --pbr-shadow-input: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  --pbr-shadow-capsule:
+    var(--surface-highlight), 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 2px 6px -2px rgba(0, 0, 0, 0.3);
+  --pbr-shadow-primary:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 1px 2px color-mix(in oklab, var(--primary) 30%, transparent),
+    0 8px 20px -8px color-mix(in oklab, var(--primary) 40%, transparent);
+  --pbr-shadow-primary-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 3px color-mix(in oklab, #60a5fa 25%, transparent),
+    0 2px 4px color-mix(in oklab, var(--primary) 34%, transparent),
+    0 10px 24px -8px color-mix(in oklab, var(--primary) 46%, transparent);
+  --pbr-shadow-primary-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px color-mix(in oklab, var(--primary) 36%, transparent);
+  --pbr-shadow-glow: 0 0 0 3px color-mix(in oklab, #60a5fa 25%, transparent);
+}

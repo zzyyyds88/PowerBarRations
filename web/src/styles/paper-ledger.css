@@ -1,0 +1,235 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+/*
+ * Paper Ledger — the default console visual language.
+ *
+ * Warm paper canvas, ink text, hairline rules and one acid highlight. The
+ * variables live on :root so named theme presets (which write their variables
+ * on <body>) still win when explicitly selected. Keep this file declarative:
+ * page-specific layout belongs to shared components, not one-off selectors.
+ */
+
+:root {
+  --radius: 0.5rem;
+
+  --background: #f3f0e8;
+  --foreground: #1b1a17;
+  --card: #fbf9f2;
+  --card-foreground: #1b1a17;
+  --popover: #fffdf7;
+  --popover-foreground: #1b1a17;
+
+  /* Ink primary: the action is black on paper, not a blue SaaS button. */
+  --primary: #1b1a17;
+  --primary-foreground: #f7f4ea;
+  --secondary: #e9e4d8;
+  --secondary-foreground: #1b1a17;
+  --muted: #e9e4d8;
+  --muted-foreground: #6b6458;
+
+  /* Acid highlight is reserved for selection/active navigation, never status. */
+  --accent: #e4f36a;
+  --accent-foreground: #1b1a17;
+
+  --destructive: #b42318;
+  --destructive-foreground: #fffdf7;
+  --success: #2f7d57;
+  --success-foreground: #f7f4ea;
+  --warning: #b45309;
+  --warning-foreground: #fffdf7;
+  --info: #0e7490;
+  --info-foreground: #f7f4ea;
+  --neutral: #8a8375;
+  --neutral-foreground: #fffdf7;
+
+  --border: #d8d0bf;
+  --input: #cfc6b3;
+  --ring: #1b1a17;
+
+  --table-header: #ebe5d9;
+  --table-header-hover: #e4ddcf;
+  --table-row: var(--card);
+  --table-row-hover: #f4efdf;
+
+  --sidebar: #ece6da;
+  --sidebar-foreground: #1b1a17;
+  --sidebar-primary: #1b1a17;
+  --sidebar-primary-foreground: #f7f4ea;
+  --sidebar-accent: #e4f36a;
+  --sidebar-accent-foreground: #1b1a17;
+  --sidebar-border: #d8d0bf;
+  --sidebar-ring: #1b1a17;
+
+  --chart-1: #1b1a17;
+  --chart-2: #0e7490;
+  --chart-3: #b45309;
+  --chart-4: #2f7d57;
+  --chart-5: #b42318;
+
+  /* Flat paper surfaces: elevation comes from rules, not glass gradients. */
+  --surface-card-bottom: var(--card);
+  --surface-popover-bottom: var(--popover);
+  --surface-card: linear-gradient(180deg, var(--card), var(--card));
+  --surface-popover: linear-gradient(180deg, var(--popover), var(--popover));
+  --surface-raised: var(--card);
+  --surface-hover: color-mix(in oklab, var(--accent) 26%, var(--background));
+  --surface-row-hover: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 34%, transparent),
+    transparent
+  );
+  --surface-sidebar-active: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 72%, transparent),
+    color-mix(in oklab, var(--accent) 10%, transparent)
+  );
+  --surface-sidebar-bar: var(--foreground);
+  --surface-glass: color-mix(in oklab, var(--card) 86%, transparent);
+  --surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+
+  --border-hover: #c7bda9;
+  --border-accent-hover: color-mix(
+    in oklab,
+    var(--foreground) 28%,
+    var(--border)
+  );
+  --border-focus: #8f8573;
+
+  --gradient-primary-top: #2a2824;
+  --gradient-primary-bottom: #171613;
+  --gradient-primary: linear-gradient(
+    180deg,
+    var(--gradient-primary-top),
+    var(--gradient-primary-bottom)
+  );
+  --gradient-primary-hover: linear-gradient(180deg, #34312b, #1d1b17);
+
+  --pbr-shadow-panel: 0 1px 0 rgba(27, 26, 23, 0.04);
+  --pbr-shadow-panel-hover: 0 2px 0 rgba(27, 26, 23, 0.06);
+  --pbr-shadow-popover: 0 16px 36px -18px rgba(27, 26, 23, 0.28);
+  --pbr-shadow-control: 0 1px 0 rgba(27, 26, 23, 0.05);
+  --pbr-shadow-input: inset 0 1px 0 rgba(27, 26, 23, 0.03);
+  --pbr-shadow-capsule: 0 1px 0 rgba(27, 26, 23, 0.06);
+  --pbr-shadow-primary: 0 1px 0 rgba(0, 0, 0, 0.18);
+  --pbr-shadow-primary-hover: 0 0 0 3px
+    color-mix(in oklab, var(--accent) 55%, transparent);
+  --pbr-shadow-primary-sm: 0 1px 0 rgba(0, 0, 0, 0.16);
+  --pbr-shadow-glow: 0 0 0 3px
+    color-mix(in oklab, var(--foreground) 16%, transparent);
+}
+
+.dark {
+  --background: #171613;
+  --foreground: #ece6da;
+  --card: #1f1d19;
+  --card-foreground: #ece6da;
+  --popover: #25221d;
+  --popover-foreground: #ece6da;
+
+  --primary: #e4f36a;
+  --primary-foreground: #1b1a17;
+  --secondary: #2a2721;
+  --secondary-foreground: #ece6da;
+  --muted: #2a2721;
+  --muted-foreground: #aaa294;
+
+  --accent: #e4f36a;
+  --accent-foreground: #1b1a17;
+
+  --destructive: #f27066;
+  --destructive-foreground: #1b1a17;
+  --success: #6dbb91;
+  --success-foreground: #10231a;
+  --warning: #e7a84b;
+  --warning-foreground: #281b08;
+  --info: #6cc4d8;
+  --info-foreground: #0c2328;
+  --neutral: #8f8779;
+  --neutral-foreground: #1b1a17;
+
+  --border: #3a352d;
+  --input: #4a443a;
+  --ring: #e4f36a;
+
+  --table-header: #24211c;
+  --table-header-hover: #2b2721;
+  --table-row: var(--card);
+  --table-row-hover: #29251f;
+
+  --sidebar: #1c1a16;
+  --sidebar-foreground: #ece6da;
+  --sidebar-primary: #e4f36a;
+  --sidebar-primary-foreground: #1b1a17;
+  --sidebar-accent: #343026;
+  --sidebar-accent-foreground: #e4f36a;
+  --sidebar-border: #3a352d;
+  --sidebar-ring: #e4f36a;
+
+  --chart-1: #ece6da;
+  --chart-2: #6cc4d8;
+  --chart-3: #e7a84b;
+  --chart-4: #6dbb91;
+  --chart-5: #f27066;
+
+  --surface-card-bottom: var(--card);
+  --surface-popover-bottom: var(--popover);
+  --surface-card: linear-gradient(180deg, var(--card), var(--card));
+  --surface-popover: linear-gradient(180deg, var(--popover), var(--popover));
+  --surface-raised: var(--card);
+  --surface-hover: color-mix(in oklab, var(--accent) 10%, var(--background));
+  --surface-row-hover: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 10%, transparent),
+    transparent
+  );
+  --surface-sidebar-active: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--accent) 18%, transparent),
+    transparent
+  );
+  --surface-sidebar-bar: var(--accent);
+  --surface-glass: color-mix(in oklab, var(--card) 86%, transparent);
+  --surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  --border-hover: #4a443a;
+  --border-accent-hover: color-mix(in oklab, var(--accent) 36%, var(--border));
+  --border-focus: #8f8573;
+
+  --gradient-primary-top: #eefb7c;
+  --gradient-primary-bottom: #d9e955;
+  --gradient-primary: linear-gradient(
+    180deg,
+    var(--gradient-primary-top),
+    var(--gradient-primary-bottom)
+  );
+  --gradient-primary-hover: linear-gradient(180deg, #f4ff9b, #e4f36a);
+
+  --pbr-shadow-panel: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --pbr-shadow-panel-hover: 0 2px 0 rgba(0, 0, 0, 0.35);
+  --pbr-shadow-popover: 0 16px 36px -18px rgba(0, 0, 0, 0.7);
+  --pbr-shadow-control: 0 1px 0 rgba(0, 0, 0, 0.25);
+  --pbr-shadow-input: inset 0 1px 0 rgba(0, 0, 0, 0.2);
+  --pbr-shadow-capsule: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --pbr-shadow-primary: 0 1px 0 rgba(0, 0, 0, 0.35);
+  --pbr-shadow-primary-hover: 0 0 0 3px
+    color-mix(in oklab, var(--accent) 30%, transparent);
+  --pbr-shadow-primary-sm: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --pbr-shadow-glow: 0 0 0 3px
+    color-mix(in oklab, var(--accent) 25%, transparent);
+}

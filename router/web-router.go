@@ -1,0 +1,48 @@
+package router
+
+import (
+	"embed"
+	"net/http"
+	"strings"
+
+	"github.com/gin-contrib/gzip"
+	"github.com/gin-contrib/static"
+	"github.com/gin-gonic/gin"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/controller"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+)
+
+// WebAssets holds the embedded dashboard frontend assets.
+type WebAssets struct {
+	BuildFS   embed.FS
+	IndexPage []byte
+}
+
+func SetWebRouter(router *gin.Engine, assets WebAssets) {
+	frontendFS := common.EmbedFolder(assets.BuildFS, "web/dist")
+
+	router.NoRoute(
+		middleware.RouteTag("web"),
+		gzip.Gzip(gzip.DefaultCompression),
+		middleware.GlobalWebRateLimit(),
+		middleware.Cache(),
+		static.Serve("/", frontendFS),
+		func(c *gin.Context) {
+			if strings.HasPrefix(c.Request.RequestURI, "/v1") || strings.HasPrefix(c.Request.RequestURI, "/api") || strings.HasPrefix(c.Request.RequestURI, "/assets") {
+				controller.RelayNotFound(c)
+				return
+			}
+			// 静态资源不存在时必须 404，绝不能回落 index.html：浏览器会把
+			// HTML 当 JS 模块加载并抛 MIME/动态导入错误，升级部署后旧标签页
+			// 会直接落到 500 错误页。
+			if strings.HasPrefix(c.Request.RequestURI, "/static/") {
+				c.Header("Cache-Control", "no-store")
+				c.Data(http.StatusNotFound, "text/plain; charset=utf-8", []byte("asset not found"))
+				return
+			}
+			c.Header("Cache-Control", "no-cache")
+			c.Data(http.StatusOK, "text/html; charset=utf-8", assets.IndexPage)
+		},
+	)
+}

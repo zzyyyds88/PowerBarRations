@@ -1,0 +1,455 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import type { Row } from '@tanstack/react-table'
+import {
+  MoreHorizontal,
+  Activity,
+  Boxes,
+  Pencil,
+  PlugZap,
+  Copy,
+  Power,
+  PowerOff,
+  Key,
+  Trash2,
+  RefreshCw,
+  Loader2,
+} from 'lucide-react'
+import { useContext, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  ADMIN_PERMISSION_ACTIONS,
+  ADMIN_PERMISSION_RESOURCES,
+  hasPermission,
+} from '@/lib/admin-permissions'
+import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
+
+import { MODEL_FETCHABLE_TYPES } from '../constants'
+import {
+  type ChannelActionFailure,
+  channelsQueryKeys,
+  handleDeleteChannel,
+  handleTestChannel,
+  handleToggleChannelStatus,
+  isChannelEnabled,
+  isMultiKeyChannel,
+} from '../lib'
+import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
+import type { Channel } from '../types'
+import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
+import { useChannels } from './channels-provider'
+
+interface DataTableRowActionsProps {
+  row: Row<Channel>
+}
+
+export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+  const { t } = useTranslation()
+  const layout = useContext(ChannelRowActionsLayoutContext)
+  const channel = row.original
+  const { setOpen, setCurrentRow, upstream } = useChannels()
+  const queryClient = useQueryClient()
+  const currentUser = useAuthStore((s) => s.auth.user)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
+  const [isTogglingStatus, setIsTogglingStatus] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteFailure, setDeleteFailure] =
+    useState<ChannelActionFailure | null>(null)
+
+  const isEnabled = isChannelEnabled(channel)
+  const isMultiKey = isMultiKeyChannel(channel)
+  const canEditSensitive = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.CHANNEL,
+    ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
+  )
+
+  const handleEdit = () => {
+    setCurrentRow(channel)
+    setOpen('update-channel')
+  }
+
+  const handleTest = () => {
+    setCurrentRow(channel)
+    setOpen('test-channel')
+  }
+
+  const handleStatus = () => {
+    setCurrentRow(channel)
+    setOpen('status-channel')
+  }
+
+  const handleDirectTest = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation()
+    setIsTesting(true)
+    try {
+      await handleTestChannel(channel.id, { channelName: channel.name }, () => {
+        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
+      })
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  const handleManageOllamaModels = () => {
+    setCurrentRow(channel)
+    setOpen('ollama-models')
+  }
+
+  const handleCopy = () => {
+    setCurrentRow(channel)
+    setOpen('copy-channel')
+  }
+
+  const handleManageKeys = () => {
+    setCurrentRow(channel)
+    setOpen('multi-key-manage')
+  }
+
+  const handleToggleStatus = async (
+    e?: React.MouseEvent<HTMLButtonElement>
+  ) => {
+    e?.stopPropagation()
+    setIsTogglingStatus(true)
+    try {
+      await handleToggleChannelStatus(channel.id, channel.status, queryClient)
+    } finally {
+      setIsTogglingStatus(false)
+    }
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!canEditSensitive) return
+    setIsDeleting(true)
+    try {
+      const failure = await handleDeleteChannel(channel.id, queryClient)
+      if (failure) {
+        // 被车道引用等失败：保留确认框并展示原因/清单，不静默关闭。
+        setDeleteFailure(failure)
+      } else {
+        setDeleteFailure(null)
+        setDeleteConfirmOpen(false)
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  let statusIcon = <Power className='size-4' />
+  if (isTogglingStatus) {
+    statusIcon = <Loader2 className='size-4 animate-spin' />
+  } else if (isEnabled) {
+    statusIcon = <PowerOff className='size-4' />
+  }
+
+  return (
+    <div
+      className={cn(
+        '-ml-1.5 flex items-center gap-1',
+        // In card view the bar shares the row with the card title and would
+        // overflow a narrow card; wrap it instead (see channel-card.tsx).
+        layout === 'card' && 'min-w-0 flex-wrap justify-end'
+      )}
+    >
+      {layout !== 'card' && (
+        <Button
+          variant='ghost'
+          size='sm'
+          className='gap-1.5'
+          onClick={(e) => {
+            e.stopPropagation()
+            handleEdit()
+          }}
+        >
+          <Pencil className='size-3.5' />
+          {t('Edit')}
+        </Button>
+      )}
+
+      <TooltipProvider delay={100}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='ghost'
+                size='icon'
+                className='size-8'
+                onClick={handleDirectTest}
+                disabled={isTesting}
+                aria-label={t('Test Connection')}
+              />
+            }
+          >
+            {isTesting ? (
+              <Loader2 className='size-3.5 animate-spin' />
+            ) : (
+              <PlugZap className='size-3.5' />
+            )}
+          </TooltipTrigger>
+          <TooltipContent>{t('Test Connection')}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {layout === 'card' && (
+        <Button
+          variant='ghost'
+          size='sm'
+          className='gap-1.5'
+          onClick={(e) => {
+            e.stopPropagation()
+            handleTest()
+          }}
+        >
+          <PlugZap className='size-3.5' />
+          {t('Test Channel Connection')}
+        </Button>
+      )}
+
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant='ghost'
+              className='data-popup-open:bg-muted flex h-8 w-8 p-0'
+            />
+          }
+        >
+          <MoreHorizontal className='h-4 w-4' />
+          <span className='sr-only'>{t('Open menu')}</span>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align='end' className='w-48'>
+          {layout === 'card' && (
+            <DropdownMenuItem onClick={handleEdit}>
+              {t('Edit')}
+              <DropdownMenuShortcut>
+                <Pencil size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
+          {/* Test Connection */}
+          <DropdownMenuItem onClick={handleTest}>
+            {t('Test Connection')}
+            <DropdownMenuShortcut>
+              <PlugZap size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
+          {/* Channel status (read-only monitoring drawer) */}
+          <DropdownMenuItem onClick={handleStatus}>
+            {t('Status')}
+            <DropdownMenuShortcut>
+              <Activity size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+
+          {/* Detect Upstream Updates (only for fetchable channel types) */}
+          {MODEL_FETCHABLE_TYPES.has(channel.type) && (
+            <DropdownMenuItem
+              onClick={() => {
+                const meta = parseUpstreamUpdateMeta(channel.settings)
+                if (
+                  meta.pendingAddModels.length > 0 ||
+                  meta.pendingRemoveModels.length > 0
+                ) {
+                  upstream.openModal(
+                    channel,
+                    meta.pendingAddModels,
+                    meta.pendingRemoveModels,
+                    meta.pendingAddModels.length > 0 ? 'add' : 'remove'
+                  )
+                } else {
+                  upstream.detectChannelUpdates(channel)
+                }
+              }}
+            >
+              {t('Upstream Updates')}
+              <DropdownMenuShortcut>
+                <RefreshCw size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
+          {/* Ollama Models (only for Ollama channels) */}
+          {channel.type === 4 && (
+            <DropdownMenuItem onClick={handleManageOllamaModels}>
+              {t('Manage Ollama Models')}
+              <DropdownMenuShortcut>
+                <Boxes size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+
+          {/* Copy Channel */}
+          <DropdownMenuItem
+            disabled={!canEditSensitive}
+            onClick={canEditSensitive ? handleCopy : undefined}
+          >
+            {t('Copy Channel')}
+            <DropdownMenuShortcut>
+              <Copy size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+          {!canEditSensitive && (
+            <DropdownMenuItem disabled className='text-xs normal-case'>
+              {t('No permission to perform this action')}
+            </DropdownMenuItem>
+          )}
+
+          {/* Manage Keys (only for multi-key channels) */}
+          {isMultiKey && (
+            <DropdownMenuItem onClick={handleManageKeys}>
+              {t('Manage Keys')}
+              <DropdownMenuShortcut>
+                <Key size={16} />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
+
+          {/* Enable / pause: state-changing action stays inside the menu so the
+              row never carries a permanent red text button (ui-spec §7). */}
+          <DropdownMenuItem
+            disabled={isTogglingStatus}
+            onSelect={(e) => {
+              e.preventDefault()
+              void handleToggleStatus()
+            }}
+            className={
+              isEnabled
+                ? 'text-destructive focus:text-destructive'
+                : 'text-success focus:text-success'
+            }
+          >
+            {statusIcon}
+            {isEnabled ? t('Disable') : t('Enable')}
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          {/* Delete */}
+          <DropdownMenuItem
+            disabled={!canEditSensitive}
+            onSelect={(e) => {
+              e.preventDefault()
+              if (!canEditSensitive) return
+              setDeleteConfirmOpen(true)
+            }}
+            className='text-destructive focus:text-destructive'
+          >
+            {t('Delete')}
+            <DropdownMenuShortcut>
+              <Trash2 size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onOpenChange={(nextOpen) => {
+          setDeleteConfirmOpen(nextOpen)
+          if (!nextOpen) setDeleteFailure(null)
+        }}
+        title={t('Delete Channel')}
+        desc={t(
+          'Are you sure you want to delete channel "{{name}}"? This action cannot be undone.',
+          { name: channel.name }
+        )}
+        confirmText={t('Delete')}
+        destructive
+        isLoading={isDeleting}
+        handleConfirm={handleConfirmDelete}
+      >
+        {deleteFailure && (
+          <Alert variant='destructive'>
+            <AlertDescription>
+              <p>{deleteFailure.message || t('Failed to delete channel')}</p>
+              {deleteFailure.lanes.length > 0 && (
+                <ul className='mt-2 list-disc space-y-1 ps-5'>
+                  {deleteFailure.lanes.map((lane) => (
+                    <li key={lane}>
+                      <Link
+                        to='/routes'
+                        search={{ model: lane }}
+                        className='underline underline-offset-2'
+                      >
+                        {lane}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {deleteFailure.groups.length > 0 && (
+                <div className='mt-2'>
+                  <p className='font-medium'>{t('Member groups')}</p>
+                  <ul className='list-disc space-y-1 ps-5'>
+                    {deleteFailure.groups.map((group) => (
+                      <li key={group}>
+                        <Link
+                          to='/routes'
+                          search={{ group }}
+                          className='underline underline-offset-2'
+                        >
+                          {group}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Link
+                to='/routes'
+                search={{}}
+                className='mt-3 inline-block font-medium underline underline-offset-2'
+              >
+                {t('Routing & Failover')}
+              </Link>
+            </AlertDescription>
+          </Alert>
+        )}
+      </ConfirmDialog>
+    </div>
+  )
+}

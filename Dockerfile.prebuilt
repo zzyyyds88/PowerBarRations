@@ -1,0 +1,66 @@
+# PowerBarRations —— **离线/免拉 npm 源**的构建变体
+#
+# 与 Dockerfile 的唯一区别：阶段 0 不跑 pnpm 重建前端，直接取仓库里**已提交**的 web/dist
+# （web/.gitignore 已放行 dist/static 等；发布前请先在本地 `pnpm build` 并提交产物）。
+#
+# 用法：
+#   docker build -f Dockerfile.prebuilt -t powerbar-rations:dev .
+#   # 或走 compose 开关：
+#   PBR_DOCKERFILE=Dockerfile.prebuilt docker compose build
+#
+# 等价性：与容器内重建同源、确定性构建，content hash 相同（实测入口 chunk index.90d575a478.js），
+# 故两者产出的控制台一致；差别只在「谁跑 pnpm」。
+#
+# 阶段 0（变体）：直接内嵌仓库里已提交的前端产物
+FROM scratch AS web
+COPY web/dist /src/web/dist
+
+# 阶段 1：构建 Go 二进制
+FROM golang:1.25.1-alpine AS build
+
+WORKDIR /src
+# 国内源：apk 走阿里云镜像。
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories \
+ && apk add --no-cache git ca-certificates
+
+# 国内源：Go module 走 goproxy.cn；go.sum 已锁定，关闭校验库以避免访问 sum.golang.org。
+# 可用 --build-arg GOPROXY=/GOSUMDB 覆盖。
+ARG GOPROXY=https://goproxy.cn,direct
+ARG GOSUMDB=off
+ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
+
+# 先拷依赖清单，利用层缓存（relaykit 是本地 replace 的嵌套模块，需要一并拷入）
+COPY go.mod go.sum ./
+COPY relaykit/go.mod relaykit/go.sum ./relaykit/
+RUN go mod download
+
+COPY . .
+# 用阶段 0 的真实控制台覆盖仓库里的占位页
+COPY --from=web /src/web/dist ./web/dist
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags "-s -w -X github.com/zzyyyds88/PowerBarRations/common.Version=${VERSION} -X github.com/zzyyyds88/PowerBarRations/common.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      -o /out/pbr .
+
+FROM alpine:3.20
+
+# 国内源：apk 走阿里云镜像。
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories \
+ && apk add --no-cache ca-certificates tzdata \
+ && adduser -D -u 10001 -h /app pbr \
+ && mkdir -p /data && chown -R pbr:pbr /data /app
+
+WORKDIR /app
+COPY --from=build /out/pbr /app/pbr
+
+USER pbr
+VOLUME ["/data"]
+
+ENV PORT=5700 \
+    SQLITE_PATH="/data/pbr.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate" \
+    GIN_MODE=release
+
+EXPOSE 5700
+
+# SESSION_SECRET / CRYPTO_SECRET 必须由部署方提供，不给默认值（见 README）。
+ENTRYPOINT ["/app/pbr"]

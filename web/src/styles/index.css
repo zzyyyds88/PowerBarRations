@@ -1,0 +1,992 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/public-sans';
+/* Editorial serif (Lora) backing the `serif` font axis and the Anthropic
+ * preset's default typography. See `--font-serif` in theme.css for the
+ * full Latin + CJK fallback stack and `theme-presets.css` for the cascade
+ * that activates it. Loaded globally so font-switching is instantaneous
+ * with no FOUT once the variable is fetched. */
+@import '@fontsource-variable/lora';
+
+@import './theme.css';
+@import './theme-presets.css';
+@import './paper-ledger.css';
+
+/* Shiki dual themes: token colors follow dark theme (pre background stays `bg-background` on the block) */
+@layer components {
+  .shiki span {
+    color: var(--shiki-light) !important;
+    font-style: var(--shiki-light-font-style) !important;
+    font-weight: var(--shiki-light-font-weight) !important;
+    text-decoration: var(--shiki-light-text-decoration) !important;
+  }
+
+  .dark .shiki span {
+    color: var(--shiki-dark) !important;
+    font-style: var(--shiki-dark-font-style) !important;
+    font-weight: var(--shiki-dark-font-weight) !important;
+    text-decoration: var(--shiki-dark-text-decoration) !important;
+  }
+
+  .json-code-editor-textarea {
+    overflow: auto !important;
+    scrollbar-gutter: stable;
+  }
+
+  .json-code-editor-textarea::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+    -webkit-text-fill-color: var(--muted-foreground);
+  }
+
+  .json-code-editor-textarea,
+  .json-code-editor-highlight,
+  .json-code-editor-lines {
+    overflow-wrap: normal !important;
+    white-space: pre !important;
+  }
+
+  .json-code-editor-highlight .yace-tok--str {
+    color: var(--chart-5);
+  }
+
+  .json-code-editor-highlight .yace-tok--num {
+    color: var(--chart-4);
+  }
+
+  .json-code-editor-highlight .yace-tok--kw {
+    color: var(--chart-1);
+  }
+
+  .json-code-editor-highlight .yace-tok--punc {
+    color: var(--muted-foreground);
+  }
+
+  .json-code-editor-highlight .yace-tok--com {
+    color: var(--muted-foreground);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  html {
+    @apply overflow-x-hidden font-sans;
+  }
+  body {
+    /* 14px body floor for the data-dense console: secondary text steps down
+     * to 12px (`text-xs`), headings step up. Keeps every page on the same
+     * 12-14px body rhythm instead of Tailwind's 16px default. */
+    @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full text-sm;
+    /* Font is driven by the theme's font axis via `--font-body`
+     * (defined in theme.css, swapped by `[data-theme-font='...']` blocks
+     * in theme-presets.css). Defaults to the project's humanist sans. */
+    font-family: var(--font-body);
+  }
+
+  /* Keep sticky headers stable while primitives lock body scrolling. */
+  body[data-scroll-locked] {
+    overflow: unset !important;
+  }
+
+  /* Cursor pointer for buttons */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* 密码框只显示我们自己的可见性切换；屏蔽 Edge/IE 原生的显示/清除按钮，
+   * 否则会与自定义眼睛叠成两只。 */
+  input[type='password']::-ms-reveal,
+  input[type='password']::-ms-clear,
+  input[type='text'][autocomplete='new-password']::-ms-reveal,
+  input[type='text'][autocomplete='new-password']::-ms-clear {
+    display: none;
+  }
+
+  /* Prevent focus zoom on mobile devices */
+  @media screen and (max-width: 767px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* Focus must stay visible on every interactive surface (ui-spec §12).
+   * Components may add their own ring, but the baseline cannot disappear. */
+  :where(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [tabindex]:not([tabindex='-1'])
+  ):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Compact table density (ui-spec §11): 40px rows instead of the 44px
+ * desktop default. Opt in per table via `density='compact'` on DataTablePage,
+ * which renders this data attribute on the table container. */
+[data-density='compact'] {
+  --density-table-row-height: var(--density-table-row-height-compact);
+}
+
+/* Vercel Geist-style skeleton shimmer */
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-base) 0%,
+    var(--skeleton-base) 33%,
+    var(--skeleton-highlight) 50%,
+    var(--skeleton-base) 67%,
+    var(--skeleton-base) 100%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}
+
+/* Skeleton shimmer uses the same base/highlight tokens as every other
+ * loading surface (ui-spec §11). */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer {
+    animation: none !important;
+    background: var(--skeleton-base) !important;
+  }
+}
+
+/* Conic-gradient loading ring. The arc is painted by the conic gradient and
+ * the ring silhouette by a radial mask, so the whole spinner is one element
+ * with no SVG asset and it inherits `currentColor`-free primary tokens. */
+.spinner-ring {
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 90deg,
+    transparent 0deg 150deg,
+    color-mix(in oklab, var(--primary) 30%, transparent) 220deg,
+    var(--primary) 345deg,
+    transparent 360deg
+  );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 0);
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2px),
+    #000 0
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The ring must still convey "busy", so it is slowed rather than frozen. */
+  .spinner-ring {
+    animation-duration: 2.4s !important;
+  }
+}
+
+/* ── Active sidebar item ──────────────────────────────────────────────────
+ * The active nav item is a translucent primary wash with a soft inner
+ * highlight, a 3px primary bar hugging the leading edge and a tinted icon.
+ * Authored here (not in the cva) because it needs the `::before` bar and a
+ * child `svg` selector; both read from theme tokens so presets follow. */
+[data-sidebar='menu-button'][data-active] {
+  position: relative;
+  background-image: var(--surface-sidebar-active);
+  box-shadow: inset 0 1px 0 var(--surface-highlight);
+}
+
+[data-sidebar='menu-button'][data-active]::before {
+  content: '';
+  position: absolute;
+  inset-block: 0.25rem;
+  inset-inline-start: 0;
+  width: 3px;
+  border-start-end-radius: 9999px;
+  border-end-end-radius: 9999px;
+  background: var(--surface-sidebar-bar);
+}
+
+[data-sidebar='menu-button'][data-active] svg {
+  color: var(--sidebar-primary);
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+}
+
+/* ── Tonal tiles ──────────────────────────────────────────────────────────
+ * Shared premium recipe for soft tonal surfaces (icon badges, tonal pills):
+ * a same-hue translucent wash, a same-hue hairline and the inner 1px
+ * highlight. The hue is injected per tone via `--tone-hue`, so a preset that
+ * repaints `--primary` / `--chart-*` repaints these tiles too. Authored as
+ * component classes (not utilities) so the wash can never be half-applied:
+ * `--tone-hue` and the surface always travel together. */
+@layer components {
+  .pbr-tile {
+    border-color: color-mix(in oklab, var(--tone-hue) 24%, var(--border));
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--tone-hue) 16%, transparent),
+      color-mix(in oklab, var(--tone-hue) 5%, transparent)
+    );
+    box-shadow: inset 0 1px 0 var(--surface-highlight);
+  }
+
+  .pbr-tone-neutral {
+    --tone-hue: var(--neutral);
+  }
+  .pbr-tone-primary {
+    --tone-hue: var(--primary);
+  }
+  .pbr-tone-success {
+    --tone-hue: var(--success);
+  }
+  .pbr-tone-warning {
+    --tone-hue: var(--warning);
+  }
+  .pbr-tone-info {
+    --tone-hue: var(--info);
+  }
+  .pbr-tone-destructive {
+    --tone-hue: var(--destructive);
+  }
+  .pbr-tone-chart-1 {
+    --tone-hue: var(--chart-1);
+  }
+  .pbr-tone-chart-2 {
+    --tone-hue: var(--chart-2);
+  }
+  .pbr-tone-chart-3 {
+    --tone-hue: var(--chart-3);
+  }
+  .pbr-tone-chart-4 {
+    --tone-hue: var(--chart-4);
+  }
+  .pbr-tone-chart-5 {
+    --tone-hue: var(--chart-5);
+  }
+}
+
+@utility max-w-container {
+  max-width: 1280px;
+}
+
+@utility max-w-container-lg {
+  max-width: 1536px;
+}
+
+@utility no-scrollbar {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for IE, Edge and Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+
+/* Tooltip content can still scroll, but should not show a distracting axis. */
+[data-slot='tooltip-content'],
+[data-slot='tooltip-content'] * {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+[data-slot='tooltip-content']::-webkit-scrollbar,
+[data-slot='tooltip-content'] *::-webkit-scrollbar {
+  display: none;
+}
+
+@utility hover-scrollbar {
+  /* Hide scrollbar by default */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+
+  /* Show scrollbar on hover */
+  &:hover {
+    scrollbar-color: var(--border) transparent;
+  }
+
+  /* Webkit browsers (Chrome, Safari, Edge) */
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border-radius: 4px;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+  }
+
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklch, var(--border) 60%, transparent);
+  }
+}
+
+@utility faded-bottom {
+  @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,_transparent_10%,_var(--background)_70%)] md:after:block;
+}
+
+.CollapsibleContent {
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .CollapsibleContent[data-open] {
+    animation: slideDown 300ms ease-out;
+  }
+  .CollapsibleContent:not([data-open]) {
+    animation: slideUp 300ms ease-out;
+  }
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--collapsible-panel-height);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--collapsible-panel-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+/* Launch UI Animations and Effects - Matching Template Exactly */
+@layer utilities {
+  /* Gradient utilities */
+  .bg-radial {
+    background-image: radial-gradient(var(--tw-gradient-stops));
+  }
+
+  /* Glass morphism effects - matching Launch UI template */
+  .glass-1 {
+    @apply border-border from-card/80 to-card/40 dark:border-border/10 dark:border-b-border/5 dark:border-t-border/20 dark:from-card/5 dark:to-card/0 border bg-linear-to-b;
+  }
+
+  .glass-2 {
+    @apply border-border from-card/100 to-card/80 dark:border-border/10 dark:border-b-border/5 dark:border-t-border/20 dark:from-card/10 dark:to-card/5 border bg-linear-to-b;
+  }
+
+  .glass-3 {
+    @apply border-border from-card/30 to-card/20 dark:border-border/10 dark:border-t-border/20 dark:border-b-border/5 dark:from-primary/5 dark:to-primary/2 border bg-linear-to-b;
+  }
+
+  .glass-4 {
+    @apply border-border border-b-input/90 from-card/60 to-card/20 dark:border-border/10 dark:border-t-border/30 dark:from-primary/10 dark:to-primary/5 border bg-linear-to-b dark:border-b-0;
+  }
+
+  .glass-5 {
+    @apply border-border border-b-input from-card/100 to-card/20 dark:border-border/10 dark:border-t-border/30 dark:from-primary/15 dark:to-primary/5 border bg-linear-to-b dark:border-b-0;
+  }
+
+  /* Fade effects - matching Launch UI template */
+  .fade-x {
+    mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      black 25%,
+      black 75%,
+      transparent 100%
+    );
+  }
+
+  .fade-y {
+    mask-image: linear-gradient(
+      to top,
+      transparent 0%,
+      black 25%,
+      black 75%,
+      transparent 100%
+    );
+  }
+
+  .fade-top {
+    mask-image: linear-gradient(to bottom, transparent 0%, black 35%);
+  }
+
+  .fade-bottom {
+    mask-image: linear-gradient(to top, transparent 0%, black 35%);
+  }
+
+  .fade-top-lg {
+    mask-image: linear-gradient(to bottom, transparent 15%, black 100%);
+  }
+
+  .fade-bottom-lg {
+    mask-image: linear-gradient(to top, transparent 15%, black 100%);
+  }
+
+  .fade-left {
+    mask-image: linear-gradient(to right, transparent 0%, black 35%);
+  }
+
+  .fade-right {
+    mask-image: linear-gradient(to left, transparent 0%, black 35%);
+  }
+
+  .fade-left-lg {
+    mask-image: linear-gradient(to right, transparent 15%, black 100%);
+  }
+
+  .fade-right-lg {
+    mask-image: linear-gradient(to left, transparent 15%, black 100%);
+  }
+
+  /* Animations */
+  .animate-appear {
+    animation: appear 0.6s forwards ease-out;
+  }
+
+  .animate-appear-zoom {
+    animation: appear-zoom 0.6s forwards ease-out;
+  }
+
+  .animation-delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  .animation-delay-700 {
+    animation-delay: 700ms;
+  }
+
+  .animation-delay-1000 {
+    animation-delay: 1000ms;
+  }
+
+  @keyframes appear {
+    0% {
+      opacity: 0;
+      transform: translateY(1rem);
+      filter: blur(0.5rem);
+    }
+    50% {
+      filter: blur(0);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes appear-zoom {
+    0% {
+      opacity: 0;
+      transform: scale(0.5);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Vertical scroll animation for icon lists */
+  @keyframes scroll-up {
+    0% {
+      transform: translateY(0);
+    }
+    100% {
+      transform: translateY(-50%);
+    }
+  }
+
+  .animate-scroll-up {
+    animation: scroll-up 20s linear infinite;
+    will-change: transform;
+  }
+
+  .animate-scroll-down {
+    animation: scroll-up 20s linear infinite reverse;
+    will-change: transform;
+  }
+
+  /* Pause animation on hover */
+  .scroll-container:hover .animate-scroll-up,
+  .scroll-container:hover .animate-scroll-down {
+    animation-play-state: paused;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-appear,
+  .animate-appear-zoom,
+  .animate-scroll-up,
+  .animate-scroll-down,
+  [data-slot='table'] tbody tr {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Smooth streaming: one-shot fade-in on newly streamed words.
+ * Duration must match FADE_DURATION_MS in response-fade.ts */
+@keyframes stream-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-stream-fade] {
+  animation: stream-fade-in 250ms ease-out both;
+  animation-delay: var(--stream-fade-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-stream-fade] {
+    animation: none;
+  }
+}
+
+/* ── Landing page scroll-triggered animations ── */
+@keyframes landing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes landing-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes landing-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes landing-fade-left {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes landing-fade-right {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.landing-animate-fade-up {
+  animation: landing-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.landing-animate-fade-in {
+  animation: landing-fade-in 0.6s ease-out both;
+}
+.landing-animate-scale-in {
+  animation: landing-scale-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.landing-animate-fade-left {
+  animation: landing-fade-left 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.landing-animate-fade-right {
+  animation: landing-fade-right 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-animate-fade-up,
+  .landing-animate-fade-in,
+  .landing-animate-scale-in,
+  .landing-animate-fade-left,
+  .landing-animate-fade-right {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* Micro-interactions — premium hover feedback for clickable surfaces.
+ * The resting elevation comes from the `shadow-panel` utility on the card;
+ * hover deepens it and tints the hairline toward the primary hue. Only the
+ * 1px lift is motion-gated, so reduced-motion users still get the state
+ * change without any movement. */
+[data-slot='card'][data-card-hover='true'] {
+  transition:
+    border-color var(--motion-base) var(--motion-ease),
+    box-shadow var(--motion-base) var(--motion-ease),
+    transform var(--motion-base) var(--motion-ease);
+}
+
+@media (min-width: 641px) {
+  [data-slot='card'][data-card-hover='true']:hover {
+    border-color: var(--border-accent-hover);
+    box-shadow: var(--pbr-shadow-panel-hover);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) and (min-width: 641px) {
+  [data-slot='card'][data-card-hover='true']:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button:not(:disabled):active,
+  [role='button']:not(:disabled):active {
+    transform: scale(0.98);
+  }
+
+  [data-slot='table'] tr {
+    transition:
+      background-color var(--motion-fast) ease-out,
+      background-image var(--motion-fast) ease-out;
+  }
+
+  /* Stagger is opt-in for short visual lists; operational tables stay still
+     so rows do not move while an operator scans or selects them. */
+  [data-table-motion='stagger'] tbody tr {
+    animation: tableRowEnter 0.2s cubic-bezier(0.33, 1, 0.68, 1) both;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(2) {
+    animation-delay: 25ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(3) {
+    animation-delay: 50ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(4) {
+    animation-delay: 75ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(5) {
+    animation-delay: 100ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(6) {
+    animation-delay: 125ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(7) {
+    animation-delay: 150ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(8) {
+    animation-delay: 175ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(9) {
+    animation-delay: 200ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(10) {
+    animation-delay: 225ms;
+  }
+  [data-table-motion='stagger'] tbody tr:nth-child(n + 11) {
+    animation-delay: 250ms;
+  }
+}
+
+@keyframes tableRowEnter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tabular numbers for data-heavy contexts */
+[data-slot='table'] td,
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Table width control: opt-in wrapping ──────────────────────────────
+ * `TableHead` / `TableCell` ship `whitespace-nowrap`, which holds every cell at
+ * its max-content width. That is a hard floor under the table: a wide table
+ * answers a shrinking viewport with a horizontal scrollbar instead of tighter
+ * columns, no matter how much room the page has. `wrap` on `<Table>` writes
+ * `data-wrap="true"` on the `<table>` and lifts that floor.
+ *
+ * `overflow-wrap: anywhere` (rather than `break-word`) is the load-bearing
+ * half: only `anywhere` also lowers the cell's min-content contribution, which
+ * is what stops an unbreakable token — a 40-char API key, a route, a model
+ * name — from pinning the column, and therefore the table, wide open.
+ *
+ * A single cell can opt back out with `data-wrap="false"`, e.g. a timestamp
+ * that reads badly once split across two lines. */
+[data-wrap='true'] :is(th, td) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+[data-wrap='true'] :is(th, td)[data-wrap='false'] {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* ── Table horizontal overflow: trailing edge fade ─────────────────────
+ * The hint that the table continues past the right edge. `TableScrollHint`
+ * renders the zero-height `sticky` anchor this bar hangs off; the anchor keeps
+ * it against the port's trailing edge while the table scrolls underneath.
+ *
+ * `z-index: 0` puts it above ordinary cells but under the sticky header (z-10)
+ * and the pinned columns (z-10 / z-30), so those keep their opaque bands and
+ * only the scrolling cells behind them get the fade.
+ *
+ * `container-type: scroll-state` on the port does not affect layout or sticky
+ * positioning; it only gives the query below something to ask, so the fade
+ * exists exactly while there is more table to the right. Engines without
+ * `scroll-state` support simply never match and never show the fade. */
+[data-scroll-port='true'] {
+  container-type: scroll-state;
+}
+
+[data-slot='table-scroll-hint-bar'] {
+  opacity: 0;
+  background-image: linear-gradient(
+    to left,
+    color-mix(in oklab, var(--foreground) 12%, transparent),
+    transparent
+  );
+  transition: opacity var(--motion-fast) ease-out;
+}
+
+@container scroll-state(scrollable: right) {
+  [data-slot='table-scroll-hint-bar'] {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='table-scroll-hint-bar'] {
+    transition: none;
+  }
+}
+
+/* Long list rendering optimization */
+.content-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 80px;
+}
+
+/* ── Hero terminal demo animations ── */
+@keyframes terminal-demo-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.terminal-demo-blink {
+  animation: terminal-demo-blink 1s step-end infinite;
+}
+
+@keyframes terminal-demo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.terminal-demo-spin {
+  animation: terminal-demo-spin 0.8s linear infinite;
+}
+
+@keyframes terminal-demo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.terminal-demo-pulse {
+  animation: terminal-demo-pulse 1.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-demo-blink,
+  .terminal-demo-spin,
+  .terminal-demo-pulse {
+    animation: none !important;
+  }
+}
+
+/* ── Auto group flowing border ── */
+@property --auto-group-flow-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes auto-group-flow-border-travel {
+  to {
+    --auto-group-flow-angle: 360deg;
+  }
+}
+
+/* Border-only effect: the conic gradient covers the whole layer, but the
+ * two-layer mask (content-box XOR full box) keeps only a `padding`-wide
+ * ring visible, so the highlight hugs the rounded perimeter. Animating
+ * the gradient's start angle makes the bright segment travel around all
+ * four edges and corners without touching the interior. */
+.auto-group-flow-border {
+  padding: 1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--auto-group-flow-angle),
+    transparent 0deg,
+    transparent 240deg,
+    color-mix(in oklch, var(--primary) 45%, transparent) 300deg,
+    var(--primary) 342deg,
+    transparent 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: auto-group-flow-border-travel 3.2s linear infinite;
+}
+
+.auto-group-flow-border-subtle {
+  padding: 1px;
+  background: conic-gradient(
+    from var(--auto-group-flow-angle),
+    transparent 0deg 300deg,
+    color-mix(in oklch, var(--primary) 30%, transparent) 318deg,
+    var(--primary) 348deg,
+    transparent 360deg
+  );
+  animation-duration: 3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auto-group-flow-border {
+    display: none;
+  }
+}
+
+/* ── Live routing wires ──────────────────────────────────────────────────
+ * 借鉴 magpie 的路由舞台（internal/gui/assets/plugins/routing/routing.css）。
+ * 状态三分，语义固定：
+ *   .live  正在服务的那一根——虚线滚动，是唯一"动"的线；
+ *   .lit   刚答完 / 当前成员但不忙——只上色，静止；
+ *   .rest  冷却/熔断/被拒冷却——更疏的虚线 + 半透明，表示绕开它。
+ * 只有 live 跑动画：全部线都动会同时失去"数据在走"的感觉和帧率。
+ * dashoffset -8 正好等于 3+5 的一个周期，所以循环处无跳变。 */
+.pbr-wire {
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
+  stroke-linecap: round;
+  transition:
+    stroke 240ms ease-out,
+    opacity 240ms ease-out;
+}
+
+.pbr-wire-rest {
+  stroke-dasharray: 2 6;
+  opacity: 0.3;
+}
+
+.pbr-wire-live {
+  stroke-dasharray: 3 5;
+  animation: pbr-wire-flow 0.7s linear infinite;
+}
+
+@keyframes pbr-wire-flow {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+
+/* 正在流走的数据包：沿当前成员的线飞到成员卡片。只画一个，不刷屏。 */
+.pbr-wire-packet {
+  fill: var(--primary);
+  filter: drop-shadow(0 0 3px var(--primary));
+  animation: pbr-wire-packet-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pbr-wire-packet-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 减速而不是冻结：静止的虚线无法表达"正在服务"。 */
+  .pbr-wire-live {
+    animation-duration: 2.6s;
+  }
+
+  .pbr-wire-packet {
+    animation: none;
+  }
+}

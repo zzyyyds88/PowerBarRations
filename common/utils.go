@@ -1,0 +1,226 @@
+package common
+
+import (
+	crand "crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"math/big"
+	"net"
+	"net/url"
+	"os"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
+)
+
+func GetNetworkIps() []string {
+	var networkIps []string
+	ips, err := net.InterfaceAddrs()
+	if err != nil {
+		log.Println(err)
+		return networkIps
+	}
+
+	for _, a := range ips {
+		if ipNet, ok := a.(*net.IPNet); ok && !ipNet.IP.IsLoopback() {
+			if ipNet.IP.To4() != nil {
+				ip := ipNet.IP.String()
+				// Include common private network ranges
+				if strings.HasPrefix(ip, "10.") ||
+					strings.HasPrefix(ip, "172.") ||
+					strings.HasPrefix(ip, "192.168.") {
+					networkIps = append(networkIps, ip)
+				}
+			}
+		}
+	}
+	return networkIps
+}
+
+// IsRunningInContainer detects if the application is running inside a container
+func IsRunningInContainer() bool {
+	// Method 1: Check for .dockerenv file (Docker containers)
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+
+	// Method 2: Check cgroup for container indicators
+	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
+		content := string(data)
+		if strings.Contains(content, "docker") ||
+			strings.Contains(content, "containerd") ||
+			strings.Contains(content, "kubepods") ||
+			strings.Contains(content, "/lxc/") {
+			return true
+		}
+	}
+
+	// Method 3: Check environment variables commonly set by container runtimes
+	containerEnvVars := []string{
+		"KUBERNETES_SERVICE_HOST",
+		"DOCKER_CONTAINER",
+		"container",
+	}
+
+	for _, envVar := range containerEnvVars {
+		if os.Getenv(envVar) != "" {
+			return true
+		}
+	}
+
+	// Method 4: Check if init process is not the traditional init
+	if data, err := os.ReadFile("/proc/1/comm"); err == nil {
+		comm := strings.TrimSpace(string(data))
+		// In containers, process 1 is often not "init" or "systemd"
+		if comm != "init" && comm != "systemd" {
+			// Additional check: if it's a common container entrypoint
+			if strings.Contains(comm, "docker") ||
+				strings.Contains(comm, "containerd") ||
+				strings.Contains(comm, "runc") {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func Interface2String(inter any) string {
+	switch inter.(type) {
+	case string:
+		return inter.(string)
+	case int:
+		return fmt.Sprintf("%d", inter.(int))
+	case float64:
+		return strconv.FormatFloat(inter.(float64), 'f', -1, 64)
+	case bool:
+		if inter.(bool) {
+			return "true"
+		} else {
+			return "false"
+		}
+	case nil:
+		return ""
+	}
+	return fmt.Sprintf("%v", inter)
+}
+
+func GetUUID() string {
+	code := uuid.New().String()
+	code = strings.Replace(code, "-", "", -1)
+	return code
+}
+
+const keyChars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func GenerateRandomCharsKey(length int) (string, error) {
+	b := make([]byte, length)
+	maxI := big.NewInt(int64(len(keyChars)))
+
+	for i := range b {
+		n, err := crand.Int(crand.Reader, maxI)
+		if err != nil {
+			return "", err
+		}
+		b[i] = keyChars[n.Int64()]
+	}
+
+	return string(b), nil
+}
+
+func GenerateKey() (string, error) {
+	//rand.Seed(time.Now().UnixNano())
+	return GenerateRandomCharsKey(48)
+}
+
+func GetTimestamp() int64 {
+	return time.Now().Unix()
+}
+
+func GetTimeString() string {
+	now := time.Now().UTC()
+	return fmt.Sprintf("%s%09d", now.Format("20060102150405"), now.UnixNano()%1e9)
+}
+
+var requestIdPrefix = func() string {
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Path != "" {
+		h := sha256.Sum256([]byte(bi.Main.Path))
+		return hex.EncodeToString(h[:4])
+	}
+	return GetRandomString(8)
+}()
+
+func NewRequestId() string {
+	return GetTimeString() + requestIdPrefix + GetRandomString(8)
+}
+
+func Max(a int, b int) int {
+	if a >= b {
+		return a
+	} else {
+		return b
+	}
+}
+
+func MessageWithRequestId(message string, id string) string {
+	return fmt.Sprintf("%s (request id: %s)", message, id)
+}
+
+func GetPointer[T any](v T) *T {
+	return &v
+}
+
+func Any2Type[T any](data any) (T, error) {
+	var zero T
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return zero, err
+	}
+	var res T
+	err = json.Unmarshal(bytes, &res)
+	if err != nil {
+		return zero, err
+	}
+	return res, nil
+}
+
+// SaveTmpFile saves data to a temporary file. The filename would be apppended with a random string.
+func SaveTmpFile(filename string, data io.Reader) (string, error) {
+	f, err := os.CreateTemp(os.TempDir(), filename)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to create temporary file %s", filename)
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, data)
+	if err != nil {
+		return "", errors.Wrapf(err, "failed to copy data to temporary file %s", filename)
+	}
+
+	return f.Name(), nil
+}
+
+// BuildURL concatenates base and endpoint, returns the complete url string
+func BuildURL(base string, endpoint string) string {
+	u, err := url.Parse(base)
+	if err != nil {
+		return base + endpoint
+	}
+	end := endpoint
+	if end == "" {
+		end = "/"
+	}
+	ref, err := url.Parse(end)
+	if err != nil {
+		return base + endpoint
+	}
+	return u.ResolveReference(ref).String()
+}

@@ -1,0 +1,699 @@
+package controller
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
+	"gorm.io/gorm"
+)
+
+func modelManagementDB(t *testing.T, kind, dsn string) *gorm.DB {
+	t.Helper()
+	database, isolatedDSN := newAuditTestDatabase(t, kind, dsn)
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
+	previousMaster, previousSQLite := common.IsMasterNode, common.SQLitePath
+	previousRedis, previousMemory := common.RedisEnabled, common.MemoryCacheEnabled
+	previousOptions := common.OptionMap
+	restoreRatios := []struct {
+		value   string
+		restore func(string) error
+	}{
+		{ratio_setting.ModelPrice2JSONString(), ratio_setting.UpdateModelPriceByJSONString},
+		{ratio_setting.ModelRatio2JSONString(), ratio_setting.UpdateModelRatioByJSONString},
+		{ratio_setting.CompletionRatio2JSONString(), ratio_setting.UpdateCompletionRatioByJSONString},
+		{ratio_setting.CacheRatio2JSONString(), ratio_setting.UpdateCacheRatioByJSONString},
+		{ratio_setting.CreateCacheRatio2JSONString(), ratio_setting.UpdateCreateCacheRatioByJSONString},
+		{ratio_setting.ImageRatio2JSONString(), ratio_setting.UpdateImageRatioByJSONString},
+		{ratio_setting.AudioRatio2JSONString(), ratio_setting.UpdateAudioRatioByJSONString},
+		{ratio_setting.AudioCompletionRatio2JSONString(), ratio_setting.UpdateAudioCompletionRatioByJSONString},
+	}
+	common.IsMasterNode = false
+	common.RedisEnabled, common.MemoryCacheEnabled = false, false
+	common.OptionMap = map[string]string{}
+	if kind == "sqlite" {
+		common.SQLitePath = isolatedDSN
+		isolatedDSN = "local"
+	}
+	t.Setenv("SQL_DSN", isolatedDSN)
+	t.Setenv("LOG_SQL_DSN", "")
+	require.NoError(t, model.InitDB())
+	database = model.DB
+	model.LOG_DB = database
+	require.NoError(t, database.AutoMigrate(&model.Model{}, &model.Channel{}, &model.Option{}, &model.User{}, &model.AuditLog{}, &model.Lane{}, &model.LaneMember{}))
+	for _, value := range restoreRatios {
+		require.NoError(t, value.restore("{}"))
+	}
+	var version string
+	query := "SELECT version()"
+	if kind == "sqlite" {
+		query = "SELECT sqlite_version()"
+	}
+	require.NoError(t, database.Raw(query).Scan(&version).Error)
+	t.Logf("database version: %s", version)
+	t.Cleanup(func() {
+		for _, value := range restoreRatios {
+			require.NoError(t, value.restore(value.value))
+		}
+		common.OptionMap = previousOptions
+		common.IsMasterNode, common.SQLitePath = previousMaster, previousSQLite
+		common.RedisEnabled, common.MemoryCacheEnabled = previousRedis, previousMemory
+		common.SetDatabaseTypes(previousMain, previousLog)
+		connection, err := database.DB()
+		if err == nil {
+			require.NoError(t, connection.Close())
+		}
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+	})
+	return database
+}
+
+func modelManagementRequest(t *testing.T, handler gin.HandlerFunc, method, path string, body any, output any) *httptest.ResponseRecorder {
+	t.Helper()
+	encoded, err := common.Marshal(body)
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(method, path, bytes.NewReader(encoded))
+	context.Set("role", common.RoleRootUser)
+	handler(context)
+	if output != nil {
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), output), recorder.Body.String())
+	}
+	return recorder
+}
+
+func TestModelManagementDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env + " to run this database")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+
+			t.Run("channel_model_listing", func(t *testing.T) {
+				exact := model.Model{ModelName: "listing-exact", Status: 1, SyncOfficial: 1}
+				catalog := model.Model{ModelName: "listing-catalog", Status: 1}
+				rule := model.Model{ModelName: "listing-rule-", NameRule: model.NameRulePrefix, Status: 1}
+				for _, item := range []*model.Model{&exact, &catalog, &rule} {
+					require.NoError(t, item.Insert())
+				}
+				active := model.Channel{Name: "Listing active", Type: 1, Key: "fixture", Models: "listing-exact, listing-new,listing-rule-child,listing-new, ,", Group: "default", Status: common.ChannelStatusEnabled}
+				inactive := model.Channel{Name: "Listing inactive", Type: 1, Key: "fixture", Models: "listing-new,listing-disabled", Group: "default", Status: common.ChannelStatusManuallyDisabled}
+				for _, channel := range []*model.Channel{&active, &inactive} {
+					require.NoError(t, channel.Insert())
+				}
+				t.Cleanup(func() {
+					require.NoError(t, db.Where("id IN ?", []int{active.Id, inactive.Id}).Delete(&model.Channel{}).Error)
+					require.NoError(t, db.Unscoped().Where("model_name LIKE ?", "listing-%").Delete(&model.Model{}).Error)
+					model.RefreshPricing()
+				})
+				type listingResponse struct {
+					Success bool
+					Data    struct {
+						Items []model.Model
+						Total int
+					}
+				}
+				var response listingResponse
+				modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=listing-", nil, &response)
+				require.True(t, response.Success)
+				require.Equal(t, 6, response.Data.Total)
+				names := make([]string, 0)
+				byName := make(map[string]model.Model)
+				for _, item := range response.Data.Items {
+					names = append(names, item.ModelName)
+					byName[item.ModelName] = item
+				}
+				assert.Equal(t, []string{"listing-rule-", "listing-catalog", "listing-exact", "listing-disabled", "listing-new", "listing-rule-child"}, names)
+				assert.True(t, byName[exact.ModelName].HasMetadata)
+				assert.False(t, byName["listing-new"].HasMetadata)
+				assert.Zero(t, byName["listing-new"].Id)
+				assert.Equal(t, 2, byName["listing-new"].ConfiguredChannelCount)
+				assert.Equal(t, 1, byName["listing-disabled"].ConfiguredChannelCount)
+				assert.Empty(t, byName["listing-disabled"].BoundChannels)
+				assert.Zero(t, byName[catalog.ModelName].ConfiguredChannelCount)
+				for _, tc := range []struct {
+					query string
+					total int
+					names []string
+				}{
+					{"&p=2&page_size=2", 6, []string{"listing-exact", "listing-disabled"}},
+					{"&p=9&page_size=2", 6, []string{}},
+					{"&status=enabled", 3, []string{"listing-rule-", "listing-catalog", "listing-exact"}},
+					{"&sync_official=no", 2, []string{"listing-rule-", "listing-catalog"}},
+				} {
+					var page listingResponse
+					modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=listing-"+tc.query, nil, &page)
+					require.True(t, page.Success)
+					assert.Equal(t, tc.total, page.Data.Total)
+					actual := make([]string, 0)
+					for _, item := range page.Data.Items {
+						actual = append(actual, item.ModelName)
+					}
+					assert.Equal(t, tc.names, actual)
+				}
+				var legacy listingResponse
+				modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?keyword=listing-", nil, &legacy)
+				assert.Equal(t, 3, legacy.Data.Total)
+				var count int64
+				require.NoError(t, db.Model(&model.Model{}).Where("model_name LIKE ?", "listing-%").Count(&count).Error)
+				assert.EqualValues(t, 3, count)
+				prices, err := model.GetModelPricingSnapshot([]string{"listing-new"})
+				require.NoError(t, err)
+				require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: "listing-new", ExpectedVersion: prices.Entries[0].Version, Pricing: model.PricingValues{"ModelPrice": float64(0)}}}))
+				t.Cleanup(func() {
+					snapshot, err := model.GetModelPricingSnapshot([]string{"listing-new"})
+					require.NoError(t, err)
+					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: "listing-new", ExpectedVersion: snapshot.Entries[0].Version, Reset: true}}))
+				})
+				require.NoError(t, db.Model(&model.Model{}).Where("model_name = ?", "listing-new").Count(&count).Error)
+				assert.Zero(t, count)
+				for _, price := range model.GetPricing() {
+					assert.NotEqual(t, catalog.ModelName, price.ModelName)
+				}
+				created := model.Model{ModelName: "listing-new", Status: 1}
+				require.NoError(t, created.Insert())
+				var after listingResponse
+				modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=listing-new", nil, &after)
+				require.Len(t, after.Data.Items, 1)
+				assert.Equal(t, created.Id, after.Data.Items[0].Id)
+				require.NoError(t, created.Delete())
+				after = listingResponse{}
+				modelManagementRequest(t, SearchModelsMeta, "GET", "/api/models/search?include_channel_models=true&keyword=listing-new", nil, &after)
+				require.Len(t, after.Data.Items, 1)
+				assert.False(t, after.Data.Items[0].HasMetadata)
+				require.NoError(t, db.Callback().Query().Before("gorm:query").Register("fail_listing_channels", func(tx *gorm.DB) {
+					if tx.Statement.Table == "channels" {
+						tx.AddError(errors.New("channel lookup failed"))
+					}
+				}))
+				var failed listingResponse
+				modelManagementRequest(t, GetAllModelsMeta, "GET", "/api/models/?include_channel_models=true", nil, &failed)
+				require.NoError(t, db.Callback().Query().Remove("fail_listing_channels"))
+				assert.False(t, failed.Success, "a channel lookup failure must not look like an empty configuration")
+
+			})
+
+			t.Run("pricing_saves_zero_and_rejects_stale_batches", func(t *testing.T) {
+				before, err := model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
+				require.NoError(t, err)
+				changes := []model.ModelPricingChange{
+					{ModelName: "matrix-priced", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(0)}},
+					{ModelName: "matrix-other", ExpectedVersion: before.EmptyVersion, Pricing: model.PricingValues{"ModelRatio": float64(1), "CreateCacheRatio": 1.25}},
+				}
+				require.NoError(t, model.UpdateModelPricing(changes))
+				loaded, err := model.GetModelPricingSnapshot([]string{"matrix-priced"})
+				require.NoError(t, err)
+				assert.Equal(t, float64(0), loaded.Entries[0].Effective["ModelPrice"])
+				stale := changes[0]
+				changes[0].ExpectedVersion = loaded.Entries[0].Version
+				// Switching matrix-priced from a fixed price to a ratio must
+				// replace the whole draft: the old ModelPrice disappears.
+				changes[0].Pricing = model.PricingValues{"ModelRatio": float64(1), "CompletionRatio": float64(2)}
+				require.NoError(t, model.UpdateModelPricing(changes[:1]))
+				loaded, err = model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
+				require.NoError(t, err)
+				assert.Equal(t, 1.25, loaded.Entries[0].Configured["CreateCacheRatio"])
+				assert.Equal(t, float64(1), loaded.Entries[1].Effective["ModelRatio"])
+				_, oldFixed := loaded.Entries[1].Configured["ModelPrice"]
+				assert.False(t, oldFixed)
+				other := model.ModelPricingChange{ModelName: "matrix-other", ExpectedVersion: loaded.Entries[0].Version, Pricing: model.PricingValues{"ModelRatio": float64(9)}}
+				err = model.UpdateModelPricing([]model.ModelPricingChange{other, stale})
+				assert.ErrorIs(t, err, model.ErrModelPricingConflict)
+				after, err := model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
+				require.NoError(t, err)
+				assert.Equal(t, loaded.Entries, after.Entries)
+				invalid := other
+				invalid.Pricing = model.PricingValues{"ModelPrice": float64(-1)}
+				assert.Error(t, model.UpdateModelPricing([]model.ModelPricingChange{invalid}))
+				// A physical failure after earlier option writes must roll back all
+				// rows and leave the previously published runtime price intact.
+				writes := 0
+				require.NoError(t, db.Callback().Update().Before("gorm:update").Register("fail_pricing_matrix", func(tx *gorm.DB) {
+					if tx.Statement.Table == "options" {
+						writes++
+						if writes == 3 {
+							tx.AddError(errors.New("injected write failure"))
+						}
+					}
+				}))
+				err = model.UpdateModelPricing([]model.ModelPricingChange{other})
+				require.Error(t, err)
+				require.NoError(t, db.Callback().Update().Remove("fail_pricing_matrix"))
+				after, err = model.GetModelPricingSnapshot([]string{"matrix-priced", "matrix-other"})
+				require.NoError(t, err)
+				assert.Equal(t, loaded.Entries, after.Entries)
+				ratio, _, _ := ratio_setting.GetModelRatio("matrix-other")
+				assert.Equal(t, float64(1), ratio)
+				// Two saves based on the same version cannot both succeed.
+				var wg sync.WaitGroup
+				results := make(chan error, 2)
+				for _, value := range []float64{3, 4} {
+					wg.Add(1)
+					go func(value float64) {
+						defer wg.Done()
+						change := other
+						change.Pricing = model.PricingValues{"ModelRatio": value}
+						results <- model.UpdateModelPricing([]model.ModelPricingChange{change})
+					}(value)
+				}
+				wg.Wait()
+				close(results)
+				successes, conflicts := 0, 0
+				for err := range results {
+					if err == nil {
+						successes++
+					} else if errors.Is(err, model.ErrModelPricingConflict) {
+						conflicts++
+					} else {
+						require.NoError(t, err)
+					}
+				}
+				assert.Equal(t, 1, successes)
+				assert.Equal(t, 1, conflicts)
+			})
+			t.Run("concurrent_import_creates_one_record", func(t *testing.T) {
+				update := model.MetadataSyncUpdate{MetadataSyncSelection: model.MetadataSyncSelection{ModelName: "matrix-concurrent-import", RecordVersion: model.MetadataRecordVersion(nil), Create: true}, Values: model.MetadataValues{Description: "Imported", Status: 1}}
+				var wg sync.WaitGroup
+				results := make(chan error, 2)
+				for range 2 {
+					wg.Go(func() {
+						_, err := model.ApplyMetadataSync([]model.MetadataSyncUpdate{update})
+						results <- err
+					})
+				}
+				wg.Wait()
+				close(results)
+				successes, conflicts := 0, 0
+				for err := range results {
+					if err == nil {
+						successes++
+					} else if errors.Is(err, model.ErrMetadataSyncConflict) {
+						conflicts++
+					} else {
+						require.NoError(t, err)
+					}
+				}
+				assert.Equal(t, 1, successes)
+				assert.Equal(t, 1, conflicts)
+				var count int64
+				require.NoError(t, db.Model(&model.Model{}).Where("model_name = ?", update.ModelName).Count(&count).Error)
+				assert.EqualValues(t, 1, count)
+			})
+			t.Run("metadata_keeps_pricing_and_channel_identity", func(t *testing.T) {
+				// abilities 表已删除：分组/绑定渠道直接由启用渠道的 Group/Models 声明。
+				active := model.Channel{Name: "Active route", Type: 1, Status: common.ChannelStatusEnabled, Group: "available", Models: "matrix-hidden-unpriced"}
+				disabled := model.Channel{Name: "Disabled route", Type: 1, Status: common.ChannelStatusManuallyDisabled, Group: "disabled", Models: "matrix-hidden-unpriced"}
+				require.NoError(t, db.Create(&active).Error)
+				require.NoError(t, db.Create(&disabled).Error)
+				exact := &model.Model{ModelName: "matrix-hidden-unpriced", Status: 0, SyncOfficial: 0}
+				require.NoError(t, exact.Insert())
+				rule := &model.Model{ModelName: "matrix-hidden-", NameRule: model.NameRulePrefix}
+				enrichModels([]*model.Model{exact, rule})
+				assert.Equal(t, []string{"available"}, exact.EnableGroups)
+				assert.Equal(t, []model.BoundChannel{{Name: "Active route", Type: 1}}, exact.BoundChannels)
+				assert.Equal(t, []string{"matrix-hidden-unpriced"}, rule.MatchedModels)
+				assert.Empty(t, exact.Endpoints, "inferred endpoints must not become stored configuration")
+				priceBefore, err := model.GetModelPricingSnapshot([]string{"matrix-hidden-unpriced"})
+				require.NoError(t, err)
+				require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: exact.ModelName, ExpectedVersion: priceBefore.Entries[0].Version, Pricing: model.PricingValues{"ModelPrice": float64(0)}}}))
+				exact.ModelName = "matrix-renamed"
+				exact.Endpoints = `{"openai":{"path":"/v1/chat/completions","method":"POST"}}`
+				response := modelManagementRequest(t, UpdateModelMeta, http.MethodPut, "/api/models/", exact, nil)
+				assert.Contains(t, response.Body.String(), `"success":true`)
+				var reloaded model.Model
+				require.NoError(t, db.First(&reloaded, exact.Id).Error)
+				enrichModels([]*model.Model{&reloaded})
+				assert.Equal(t, exact.Endpoints, reloaded.Endpoints)
+				assert.Empty(t, reloaded.BoundChannels)
+				prices, err := model.GetModelPricingSnapshot([]string{"matrix-hidden-unpriced", "matrix-renamed"})
+				require.NoError(t, err)
+				assert.Equal(t, float64(0), prices.Entries[0].Configured["ModelPrice"])
+				assert.Empty(t, prices.Entries[1].Configured)
+				require.NoError(t, reloaded.Delete())
+				require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: "matrix-hidden-unpriced", ExpectedVersion: prices.Entries[0].Version, Reset: true}}))
+				prices, err = model.GetModelPricingSnapshot([]string{"matrix-hidden-unpriced"})
+				require.NoError(t, err)
+				assert.Empty(t, prices.Entries[0].Configured)
+				// 删目录记录不得动渠道声明本身（abilities 时代同口径）。
+				var channelAfter model.Channel
+				require.NoError(t, db.First(&channelAfter, active.Id).Error)
+				assert.Equal(t, []string{"matrix-hidden-unpriced"}, channelAfter.GetModels())
+			})
+			t.Run("metadata_preview_selection_versions_and_transaction", func(t *testing.T) {
+				local := &model.Model{ModelName: "matrix-existing", Description: "Local description", Tags: "keep", Status: 1, SyncOfficial: 1}
+				require.NoError(t, local.Insert())
+				blocked := &model.Model{ModelName: "matrix-blocked", Status: 1, SyncOfficial: 0}
+				require.NoError(t, blocked.Insert())
+				// 渠道声明 matrix-new，使其在同步预览中归为 "site"（GetMissingModels 口径）。
+				siteChannel := model.Channel{Name: "Matrix site channel", Type: 1, Key: "fixture", Status: common.ChannelStatusEnabled, Group: "default", Models: "matrix-new"}
+				require.NoError(t, db.Create(&siteChannel).Error)
+				var revision atomic.Int32
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					assert.Contains(t, r.URL.Path, "/api/i18n/zh/newapi/")
+					payload := []upstreamModel{
+						{ModelName: "matrix-existing", Description: fmt.Sprintf("Upstream %d", revision.Load()), Tags: "changed", Status: 0, Endpoints: []byte(`{"openai":{"path":"/v1/chat/completions","method":"POST"}}`)},
+						{ModelName: "matrix-new", Description: "New model", Status: 0, Endpoints: []byte(`{"openai":"/v1/chat/completions"}`)},
+						{ModelName: "matrix-blocked", Description: "Do not overwrite", Status: 1},
+						{ModelName: "matrix-catalog", Description: "Catalog only", Status: 1},
+					}
+					encoded, err := common.Marshal(payload)
+					require.NoError(t, err)
+					_, _ = w.Write(encoded)
+				}))
+				defer upstream.Close()
+				t.Setenv("SYNC_UPSTREAM_BASE", upstream.URL)
+				t.Setenv("SYNC_HTTP_RETRY", "1")
+				var preview struct {
+					Success bool
+					Data    struct {
+						Source     metadataSyncSource
+						Candidates []metadataSyncCandidate
+					}
+				}
+				response := modelManagementRequest(t, SyncUpstreamPreview, "GET", "/api/models/sync_upstream/preview?locale=zh", nil, &preview)
+				require.Equal(t, http.StatusOK, response.Code)
+				require.True(t, preview.Success, response.Body.String())
+				byName := make(map[string]metadataSyncCandidate)
+				for _, candidate := range preview.Data.Candidates {
+					byName[candidate.ModelName] = candidate
+				}
+				assert.Equal(t, "site", byName["matrix-new"].Scope)
+				assert.Equal(t, "catalog", byName["matrix-catalog"].Scope)
+				assert.Equal(t, "blocked", byName["matrix-blocked"].Kind)
+				body := map[string]any{"locale": "zh", "source_version": preview.Data.Source.Version, "selections": []model.MetadataSyncSelection{
+					{ModelName: "matrix-existing", RecordVersion: byName["matrix-existing"].RecordVersion, Fields: []string{"description", "endpoints"}},
+					{ModelName: "matrix-new", RecordVersion: byName["matrix-new"].RecordVersion, Create: true},
+				}}
+				beforePricing, err := model.GetModelPricingSnapshot([]string{"matrix-priced"})
+				require.NoError(t, err)
+				// A failed model insert must also undo the earlier metadata update.
+				require.NoError(t, db.Callback().Create().Before("gorm:create").Register("fail_metadata_matrix", func(tx *gorm.DB) {
+					if tx.Statement.Table == "models" {
+						tx.AddError(errors.New("injected metadata failure"))
+					}
+				}))
+				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", body, nil)
+				assert.NotEqual(t, http.StatusOK, response.Code)
+				require.NoError(t, db.Callback().Create().Remove("fail_metadata_matrix"))
+				var persisted model.Model
+				require.NoError(t, db.First(&persisted, local.Id).Error)
+				assert.Equal(t, "Local description", persisted.Description)
+				var result struct {
+					Success bool
+					Data    model.MetadataSyncResult
+				}
+				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", body, &result)
+				require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+				require.True(t, result.Success)
+				assert.Equal(t, []string{"matrix-new"}, result.Data.CreatedModels)
+				require.NoError(t, db.First(&persisted, local.Id).Error)
+				assert.Equal(t, "Upstream 0", persisted.Description)
+				assert.Equal(t, "keep", persisted.Tags)
+				assert.Equal(t, 1, persisted.Status)
+				assert.JSONEq(t, `{"openai":{"path":"/v1/chat/completions","method":"POST"}}`, persisted.Endpoints)
+				var created model.Model
+				require.NoError(t, db.Where("model_name = ?", "matrix-new").First(&created).Error)
+				assert.Equal(t, 1, created.SyncOfficial)
+				assert.Zero(t, created.Status)
+				afterPricing, err := model.GetModelPricingSnapshot([]string{"matrix-priced"})
+				require.NoError(t, err)
+				assert.Equal(t, beforePricing.Entries, afterPricing.Entries)
+				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", body, nil)
+				assert.Equal(t, http.StatusConflict, response.Code)
+				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", map[string]any{}, nil)
+				assert.Equal(t, http.StatusBadRequest, response.Code)
+				body["selections"] = []model.MetadataSyncSelection{{ModelName: "matrix-blocked", RecordVersion: byName["matrix-blocked"].RecordVersion, Fields: []string{"description"}}}
+				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", body, nil)
+				assert.Equal(t, http.StatusBadRequest, response.Code)
+				revision.Add(1)
+				response = modelManagementRequest(t, SyncUpstreamModels, "POST", "/api/models/sync_upstream", body, nil)
+				assert.Equal(t, http.StatusConflict, response.Code)
+			})
+		})
+	}
+}
+
+func TestMetadataSyncLocaleAndEndpointValidation(t *testing.T) {
+	for _, locale := range []struct{ input, expected string }{{"zh", "zh"}, {"zh-CN", "zh"}, {"en", "en"}, {"ja", "ja"}} {
+		t.Run(locale.input, func(t *testing.T) {
+			normalized, ok := normalizeLocale(locale.input)
+			assert.True(t, ok)
+			assert.Equal(t, locale.expected, normalized)
+		})
+	}
+	_, valid := normalizeLocale("invalid")
+	assert.False(t, valid)
+	for _, endpoint := range []string{`1`, `null`, `{"openai":false}`, `{"openai":{"path":"invalid"}}`} {
+		assert.Error(t, model.ValidateModelEndpoints(endpoint))
+	}
+}
+
+func TestPricingDefaultBrands(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env)
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+
+			t.Run("pricing_derives_default_brands_without_persisting", func(t *testing.T) {
+				channel := model.Channel{Name: "Vendor fixture", Type: 1, Status: common.ChannelStatusEnabled, Group: "default", Models: "gemini-vendor-fixture"}
+				require.NoError(t, db.Create(&channel).Error)
+				model.RefreshPricing()
+				model.GetPricing()
+				vendors := model.GetVendors()
+				require.Len(t, vendors, 1)
+				assert.Equal(t, "Google", vendors[0].Name)
+				assert.Equal(t, "Gemini.Color", vendors[0].Icon)
+				assert.Negative(t, vendors[0].ID)
+			})
+		})
+	}
+}
+
+// assertChannelBusinessFieldsEqual 比较渠道的**业务字段**，刻意排除 UpdatedAt。
+//
+// 为什么不能整结构 assert.Equal：渠道更新走 GORM 的 Updates，updated_at 由 GORM
+// 以"当前秒"写入；而期望值是 Create 时那次写入的秒。当两次写入恰好跨越秒边界时，
+// expected/actual 会差 1，产生与业务无关的偶发失败（本轮验收实测到过）。这里只断言
+// "只有 models 变化"这类真正的行为契约。
+func assertChannelBusinessFieldsEqual(t *testing.T, expected, actual model.Channel) {
+	t.Helper()
+	expected.UpdatedAt, actual.UpdatedAt = 0, 0
+	assert.Equal(t, expected, actual)
+}
+
+func TestModelDeletionDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env + " to run this database")
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+
+			var response struct {
+				Success bool
+				Data    model.ModelDeleteResult
+			}
+			metadataOnly := model.Model{ModelName: "metadata-only", Status: 1}
+			require.NoError(t, metadataOnly.Insert())
+			channel := model.Channel{Name: "Retained channel", Type: 1, Key: "fixture-key", Models: metadataOnly.ModelName, Group: "default", Status: common.ChannelStatusEnabled}
+			require.NoError(t, db.Create(&channel).Error)
+			recorder := modelManagementRequest(t, func(c *gin.Context) {
+				c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(metadataOnly.Id)}}
+				DeleteModelMeta(c)
+			}, http.MethodDelete, "/api/models/"+strconv.Itoa(metadataOnly.Id), nil, &response)
+			require.True(t, response.Success, recorder.Body.String())
+			assert.Equal(t, model.ModelDeleteResult{DeletedCount: 1}, response.Data)
+			var retained model.Channel
+			require.NoError(t, db.First(&retained, channel.Id).Error)
+			assert.Equal(t, channel.Models, retained.Models)
+			var count int64
+			declaring, err := model.GetChannelsDeclaringModel(metadataOnly.ModelName)
+			require.NoError(t, err)
+			require.Len(t, declaring, 1, "只删目录记录不得摘除渠道声明")
+			assert.Equal(t, channel.Id, declaring[0].Id)
+
+			for _, rule := range []int{model.NameRuleExact, model.NameRulePrefix, model.NameRuleContains, model.NameRuleSuffix} {
+				t.Run(fmt.Sprintf("rule_%d_exact_names_only_atomic_and_cached", rule), func(t *testing.T) {
+					name := fmt.Sprintf("delete-rule-%d", rule)
+					first := model.Model{ModelName: name, NameRule: rule, Status: 1}
+					second := model.Model{ModelName: name + "-second", Status: 1}
+					require.NoError(t, first.Insert())
+					require.NoError(t, second.Insert())
+					mapping := `{"` + name + `":"upstream-name"}`
+					channels := []model.Channel{
+						{Name: "Enabled", Type: 1, Key: "fixture-key", Models: name + "," + name + "-keep," + second.ModelName, Group: "default,vip", Status: common.ChannelStatusEnabled, ModelMapping: &mapping},
+						{Name: "Disabled", Type: 1, Models: name + ",prefix-" + name, Group: "disabled-group", Status: common.ChannelStatusManuallyDisabled},
+						{Name: "Last model", Type: 1, Models: name, Group: "last-model-group", Status: common.ChannelStatusEnabled},
+						{Name: "Case-sensitive name", Type: 1, Models: strings.ToUpper(name), Group: "case-group", Status: common.ChannelStatusEnabled},
+					}
+					for i := range channels {
+						require.NoError(t, db.Create(&channels[i]).Error)
+					}
+					common.MemoryCacheEnabled = true
+					model.InitChannelCache()
+					require.Contains(t, model.GetGroupEnabledModels("default"), name,
+						"删除前 default 分组应声明该模型")
+					baseline, err := model.GetModelPricingSnapshot([]string{name})
+					require.NoError(t, err)
+					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{{ModelName: name, ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(2)}}}))
+					pricingBefore, err := model.GetModelPricingSnapshot([]string{name, second.ModelName})
+					require.NoError(t, err)
+					if rule != model.NameRuleExact {
+						_, err := model.DeleteModelMetadata([]int{first.Id, second.Id}, true, true)
+						require.EqualError(t, err, "only exact-match models can be removed from channels")
+						after, err := model.GetModelPricingSnapshot([]string{name, second.ModelName})
+						require.NoError(t, err)
+						assert.Equal(t, pricingBefore, after)
+						require.NoError(t, db.Model(&model.Model{}).Where("id IN ?", []int{first.Id, second.Id}).Count(&count).Error)
+						assert.EqualValues(t, 2, count)
+						for _, original := range channels {
+							var after model.Channel
+							require.NoError(t, db.First(&after, original.Id).Error)
+							assertChannelBusinessFieldsEqual(t, original, after)
+						}
+						return
+					}
+					body := map[string]any{"model_ids": []int{first.Id, second.Id, first.Id}, "remove_from_channels": true}
+					// A failure at the final metadata delete must undo every earlier
+					// channel/ability write and keep the published cache intact.
+					require.NoError(t, db.Callback().Delete().Before("gorm:delete").Register("fail_model_deletion", func(tx *gorm.DB) {
+						if tx.Statement.Table == "models" {
+							tx.AddError(errors.New("injected model deletion failure"))
+						}
+					}))
+					result, err := model.DeleteModelMetadata([]int{first.Id, second.Id}, true, false)
+					require.Error(t, err)
+					assert.Zero(t, result)
+					require.NoError(t, db.Callback().Delete().Remove("fail_model_deletion"))
+					for _, original := range channels {
+						var after model.Channel
+						require.NoError(t, db.First(&after, original.Id).Error)
+						assertChannelBusinessFieldsEqual(t, original, after)
+					}
+					require.Contains(t, model.GetGroupEnabledModels("default"), name,
+						"注入失败的删除不得改动渠道声明")
+					recorder := modelManagementRequest(t, BatchDeleteModelMeta, http.MethodPost, "/api/models/delete", body, &response)
+					require.True(t, response.Success, recorder.Body.String())
+					assert.Equal(t, model.ModelDeleteResult{DeletedCount: 2, UpdatedChannels: 3}, response.Data)
+					for i, original := range channels {
+						var after model.Channel
+						require.NoError(t, db.First(&after, original.Id).Error)
+						original.Models = []string{name + "-keep", "prefix-" + name, "", strings.ToUpper(name)}[i]
+						assertChannelBusinessFieldsEqual(t, original, after)
+					}
+					for _, group := range []string{"default", "vip", "last-model-group"} {
+						assert.NotContains(t, model.GetGroupEnabledModels(group), name,
+							"删除后各分组都不应再声明该模型")
+					}
+					require.Contains(t, model.GetGroupEnabledModels("default"), name+"-keep",
+						"未被移除的声明必须保留")
+					pricingAfter, err := model.GetModelPricingSnapshot([]string{name, second.ModelName})
+					require.NoError(t, err)
+					assert.Equal(t, pricingBefore, pricingAfter)
+					require.NoError(t, db.Model(&model.Model{}).Where("id IN ?", []int{first.Id, second.Id}).Count(&count).Error)
+					assert.Zero(t, count)
+					_, err = model.DeleteModelMetadata([]int{first.Id}, true, false)
+					assert.Error(t, err, "stale selections cannot delete newly created records")
+				})
+			}
+			for _, removeChannels := range []bool{false, true} {
+				t.Run(fmt.Sprintf("pricing_removal_channels_%t", removeChannels), func(t *testing.T) {
+					name := fmt.Sprintf("remove-pricing-%t", removeChannels)
+					metadata := model.Model{ModelName: name, NameRule: model.NameRuleExact, Status: 1}
+					require.NoError(t, metadata.Insert())
+					keep := name + "-keep"
+					channel := model.Channel{Name: "Independent pricing removal", Type: 1, Models: name + "," + keep, Group: "pricing-removal", Status: common.ChannelStatusEnabled}
+					require.NoError(t, db.Create(&channel).Error)
+					model.InitChannelCache()
+					baseline, err := model.GetModelPricingSnapshot([]string{name, keep})
+					require.NoError(t, err)
+					pricing := model.PricingValues{"ModelRatio": float64(1), "ModelPrice": float64(0), "CompletionRatio": float64(2), "CacheRatio": float64(0.1), "CreateCacheRatio": float64(1.25), "ImageRatio": float64(3), "AudioRatio": float64(4), "AudioCompletionRatio": float64(5)}
+					require.NoError(t, model.UpdateModelPricing([]model.ModelPricingChange{
+						{ModelName: name, ExpectedVersion: baseline.EmptyVersion, Pricing: pricing},
+						{ModelName: keep, ExpectedVersion: baseline.EmptyVersion, Pricing: model.PricingValues{"ModelPrice": float64(9)}},
+					}))
+					before, err := model.GetModelPricingSnapshot([]string{name, keep})
+					require.NoError(t, err)
+					body := map[string]any{"model_ids": []int{metadata.Id}, "remove_from_channels": removeChannels, "remove_pricing": true}
+					// PBR 无用户体系：管理密钥即全量权限（token-spec §2），不存在"只有
+					// 超级管理员能删定价"的角色门——该门在 PBRAuth 下恒真，会让
+					// remove_pricing 永远 403。这里断言两条删除路径都不再返回 403
+					// （用一次性记录，避免影响后续定价断言）。
+					for _, single := range []bool{false, true} {
+						probe := model.Model{ModelName: fmt.Sprintf("perm-probe-%t", single), NameRule: model.NameRuleExact, Status: 1}
+						require.NoError(t, probe.Insert())
+						recorder := modelManagementRequest(t, func(c *gin.Context) {
+							if single {
+								c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(probe.Id)}}
+								DeleteModelMeta(c)
+								return
+							}
+							BatchDeleteModelMeta(c)
+						}, http.MethodPost, "/api/models/delete?remove_pricing=true",
+							map[string]any{"model_ids": []int{probe.Id}, "remove_pricing": true}, nil)
+						assert.NotEqual(t, http.StatusForbidden, recorder.Code, "管理密钥即全量权限，remove_pricing 不得被角色门拒绝")
+					}
+					updates := 0
+					require.NoError(t, db.Callback().Update().Before("gorm:update").Register("fail_deleted_pricing", func(tx *gorm.DB) {
+						if tx.Statement.Table == "options" {
+							updates++
+							if updates == 3 {
+								tx.AddError(errors.New("injected pricing deletion failure"))
+							}
+						}
+					}))
+					_, err = model.DeleteModelMetadata([]int{metadata.Id}, removeChannels, true)
+					require.Error(t, err)
+					require.NoError(t, db.Callback().Update().Remove("fail_deleted_pricing"))
+					after, err := model.GetModelPricingSnapshot([]string{name, keep})
+					require.NoError(t, err)
+					assert.Equal(t, before, after, "partial option writes roll back")
+					var retained model.Model
+					require.NoError(t, db.First(&retained, metadata.Id).Error)
+					var channelAfter model.Channel
+					require.NoError(t, db.First(&channelAfter, channel.Id).Error)
+					assert.Equal(t, channel.Models, channelAfter.Models)
+					_, err = model.DeleteModelMetadata([]int{metadata.Id, 999999}, removeChannels, true)
+					assert.Error(t, err, "a missing model aborts the whole batch")
+					recorder := modelManagementRequest(t, BatchDeleteModelMeta, http.MethodPost, "/api/models/delete", body, &response)
+					require.True(t, response.Success, recorder.Body.String())
+					after, err = model.GetModelPricingSnapshot([]string{name, keep})
+					require.NoError(t, err)
+					assert.Empty(t, after.Entries[0].Configured)
+					assert.Equal(t, before.Entries[1], after.Entries[1], "name rules do not expand pricing deletion")
+					require.NoError(t, db.First(&channelAfter, channel.Id).Error)
+					expectedModels := channel.Models
+					if removeChannels {
+						expectedModels = keep
+					}
+					assert.Equal(t, expectedModels, channelAfter.Models)
+					require.NoError(t, db.Model(&model.Model{}).Where("id = ?", metadata.Id).Count(&count).Error)
+					assert.Zero(t, count)
+				})
+			}
+			for _, ids := range [][]int{nil, {0}, {-1}, make([]int, 1001)} {
+				_, err := model.DeleteModelMetadata(ids, true, false)
+				assert.Error(t, err)
+			}
+		})
+	}
+}

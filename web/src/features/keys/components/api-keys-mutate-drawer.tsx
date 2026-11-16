@@ -1,0 +1,548 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
+import { ChevronDown, KeyRound, Settings2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { useForm, type SubmitErrorHandler } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+
+import { DateTimePicker } from '@/components/datetime-picker'
+import {
+  SideDrawerSection,
+  SideDrawerSectionHeader,
+} from '@/components/drawer-layout'
+import { MultiSelect } from '@/components/multi-select'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { useStatus } from '@/hooks/use-status'
+import { getUserModels } from '@/lib/api'
+import { handleServerError } from '@/lib/handle-server-error'
+import { cn } from '@/lib/utils'
+
+import { createApiKey, updateApiKey, getApiKey } from '../api'
+import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+import {
+  getApiKeyFormSchema,
+  type ApiKeyFormValues,
+  getApiKeyFormDefaultValues,
+  transformFormDataToPayload,
+  transformApiKeyToFormDefaults,
+} from '../lib'
+import type { ApiKey } from '../types'
+import { useApiKeys } from './api-keys-provider'
+
+type ApiKeyMutateDrawerProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  currentRow?: ApiKey
+}
+
+/** 批量创建时的随机后缀；放在模块作用域，避免在渲染路径里调用 Math.random。 */
+function randomNameSuffix(): string {
+  return Math.random().toString(36).slice(2, 8)
+}
+
+export function ApiKeysMutateDrawer({
+  open,
+  onOpenChange,
+  currentRow,
+}: ApiKeyMutateDrawerProps) {
+  const { t } = useTranslation()
+  const isUpdate = !!currentRow
+  const currentRowId = currentRow?.id
+  const { triggerRefresh } = useApiKeys()
+  const { loading: statusLoading } = useStatus()
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [initializedTarget, setInitializedTarget] = useState<string | null>(
+    null
+  )
+  // 批量创建的部分失败汇总：保留已创建名单与失败数，抽屉不关闭以便重试剩余。
+  const [createSummary, setCreateSummary] = useState<{
+    created: string[]
+    failed: number
+  } | null>(null)
+
+  // Fetch models
+  const { data: modelsData } = useQuery({
+    queryKey: ['user-models'],
+    // getUserModels 成功即裸路由键数组；失败由 axios 拒绝。
+    queryFn: async () => getUserModels(),
+    enabled: open,
+    staleTime: 0,
+  })
+
+  const {
+    data: apiKeyData,
+    isFetched: apiKeyFetched,
+    isFetching: apiKeyFetching,
+  } = useQuery({
+    queryKey: ['api-key', currentRowId],
+    // getApiKey 是 PBR 本地适配层（本地合成 {success,data}）。
+    queryFn: async () => getApiKey(currentRowId ?? 0),
+    enabled: open && isUpdate && currentRowId !== undefined,
+    staleTime: 0,
+  })
+
+  const models = modelsData ?? []
+  const schema = useMemo(() => getApiKeyFormSchema(t), [t])
+
+  const form = useForm<ApiKeyFormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: getApiKeyFormDefaultValues(),
+  })
+
+  // Load existing data when updating
+  useEffect(() => {
+    if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInitializedTarget(null)
+      return
+    }
+    if (isUpdate && (!apiKeyFetched || apiKeyFetching)) return
+    if (!isUpdate && statusLoading) return
+
+    const target = isUpdate && currentRow ? `update:${currentRow.id}` : 'create'
+    if (initializedTarget === target) return
+    if (isUpdate && currentRow) {
+      if (apiKeyData?.success && apiKeyData.data) {
+        form.reset(transformApiKeyToFormDefaults(apiKeyData.data))
+        setInitializedTarget(target)
+      }
+    } else {
+      form.reset(getApiKeyFormDefaultValues())
+      setInitializedTarget(target)
+    }
+  }, [
+    open,
+    isUpdate,
+    currentRow,
+    form,
+    statusLoading,
+    apiKeyData,
+    apiKeyFetched,
+    apiKeyFetching,
+    initializedTarget,
+  ])
+
+  const formTarget =
+    isUpdate && currentRow ? `update:${currentRow.id}` : 'create'
+  const isFormInitialized = initializedTarget === formTarget
+
+  const onSubmit = async (data: ApiKeyFormValues) => {
+    setIsSubmitting(true)
+    try {
+      const basePayload = transformFormDataToPayload(data)
+
+      if (isUpdate && currentRow) {
+        const result = await updateApiKey({
+          ...basePayload,
+          id: currentRow.id,
+        })
+        if (result.success) {
+          toast.success(t(SUCCESS_MESSAGES.API_KEY_UPDATED))
+          onOpenChange(false)
+          triggerRefresh()
+        } else {
+          handleServerError(result, t(ERROR_MESSAGES.UPDATE_FAILED))
+        }
+      } else {
+        // Create mode：批量创建。部分失败时保留抽屉与草稿，报告成功/失败数并
+        // 列出已创建名单，用户可再次保存重试剩余（已创建的会跳过）。
+        const requestedCount = data.tokenCount || 1
+        const previouslyCreated = createSummary?.created ?? []
+        const remaining = Math.max(0, requestedCount - previouslyCreated.length)
+        const createdNames = [...previouslyCreated]
+        let failedCount = 0
+
+        for (let i = 0; i < remaining; i++) {
+          const sequence = createdNames.length
+          const name =
+            sequence === 0 && data.name
+              ? data.name
+              : `${data.name || 'default'}-${randomNameSuffix()}`
+          try {
+            const result = await createApiKey({ ...basePayload, name })
+            if (result.success) {
+              createdNames.push(name)
+              setCreateSummary({ created: createdNames, failed: 0 })
+            } else {
+              failedCount = remaining - i
+              handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED))
+              break
+            }
+          } catch (error) {
+            // 请求被拒（HTTP/网络错误）会抛出而非返回 success:false：
+            // 记录已创建的部分，保留抽屉让用户重试剩余。
+            failedCount = remaining - i
+            handleServerError(error, t(ERROR_MESSAGES.CREATE_FAILED))
+            break
+          }
+        }
+
+        if (failedCount === 0) {
+          toast.success(
+            t('Successfully created {{count}} API Key(s)', {
+              count: createdNames.length,
+            })
+          )
+          setCreateSummary(null)
+          onOpenChange(false)
+          triggerRefresh()
+        } else {
+          setCreateSummary({ created: createdNames, failed: failedCount })
+          triggerRefresh()
+          toast.error(
+            t(
+              'Created {{created}} of {{total}} API Key(s); {{failed}} failed.',
+              {
+                created: createdNames.length,
+                total: requestedCount,
+                failed: failedCount,
+              }
+            )
+          )
+        }
+      }
+    } catch (error) {
+      handleServerError(error, t(ERROR_MESSAGES.UNEXPECTED))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const onInvalid: SubmitErrorHandler<ApiKeyFormValues> = () => {
+    toast.error(t('Please fix the highlighted fields before saving'))
+  }
+
+  const handleSetExpiry = (months: number, days: number, hours: number) => {
+    if (months === 0 && days === 0 && hours === 0) {
+      form.setValue('expired_time', undefined)
+      return
+    }
+
+    const now = new Date()
+    now.setMonth(now.getMonth() + months)
+    now.setDate(now.getDate() + days)
+    now.setHours(now.getHours() + hours)
+
+    form.setValue('expired_time', now)
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        onOpenChange(v)
+        if (!v) {
+          setCreateSummary(null)
+          form.reset()
+        }
+      }}
+    >
+      <DialogContent
+        variant='sheet'
+        className='flex w-full flex-col gap-0 overflow-hidden p-0 sm:w-[min(94vw,640px)] sm:max-w-none'
+      >
+        <DialogHeader className='border-border border-b px-6 py-4'>
+          <DialogTitle>
+            {isUpdate ? t('Update API Key') : t('Create API Key')}
+          </DialogTitle>
+          <DialogDescription>
+            {isUpdate
+              ? t('Update the API key by providing necessary info.')
+              : t('Add a new API key by providing necessary info.')}
+          </DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form
+            id='api-key-form'
+            onSubmit={form.handleSubmit(onSubmit, onInvalid)}
+            aria-busy={!isFormInitialized}
+            inert={!isFormInitialized || isSubmitting ? true : undefined}
+            className='min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-4'
+          >
+            <SideDrawerSection>
+              <SideDrawerSectionHeader
+                title={t('Basic Information')}
+                description={t('Set API key basic information')}
+                icon={<KeyRound className='size-4' />}
+                iconTone='info'
+              />
+              <FormField
+                control={form.control}
+                name='name'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Name')}</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder={t('Enter a name')} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='expired_time'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Expiration Time')}</FormLabel>
+                    <div className='grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center'>
+                      <FormControl>
+                        <DateTimePicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          placeholder={t('Never expires')}
+                          className='min-w-0 [&_input[type=time]]:w-24 sm:[&_input[type=time]]:w-32'
+                        />
+                      </FormControl>
+                      <div className='grid grid-cols-4 gap-2 sm:flex'>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          className='px-2 text-xs sm:px-3 sm:text-sm'
+                          onClick={() => handleSetExpiry(0, 0, 0)}
+                        >
+                          {t('Never')}
+                        </Button>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          className='px-2 text-xs sm:px-3 sm:text-sm'
+                          onClick={() => handleSetExpiry(1, 0, 0)}
+                        >
+                          {t('1 Month')}
+                        </Button>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          className='px-2 text-xs sm:px-3 sm:text-sm'
+                          onClick={() => handleSetExpiry(0, 1, 0)}
+                        >
+                          {t('1 Day')}
+                        </Button>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          className='px-2 text-xs sm:px-3 sm:text-sm'
+                          onClick={() => handleSetExpiry(0, 0, 1)}
+                        >
+                          {t('1 Hour')}
+                        </Button>
+                      </div>
+                    </div>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {!isUpdate && (
+                <FormField
+                  control={form.control}
+                  name='tokenCount'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Quantity')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type='number'
+                          min='1'
+                          placeholder={t('Number of keys to create')}
+                          onChange={(e) =>
+                            field.onChange(
+                              Number.parseInt(e.target.value, 10) || 1
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Create multiple API keys at once (random suffix will be added to names)'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+            </SideDrawerSection>
+
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <SideDrawerSection>
+                <CollapsibleTrigger
+                  render={
+                    <button
+                      type='button'
+                      className='hover:bg-muted/40 flex w-full items-center gap-3 rounded-md py-1.5 text-left transition-colors'
+                    />
+                  }
+                >
+                  <SideDrawerSectionHeader
+                    className='flex-1'
+                    title={t('Advanced Settings')}
+                    description={t('Set API key access restrictions')}
+                    icon={<Settings2 className='size-4' />}
+                  />
+                  <ChevronDown
+                    className={cn(
+                      'text-muted-foreground size-4 shrink-0 transition-transform',
+                      advancedOpen && 'rotate-180'
+                    )}
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className='flex flex-col gap-4 pt-2'>
+                    <FormField
+                      control={form.control}
+                      name='model_limits'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Model Limits')}</FormLabel>
+                          <FormControl>
+                            <MultiSelect
+                              options={models.map((m) => ({
+                                label: m,
+                                value: m,
+                              }))}
+                              selected={field.value}
+                              onChange={field.onChange}
+                              placeholder={t(
+                                'Select models (empty for allow all)'
+                              )}
+                              allowCreate
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t('Limit which models can be used with this key')}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name='allow_ips'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            {t('IP Whitelist (supports CIDR)')}
+                          </FormLabel>
+                          <FormControl>
+                            <Textarea
+                              {...field}
+                              className='min-h-20 resize-none'
+                              placeholder={t(
+                                'One IP per line (empty for no restriction)'
+                              )}
+                              rows={3}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t(
+                              'Do not over-trust this feature. IP may be spoofed. Please use with nginx, CDN and other gateways.'
+                            )}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </CollapsibleContent>
+              </SideDrawerSection>
+            </Collapsible>
+
+            {createSummary && createSummary.failed > 0 && (
+              <Alert variant='destructive'>
+                <AlertTitle>
+                  {t('Created {{created}} of {{total}} API Key(s)', {
+                    created: createSummary.created.length,
+                    total: createSummary.created.length + createSummary.failed,
+                  })}
+                </AlertTitle>
+                <AlertDescription>
+                  {createSummary.created.length > 0 && (
+                    <p className='font-mono text-xs break-all'>
+                      {t('Already created:')} {createSummary.created.join(', ')}
+                    </p>
+                  )}
+                  <p>
+                    {t(
+                      'Save again to retry the remaining {{count}} key(s); already created ones are skipped.',
+                      { count: createSummary.failed }
+                    )}
+                  </p>
+                </AlertDescription>
+              </Alert>
+            )}
+          </form>
+        </Form>
+        <DialogFooter className='border-border border-t px-6 py-4'>
+          <DialogClose
+            render={<Button variant='outline' className='w-full sm:w-auto' />}
+          >
+            {t('Close')}
+          </DialogClose>
+          <Button
+            type='button'
+            onClick={form.handleSubmit(onSubmit, onInvalid)}
+            disabled={!isFormInitialized || isSubmitting}
+            className='w-full sm:w-auto'
+          >
+            {isSubmitting ? t('Saving...') : t('Save changes')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

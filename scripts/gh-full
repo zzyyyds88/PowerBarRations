@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# 用本机保存的全权限 GitHub token 调 gh（含 delete_repo）。
+#
+# 当前默认的 gh 登录只有 repo/gist scope，删仓库会被 403 拒绝；
+# 这个包装脚本读取本机保存的全权限 token，不动默认登录态。
+#
+#   ./scripts/gh-full repo delete zzyyyds88/SomeRepo
+#   ./scripts/gh-full api repos/zzyyyds88/X --jq .visibility
+#   ./scripts/gh-full auth status          # 看这把 token 的 scope
+#
+# token 存在 ~/.config/gh/tokens.d/zzyyyds88-full.token（600，仓库外）。
+set -euo pipefail
+
+TOKEN_FILE="${GH_FULL_TOKEN_FILE:-$HOME/.config/gh/tokens.d/zzyyyds88-full.token}"
+
+if [[ ! -r "$TOKEN_FILE" ]]; then
+  echo "gh-full: 找不到 token 文件：$TOKEN_FILE" >&2
+  echo "  从你的任意一台已登录 gh 的机器取 oauth_token，写入上述路径（600）" >&2
+  exit 1
+fi
+
+TOKEN="$(tr -d '\r\n' <"$TOKEN_FILE")"
+if [[ -z "$TOKEN" ]]; then
+  echo "gh-full: token 文件为空：$TOKEN_FILE" >&2
+  exit 1
+fi
+
+# `repo delete` 是高频操作，给个短路径；其余原样透传给 gh（含 api 子命令）。
+if [[ "${1:-}" == "repo" && "${2:-}" == "delete" && -n "${3:-}" ]]; then
+  shift 2
+  exec env GH_TOKEN="$TOKEN" gh repo delete "$@"
+fi
+
+exec env GH_TOKEN="$TOKEN" gh "$@"

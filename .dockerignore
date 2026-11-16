@@ -1,0 +1,56 @@
+# 上游只读参考源码：体积大、不参与构建
+reference/
+
+# 文档与验收证据：只在仓库里，不进镜像
+docs/
+verify/
+AGENTS.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+web/AGENTS.md
+
+# 版本控制与 CI 配置
+.git
+.gitignore
+.github
+
+# 本地凭据与运行时数据（含嵌套目录，避免 web/.env 被 COPY 进构建）
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+*.db
+*.db-wal
+*.db-shm
+data/
+uploads/
+.uploads/
+logs/
+tmp/
+spike/
+verify/**/*.log
+
+# 依赖与构建产物（镜像内会重新构建）
+bin/
+dist/
+pbr
+*.exe
+web/node_modules/
+# 注意：**不要**排除 web/dist —— 前端产物已纳入版本库，供 Dockerfile 的 WEB_SOURCE=web-prebuilt 离线内嵌
+
+# 编辑器与缓存
+.DS_Store
+*.swp
+*~
+__pycache__/
+*.pyc
+*.pyo
+
+# 部署凭据与用户本地备份：绝不进入构建上下文或镜像层
+deploy/
+*.bak
+*.bak-*

@@ -1,0 +1,368 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+/*
+PowerBarRations —— 「路由与故障切换」独立页（ui-spec §6.3、ADR 0006）
+
+以**卡片网格**列出全部路由键（已配车道 + 未配车道）：每张卡片展示路由键、
+状态徽章、成员顺序与运行态；操作 = 编辑成员链 / 删除车道。页头「新建车道」进入两栏
+编排器；未配车道的路由键点开即可组链。渠道声明/新增模型不会自动建车道。
+*/
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, Waypoints } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { EmptyState } from '@/components/empty-state'
+import { ErrorState } from '@/components/error-state'
+import { ConsolePage } from '@/components/layout'
+import { LoadingState } from '@/components/loading-state'
+import { Button } from '@/components/ui/button'
+import { useMediaQuery } from '@/hooks'
+
+import {
+  cleanupPBROrphanMembers,
+  deletePBRFailover,
+  listPBRLaneSummaries,
+  listPBRMemberGroups,
+  listPBRModels,
+  pbrModelsQueryKey,
+  type PBRModelSummary,
+} from './api'
+import { LaneCard } from './components/lane-card'
+import { LaneEditorDialog } from './components/lane-editor-dialog'
+import { MemberGroupPanel } from './components/member-group-panel'
+import { useLaneRuntime } from './hooks/use-lane-runtime'
+
+// 车道顺序摘要挂在同一前缀 queryKey 下：编排器保存/删除后 invalidate 会一并刷新。
+const laneSummariesKey = [...pbrModelsQueryKey, 'lane-summaries'] as const
+
+export function Routes(
+  props: {
+    deepLinkModel?: string
+    deepLinkGroup?: string
+    onDeepLinkClose?: () => void
+  } = {}
+) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
+  const deepLinkModel = props.deepLinkModel ?? ''
+  const deepLinkGroup = props.deepLinkGroup ?? ''
+  const openedDeepLink = useRef('')
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorModel, setEditorModel] = useState<string | undefined>(undefined)
+  const [pendingDelete, setPendingDelete] = useState<PBRModelSummary | null>(
+    null
+  )
+  const [cleanupOpen, setCleanupOpen] = useState(false)
+
+  const modelsQuery = useQuery({
+    queryKey: pbrModelsQueryKey,
+    queryFn: listPBRModels,
+  })
+  const lanesQuery = useQuery({
+    queryKey: laneSummariesKey,
+    queryFn: listPBRLaneSummaries,
+  })
+  const groupsQuery = useQuery({
+    queryKey: ['pbr-member-groups'],
+    queryFn: listPBRMemberGroups,
+  })
+
+  // 路由页只列真实车道（explicit/disabled）：渠道声明但未配车道的路由键
+  // （unconfigured）不在本页出现——渠道声明与车道彻底分列（ADR 0007）。
+  // GET /api/models 契约不变，仍返回 unconfigured（模型管理页与 /v1/models 消费）。
+  const models = (modelsQuery.data ?? []).filter(
+    (m) => m.source !== 'unconfigured'
+  )
+  // 冲突对话框里的 `/routes?model=...` 深链：数据就绪后直接打开对应车道。
+  // ref 防止关闭编辑器后 effect 因 models 数组新引用而再次弹出。
+  useEffect(() => {
+    if (!deepLinkModel) {
+      openedDeepLink.current = ''
+      return
+    }
+    if (openedDeepLink.current === deepLinkModel) return
+    const row = models.find((item) => item.model === deepLinkModel)
+    if (!row) return
+    openedDeepLink.current = deepLinkModel
+    const targetModel = row.model
+    // 微任务里打开编辑器：避免在 effect 同步阶段触发级联渲染。
+    queueMicrotask(() => {
+      setEditorModel(targetModel)
+      setEditorOpen(true)
+    })
+  }, [deepLinkModel, models])
+  const laneNames = models
+    .filter((m) => m.source === 'explicit')
+    .map((m) => m.model)
+  const { runtime: laneRuntime, nowMs } = useLaneRuntime(laneNames)
+  const laneSummaries = new Map(
+    (lanesQuery.data ?? []).map((lane) => [lane.name, lane])
+  )
+  const orphanLanes = (lanesQuery.data ?? []).filter(
+    (lane) => lane.orphan_member_count > 0
+  )
+
+  const cleanup = useMutation({
+    mutationFn: cleanupPBROrphanMembers,
+    onSuccess: async (result) => {
+      const manual = result.manual_lanes_cleared
+      toast.success(
+        t(
+          'Cleaned {{lanes}} lane(s) and {{groups}} group(s); deleted {{deletedLanes}} empty lane(s) and {{deletedGroups}} empty group(s).',
+          {
+            lanes: result.cleaned_lanes.length,
+            groups: result.cleaned_groups.length,
+            deletedLanes: result.deleted_lanes.length,
+            deletedGroups: result.deleted_groups.length,
+          }
+        ),
+        manual.length > 0
+          ? {
+              description: t(
+                'Manual lanes now need an active member: {{lanes}}.',
+                { lanes: manual.join(', ') }
+              ),
+            }
+          : undefined
+      )
+      setCleanupOpen(false)
+      await queryClient.invalidateQueries({ queryKey: pbrModelsQueryKey })
+      await queryClient.invalidateQueries({ queryKey: ['pbr-member-groups'] })
+      await queryClient.invalidateQueries({ queryKey: ['pbr-route'] })
+      await queryClient.invalidateQueries({ queryKey: ['pbr-channel-catalog'] })
+    },
+  })
+
+  const removeLane = useMutation({
+    mutationFn: (model: string) => deletePBRFailover(model),
+    onSuccess: async () => {
+      toast.success(
+        t('Lane removed; configure this model again to make it callable')
+      )
+      setPendingDelete(null)
+      await queryClient.invalidateQueries({ queryKey: pbrModelsQueryKey })
+      await queryClient.invalidateQueries({ queryKey: laneSummariesKey })
+      await queryClient.invalidateQueries({ queryKey: ['pbr-member-groups'] })
+      await queryClient.invalidateQueries({ queryKey: ['pbr-route'] })
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : String(error))
+    },
+  })
+
+  const refresh = async () => {
+    await queryClient.invalidateQueries({ queryKey: pbrModelsQueryKey })
+    await queryClient.invalidateQueries({ queryKey: laneSummariesKey })
+    await queryClient.invalidateQueries({ queryKey: ['pbr-member-groups'] })
+    await queryClient.invalidateQueries({ queryKey: ['pbr-route'] })
+  }
+
+  const openNewLane = () => {
+    setEditorModel(undefined)
+    setEditorOpen(true)
+  }
+  // 卡片一定是真实车道，点开即编辑模式（ADR 0007）。
+  const openCard = (row: PBRModelSummary) => {
+    setEditorModel(row.model)
+    setEditorOpen(true)
+  }
+
+  let content
+  if (modelsQuery.isLoading) {
+    content = <LoadingState message={t('Loading...')} />
+  } else if (modelsQuery.isError) {
+    content = (
+      <ErrorState
+        description={
+          modelsQuery.error instanceof Error
+            ? modelsQuery.error.message
+            : String(modelsQuery.error)
+        }
+        onRetry={() => void modelsQuery.refetch()}
+      />
+    )
+  } else if (models.length === 0) {
+    content = (
+      <EmptyState
+        icon={Waypoints}
+        title={t('No lanes yet')}
+        description={t(
+          'Create a lane by hand: enter a route key and pick members from any channel. Declaring models on channels does not create lanes.'
+        )}
+        action={
+          <Button size='sm' onClick={() => openNewLane()}>
+            <Plus className='size-4' aria-hidden='true' />
+            {t('New lane')}
+          </Button>
+        }
+      />
+    )
+  } else {
+    content = (
+      <div className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))] gap-4 pb-4'>
+        {models.map((row) => {
+          const laneSummary = laneSummaries.get(row.model)
+          return (
+            <LaneCard
+              key={row.model}
+              summary={row}
+              members={laneSummary?.members ?? []}
+              mode={laneSummary?.mode}
+              activeMember={laneSummary?.active_member}
+              groups={groupsQuery.data}
+              snapshot={laneRuntime.byLane.get(row.model)}
+              now={nowMs}
+              onEdit={() => openCard(row)}
+              onDelete={() => setPendingDelete(row)}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <ConsolePage
+        title={t('Routing')}
+        description={t(
+          'Route keys, their ordered fallback chains and shared chains.'
+        )}
+        actions={
+          <Button size='sm' onClick={() => openNewLane()}>
+            <Plus className='size-4' />
+            {t('New lane')}
+          </Button>
+        }
+        fixedContent
+        stackActionsOnMobile
+      >
+        <div className='flex h-full min-h-0 flex-col'>
+          {lanesQuery.isError && (
+            <div className='border-destructive/40 bg-destructive/5 text-destructive mb-3 flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs'>
+              <span>{t('Failed to load lane member order')}</span>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => void lanesQuery.refetch()}
+              >
+                {t('Retry')}
+              </Button>
+            </div>
+          )}
+          {orphanLanes.length > 0 && (
+            <div className='border-warning/40 bg-warning/10 text-warning rounded-control mb-3 flex items-center justify-between gap-2 border px-3 py-2 text-xs'>
+              <span>
+                {t(
+                  '{{count}} lane(s) have members whose channel no longer exists.',
+                  { count: orphanLanes.length }
+                )}
+              </span>
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => setCleanupOpen(true)}
+              >
+                {t('Clean up orphan members')}
+              </Button>
+            </div>
+          )}
+          {isDesktop ? (
+            <div className='grid min-h-0 flex-1 grid-cols-[1fr_3fr] gap-3'>
+              <div className='min-h-0 overflow-hidden'>
+                <MemberGroupPanel
+                  focusGroup={deepLinkGroup}
+                  onFocusGroupClose={props.onDeepLinkClose}
+                />
+              </div>
+              <div className='min-h-0 overflow-auto'>{content}</div>
+            </div>
+          ) : (
+            <div className='flex min-h-0 flex-1 flex-col gap-3'>
+              <MemberGroupPanel
+                collapsible
+                focusGroup={deepLinkGroup}
+                onFocusGroupClose={props.onDeepLinkClose}
+              />
+              <div className='min-h-0 flex-1 overflow-auto'>{content}</div>
+            </div>
+          )}
+        </div>
+      </ConsolePage>
+
+      {editorOpen && (
+        <LaneEditorDialog
+          open
+          onOpenChange={(open) => {
+            setEditorOpen(open)
+            if (!open && deepLinkModel) {
+              openedDeepLink.current = ''
+              props.onDeepLinkClose?.()
+            }
+          }}
+          model={editorModel}
+          onSaved={refresh}
+        />
+      )}
+
+      <ConfirmDialog
+        destructive
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null)
+        }}
+        title={t('Remove this lane?')}
+        desc={t(
+          'Removing the lane makes {{model}} unavailable immediately (requests return 503) until you configure a lane again.',
+          { model: pendingDelete?.model ?? '' }
+        )}
+        confirmText={t('Remove lane')}
+        isLoading={removeLane.isPending}
+        handleConfirm={() => {
+          if (pendingDelete) removeLane.mutate(pendingDelete.model)
+        }}
+      />
+
+      <ConfirmDialog
+        destructive
+        open={cleanupOpen}
+        onOpenChange={setCleanupOpen}
+        title={t('Clean up orphan members?')}
+        desc={t(
+          'Members whose channel no longer exists are removed from lanes and member groups; lanes or groups left without members are deleted. Those models stop being callable.'
+        )}
+        confirmText={t('Clean up')}
+        isLoading={cleanup.isPending}
+        handleConfirm={() => cleanup.mutate()}
+      >
+        <ul className='max-h-48 list-disc overflow-auto pl-5 text-xs'>
+          {orphanLanes.map((lane) => (
+            <li key={lane.name} className='font-mono'>
+              {lane.name} ({lane.orphan_member_count})
+            </li>
+          ))}
+        </ul>
+      </ConfirmDialog>
+    </>
+  )
+}

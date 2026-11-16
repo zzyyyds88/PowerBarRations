@@ -1,0 +1,141 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+import { Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+
+import { Dialog } from '@/components/dialog'
+import { Label } from '@/components/ui/label'
+import { formatCompactNumber } from '@/lib/format'
+import { handleServerError } from '@/lib/handle-server-error'
+
+import { getUserInfo } from '../../api'
+import type { UserInfo } from '../../types'
+
+interface UserInfoDialogProps {
+  userId: number | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}
+
+function InfoItem({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className='space-y-1.5'>
+      <Label className='text-muted-foreground text-xs'>{label}</Label>
+      <div className='text-sm font-semibold'>{value}</div>
+    </div>
+  )
+}
+
+export function UserInfoDialog({
+  userId,
+  open,
+  onOpenChange,
+}: UserInfoDialogProps) {
+  const { t } = useTranslation()
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const fetchUserInfo = useCallback(
+    async (id: number) => {
+      setIsLoading(true)
+      try {
+        // 成功即裸用户对象；失败由 axios 拒绝。
+        setUserInfo(await getUserInfo(id))
+      } catch (error) {
+        handleServerError(error, t('Failed to fetch user information'))
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [t]
+  )
+
+  useEffect(() => {
+    if (!open || !userId) return
+    let cancelled = false
+    // 微任务里再发起请求：loading 的 setState 不落在 effect 同步阶段，
+    // 避免一次无谓的级联渲染；关闭对话框后不再回写。
+    queueMicrotask(() => {
+      if (!cancelled) void fetchUserInfo(userId)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, userId, fetchUserInfo])
+
+  return (
+    <Dialog
+      size='md'
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('User Information')}
+      description={t(
+        'View details about the actor associated with this log entry.'
+      )}
+      contentClassName='sm:max-w-lg'
+      bodyClassName='space-y-4'
+    >
+      {isLoading && (
+        <div className='flex items-center justify-center py-8'>
+          <Loader2 className='text-muted-foreground size-6 animate-spin' />
+        </div>
+      )}
+      {!isLoading && userInfo && (
+        <div className='space-y-4 py-4'>
+          {/* Basic Info */}
+          <div className='grid grid-cols-2 gap-4'>
+            <InfoItem label={t('Username')} value={userInfo.username} />
+            {userInfo.display_name && (
+              <InfoItem
+                label={t('Display Name')}
+                value={userInfo.display_name}
+              />
+            )}
+          </div>
+
+          {/* Statistics：PBR 为单用户单口令网关，无余额/分组/邀请口径，这里只保留请求数。 */}
+          <div className='grid grid-cols-2 gap-4'>
+            <InfoItem
+              label={t('Request Count')}
+              value={formatCompactNumber(userInfo.request_count)}
+            />
+          </div>
+
+          {/* Remark */}
+          {userInfo.remark && (
+            <div className='space-y-1.5'>
+              <Label className='text-muted-foreground text-xs'>
+                {t('Remark')}
+              </Label>
+              <div className='text-sm leading-relaxed font-semibold break-words'>
+                {userInfo.remark}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {!isLoading && !userInfo && (
+        <div className='text-muted-foreground py-8 text-center text-sm'>
+          {t('No user information available')}
+        </div>
+      )}
+    </Dialog>
+  )
+}

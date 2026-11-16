@@ -1,0 +1,112 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+// 首页概览的展示格式化（ui-spec §6.2A）。
+//
+// 空样本统一显示 `-`（不是 0），避免"没数据"被误读成"数据是 0"。
+
+const EMPTY = '-'
+
+/** Token 总数缩写：`15.1B` / `556.4M` / `12.3K`。 */
+/** Token 数量级：委托共享实现（中文 亿/万、其它 B/M/K，见 `@/lib/format`）。 */
+export { formatTokenAmount } from '@/lib/format'
+
+/** 平均延迟：`840ms` / `1.20s`；无样本为 `-`。 */
+export function formatLatencyMs(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return EMPTY
+  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}s`
+  return `${Math.round(value)}ms`
+}
+
+/** 输出速度（output_tps）：`41.2 tok/s`；无样本为 `-`。 */
+export function formatThroughputTps(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return EMPTY
+  return `${value.toFixed(1)} tok/s`
+}
+
+/**
+ * 服务状态卡的 TPS 副行：只有干净样本（成功且单次尝试）才显示。
+ * 无干净样本返回 null——界面只显示 p50，不出现孤零零的 `-`。
+ * 故障转移请求的 total_ms 含失败往返，不参与 TPS；这是刻意口径。
+ */
+export function formatModelThroughput(item: {
+  output_tps: number
+  tps_samples: number
+}): string | null {
+  if (item.tps_samples <= 0) return null
+  if (!Number.isFinite(item.output_tps) || item.output_tps <= 0) return null
+  return formatThroughputTps(item.output_tps)
+}
+
+/** TPS 缺失原因（界面用它解释副行为什么是空的，而不是只留白）。 */
+export type ModelThroughputNote = 'no-clean-samples' | 'no-output-tokens' | null
+
+export function modelThroughputNote(item: {
+  output_tps: number
+  tps_samples: number
+}): ModelThroughputNote {
+  if (item.tps_samples <= 0) return 'no-clean-samples'
+  if (!Number.isFinite(item.output_tps) || item.output_tps <= 0) {
+    return 'no-output-tokens'
+  }
+  return null
+}
+
+/** 成功率（0~1 小数）：`98.33%`；无样本为 `-`。 */
+export function formatSuccessRate(value: number): string {
+  if (!Number.isFinite(value)) return EMPTY
+  return `${(value * 100).toFixed(2)}%`
+}
+
+/** 调用次数等整数：千分位；非法值为 `-`。 */
+export function formatCount(value: number): string {
+  if (!Number.isFinite(value)) return EMPTY
+  // 大数缩写（2026-10-25 用户裁决）：>= 1 万用 K/M/B 短符号，不展开完整数字；
+  // 万以内的计数保留完整（1,249 这类读表更准）。
+  if (value >= 10_000) {
+    if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+    return `${(value / 1_000).toFixed(1)}K`
+  }
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+/**
+ * 环比（%）：`previous <= 0` 时没有可比基准，返回 null（展示为 `-`）。
+ */
+export function deltaPercent(current: number, previous: number): number | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return null
+  if (previous <= 0) return null
+  return ((current - previous) / previous) * 100
+}
+
+/** 环比文案：`+12.3%` / `-4.0%`；无基准为 `-`。 */
+export function formatDeltaPercent(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return EMPTY
+  const sign = value > 0 ? '+' : ''
+  return `${sign}${value.toFixed(1)}%`
+}
+
+/** 无真实 logo 时的首字母占位（取首个非空字符，大写）。 */
+export function modelInitial(name: string): string {
+  const trimmed = name.trim()
+  if (trimmed === '') return '?'
+  return trimmed.slice(0, 1).toUpperCase()
+}

@@ -1,0 +1,98 @@
+# gitleaks 配置（PowerBarRations）
+#
+# 用途：pre-commit 与发布前扫描的本地闸口。默认规则（~150 条）全部保留，
+# 只对**已逐条核实过的误报位置**做 allowlist，不放宽任何检测规则。
+#
+# 维护原则：
+#   1. 新增 allowlist 前必须打开命中行确认它是测试夹具/注释/已脱敏文本，
+#      并把理由写在对应条目上。禁止用 path 级通配掩盖整片目录。
+#   2. 真实凭据一律不得豁免——发现真实凭据应轮换，而不是加进 allowlist。
+#   3. 测试需要喂真实密钥字形时，优先拆成 "前缀" + "其余" 的运行时拼接
+#      （见 AGENTS.md「密钥字形同样要避开」），这样既不触发本地扫描，
+#      也不会触发 GitHub secret scanning。
+
+title = "PowerBarRations"
+
+[extend]
+# 继承默认规则集，保持与上游规则同步。
+useDefault = true
+
+# ── 全局 allowlist ────────────────────────────────────────────────────────
+[[allowlists]]
+description = "脱敏引擎测试夹具：这个包必须喂真实密钥字形来验证脱敏逻辑"
+# 只豁免测试文件与 testdata，不豁免同目录的生产代码。
+paths = [
+  '''internal/privacy/redact/.*_test\.go''',
+  '''internal/privacy/redact/testdata/.*''',
+  '''internal/privacy/pii/.*_test\.go''',
+]
+
+[[allowlists]]
+description = "API 文档里的示例字段（占位符形态，非真实值）"
+paths = ['''docs/api-spec-v1\.md''']
+# 文档里的 key/session_key 字段都是 <占位> 或明显示例值。
+regexTarget = "match"
+regexes = [
+  '''"(key|session_key)"\s*:\s*"[^"]{0,64}"''',
+]
+
+[[allowlists]]
+description = "i18n 文案与前端构建产物里的口令相关词条"
+paths = [
+  '''web/src/i18n/locales/.*\.json''',
+  '''web/dist/.*''',
+]
+regexTarget = "match"
+regexes = ['''password visibility''', '''password''', '''密码''', '''口令''']
+
+[[allowlists]]
+description = "脱敏引擎自身的实现代码：注释里出现 secret/token 字样，属规则说明"
+paths = ['''internal/privacy/redact/[a-z_]+\.go''']
+regexTarget = "line"
+# 只豁免整行注释（// 开头），不碰真正的代码行。
+regexes = ['''^\s*//''']
+
+[[allowlists]]
+description = "vertex 私钥拼接代码：PEM 头尾是字面量，密钥体来自运行时配置"
+paths = ['''relay/channel/vertex/service_account\.go''']
+regexTarget = "line"
+regexes = ['''-----BEGIN PRIVATE KEY-----''', '''-----END PRIVATE KEY-----''']
+
+[[allowlists]]
+description = "验收脚本里的 curl 认证头形状（token 来自环境变量，不是字面量）"
+paths = ['''verify/.*\.sh''']
+regexTarget = "match"
+regexes = ['''curl -s''']
+
+[[allowlists]]
+description = "webhook 签名测试：编造的 HMAC 密钥，用于校验实现与手册公式一致"
+paths = ['''internal/webhook/webhook_test\.go''']
+regexTarget = "line"
+regexes = ['''notify-secret-\d+''']
+
+[[allowlists]]
+description = "上游文本脱敏测试：输入是自己编的 key 字形，断言输出被掩码"
+paths = ['''relaykit/relayconvert/kitutil/mask_test\.go''']
+regexTarget = "line"
+regexes = [
+  # 测试用例的输入与期望值都在同一行，key 形状是刻意编的短串。
+  '''sk-proj-abcdefghijklmnop''',
+  '''xai-abcdefghijklmnop''',
+  '''pbr-a1b2c3d4e5f6''',
+  '''AIzaSyA1234567890abcdefg''',
+  '''supersecretvalue''',
+  # JWT 是 jwt.io 首页的示例令牌，不是真实凭据。
+  '''eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0''',
+]
+
+[[allowlists]]
+description = "reasoning_suffix 测试：模型名 claude-3-7-sonnet 被通用密钥规则误判"
+paths = ['''relay/helper/reasoning_suffix_test\.go''']
+regexTarget = "line"
+regexes = ['''claude-3-7-sonnet''']
+
+[[allowlists]]
+description = "路由运行态：appendEvent 的 key 参数是成员去重键，不是凭据"
+paths = ['''internal/route/runtime\.go''']
+regexTarget = "line"
+regexes = ['''appendEvent\("affinity_start", key,''']

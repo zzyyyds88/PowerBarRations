@@ -1,0 +1,104 @@
+# 上游只读参考源码，不纳入根仓库
+/reference/
+
+# 构建产物
+/bin/
+/dist/
+/pbr
+*.exe
+*.test
+
+# 本地凭据与运行时数据
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+/data/
+/uploads/
+/.uploads/
+
+# 私钥 / 证书 / 密钥库：私钥绝不入库（公钥可以，见 AGENTS.md）
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa
+id_rsa.*
+id_dsa
+id_ecdsa
+id_ed25519
+*.kdbx
+
+# 凭据清单（部署方自己的运维配置，不入库）
+secrets.yaml
+secrets.yml
+credentials.json
+service-account*.json
+
+# 数据与配置备份包（可能含真实库或凭据）
+*.tgz
+*.tar.gz
+*.tar
+*.7z
+*.zip
+
+# 本地备份副本（可能含真实凭据/内网地址，一律不入库）
+*.bak
+*.bak-*
+*.orig
+/tmp/
+/spike/
+
+# 编辑器与系统文件
+.DS_Store
+*.swp
+*~
+
+# 本地代理会话设置（主机本地权限配置，不入库）
+.qoder/
+
+# 验收原始运行日志与截图（含时间戳与请求细节，不入库；脱敏结论写 verify/**/README.md）
+verify/**/*.log
+verify/**/shots/
+
+# 控制台构建产物（Docker/本地构建生成；仓库只保留 web/dist/index.html 占位页）
+# 具体忽略规则以 web/.gitignore 为准（dist/* 但保留 dist/index.html）
+/web/node_modules/
+
+# 运行时日志目录（构建/启动产物）
+/logs/
+
+# Python 缓存（验收脚本运行产物，不入库）
+__pycache__/
+*.pyc
+*.pyo
+
+# zcode CLI session artifacts
+.zcode/
+
+# 发布产物与部署运行日志（release.sh 生成，不入库）
+/deploy/images/
+/deploy/deploy-history.log
+
+# 部署凭据（真实值只保存在本机；仓库只保留 *.example 模板）
+/deploy/production.env
+/deploy/test.env
+# 凭据文件的任何本地备份（含时间戳副本）同样不得入库
+/deploy/*.env.bak*
+*.env.bak*
+/deploy/production.env.*
+/deploy/test.env.*
+
+# 测试环境运行时状态（TTL 计时、watchdog PID）
+/deploy/.test-env/
+/deploy/.release.lock
+
+# 本地脱敏模型（运行时下载，不入库）
+/privacy/
+
+# 本地安装的 git hooks（由 scripts/install-hooks.sh 生成，指向 scripts/pre-commit）
+/scripts/hooks/

@@ -1,0 +1,202 @@
+package claude
+
+import (
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
+)
+
+func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	responseID := helper.GetResponseID(c)
+	created := common.GetTimestamp()
+	state, err := relayconvert.NewResponseStreamState(types.RelayFormatClaude, types.RelayFormatOpenAIResponses, relayconvert.ResponseStreamOptions{
+		ID:                 responseID,
+		Model:              info.UpstreamModelName,
+		Created:            created,
+		EmitSequenceNumber: true,
+	})
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	hostedBridge := relayconvert.NewClaudeHostedStreamBridge()
+
+	claudeInfo := &ClaudeResponseInfo{
+		ResponseId:   responseID,
+		Created:      created,
+		Model:        info.UpstreamModelName,
+		ResponseText: strings.Builder{},
+		Usage:        &dto.Usage{},
+	}
+	var streamErr *types.NewAPIError
+	// streamRejectMsg 非空 = 提交前收到流内 error 帧（routing-spec §4.4）：
+	// 不写任何客户端事件，本次尝试按成员级拒绝失败（upstream_reject）。
+	var streamRejectMsg string
+	// streamFailed means a Responses-native terminal error was sent successfully.
+	// In that case the scanner stops without a transport error and the partial
+	// upstream usage remains billable.
+	streamFailed := false
+
+	sendResponsesEvent := func(eventType string, payload dto.ResponsesStreamResponse) bool {
+		payload.Type = eventType
+		data, err := common.Marshal(payload)
+		if err != nil {
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
+			return false
+		}
+		if err := helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: eventType}, string(data)); err != nil {
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			return false
+		}
+		return true
+	}
+	sendResult := func(result relayconvert.ResponseResult) bool {
+		event, ok := result.Value.(relayconvert.ChatToResponsesStreamEvent)
+		if !ok {
+			streamErr = types.NewOpenAIError(
+				fmt.Errorf("expected OpenAI Responses stream event, got %T", result.Value),
+				types.ErrorCodeBadResponse,
+				http.StatusInternalServerError,
+			)
+			return false
+		}
+		return sendResponsesEvent(event.Type, event.Payload)
+	}
+	failResponsesStream := func(err error) bool {
+		failureResults, handled := state.FailResponsesStream("server_error", err.Error(), "")
+		if !handled {
+			return false
+		}
+		for _, result := range failureResults {
+			if !sendResult(result) {
+				return true
+			}
+		}
+		streamFailed = true
+		return true
+	}
+
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if msg, isErr := helper.IsUpstreamErrorFrame([]byte(data)); isErr {
+			if !helper.StreamCommitted(c) {
+				// 提交前：不写客户端事件（含 response.failed），交车道换下一成员（§4.4）。
+				streamRejectMsg = msg
+				sr.Stop(helper.NewUpstreamStreamRejectError(msg))
+				return
+			}
+			// 提交后：内容已交付，如实留痕（§4.3）；按 Responses 协议写失败终态
+			// 事件收尾，让客户端拿到"上游中途判拒"的显式失败而不是静默截断。
+			helper.MarkStreamReject(c, msg)
+			if failResponsesStream(fmt.Errorf("%s", msg)) {
+				sr.Stop(streamErr)
+				return
+			}
+		}
+		var claudeResponse dto.ClaudeResponse
+		if err := common.UnmarshalJsonStr(data, &claudeResponse); err != nil {
+			logger.LogError(c, "failed to unmarshal Claude stream event: "+err.Error())
+			if failResponsesStream(err) {
+				// A nil streamErr here is intentional: the protocol-level failure
+				// event was delivered, so only the scanner needs to stop.
+				sr.Stop(streamErr)
+				return
+			}
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+			sr.Stop(streamErr)
+			return
+		}
+		if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
+			if failResponsesStream(fmt.Errorf("%s", claudeError.Message)) {
+				sr.Stop(streamErr)
+				return
+			}
+			streamErr = types.WithClaudeError(*claudeError, http.StatusInternalServerError)
+			sr.Stop(streamErr)
+			return
+		}
+
+		if claudeResponse.StopReason != "" {
+			maybeMarkClaudeRefusal(c, claudeResponse.StopReason)
+		}
+		if claudeResponse.Delta != nil && claudeResponse.Delta.StopReason != nil {
+			maybeMarkClaudeRefusal(c, *claudeResponse.Delta.StopReason)
+		}
+		if claudeResponse.Type == "message_start" && claudeResponse.Message != nil {
+			info.UpstreamModelName = claudeResponse.Message.Model
+		}
+		FormatClaudeResponseInfo(&claudeResponse, nil, claudeInfo)
+		countClaudeStreamBillableTools(c, info, &claudeResponse)
+		hostedEvents, consumed, err := hostedBridge.Convert(&claudeResponse, state)
+		if err != nil {
+			if failResponsesStream(err) {
+				sr.Stop(streamErr)
+				return
+			}
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			sr.Stop(streamErr)
+			return
+		}
+		for _, event := range hostedEvents {
+			if !sendResponsesEvent(event.Type, event.Payload) {
+				sr.Stop(streamErr)
+				return
+			}
+		}
+		if consumed {
+			return
+		}
+
+		results, err := service.ConvertStreamResponseChunk(c, info, state, &claudeResponse)
+		if err != nil {
+			if failResponsesStream(err) {
+				sr.Stop(streamErr)
+				return
+			}
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			sr.Stop(streamErr)
+			return
+		}
+		for _, result := range results {
+			if !sendResult(result) {
+				sr.Stop(streamErr)
+				return
+			}
+		}
+	})
+	if streamRejectMsg != "" {
+		// 提交前的成员级拒绝：本次尝试未向客户端写出任何帧。
+		return nil, helper.NewUpstreamStreamRejectError(streamRejectMsg)
+	}
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if streamFailed {
+		return claudeInfo.Usage, nil
+	}
+
+	HandleStreamFinalResponse(c, info, claudeInfo)
+	openAIUsage := buildOpenAIStyleUsageFromClaudeUsage(claudeInfo.Usage)
+	state.SetUsage(&openAIUsage)
+	finalResults, err := service.FinalizeStreamResponse(c, info, state)
+	if err != nil {
+		if failResponsesStream(err) {
+			return claudeInfo.Usage, streamErr
+		}
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	for _, result := range finalResults {
+		if !sendResult(result) {
+			return nil, streamErr
+		}
+	}
+	return claudeInfo.Usage, nil
+}

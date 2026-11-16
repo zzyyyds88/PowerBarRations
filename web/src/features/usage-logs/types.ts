@@ -1,0 +1,348 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+/**
+ * Type definitions for usage logs
+ */
+import type { UsageLog } from './data/schema'
+import type { RequestRuleTrace } from './lib/billing-expr'
+import type { PBRAttempt } from './pbr/pbr-logs-api'
+
+// ============================================================================
+// Log Category Types
+// ============================================================================
+
+/**
+ * Log category for different log types
+ */
+export type LogCategory = 'common' | 'pbr'
+
+// ============================================================================
+// Filter Types
+// ============================================================================
+
+/**
+ * Common filters (shared across all log types)
+ */
+export interface CommonFilters {
+  startTime?: Date
+  endTime?: Date
+  channel?: string
+}
+
+/**
+ * Common logs specific filters
+ */
+export interface CommonLogFilters extends CommonFilters {
+  model?: string
+  token?: string
+  group?: string
+  username?: string
+  requestId?: string
+  upstreamRequestId?: string
+}
+
+export type LogFilters = CommonLogFilters
+
+// ============================================================================
+// Common Logs Additional Types
+// ============================================================================
+
+/**
+ * Parsed data from the 'other' field in usage logs
+ */
+export const USAGE_BILLING_PATH = {
+  LOCAL: 'local',
+  UPSTREAM: 'upstream',
+  OPENAI: 'billing-usage-openai',
+  OPENAI_ESTIMATED: 'billing-usage-openai-estimated',
+  ANTHROPIC: 'billing-usage-anthropic',
+  ANTHROPIC_ESTIMATED: 'billing-usage-anthropic-estimated',
+  GEMINI: 'billing-usage-gemini',
+  GEMINI_ESTIMATED: 'billing-usage-gemini-estimated',
+} as const
+
+export type UsageBillingPath =
+  (typeof USAGE_BILLING_PATH)[keyof typeof USAGE_BILLING_PATH]
+
+export interface ToolSurchargeItem {
+  name: string
+  count: number
+  price: number
+}
+
+export interface LogOtherData {
+  admin_info?: {
+    is_multi_key?: boolean
+    multi_key_index?: number
+    use_channel?: number[]
+    local_count_tokens?: boolean
+    usage_billing_path?: UsageBillingPath | string
+    // Top-up audit fields (type=1, admin only)
+    payment_method?: string
+    callback_payment_method?: string
+    caller_ip?: string
+    server_ip?: string
+    version?: string
+    node_name?: string
+    // Operator identity for audit logs (type=3, admin only)
+    admin_username?: string
+    admin_id?: number | string
+    admin_role?: number
+    auth_method?: 'session' | 'access_token' | string
+    // Quota saturation marker: set when a quota conversion clamped at the
+    // supported single-request bound (overflow/underflow) or hit a NaN fallback while computing
+    // this request's charge. Admin-only (nested under admin_info).
+    quota_saturation?: {
+      op: string
+      kind: 'overflow' | 'underflow' | 'nan'
+      original: number
+      clamped: number
+    }
+    // Reject / intercept reason (admin only)
+    reject_reason?: string
+  }
+  root_info?: {
+    node_name?: string
+  }
+  // Language-independent operation descriptor (audit/login logs).
+  // Frontend renders localized content from action + params via i18n templates.
+  op?: {
+    action?: string
+    params?: Record<string, string | number | boolean | string[]>
+  }
+  // Operation audit details written by the admin-audit fallback in authHelper (type=3, admin only)
+  audit_info?: {
+    method?: string
+    route?: string
+    path?: string
+    status?: number
+    success?: boolean
+    params?: Record<string, string>
+  }
+  // Login audit fields (type=7); visible to the log owner
+  login_method?: string
+  user_agent?: string
+  request_path?: string
+  request_conversion?: string[]
+  ws?: boolean
+  audio?: boolean
+  audio_input?: number
+  audio_output?: number
+  text_input?: number
+  text_output?: number
+  cache_tokens?: number
+  image_cache_tokens?: number
+  billing_tokens?: Record<string, number>
+  cache_creation_tokens?: number
+  cache_creation_tokens_5m?: number
+  cache_creation_tokens_1h?: number
+  claude?: boolean
+  model_ratio?: number
+  completion_ratio?: number
+  model_price?: number
+  group_ratio?: number
+  user_group_ratio?: number
+  cache_ratio?: number
+  cache_creation_ratio?: number
+  cache_creation_ratio_5m?: number
+  cache_creation_ratio_1h?: number
+  is_model_mapped?: boolean
+  upstream_model_name?: string
+  audio_ratio?: number
+  audio_completion_ratio?: number
+  frt?: number
+  // Tiered (expression-based) billing fields, set by backend when
+  // billing_mode === 'tiered_expr'. expr_b64 is the base64-encoded billing
+  // expression; the matched tier and request-rule traces come from the actual
+  // settlement run.
+  billing_mode?: string
+  billing_unit?: 'token' | 'request'
+  fixed_price?: number
+  image_count?: number
+  expr_b64?: string
+  matched_tier?: string
+  request_rules?: RequestRuleTrace[]
+  usage_facts?: Record<string, string | number>
+  reasoning_effort?: string
+  image?: boolean
+  image_ratio?: number
+  image_output?: number
+  web_search?: boolean
+  web_search_call_count?: number
+  web_search_price?: number
+  file_search?: boolean
+  file_search_call_count?: number
+  file_search_price?: number
+  tool_surcharges?: ToolSurchargeItem[]
+  audio_input_seperate_price?: boolean
+  audio_input_token_count?: number
+  audio_input_price?: number
+  image_generation_call?: boolean
+  image_generation_call_price?: number
+  image_generation_call_count?: number
+  is_system_prompt_overwritten?: boolean
+  po?: string[]
+  billing_source?: string
+  group?: string
+  stream_status?: {
+    status?: string
+    end_reason?: string
+    error_count?: number
+    end_error?: string
+    errors?: string[]
+  }
+  // Violation fee fields
+  violation_fee?: boolean
+  violation_fee_code?: string
+  violation_fee_marker?: string
+  fee_quota?: number
+  // Refund reason (type=6)
+  reason?: string
+  // Subscription billing fields
+  subscription_plan_id?: string
+  subscription_plan_title?: string
+  subscription_id?: string
+  subscription_pre_consumed?: number
+  subscription_post_delta?: number
+  subscription_consumed?: number
+  subscription_remain?: number
+  subscription_total?: number
+  // PBR 日志扩展块：由前端 mapPBRLogToUsageLog 构造，承载 PBR 独有字段
+  // （车道/route_source/upstream_model/error_summary/http_status/total_ms/
+  // estimated_cost/attempts），供 common-logs-columns 花费列与 DetailsDialog 读取。
+  pbr?: {
+    lane: string
+    route_source: string
+    upstream_model: string
+    error_kind: string
+    error_summary: string
+    http_status: number
+    total_ms: number
+    estimated_cost: number
+    attempts: PBRAttempt[]
+    total_attempts: number
+    inbound_format: string
+    success: boolean
+    client?: string
+    client_group?: string
+    client_name?: string
+    session_id?: string
+    session_key?: string
+    subagent?: string
+    parent_subagent?: string
+    parent_session_id?: string
+    context_tokens?: number
+    context_window?: number
+    context_counted?: boolean
+    context_status?: string
+    masked_count?: number
+    mask_blocked?: boolean
+    mask_status?: string
+  }
+}
+
+/**
+ * Log statistics data
+ */
+export interface LogStatistics {
+  quota: number
+  rpm: number
+  tpm: number
+}
+
+// ============================================================================
+// Common Log Types
+// ============================================================================
+
+export interface GetLogsParams {
+  p?: number
+  page_size?: number
+  type?: number
+  username?: string
+  token_name?: string
+  model_name?: string
+  start_timestamp?: number
+  end_timestamp?: number
+  channel?: number
+  group?: string
+  request_id?: string
+  upstream_request_id?: string
+}
+
+/** 基座面 `GET /api/log/` 列表成功即裸 `{items,total,page,page_size}`。 */
+export interface GetLogsResponse {
+  items: UsageLog[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface GetLogStatsParams {
+  type?: number
+  username?: string
+  token_name?: string
+  model_name?: string
+  start_timestamp?: number
+  end_timestamp?: number
+  channel?: number
+  group?: string
+  request_id?: string
+  upstream_request_id?: string
+}
+
+/** 统计视图的本地零值（基座 `/api/log/stat` 已随计费面删除）。 */
+export interface GetLogStatsResponse {
+  quota: number
+  rpm: number
+  tpm: number
+}
+
+// ============================================================================
+// Fetch Logs Configuration
+// ============================================================================
+
+/**
+ * Configuration for fetching logs by category
+ */
+export interface FetchLogsConfig {
+  logCategory: LogCategory
+  isAdmin: boolean
+  page: number
+  pageSize: number
+  searchParams: Record<string, unknown>
+  columnFilters: Array<{ id: string; value: unknown }>
+}
+
+// ============================================================================
+// User Info Types
+// ============================================================================
+
+export interface UserInfo {
+  id: number
+  username: string
+  display_name?: string
+  quota: number
+  used_quota: number
+  request_count: number
+  group?: string
+  aff_code?: string
+  aff_count?: number
+  aff_quota?: number
+  remark?: string
+}

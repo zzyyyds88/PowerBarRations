@@ -1,0 +1,181 @@
+package openai
+
+import (
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
+
+	"github.com/gin-gonic/gin"
+)
+
+func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	defer service.CloseResponseBodyGracefully(resp)
+
+	// read response body
+	var responsesResponse dto.OpenAIResponsesResponse
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
+	}
+	err = common.Unmarshal(responseBody, &responsesResponse)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	if oaiError := responsesResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
+	}
+
+	// 写入新的 response body
+	service.IOCopyBytesGracefully(c, resp, responseBody)
+
+	// compute usage
+	usage := relayconvert.NormalizeResponsesUsage(responsesResponse.Usage)
+	// Count actual tool invocations from Output (not tool declarations).
+	for _, output := range responsesResponse.Output {
+		switch output.Type {
+		case dto.BuildInCallWebSearchCall:
+			info.CountBillableToolCall(dto.BuildInCallWebSearchCall, "")
+		case dto.BuildInCallFileSearchCall:
+			info.CountBillableToolCall(dto.BuildInCallFileSearchCall, "")
+		case dto.BuildInCallFunctionCall:
+			info.CountBillableToolCall(dto.BuildInCallFunctionCall, output.Name)
+		}
+	}
+
+	imageCounter := &relaycommon.ImageGenerationCallCounter{}
+	if !relaycommon.IsNonBillableResponsesStatus(responsesResponse.Status) {
+		for i := range responsesResponse.Output {
+			idx := i
+			imageCounter.Observe(&responsesResponse.Output[i], &idx)
+		}
+	}
+	imageCounter.Commit(info)
+
+	return usage, nil
+}
+
+func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	if resp == nil || resp.Body == nil {
+		logger.LogError(c, "invalid response or response body")
+		return nil, types.NewError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse)
+	}
+
+	defer service.CloseResponseBodyGracefully(resp)
+
+	var usage = &dto.Usage{}
+	var responseTextBuilder strings.Builder
+	imageCounter := &relaycommon.ImageGenerationCallCounter{}
+	imageCommitted := false
+	// streamRejectMsg 非空 = 提交前收到流内 error 帧（routing-spec §4.4）：
+	// 该帧不转发给客户端，本次尝试按成员级拒绝失败（upstream_reject）。
+	var streamRejectMsg string
+
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if msg, isErr := helper.IsUpstreamErrorFrame([]byte(data)); isErr {
+			if !helper.StreamCommitted(c) {
+				// 提交前：不转发该帧（含 response.failed + response.error，以及
+				// type=error / upstream_error / 非空 error 对象），交车道换下一成员。
+				streamRejectMsg = msg
+				sr.Stop(helper.NewUpstreamStreamRejectError(msg))
+				return
+			}
+			// 提交后：内容已交付，原样透传并如实留痕（§4.3）。
+			helper.MarkStreamReject(c, msg)
+		}
+
+		// 检查当前数据是否包含 completed 状态和 usage 信息
+		var streamResponse dto.ResponsesStreamResponse
+		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
+			sr.Error(err)
+			return
+		}
+		sendResponsesStreamData(c, streamResponse, data)
+		switch streamResponse.Type {
+		case "response.completed", "response.done":
+			if streamResponse.Response != nil {
+				if streamResponse.Response.Usage != nil {
+					incomingUsage := relayconvert.NormalizeResponsesUsage(streamResponse.Response.Usage)
+					usage = dto.MergeUsageNonZero(usage, incomingUsage)
+				}
+				if !imageCommitted {
+					if relaycommon.IsNonBillableResponsesStatus(streamResponse.Response.Status) {
+						imageCounter.Reset()
+						imageCounter.Commit(info)
+						imageCommitted = true
+					} else {
+						for i := range streamResponse.Response.Output {
+							idx := i
+							imageCounter.Observe(&streamResponse.Response.Output[i], &idx)
+						}
+						imageCounter.Commit(info)
+						imageCommitted = true
+					}
+				}
+			} else if !imageCommitted {
+				imageCounter.Commit(info)
+				imageCommitted = true
+			}
+		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+			if !imageCommitted {
+				imageCounter.Reset()
+				imageCounter.Commit(info)
+				imageCommitted = true
+			}
+		case "response.output_text.delta":
+			// 处理输出文本
+			responseTextBuilder.WriteString(streamResponse.Delta)
+		case dto.ResponsesOutputTypeItemDone:
+			if streamResponse.Item != nil {
+				switch streamResponse.Item.Type {
+				case dto.BuildInCallWebSearchCall:
+					info.CountBillableToolCall(dto.BuildInCallWebSearchCall, "")
+				case dto.BuildInCallFileSearchCall:
+					info.CountBillableToolCall(dto.BuildInCallFileSearchCall, "")
+				case dto.BuildInCallFunctionCall:
+					info.CountBillableToolCall(dto.BuildInCallFunctionCall, streamResponse.Item.Name)
+				case dto.ResponsesOutputTypeImageGenerationCall:
+					if !imageCommitted {
+						imageCounter.Observe(streamResponse.Item, streamResponse.OutputIndex)
+					}
+				}
+			}
+		}
+	})
+
+	if streamRejectMsg != "" {
+		// 提交前的成员级拒绝：本次尝试未向客户端写出任何帧，车道换下一成员。
+		return nil, helper.NewUpstreamStreamRejectError(streamRejectMsg)
+	}
+
+	if usage.CompletionTokens == 0 {
+		// 计算输出文本的 token 数量
+		tempStr := responseTextBuilder.String()
+		if len(tempStr) > 0 {
+			// 非正常结束，使用输出文本的 token 数量
+			completionTokens := service.CountTextToken(tempStr, info.UpstreamModelName)
+			usage.CompletionTokens = completionTokens
+		}
+	}
+
+	if usage.PromptTokens == 0 && usage.CompletionTokens != 0 {
+		usage.PromptTokens = info.GetEstimatePromptTokens()
+	}
+
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	if usage.BillingUsage != nil {
+		usage.BillingUsage = dto.CloneBillingUsageWithEstimatedCompletion(usage.BillingUsage, usage.CompletionTokens)
+	}
+
+	return usage, nil
+}

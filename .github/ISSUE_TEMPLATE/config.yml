@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 安全漏洞（私密通道）
+    url: https://github.com/zzyyyds88/PowerBarRations/security/advisories/new
+    about: 请不要用公开 Issue 报告安全漏洞或粘贴任何凭据。
+  - name: 使用与部署文档
+    url: https://github.com/zzyyyds88/PowerBarRations#readme
+    about: 部署、配置与 API 用法先看 README 与 docs/。

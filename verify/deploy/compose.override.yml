@@ -1,0 +1,6 @@
+# 仅用于验收：把宿主机的假上游暴露给容器，并换用独立端口，避免与现网容器冲突。
+# 通过 `docker compose -p pbr-verify -f docker-compose.yml -f verify/deploy/compose.override.yml` 使用。
+services:
+  pbr:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

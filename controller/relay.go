@@ -1,0 +1,568 @@
+package controller
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/metrics"
+	pbrroute "github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/logger"
+	"github.com/zzyyyds88/PowerBarRations/middleware"
+	"github.com/zzyyyds88/PowerBarRations/model"
+	perfmetrics "github.com/zzyyyds88/PowerBarRations/pkg/perf_metrics"
+	"github.com/zzyyyds88/PowerBarRations/relay"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	relayconstant "github.com/zzyyyds88/PowerBarRations/relay/constant"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
+	"github.com/zzyyyds88/PowerBarRations/service"
+	"github.com/zzyyyds88/PowerBarRations/setting"
+
+	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/samber/lo"
+
+	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
+)
+
+func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
+	var err *types.NewAPIError
+	switch info.RelayMode {
+	case relayconstant.RelayModeImagesGenerations, relayconstant.RelayModeImagesEdits,
+		relayconstant.RelayModeImagesVariations:
+		err = relay.ImageHelper(c, info)
+	case relayconstant.RelayModeModerations:
+		// 独立 relay mode（design-v1 §4）：透传响应体，不按 chat completion
+		// 解析/重写，也不产生 chat usage。
+		err = relay.ModerationsHelper(c, info)
+	case relayconstant.RelayModeAudioSpeech:
+		fallthrough
+	case relayconstant.RelayModeAudioTranslation:
+		fallthrough
+	case relayconstant.RelayModeAudioTranscription:
+		err = relay.AudioHelper(c, info)
+	case relayconstant.RelayModeRerank:
+		err = relay.RerankHelper(c, info)
+	case relayconstant.RelayModeEmbeddings:
+		err = relay.EmbeddingHelper(c, info)
+	case relayconstant.RelayModeResponses, relayconstant.RelayModeResponsesCompact:
+		err = relay.ResponsesHelper(c, info)
+	case relayconstant.RelayModeAlphaSearch:
+		err = relay.AlphaSearchHelper(c, info)
+	default:
+		err = relay.TextHelper(c, info)
+	}
+	return err
+}
+
+func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
+	var err *types.NewAPIError
+	if strings.Contains(c.Request.URL.Path, "embed") {
+		err = relay.GeminiEmbeddingHandler(c, info)
+	} else {
+		err = relay.GeminiHelper(c, info)
+	}
+	return err
+}
+
+func Relay(c *gin.Context, relayFormat types.RelayFormat) {
+
+	requestId := c.GetString(common.RequestIdKey)
+	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+
+	var (
+		newAPIError *types.NewAPIError
+		ws          *websocket.Conn
+		privacyDone func()
+	)
+
+	// The restoring writer must finish after every response byte, including
+	// the deferred error handler's JSON. This defer is registered first, so
+	// it runs last (privacy-spec §6.2).
+	defer func() {
+		if privacyDone != nil {
+			privacyDone()
+		}
+	}()
+
+	if relayFormat == types.RelayFormatOpenAIRealtime {
+		var err error
+		ws, err = upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			helper.WssError(c, ws, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry()).ToOpenAIError())
+			return
+		}
+		defer ws.Close()
+	}
+
+	// PBR 元数据日志：唯一写入点。注册得比响应写出更早，因此最后执行——
+	// 此时结果、尝试链、响应状态都已确定（design-v1 §8）。
+	pbrLogStarted := time.Now()
+	defer func() {
+		carrier := model.GetPBRLogCarrier(c)
+		if carrier == nil {
+			return
+		}
+		carrier.Success = newAPIError == nil
+		carrier.HTTPStatus = http.StatusOK
+		if newAPIError != nil {
+			carrier.HTTPStatus = newAPIError.StatusCode
+			carrier.ErrorKind = string(pbrroute.Classify(newAPIError))
+			// 用基座的脱敏版本：上游错误体可能回显凭据，而 error_summary 会经 API 原样返回
+			carrier.ErrorSummary = newAPIError.MaskSensitiveErrorWithStatusCode()
+		} else if msg := common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject); msg != "" {
+			// 提交后才收到的流内 error 帧（routing-spec §4.3/§4.4）：传输层如实记成功
+			// （客户端确实拿到了 200 流），但把失败标记补上，使这类此前完全不可见的
+			// 失败可被检索与统计。摘要按错误摘要的统一上限截断（design-v1 §8）。
+			if len(msg) > 2048 {
+				msg = msg[:2048]
+			}
+			carrier.ErrorKind = string(pbrroute.KindUpstreamReject)
+			carrier.ErrorSummary = msg
+		}
+		if pbrState := pbrroute.From(c); pbrState != nil {
+			// 失败尝试来自运行态历史，最后一次成功由这里补齐，形成完整链。
+			// 历史→日志的字段映射只有一处实现（route.State.LogAttempts），
+			// 避免中间件快抛路径与这里各写一份、字段悄悄漂移。
+			attempts := pbrState.LogAttempts()
+			if newAPIError == nil {
+				success := pbrState.SuccessAttempt(carrier.ChannelName + "/" + carrier.UpstreamModel)
+				attempts = append(attempts, model.PBRAttempt{
+					AttemptNum: len(attempts) + 1,
+					Member:     success.Member,
+					Status:     success.Status,
+					DurationMs: success.DurationMs,
+				})
+			}
+			carrier.Attempts = attempts
+			carrier.TotalAttempts = len(attempts)
+		}
+		if carrier.TotalMs == 0 {
+			carrier.TotalMs = time.Since(pbrLogStarted).Milliseconds()
+			if carrier.StartedAtMs > 0 {
+				carrier.TotalMs = time.Now().UnixMilli() - carrier.StartedAtMs
+			}
+		}
+		// 首字耗时：由流式写入口在**第一帧数据**写出时打点（relay/helper.MarkFirstByte）。
+		// 非流式请求没有这个点，保持 0——渠道状态页据此只对流式样本计算输出速度。
+		if carrier.TTFTMs == 0 {
+			carrier.TTFTMs = int64(common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs))
+		}
+		// 无论以哪条路径结束都归还探测槽：client_error/canceled 不换人，
+		// 不会再有下一轮 getChannel，槽必须在收尾时释放（routing-spec §3.1）。
+		if pbrState := pbrroute.From(c); pbrState != nil {
+			pbrState.ReleaseProbe()
+		}
+		// 指标与日志同点同源（design-v1 §8、api-spec §5.1）：只读同一份载体，
+		// 不重新推导，保证 pbr_requests_total 与 request_logs 的口径一致。
+		observeRequestMetrics(carrier)
+		model.WritePBRLog(c)
+	}()
+
+	defer func() {
+		if newAPIError != nil {
+			// 失败/503 收尾不得残留 X-Served-By：它描述"实际成功服务的成员"，
+			// 只有成功响应才应保留（design-v1 §4.1）。任何重试过程中最后选中的
+			// 成员都不能代表"本次请求被谁服务"。
+			middleware.ClearServedByHeader(c)
+			if pbrroute.IsNoAvailable(newAPIError) {
+				// 成员链耗尽的固定 body（routing-spec §4.2）：下游 fallback 分类依赖它，
+				// 因此不走通用错误序列化，也不加请求 id 后缀。
+				pbrroute.WriteNoAvailableChannel(c, common.GetContextKeyString(c, constant.ContextKeyOriginalModel))
+				return
+			}
+			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			switch relayFormat {
+			case types.RelayFormatOpenAIRealtime:
+				helper.WssError(c, ws, newAPIError.ToOpenAIError())
+			case types.RelayFormatClaude:
+				c.JSON(newAPIError.StatusCode, gin.H{
+					"type":  "error",
+					"error": newAPIError.ToClaudeError(),
+				})
+			default:
+				c.JSON(newAPIError.StatusCode, gin.H{
+					"error": newAPIError.ToOpenAIError(),
+				})
+			}
+		}
+	}()
+
+	// 隐私脱敏（privacy-spec §6）：必须在协议解析前替换 body，后续转换、
+	// 用量/上下文解析与上游发送看到的都是占位符；回复由包装 writer 恢复。
+	if done, privacyErr := preparePrivacy(c, relayFormat); privacyErr != nil {
+		newAPIError = privacyErr
+		return
+	} else {
+		privacyDone = done
+	}
+
+	request, err := helper.GetAndValidateRequest(c, relayFormat)
+	if err != nil {
+		// Map "request body too large" to 413 so clients can handle it correctly
+		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
+			newAPIError = types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+		} else {
+			newAPIError = types.NewError(err, types.ErrorCodeInvalidRequest, types.ErrOptionWithStatusCode(http.StatusBadRequest), types.ErrOptionWithSkipRetry())
+		}
+		return
+	}
+
+	// 用量元数据（usage-spec §3–§5）：会话/客户端/上下文只读入站 body，
+	// 在协议转换前解析一次；失败只写状态，不影响转发。
+	attachUsageMetadata(c, relayFormat)
+
+	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	if err != nil {
+		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
+		return
+	}
+
+	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
+	needCountToken := constant.CountToken
+	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
+	var meta *types.TokenCountMeta
+	if needSensitiveCheck || needCountToken {
+		meta = request.GetTokenCountMeta()
+	} else {
+		meta = fastTokenCountMetaForPricing(request)
+	}
+
+	if needSensitiveCheck && meta != nil {
+		contains, words := service.CheckSensitiveText(meta.CombineText)
+		if contains {
+			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
+			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
+			return
+		}
+	}
+
+	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
+	if err != nil {
+		newAPIError = types.NewError(err, types.ErrorCodeCountTokenFailed)
+		return
+	}
+
+	relayInfo.SetEstimatePromptTokens(tokens)
+
+	// PBR 无额度计费（design-v1 §1.3/G7）：转发路径不做价格折算、预扣费与退款，
+	// 错误路径直接使用上游/本地返回的原始错误。
+
+	// PBR 车道是唯一选路入口（routing-spec §1.1）：走到这里必然已由 PBRServe 注入请求态。
+	pbrState := pbrroute.From(c)
+	if pbrState == nil {
+		newAPIError = types.NewError(errors.New("pbr route state missing"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return
+	}
+	relayInfo.RetryIndex = 0
+	relayInfo.LastError = nil
+
+	// 尝试轮数上界由车道链决定："成员数 × 单成员尝试预算"（routing-spec §3）。
+	maxRetry := pbrState.MaxRetriesForLoop()
+
+	for attempt := 0; attempt <= maxRetry; attempt++ {
+		relayInfo.RetryIndex = attempt
+		channel, channelErr := getChannel(c, relayInfo, pbrState)
+		if channelErr != nil {
+			logger.LogError(c, channelErr.Error())
+			newAPIError = channelErr
+			break
+		}
+		addUsedChannel(c, channel.Id)
+
+		bodyStorage, bodyErr := common.GetBodyStorage(c)
+		if bodyErr != nil {
+			// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
+			if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
+				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusRequestEntityTooLarge, types.ErrOptionWithSkipRetry())
+			} else {
+				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
+			break
+		}
+		c.Request.Body = io.NopCloser(bodyStorage)
+
+		switch relayFormat {
+		case types.RelayFormatOpenAIRealtime:
+			newAPIError = relay.WssHelper(c, relayInfo)
+		case types.RelayFormatClaude:
+			newAPIError = relay.ClaudeHelper(c, relayInfo)
+		case types.RelayFormatGemini:
+			newAPIError = geminiRelayHandler(c, relayInfo)
+		default:
+			newAPIError = relayHandler(c, relayInfo)
+		}
+
+		if newAPIError == nil {
+			relayInfo.LastError = nil
+			// 上报成功：解除冷却、复位熔断、按需启动亲和（routing-spec §5/§6）。
+			pbrState.OnSuccess()
+			return
+		}
+
+		relayInfo.LastError = newAPIError
+		if carrier := model.GetPBRLogCarrier(c); carrier != nil {
+			carrier.Attempts = pbrState.LogAttempts()
+			carrier.TotalAttempts = len(carrier.Attempts)
+		}
+
+		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
+
+		if !shouldRetry(c, newAPIError) {
+			// 不换人（client_error/canceled）时不会有下一轮，先把探测槽还掉
+			pbrState.ReleaseProbe()
+			break
+		}
+	}
+
+	useChannel := c.GetStringSlice("use_channel")
+	if len(useChannel) > 1 {
+		retryLogStr := fmt.Sprintf("重试：%s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
+		logger.LogInfo(c, retryLogStr)
+	}
+	if newAPIError != nil {
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, false, 0)
+		})
+	}
+}
+
+// observeRequestMetrics 把一次模型面请求的终态推给 Prometheus 指标
+// （design-v1 §8、api-spec §5.1）。
+//
+// 与日志同点同源：只读 PBR 日志载体，不重新推导、不查库，保证
+// pbr_requests_total 与 request_logs 的计数口径一致。
+//
+// 已知边界：车道快抛 503（middleware.PBRServe 内直接收尾、不进入 Relay）与
+// 鉴权/限流阶段被拒的请求不走这里，因此不计入 requests_total；这是收尾点
+// 唯一性的代价，需要覆盖时应在对应中间件另设采样点，而不是复制这套映射。
+func observeRequestMetrics(carrier *model.PBRLogCarrier) {
+	if carrier == nil {
+		return
+	}
+	observation := metrics.RequestObservation{
+		Model:     carrier.RequestModel,
+		Lane:      carrier.Lane,
+		Channel:   carrier.ChannelName,
+		Status:    carrier.HTTPStatus,
+		Duration:  durationFromMillis(carrier.TotalMs),
+		TTFT:      durationFromMillis(carrier.TTFTMs),
+		ErrorKind: carrier.ErrorKind,
+	}
+	// 请求模型名（车道名）是指标主维度；管理动作等无请求名的路径回退上游真名。
+	if observation.Model == "" {
+		observation.Model = carrier.UpstreamModel
+	}
+	if usage := carrier.Usage; usage != nil {
+		observation.PromptTokens = usage.PromptTokens
+		observation.CompletionTokens = usage.CompletionTokens
+		observation.CacheReadTokens = usage.CacheReadTokens
+		observation.CacheWriteTokens = usage.CacheWriteTokens
+		observation.ReasoningTokens = usage.ReasoningTokens
+		observation.Cost = usage.EstimatedCost
+	}
+	metrics.ObserveRequest(observation)
+}
+
+// durationFromMillis 把日志载体的毫秒值转成 time.Duration；<=0 表示未观测。
+func durationFromMillis(ms int64) time.Duration {
+	if ms <= 0 {
+		return 0
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+// CountClaudeTokens implements Anthropic's token-counting utility endpoint.
+// It deliberately skips upstream generation and billing; callers use this
+// endpoint to size prompts before creating a Message.
+func CountClaudeTokens(c *gin.Context) {
+	request, err := helper.GetAndValidateClaudeRequest(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    "invalid_request_error",
+				"message": common.MessageWithRequestId(err.Error(), c.GetString(common.RequestIdKey)),
+			},
+		})
+		return
+	}
+
+	info := relaycommon.GenRelayInfoClaude(c, request)
+	inputTokens, err := service.CountRequestToken(c, request.GetTokenCountMeta(), info)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    "api_error",
+				"message": common.MessageWithRequestId(err.Error(), c.GetString(common.RequestIdKey)),
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"input_tokens": inputTokens})
+}
+
+var upgrader = websocket.Upgrader{
+	Subprotocols: []string{"realtime"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol TODO add other protocol
+	CheckOrigin: func(r *http.Request) bool {
+		return true // 允许跨域
+	},
+}
+
+func addUsedChannel(c *gin.Context, channelId int) {
+	useChannel := c.GetStringSlice("use_channel")
+	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
+	c.Set("use_channel", useChannel)
+}
+
+func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
+	if request == nil {
+		return &types.TokenCountMeta{}
+	}
+	meta := &types.TokenCountMeta{
+		TokenType: types.TokenTypeTokenizer,
+	}
+	switch r := request.(type) {
+	case *dto.GeneralOpenAIRequest:
+		maxCompletionTokens := lo.FromPtrOr(r.MaxCompletionTokens, uint(0))
+		maxTokens := lo.FromPtrOr(r.MaxTokens, uint(0))
+		if maxCompletionTokens > maxTokens {
+			meta.MaxTokens = int(maxCompletionTokens)
+		} else {
+			meta.MaxTokens = int(maxTokens)
+		}
+	case *dto.OpenAIResponsesRequest:
+		meta.MaxTokens = int(lo.FromPtrOr(r.MaxOutputTokens, uint(0)))
+	case *dto.ClaudeRequest:
+		meta.MaxTokens = int(lo.FromPtr(r.MaxTokens))
+	case *dto.ImageRequest:
+		// Pricing for image requests depends on ImagePriceRatio; safe to compute even when CountToken is disabled.
+		return r.GetTokenCountMeta()
+	default:
+		// Best-effort: leave CombineText empty to avoid large allocations.
+	}
+	return meta
+}
+
+func getChannel(c *gin.Context, info *relaycommon.RelayInfo, pbrState *pbrroute.State) (*model.Channel, *types.NewAPIError) {
+	// ChannelMeta == nil 表示这是本请求的首次尝试：渠道上下文已由 Distribute 注入，
+	// 直接复用，不得再推进成员链（否则首个成员会被跳过）。
+	if info.ChannelMeta == nil {
+		return channelFromSelectedContext(c), nil
+	}
+	// 重试选路由车道成员链推进（routing-spec §3）。
+	channel, ok := middleware.PBRNextChannel(c, pbrState, info.OriginModelName, info.LastError)
+	if !ok {
+		// 车道不可用：登记一次车道级事件（同一停摆期只发一次，routing-spec §7）。
+		pbrState.NoteLaneUnavailable()
+		// routing-spec §4.2 例外：最后一次尝试是 upstream_reject（每条试过的腿都拒绝了
+		// 这份请求）时，把该上游错误**原样返回客户端**，不合成 503——语义如实，
+		// 且下游按"不可重试"立刻降级，不会为必然失败的请求反复重打整条成员链。
+		if info.LastError != nil && pbrroute.Classify(info.LastError) == pbrroute.KindUpstreamReject {
+			return nil, info.LastError
+		}
+		return nil, pbrroute.NoAvailableError(info.OriginModelName)
+	}
+	return channel, nil
+}
+
+// channelFromSelectedContext 用 Distribute 注入的上下文重建渠道对象。
+//
+// 只承载日志与自动禁用所需字段；真正的渠道参数（key/base_url/模型名）由
+// RelayInfo.InitChannelMeta 从上下文读取。首次尝试复用它是既有语义。
+func channelFromSelectedContext(c *gin.Context) *model.Channel {
+	autoBanInt := 1
+	if !c.GetBool("auto_ban") {
+		autoBanInt = 0
+	}
+	return &model.Channel{
+		Id:      c.GetInt("channel_id"),
+		Type:    c.GetInt("channel_type"),
+		Name:    c.GetString("channel_name"),
+		AutoBan: &autoBanInt,
+	}
+}
+
+func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError) bool {
+	if openaiErr == nil {
+		return false
+	}
+	// PBR 路由按 routing-spec §4.1 的分类决定是否换人：429/5xx/401 等换人，
+	// client_error 与 canceled 不换人、不冷却（避免一个坏请求打冷健康成员）。
+	return pbrroute.ShouldSwitchMember(pbrroute.Classify(openaiErr))
+}
+
+func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
+	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
+	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
+	if service.ShouldDisableChannel(err) && channelError.AutoBan {
+		gopool.Go(func() {
+			service.DisableChannel(channelError, err.ErrorWithStatusCode())
+		})
+	}
+
+	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
+		// 保存错误日志到mysql中
+		userId := c.GetInt("id")
+		tokenName := c.GetString("token_name")
+		modelName := c.GetString("original_model")
+		tokenId := c.GetInt("token_id")
+		userGroup := c.GetString("group")
+		other := model.NewLogOther()
+		if c.Request != nil && c.Request.URL != nil {
+			other.SetPublic("request_path", c.Request.URL.Path)
+		}
+		other.SetPublic("error_type", err.GetErrorType())
+		other.SetPublic("error_code", err.GetErrorCode())
+		other.SetPublic("status_code", err.StatusCode)
+		service.AppendRelayLogAdminInfo(c, relayInfo, other)
+		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+		if startTime.IsZero() {
+			startTime = time.Now()
+		}
+		useTimeSeconds := int(time.Since(startTime).Seconds())
+		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
+	}
+
+}
+
+func RelayNotImplemented(c *gin.Context) {
+	err := types.OpenAIError{
+		Message: "API not implemented",
+		Type:    "new_api_error",
+		Param:   "",
+		Code:    "api_not_implemented",
+	}
+	c.JSON(http.StatusNotImplemented, gin.H{
+		"error": err,
+	})
+}
+
+func RelayNotFound(c *gin.Context) {
+	// The web fallback may already have applied static-asset cache headers.
+	// A missing API or asset can appear after an upgrade; never cache its 404.
+	c.Header("Cache-Control", "no-store, no-cache, must-revalidate, private, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
+	err := types.OpenAIError{
+		Message: fmt.Sprintf("Invalid URL (%s %s)", c.Request.Method, c.Request.URL.Path),
+		Type:    "invalid_request_error",
+		Param:   "",
+		Code:    "",
+	}
+	c.JSON(http.StatusNotFound, gin.H{
+		"error": err,
+	})
+}
