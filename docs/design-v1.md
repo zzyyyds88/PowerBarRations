@@ -249,23 +249,33 @@ type Option     struct { Key, Value string }
   转换器把损失写进请求日志的 `admin_info.conversion_diagnostics`（`code` / `path` / `severity` /
   `message`，超过 32 条截断并标记 `conversion_diagnostics_truncated`）并发一条警告日志。
   `/v1/messages` → OpenAI Chat 的文档规则：`source.type=text` 转为文本块；`source.type=base64`
-  且 `media_type=application/pdf` 转为 Chat `file` 数据 URL；其它文档来源（`file_id` 引用、非 PDF）
-  与没有可引用地址的图片记 `unsupported_media_source` 并省略该块；消息没有剩余内容时整条丢弃。
+  且 `media_type=application/pdf` 转为 Chat `file` 数据 URL；`source.type=file`（`file_id` 引用）
+  由网关按 [ADR 0011](adr/0011-anthropic-files-gateway-storage.md) 先行展开为 base64 再转换；
+  其余无法表达的来源（非 PDF 的 base64 文档、没有可引用地址的图片）记 `unsupported_media_source`
+  并省略该块；消息没有剩余内容时整条丢弃。
+- **流式提交与空响应**：提交判定用数据帧口径——写出第一个 `data:` 帧才算提交，`: PING` 注释帧不算。
+  一切写出 `data:` 帧的入口都必须打提交标记，否则提交后收到的流内错误会被误判成"提交前"
+  （导致在已交付内容后再试故障转移），且首字耗时永远记不到。上游建流后**零有效帧**
+  （读超时、立即 EOF、只有 `[DONE]`）属于上游空响应，必须按成员级失败处理，
+  不得以 `200` + 成功落库——那会让客户端拿到空流且车道运行态记不到这次失败。
 
 ### 4.2 异步对象（Files / Batch）的路由例外
 
 Files / Batch 的请求体没有 `model` 字段，无法按"路由键 = 模型名"选路；同时异步任务一旦提交就固定在某个上游，不能像同步请求那样换成员。合同见 [ADR 0010](adr/0010-async-objects-lane-header.md)，要点：
 
-- **显式寻址**：`/v1/files*` 与 `/v1/batches*` 的全部请求必须带 `X-PBR-Lane: <车道名>`。缺失 → `400 lane_header_required`，名字不存在 → `404 lane_not_found`；该头不转发给上游。
+- **显式寻址**：`/v1/files*` 与 `/v1/batches*` 的请求必须带 `X-PBR-Lane: <车道名>`。缺失 → `400 lane_header_required`，名字不存在 → `404 lane_not_found`；该头不转发给上游。**唯一例外是 Anthropic Files 语义**（见下一条）。
 - **创建即固定**：创建 file / batch 时，按车道当前可用成员选第一个（与同步请求同一套冷却/熔断/人工停用过滤），把 `(lane, upstream_object_id) → channel_id` 落 `pbr_async_objects`；后续 retrieve / content / cancel 只回该渠道。**不重试、不换成员、不 failover**——异步任务换上游会破坏对象归属。
 - **跨车道隔离**：同一 `upstream_object_id` 只在创建它的车道可见；用别的车道寻址 → `404 async_object_not_found`，不得回落到"随便找一个渠道"。
 - **渠道不可用**：记录的渠道被删除或停用 → `503 async_object_channel_unavailable`，由运维恢复渠道；不静默换渠道。
 - **协议边界**：只支持 OpenAI 兼容协议渠道；其它适配器（Claude / Gemini / 签名类）→ `400 unsupported_protocol_for_async`。
-- **不是 Anthropic Files API**：`/v1/files` 只实现 OpenAI Files 语义；Anthropic 客户端的文档应以内联
-  `document` 内容块（base64 PDF / 纯文本）随消息发送，由协议转换处理（§4.1），不要走 Files 端点。
-- **传输与上限**：上传/下载按流代理，不落盘；单请求上限 512 MiB（可由 `system/options.upload_max_mb` 收紧），batch JSON 上限 8 MiB。错误摘要按 §8 脱敏。
-- **保留与清理**：元数据行在上游对象过期后保留 30 天供审计；清理走既有系统任务（手动/API 驱动），不引入 cron。
-- **记账**：文件/批处理不做 token 折算（上游异步计费不可见），日志只记请求元数据与成功/失败；`estimated_cost=0`。
+- **Anthropic Files 是并存的第二套语义**（[ADR 0011](adr/0011-anthropic-files-gateway-storage.md)）：`anthropic-beta`
+  含 `files-api-` 时按 Anthropic Files 处理——**不要求 `X-PBR-Lane`、不参与选路、不转发上游**，
+  字节由网关自己暂存，归属绑定客户端密钥，后续 `/v1/messages` 引用 `file_id` 时展开为内联 base64。
+  依据：上传不产生模型调用，因此不违反「车道是唯一路由入口」（ADR 0005）。对象 ID 带 `pbrfile-`
+  前缀与上游 OpenAI 对象隔离。这是本项目**唯一**打破"不落盘"的显式例外，边界见下一条。
+- **传输与上限**：OpenAI Files/Batch 上传/下载按流代理，不落盘；单请求上限 512 MiB，batch JSON 上限 8 MiB。Anthropic Files 单文件 64 MiB、总量 1 GiB、按 `expires_after`（缺省 24h、上限 7d）过期，字节不进数据库、不进日志正文、不进 `/api/export`。错误摘要按 §8 脱敏。
+- **保留与清理**：OpenAI 异步对象的元数据行在上游对象过期后保留 30 天供审计；Anthropic Files 按过期时间直接删除（行 + 字节）。两者都走既有系统任务（`async_task_poll` / `file_cleanup`），不引入 cron。
+- **记账**：文件/批处理不做 token 折算（上游异步计费不可见），日志只记请求元数据与成功/失败；`estimated_cost=0`。Anthropic Files 的日志 `lane`/`route_source` 为空（无选路）。
 
 ---
 

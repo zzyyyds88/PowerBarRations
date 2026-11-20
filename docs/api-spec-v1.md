@@ -391,7 +391,7 @@
 | POST | `/api/auth/logout` | 清除会话 Cookie |
 | GET | `/api/auth/session` | 查询会话状态（**免鉴权**）：`{authenticated, stale}`；`stale=true` 表示携带了已失效的会话 Cookie（口令已变更），服务端同时下发清除 Cookie（详见 token-spec §2.5.1） |
 | POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签）。**`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时返回 409 `conflict`**：环境变量管理密钥优先，口令变更不影响实际生效的密钥 |
-| GET | `/api/capabilities` | 适配器、模式、能力枚举 |
+| GET | `/api/capabilities` | 适配器、模式、能力枚举。其中 `async_objects` 为 `{lane_header, files, batches, anthropic_files}`：`lane_header` 固定 `"X-PBR-Lane"`；`files`/`batches` 表示 OpenAI 异步对象端点已注册；`anthropic_files` 表示网关侧 Anthropic Files 存储已启用（`anthropic-beta: files-api-*` 分流，不需要 lane 头，见 ADR 0011） |
 | GET | `/api/openapi.json` | OpenAPI 3 文档（**免鉴权**） |
 | GET | `/metrics` | **Prometheus 文本格式**（复用管理密钥 Bearer；不在 `/api` 前缀下）。指标：`pbr_requests_total{model,lane,channel,status}`、`pbr_request_duration_seconds`（histogram）、`pbr_ttft_seconds`（histogram）、`pbr_tokens_total{model,kind}`、`pbr_cost_total{model,channel}`、`pbr_upstream_errors_total{kind}`、`pbr_circuit_state{channel}`、`pbr_channel_up{channel}`，另含 Go runtime 默认指标。只读进程内计数器与路由运行态快照，抓取时不查 DB |
 
@@ -482,7 +482,7 @@
 | GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维）；成功 `{"items":[{"key":"..","value":".."}]}` |
 | PUT | `/api/system/options/all` | 更新**单个**系统选项：body `{key: string, value: any}`（与基座同形，非子集对象）；成功 `{"key":"..","updated":true}`；值校验失败 → 422 `validation_failed` |
 | GET | `/api/system-tasks` | 系统任务列表；成功 `{"items":[...],"next_cursor":null}` |
-| GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll`）；成功 `{"task":<对象或 null>}`；缺 `type` → 400 |
+| GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll` / `file_cleanup`）；成功 `{"task":<对象或 null>}`；缺 `type` → 400 |
 | GET | `/api/system-tasks/{id}` | 单任务详情（成功为任务对象）；不存在 → 404 `task_not_found` |
 | POST | `/api/system-tasks/log-cleanup` | 创建"清理日志文件"任务：`?target_timestamp=`（必填）；成功为任务对象；缺参数 → 400 |
 | GET | `/api/system/performance` | 性能统计；成功为统计对象 |
