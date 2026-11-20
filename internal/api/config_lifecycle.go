@@ -1395,10 +1395,13 @@ func GetCapabilities(c *gin.Context) {
 			"metrics":           true,
 		},
 		// 异步对象（Files/Batches，ADR 0010）：lane_header 是契约里固定的寻址头。
+		// anthropic_files（ADR 0011）表示网关侧 Anthropic Files 存储已启用：
+		// anthropic-beta: files-api-* 的请求按该语义分流，不需要 lane 头。
 		"async_objects": gin.H{
-			"lane_header": "X-PBR-Lane",
-			"files":       true,
-			"batches":     true,
+			"lane_header":     "X-PBR-Lane",
+			"files":           true,
+			"batches":         true,
+			"anthropic_files": true,
 		},
 		// 指标导出（api-spec §5.1）：根路径、Prometheus 文本格式、复用管理密钥。
 		"metrics": gin.H{

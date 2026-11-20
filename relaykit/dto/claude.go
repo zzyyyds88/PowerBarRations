@@ -130,6 +130,15 @@ type ClaudeMessageSource struct {
 	MediaType string `json:"media_type,omitempty"`
 	Data      any    `json:"data,omitempty"`
 	Url       string `json:"url,omitempty"`
+	// FileId 是 Anthropic Files API 的对象 ID（`source.type=file` 时使用）。
+	// 网关侧存储模式下由宿主在转发前展开成 base64（ADR 0011）；没有这个字段，
+	// 客户端发来的 file_id 会在反序列化阶段被静默丢弃，转换器连看都看不到。
+	FileId string `json:"file_id,omitempty"`
+}
+
+// IsFileReference source 是否是一个 file_id 引用（而非内联字节或 URL）。
+func (s *ClaudeMessageSource) IsFileReference() bool {
+	return s != nil && s.Type == "file" && s.FileId != ""
 }
 
 type ClaudeMessage struct {

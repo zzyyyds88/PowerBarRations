@@ -20,6 +20,8 @@ const (
 	SystemTaskTypeChannelTest   = "channel_test"
 	SystemTaskTypeModelUpdate   = "model_update"
 	SystemTaskTypeAsyncTaskPoll = "async_task_poll"
+	// SystemTaskTypeFileCleanup 清理网关侧 Anthropic Files 的过期对象（ADR 0011）。
+	SystemTaskTypeFileCleanup = "file_cleanup"
 )
 
 var ErrSystemTaskLockLost = errors.New("system task lock lost")
