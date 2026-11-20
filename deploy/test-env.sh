@@ -97,6 +97,14 @@ ttl_status() {
 }
 
 start_container() {
+  # 测试环境只跑本机构建的镜像。镜像不存在时 docker 会去远端仓库拉同名公共镜像
+  # （必然 403/404，报错完全看不出真正原因），所以这里前置拦截并给出构建命令。
+  if ! docker image inspect "$PBR_TEST_IMAGE" >/dev/null 2>&1; then
+    die "测试镜像不存在：${PBR_TEST_IMAGE}
+先在本机构建并打上该标签：
+  docker build -t ${PBR_TEST_IMAGE} .
+（test.env 的 PBR_TEST_IMAGE 固定为 dev 标签——写成生产版本号会让每次验证都要手改。）"
+  fi
   docker rm -f "$PBR_TEST_CONTAINER" >/dev/null 2>&1 || true
   docker run -d --name "$PBR_TEST_CONTAINER" \
     --restart no \
