@@ -22,21 +22,10 @@ import { api } from '@/lib/api'
 // 口径与模型状态（§6.13）完全一致：p50/p95 只取成功请求（样本 <5 为 0），
 // output_tps 只算干净样本（成功且单次尝试，流式扣掉首字等待）。返回全部配置
 // 渠道，窗口内无请求的渠道以零值出现，界面显示 `—` 而不是 0。
-
-// 默认 30s：输出速度是「该渠道窗口内全部 completion_tokens / 窗口秒数」，
-// 窗口越长越会被空闲、排队与首字等待摊平；30s 更接近操作员实测的瞬时吐字速度。
-export const CHANNEL_SPEED_WINDOWS = ['30s', '5m', '15m', '1h'] as const
-export type ChannelSpeedWindow = (typeof CHANNEL_SPEED_WINDOWS)[number]
-
-export const CHANNEL_SPEED_WINDOW_SECONDS: Record<ChannelSpeedWindow, number> =
-  {
-    '30s': 30,
-    '5m': 5 * 60,
-    '15m': 15 * 60,
-    '1h': 60 * 60,
-  }
-
-export const DEFAULT_CHANNEL_SPEED_WINDOW: ChannelSpeedWindow = '30s'
+//
+// 面板固定使用 30s 实时窗口：输出速度是「该渠道窗口内全部 completion_tokens /
+// 窗口秒数」，窗口越长越会被空闲、排队与首字等待摊平。时间档位不再暴露给用户
+// （2026-11-20 用户裁决：渠道速度只看实时值）。
 
 export interface ChannelSpeedItem {
   channel: string

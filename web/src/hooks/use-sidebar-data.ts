@@ -39,10 +39,12 @@ import { CONSOLE_ROUTES } from '@/config/routes'
 /**
  * Root navigation groups for the application sidebar.
  *
- * Grouped IA: the operator works by question, not by backend table. Usage
- * (overview/requests/sessions/context) and Channels & models are collapsible
- * groups; Masking is its own entry, and audit/tasks live with Settings in the
- * System section. Pages no longer carry a second tab strip. Playground is a
+ * Grouped IA: the operator works by question, not by backend table. Overview is
+ * the first thing an operator opens after the live topology, so it is a
+ * top-level entry directly below Live routing; Usage (requests/sessions/context)
+ * and Channels & models stay collapsible groups. Masking is instance
+ * configuration, not a log view, so it lives in the System section next to
+ * audit/tasks. Pages no longer carry a second tab strip. Playground is a
  * global header/command action, not a nav item.
  */
 export function useSidebarData(): SidebarData {
@@ -58,6 +60,11 @@ export function useSidebarData(): SidebarData {
             title: t('Nav live routing'),
             url: CONSOLE_ROUTES.liveRouting,
             icon: Waypoints,
+          },
+          {
+            title: t('Nav overview'),
+            url: CONSOLE_ROUTES.overview,
+            icon: LayoutDashboard,
           },
           {
             title: t('Nav routing'),
@@ -102,17 +109,11 @@ export function useSidebarData(): SidebarData {
             title: t('Nav usage'),
             icon: BarChart3,
             activeUrls: [
-              CONSOLE_ROUTES.overview,
               CONSOLE_ROUTES.logsRequests,
               CONSOLE_ROUTES.logsSessions,
               CONSOLE_ROUTES.logsContext,
             ],
             items: [
-              {
-                title: t('Nav overview'),
-                url: CONSOLE_ROUTES.overview,
-                icon: LayoutDashboard,
-              },
               {
                 title: t('Nav requests'),
                 url: CONSOLE_ROUTES.logsRequests,
@@ -130,18 +131,18 @@ export function useSidebarData(): SidebarData {
               },
             ],
           },
-          {
-            title: t('Nav masking'),
-            url: CONSOLE_ROUTES.logsMasking,
-            activeUrls: [CONSOLE_ROUTES.logsMasking],
-            icon: ShieldCheck,
-          },
         ],
       },
       {
         id: 'admin',
         title: t('Nav system'),
         items: [
+          {
+            title: t('Nav masking'),
+            url: CONSOLE_ROUTES.logsMasking,
+            activeUrls: [CONSOLE_ROUTES.logsMasking],
+            icon: ShieldCheck,
+          },
           {
             title: t('Nav audit logs'),
             url: CONSOLE_ROUTES.logsAudit,

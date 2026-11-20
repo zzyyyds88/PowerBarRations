@@ -92,7 +92,8 @@ export const overviewSearchSchema = z.object({
   lane: z.string().optional().catch(''),
 })
 
-export const liveRoutingSearchSchema = overviewSearchSchema.extend({
-  // 渠道速度面板的短窗；与拓扑的 range 相互独立。默认 30s：更接近瞬时吐字速度。
-  window: z.enum(['30s', '5m', '15m', '1h']).optional().catch('30s'),
+// 实时路由是观察面：只保留 `lane` 深链。历史上的 `range`/`from`/`to`/`window`
+// 参数不再读取（旧链接由 zod 丢弃），因为该页的窗口已固定为实时口径。
+export const liveRoutingSearchSchema = z.object({
+  lane: z.string().optional().catch(''),
 })
