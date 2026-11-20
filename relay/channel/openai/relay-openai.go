@@ -185,6 +185,13 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		return nil, helper.NewUpstreamStreamRejectError(streamRejectMsg)
 	}
 
+	// 上游建流后一帧有效数据都没发（读超时 / 立即 EOF / 只有 [DONE]）：
+	// 这是上游空响应，不是成功。必须在写任何终态帧之前判掉，否则客户端会拿到
+	// 一个 200 的空流、车道运行态也记不到这次失败（routing-spec §4.1）。
+	if helper.StreamFailedWithoutFrames(c, info) {
+		return nil, helper.EmptyStreamError()
+	}
+
 	// 处理最后的响应
 	shouldSendLastResp := true
 	if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,

@@ -91,9 +91,11 @@ func palmStreamHandler(c *gin.Context, resp *http.Response) (*types.NewAPIError,
 		select {
 		case data := <-dataChan:
 			c.Render(-1, common.CustomEvent{Data: "data: " + data})
+			helper.MarkStreamCommitted(c)
 			return true
 		case <-stopChan:
 			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			helper.MarkStreamCommitted(c)
 			return false
 		}
 	})

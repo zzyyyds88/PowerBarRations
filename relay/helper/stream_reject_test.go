@@ -8,6 +8,9 @@ import (
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
@@ -136,4 +139,80 @@ func TestMarkFirstByteRecordsOnce(t *testing.T) {
 	require.NoError(t, StringData(c2, `{"choices":[]}`))
 	assert.Equal(t, first, common.GetContextKeyInt(c2, constant.ContextKeyPBRTTFTMs),
 		"首字耗时只记第一帧")
+}
+
+// Claude 入站（/v1/messages）的流式主出口也必须打提交标记与首字耗时。
+//
+// 这里是线上"首字恒为不适用"的根因：ClaudeData 写的是真正的 `data:` 帧，
+// 却漏了 MarkStreamCommitted，于是 ttft_ms 永远为 0，且提交后的流内 error 帧
+// 会被误判成"提交前"。
+func TestClaudeDataMarksCommitAndFirstByte(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cases := []struct {
+		name  string
+		write func(*gin.Context) error
+	}{
+		{"ClaudeData", func(c *gin.Context) error {
+			return ClaudeData(c, dto.ClaudeResponse{Type: "message_start"})
+		}},
+		{"ClaudeChunkData", func(c *gin.Context) error {
+			ClaudeChunkData(c, dto.ClaudeResponse{Type: "content_block_delta"}, `{"type":"content_block_delta"}`)
+			return nil
+		}},
+		{"ResponseChunkData", func(c *gin.Context) error {
+			return ResponseChunkData(c, dto.ResponsesStreamResponse{Type: "response.output_text.delta"}, `{"delta":"hi"}`)
+		}},
+		{"ObjectData", func(c *gin.Context) error {
+			return ObjectData(c, map[string]any{"choices": []any{}})
+		}},
+		{"Done", func(c *gin.Context) error {
+			Done(c)
+			return nil
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now().Add(-120*time.Millisecond))
+
+			require.NoError(t, tc.write(c))
+
+			assert.True(t, StreamCommitted(c), "写出 data: 帧即提交（提交后不得再故障转移）")
+			first := common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs)
+			require.GreaterOrEqual(t, first, 100, "首字耗时必须在第一帧写出时打点")
+			require.Less(t, first, 5000)
+			assert.False(t, StreamFailedWithoutFrames(c, &relaycommon.RelayInfo{}),
+				"已提交的流不是空流")
+		})
+	}
+}
+
+// 空流判定：上游建流但零有效帧，且未向客户端提交任何内容。
+func TestStreamFailedWithoutFrames(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	assert.False(t, StreamFailedWithoutFrames(c, nil), "没有 RelayInfo 不判定")
+	assert.True(t, StreamFailedWithoutFrames(c, &relaycommon.RelayInfo{}),
+		"未提交 + 零帧 = 上游空响应")
+
+	assert.False(t, StreamFailedWithoutFrames(c, &relaycommon.RelayInfo{ReceivedResponseCount: 1}),
+		"收到过有效帧就不是空流")
+
+	// 已提交（客户端已拿到内容）时不能改判成错误，否则会把正常流截断。
+	c2, _ := gin.CreateTestContext(httptest.NewRecorder())
+	require.NoError(t, StringData(c2, `{"choices":[]}`))
+	assert.False(t, StreamFailedWithoutFrames(c2, &relaycommon.RelayInfo{}),
+		"已提交的请求不再判空流")
+}
+
+// 空流错误必须落在 bad_response 分类上，才能获得"重试同成员 + 换成员 + 冷却"。
+func TestEmptyStreamErrorClassification(t *testing.T) {
+	err := EmptyStreamError()
+	require.NotNil(t, err)
+	assert.Equal(t, types.ErrorCodeEmptyResponse, err.GetErrorCode())
+	assert.Equal(t, route.KindBadResponse, route.Classify(err))
+	assert.True(t, route.ShouldSwitchMember(route.Classify(err)))
 }

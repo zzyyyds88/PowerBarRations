@@ -166,3 +166,54 @@ func TestOaiChatToResponsesStreamHandlerPassesThroughAfterCommit(t *testing.T) {
 	require.Nil(t, apiErr, "提交后按 Responses 协议写失败终态事件并正常收尾")
 	assert.Equal(t, "content blocked", common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
 }
+
+// 上游建流后零有效帧必须判成成员级失败，不能记成功。
+//
+// 线上实案（日志 #230647）：200 + 首事件超时 → received=0，但 handler 把
+// "末帧解析失败"只写日志就吞掉，于是落一条 success=true / completion=0，
+// 客户端干等 74 秒拿到空流，车道运行态完全没记这次失败。
+func TestOaiStreamHandlerEmptyStreamIsFailure(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"完全空流", ""},
+		{"只有 [DONE]", "data: [DONE]\n"},
+		{"只有心跳注释", ": PING\n\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, recorder, resp, info := newStreamRejectContext(t, tc.body, types.RelayFormatOpenAI)
+
+			usage, apiErr := OaiStreamHandler(c, info, resp)
+
+			require.NotNil(t, apiErr, "零帧空流必须让本次尝试失败")
+			assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+			assert.Nil(t, usage, "失败尝试不返回 usage")
+			assert.Empty(t, recorder.Body.String(), "提交前不写任何帧给客户端")
+		})
+	}
+}
+
+// 正常流不能因为守卫被误判成空流。
+func TestOaiStreamHandlerNormalStreamStillSucceeds(t *testing.T) {
+	body := "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"lane-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n" +
+		"data: [DONE]\n"
+	c, recorder, resp, info := newStreamRejectContext(t, body, types.RelayFormatOpenAI)
+
+	_, apiErr := OaiStreamHandler(c, info, resp)
+
+	require.Nil(t, apiErr)
+	assert.Contains(t, recorder.Body.String(), "hi")
+}
+
+// /v1/messages 入站经 OpenAI 上游时，空流同样要判失败（而不是返回 200 空流）。
+func TestOaiStreamHandlerEmptyStreamIsFailureForClaudeFormat(t *testing.T) {
+	c, recorder, resp, info := newStreamRejectContext(t, "", types.RelayFormatClaude)
+
+	_, apiErr := OaiStreamHandler(c, info, resp)
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+	assert.Empty(t, recorder.Body.String())
+}

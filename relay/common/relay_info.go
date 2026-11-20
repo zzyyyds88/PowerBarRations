@@ -201,6 +201,9 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	// Per-attempt only. Do not clear StreamStatus, conversion diagnostics,
 	// LastError, or billing accumulators — those are request-scoped.
 	info.SendResponseCount = 0
+	// ReceivedResponseCount 是"本次上游响应实际收到的有效帧数"，同样属于
+	// per-attempt：不重置会让上一次尝试的帧数掩盖这一次的空流（空流判定依赖它）。
+	info.ReceivedResponseCount = 0
 	info.ClaudeToChatStreamState = nil
 	info.ChatToGeminiStreamState = nil
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)

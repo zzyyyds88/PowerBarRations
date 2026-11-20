@@ -126,3 +126,41 @@ func TestClaudeResponsesStreamHandlerPassesThroughErrorEventAfterCommit(t *testi
 	assert.Contains(t, recorder.Body.String(), "response.failed", "客户端拿到协议内的失败终态")
 	assert.Equal(t, claudeErrorMessage, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
 }
+
+// 上游建流后零有效帧必须判成成员级失败，不能记成功。
+func TestClaudeStreamHandlerEmptyStreamIsFailure(t *testing.T) {
+	c, recorder, resp, info := newClaudeStreamRejectContext(t, "", types.RelayFormatClaude)
+
+	_, apiErr := ClaudeStreamHandler(c, resp, info)
+
+	require.NotNil(t, apiErr, "零帧空流必须让本次尝试失败")
+	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+	assert.Empty(t, recorder.Body.String(), "提交前不写任何帧给客户端")
+}
+
+// 正常 Anthropic 流不能被空流守卫误判。
+func TestClaudeStreamHandlerNormalStreamStillSucceeds(t *testing.T) {
+	body := claudeMessageStartFrame +
+		"event: content_block_delta\n" +
+		"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n" +
+		"event: message_stop\n" +
+		"data: {\"type\":\"message_stop\"}\n"
+	c, recorder, resp, info := newClaudeStreamRejectContext(t, body, types.RelayFormatClaude)
+
+	_, apiErr := ClaudeStreamHandler(c, resp, info)
+
+	require.Nil(t, apiErr)
+	assert.Contains(t, recorder.Body.String(), "message_start")
+}
+
+// Responses 入站的 Claude 上游空流同样要判失败，且不能先合成 response.completed。
+func TestClaudeResponsesStreamHandlerEmptyStreamIsFailure(t *testing.T) {
+	c, recorder, resp, info := newClaudeStreamRejectContext(t, "", types.RelayFormatOpenAIResponses)
+
+	_, apiErr := ClaudeResponsesStreamHandler(c, resp, info)
+
+	require.NotNil(t, apiErr)
+	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+	assert.NotContains(t, recorder.Body.String(), "response.completed",
+		"空流不得被收尾逻辑合成成看起来成功的 completed 事件")
+}

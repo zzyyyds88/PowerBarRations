@@ -158,6 +158,11 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, helper.NewUpstreamStreamRejectError(streamRejectMsg)
 	}
 
+	// 上游建流后零有效帧 = 空响应，按成员级失败处理（routing-spec §4.1）。
+	if helper.StreamFailedWithoutFrames(c, info) {
+		return nil, helper.EmptyStreamError()
+	}
+
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()

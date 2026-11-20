@@ -69,6 +69,10 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	} else {
 		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
+		// 这里同样写出了真正的 `data:` 帧，必须打提交标记（routing-spec §3 第 6 步）：
+		// 它是 Claude 入站（/v1/messages）流式的主出口，漏打会让提交后收到的流内
+		// error 帧被误判成"提交前"而尝试故障转移，同时首字耗时永远记不到。
+		MarkStreamCommitted(c)
 	}
 	_ = FlushWriter(c)
 	return nil
