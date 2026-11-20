@@ -895,14 +895,15 @@ def main():
         check("实时路由页只出现一次页面标题",
               cdp.val("[...document.querySelectorAll('h2')].filter(e=>e.textContent.trim()==='Live routing'||e.textContent.trim()==='实时路由').length <= 1"),
               body[:300])
+        # 渠道速度面板固定 30s 实时窗口；无流量时只有空闲渠道条带，不能要求
+        # "Requests/s" 之类只在活跃卡片上出现的文案。
         check("实时路由同页出现渠道速度面板",
-              ("Channel speed" in body or "渠道速度" in body)
-              and CHANNEL in body
-              and ("Output speed" in body or "输出速度" in body)
-              and ("Requests/s" in body or "请求/秒" in body), body[-700:])
+              cdp.val("document.querySelector('section[aria-label=\"Channel speed\"]') !== null")
+              and ("Channel speed" in body or "渠道速度" in body)
+              and ("Output speed" in body or "输出速度" in body), body[-700:])
         check("实时路由同页出现实时流量",
               ("Live traffic" in body or "实时流量" in body)
-              and ("tok/s" in body), body[-700:])
+              or ("Live · 30s · 5s" in body), body[-700:])
         check("实时仪表盘不再独立为菜单入口",
               cdp.val("![...document.querySelectorAll('button,a')].some(e=>['Live dashboard','实时仪表盘'].includes((e.textContent||'').trim()))"),
               body[:300])
@@ -914,10 +915,10 @@ def main():
               row)
         check("渠道速度 API 返回渠道整体输出速度",
               s == 200 and row.get("output_tokens_per_second", 0) > 0, row)
-        cdp.val(js_click_exact(["5m"]))
-        time.sleep(1.5)
-        check("渠道速度窗口写入同一页 URL",
-              "window=5m" in (cdp.val("location.search") or ""), cdp.val("location.search"))
+        check("渠道速度不提供时间档位",
+              cdp.val("document.querySelectorAll('section[aria-label=\"Channel speed\"] [role=\"tab\"]').length === 0")
+              and "window=" not in (cdp.val("location.search") or ""),
+              cdp.val("location.search"))
         cdp.shot("09e-live-routing-speed")
 
         # 模型目录：上下文窗口可编辑/展示。
@@ -1196,9 +1197,12 @@ def main():
         # 先验收侧边栏 IA：分组下拉、脱敏独立入口、设置在侧边栏内展开而不替换导航。
         cdp.nav(base + "/overview", wait=4)
         nav_body = cdp.val("document.body.innerText") or ""
-        check("侧边栏用量分组含四个子项",
-              all(x in nav_body for x in ("Usage", "Overview", "Requests", "Sessions", "Context"))
-              or all(x in nav_body for x in ("用量", "概览", "请求", "会话", "上下文")),
+        check("数据概览是一级入口且排在实时路由之后",
+              all(x in nav_body for x in ("Live routing", "Overview"))
+              or all(x in nav_body for x in ("实时路由", "数据概览")),
+              nav_body[:400])
+        check("用量分组不再包含概览",
+              cdp.val("(() => { const groups=[...document.querySelectorAll('button')].filter(b=>/^(Usage|用量)$/.test((b.textContent||'').trim())); if(!groups.length) return false; const box=groups[0].closest('li')||groups[0].parentElement; return !/Overview|概览/.test(box.textContent||''); })()"),
               nav_body[:400])
         check("渠道与模型、脱敏为侧边栏入口",
               ("Channels & models" in nav_body or "渠道与模型" in nav_body)

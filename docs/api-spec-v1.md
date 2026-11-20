@@ -784,6 +784,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/privacy/settings` | 当前设置（privacy-spec §4），`active` 是计算字段；**不回显脱敏键** |
+| GET | `/api/privacy/recommended` | 发布方推荐基线（privacy-spec §4.1）；形状同 settings，**三个总开关恒为 false**、`active=false`。只读，不落库 |
 | PUT | `/api/privacy/settings?dry_run=` | 全量替换设置；成功返回写后回读；`dry_run=true` 返回 `{dry_run:true, settings, diff}`，不落库。未知 `kinds` 键忽略；未知 `actions` kind / 非法动作 / 超限 → 422 `validation_failed` |
 | GET | `/api/privacy/model` | 模型状态：`{name,revision,size,installed,downloading,done,total,error,loaded,device,min_score,required}` |
 | POST | `/api/privacy/model/download?dry_run=` | 触发下载；`dry_run=true` 一律 400（外部动作，不支持预览）。已下载返回当前状态 |

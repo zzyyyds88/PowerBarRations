@@ -3528,6 +3528,11 @@
     "This window": "Cửa sổ hiện tại",
     "Fixed 15m": "15 phút cố định",
     "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.": "Tốc độ tạo = tổng token đầu ra / tổng thời gian tạo trong cửa sổ (các luồng song song được cộng dồn).",
-    "Generation speed": "Tốc độ tạo"
+    "Generation speed": "Tốc độ tạo",
+    "Apply recommended": "Áp dụng cấu hình đề xuất",
+    "Applying…": "Đang áp dụng…",
+    "Recommended baseline applied. Masking stays off until you enable it.": "Đã áp dụng cấu hình đề xuất. Che giấu vẫn tắt cho đến khi bạn bật.",
+    "Could not apply the recommended configuration": "Không thể áp dụng cấu hình đề xuất",
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Che giấu đang tắt. Bật Khóa bí mật, Dữ liệu cá nhân hoặc thêm từ của bạn rồi Lưu — chưa có gì được che giấu trước đó."
   }
 }

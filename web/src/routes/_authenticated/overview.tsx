@@ -24,18 +24,14 @@ import { overviewSearchSchema } from '@/lib/search-schemas'
 
 export const Route = createFileRoute('/_authenticated/overview')({
   validateSearch: overviewSearchSchema,
-  // 实时路由已从概览迁到独立页；旧深链 `/overview?lane=` 原地转到新地址，
-  // 不把 lane 留在概览里当无效参数。
+  // 实时路由已从概览迁到独立页；旧深链 `/overview?lane=` 原地转到新地址。
+  // 实时路由页只认 `lane`（时间区间已固定为实时口径），所以旧链接里的
+  // range/from/to 在这里丢弃，不再当作有效参数带过去。
   beforeLoad: ({ search }) => {
     if (search.lane) {
       throw redirect({
         to: '/live-routing',
-        search: {
-          range: search.range,
-          from: search.from,
-          to: search.to,
-          lane: search.lane,
-        },
+        search: { lane: search.lane },
         replace: true,
       })
     }

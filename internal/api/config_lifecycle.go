@@ -1646,6 +1646,9 @@ func openAPIPaths() gin.H {
 			"put": secured("put", "全量替换隐私脱敏设置（dry-run 返回归一化设置与 diff）",
 				[]gin.H{dryRunParam})["put"],
 		},
+		"/privacy/recommended": gin.H{
+			"get": secured("get", "发布方推荐基线（总开关恒为关闭，只读）", nil)["get"],
+		},
 		"/privacy/model": gin.H{
 			"get": secured("get", "本地脱敏模型状态（AstrLink Guard）", nil)["get"],
 		},

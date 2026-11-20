@@ -25,7 +25,6 @@ import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChannelAvatar } from '@/features/channel-status/components/channel-avatar'
 import {
   formatDurationMs,
@@ -35,15 +34,12 @@ import { formatNumber, formatTimeStr } from '@/lib/format'
 import { getServerErrorMessage } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
-import {
-  CHANNEL_SPEED_WINDOWS,
-  CHANNEL_SPEED_WINDOW_SECONDS,
-  getChannelSpeed,
-  type ChannelSpeedItem,
-  type ChannelSpeedWindow,
-} from './api'
+import { getChannelSpeed, type ChannelSpeedItem } from './api'
 
 const AUTO_REFRESH_MS = 5_000
+/** 渠道速度固定为最近 30s：更长窗口会把空闲与首字等待摊平，不再是「实时」。 */
+const REALTIME_WINDOW_SECONDS = 30
+/** 实时流量固定近 15 分钟：与 30s 的输出速度是不同口径，卡片上要写清。 */
 const LIVE_TRAFFIC_WINDOW_SECONDS = 15 * 60
 const LIVE_TRAFFIC_REFRESH_MS = 60 * 1000
 const QUERY_PREFIX = ['channel-speed'] as const
@@ -96,9 +92,9 @@ function ChannelSpeedCard(props: {
   maxSpeed: number
   outputSpeed: number
   windowSeconds: number
-  /** 固定近 15 分钟总 token/s；与可切换窗口的整体输出速度不同口径。 */
+  /** 固定近 15 分钟总 token/s；与 30s 的整体输出速度不同口径。 */
   liveTps: number | null
-  /** 输出速度用的窗口（5m/15m/1h），直接标在卡上避免和实时流量混淆。 */
+  /** 输出速度用的窗口（固定 30s），直接标在卡上避免和实时流量混淆。 */
   windowLabel: string
 }) {
   const { t, i18n } = useTranslation()
@@ -287,18 +283,17 @@ function SpeedSkeleton() {
 /**
  * 实时路由页内的「渠道速度」面板（ui-spec §6 实时路由）。
  *
- * 短窗（5m/15m/1h）按渠道显示输出速度与请求速率，5s 自动刷新、页面隐藏暂停。
+ * 固定 30s 实时窗口，按渠道显示输出速度与请求速率，5s 自动刷新、页面隐藏暂停。
  * 有流量的渠道用速度卡；空闲/停用渠道收进紧凑条带，避免整页被 "No traffic"
  * 大卡淹没。数据源 `/api/channel-speed`（api-spec §6.14），口径与模型状态一致。
+ *
+ * 本面板不提供时间档位：这是「渠道现在多快」，历史区间分析在数据概览页。
  */
-export function ChannelSpeedPanel(props: {
-  window: ChannelSpeedWindow
-  onWindowChange: (window: ChannelSpeedWindow) => void
-}) {
+export function ChannelSpeedPanel() {
   const { t, i18n } = useTranslation()
-  const windowSeconds = CHANNEL_SPEED_WINDOW_SECONDS[props.window]
+  const windowSeconds = REALTIME_WINDOW_SECONDS
   const query = useQuery({
-    queryKey: [...QUERY_PREFIX, props.window],
+    queryKey: [...QUERY_PREFIX, 'realtime', windowSeconds],
     queryFn: () => {
       const to = Math.floor(Date.now() / 1000)
       return getChannelSpeed({ from: to - windowSeconds, to })
@@ -310,8 +305,7 @@ export function ChannelSpeedPanel(props: {
     meta: { errorToast: false },
   })
 
-  // 实时流量固定近 15 分钟，不随输出速度的 5m/15m/1h 窗口变化；15m 档位直接复用
-  // 主查询，其他档位再取一次固定窗口，避免两次 5s 轮询。
+  // 实时流量固定近 15 分钟，与 30s 的输出速度是两个口径。
   const liveQuery = useQuery({
     queryKey: [...QUERY_PREFIX, 'live-traffic', '15m'],
     queryFn: () => {
@@ -321,7 +315,6 @@ export function ChannelSpeedPanel(props: {
         to,
       })
     },
-    enabled: props.window !== '15m',
     staleTime: LIVE_TRAFFIC_REFRESH_MS / 2,
     refetchInterval: LIVE_TRAFFIC_REFRESH_MS,
     refetchIntervalInBackground: false,
@@ -330,8 +323,7 @@ export function ChannelSpeedPanel(props: {
   })
 
   const items = query.data?.items ?? []
-  const liveItems =
-    props.window === '15m' ? items : (liveQuery.data?.items ?? [])
+  const liveItems = liveQuery.data?.items ?? []
   const liveByChannel = new Map(
     liveItems.map((item) => [
       item.channel,
@@ -367,8 +359,7 @@ export function ChannelSpeedPanel(props: {
     0
   )
   const successRate = totalRequests > 0 ? totalSuccesses / totalRequests : null
-  const isFetching =
-    query.isFetching || (props.window !== '15m' && liveQuery.isFetching)
+  const isFetching = query.isFetching || liveQuery.isFetching
 
   return (
     <section
@@ -383,25 +374,9 @@ export function ChannelSpeedPanel(props: {
             {t('Output speed by channel, refreshed every 5 seconds.')}
           </span>
           <span className='ml-auto' />
-          <Tabs
-            value={props.window}
-            onValueChange={(value) => {
-              if (CHANNEL_SPEED_WINDOWS.includes(value as ChannelSpeedWindow)) {
-                props.onWindowChange(value as ChannelSpeedWindow)
-              }
-            }}
-          >
-            <TabsList>
-              {CHANNEL_SPEED_WINDOWS.map((value) => (
-                <TabsTrigger key={value} value={value}>
-                  {value}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
           <span className='text-muted-foreground inline-flex items-center gap-1 text-[11px]'>
             <span className='bg-success size-1.5 rounded-full motion-safe:animate-pulse' />
-            {t('Live')} · 5s
+            {t('Live')} · 30s · 5s
           </span>
           <Button
             type='button'
@@ -410,7 +385,7 @@ export function ChannelSpeedPanel(props: {
             disabled={isFetching}
             onClick={() => {
               void query.refetch()
-              if (props.window !== '15m') void liveQuery.refetch()
+              void liveQuery.refetch()
             }}
           >
             <RefreshCw
@@ -466,14 +441,14 @@ export function ChannelSpeedPanel(props: {
               <SummaryTile
                 label={t('Requests')}
                 value={formatNumber(totalRequests, i18n.language)}
-                caption={props.window}
+                caption='30s'
               />
               <SummaryTile
                 label={t('Success rate')}
                 value={
                   successRate == null ? '—' : formatSuccessRate(successRate)
                 }
-                caption={t('Window')}
+                caption='30s'
               />
             </div>
 
@@ -497,7 +472,7 @@ export function ChannelSpeedPanel(props: {
                     outputSpeed={item.output_tokens_per_second}
                     windowSeconds={windowSeconds}
                     liveTps={liveByChannel.get(item.channel) ?? null}
-                    windowLabel={props.window}
+                    windowLabel='30s'
                   />
                 ))}
               </div>

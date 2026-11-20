@@ -3528,6 +3528,11 @@
     "This window": "This window",
     "Fixed 15m": "Fixed 15m",
     "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.": "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.",
-    "Generation speed": "Generation speed"
+    "Generation speed": "Generation speed",
+    "Apply recommended": "Apply recommended",
+    "Applying…": "Applying…",
+    "Recommended baseline applied. Masking stays off until you enable it.": "Recommended baseline applied. Masking stays off until you enable it.",
+    "Could not apply the recommended configuration": "Could not apply the recommended configuration",
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do."
   }
 }

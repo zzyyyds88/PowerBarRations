@@ -3528,6 +3528,11 @@
     "This window": "Текущее окно",
     "Fixed 15m": "Фиксированные 15 мин",
     "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.": "Скорость генерации = все токены вывода / суммарное время генерации в окне (параллельные потоки складываются).",
-    "Generation speed": "Скорость генерации"
+    "Generation speed": "Скорость генерации",
+    "Apply recommended": "Применить рекомендуемые",
+    "Applying…": "Применение…",
+    "Recommended baseline applied. Masking stays off until you enable it.": "Рекомендуемая конфигурация применена. Маскирование остаётся выключенным, пока вы его не включите.",
+    "Could not apply the recommended configuration": "Не удалось применить рекомендуемую конфигурацию",
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Маскирование выключено. Включите «Секреты», «Персональные данные» или добавьте свои слова и сохраните — до этого ничего не маскируется."
   }
 }

@@ -62,9 +62,17 @@ const (
 	minModelScore        = 0.50
 )
 
-// Defaults returns the settings a new instance has: masking off, with the
-// categories magpie turns on by default.
-func Defaults() Settings {
+// Recommended returns the publisher's recommended masking baseline.
+//
+// 它是「打开开关后应该长什么样」的唯一真源，不是「现在就打开」：
+// 三个总开关（secrets / personal / model.enabled）刻意保持 false，脱敏必须由
+// 用户显式开启（privacy-spec §4）。因此推荐基线只固定检测项与阈值——
+// kinds 按 magpie Categories.On（六项高置信度个人数据默认勾选，ip/home/userhost/
+// bucket 这些高噪声项默认不勾），actions 为空表示全部 mask，min_score 0.80。
+//
+// 新实例的 Defaults() 就是这份基线；控制台的「应用推荐配置」也只写这份基线，
+// 不碰总开关，避免一次「恢复推荐」把正在生效的脱敏悄悄关掉。
+func Recommended() Settings {
 	kinds := map[string]bool{}
 	for _, c := range redact.Categories {
 		kinds[c.ID] = c.On
@@ -77,6 +85,12 @@ func Defaults() Settings {
 		Allow:   []string{},
 		Model:   ModelSettings{MinScore: DefaultModelMinScore},
 	}
+}
+
+// Defaults returns the settings a new instance has: the recommended baseline
+// with masking off. Masking is opt-in and must be enabled by hand.
+func Defaults() Settings {
+	return Recommended()
 }
 
 // Active says any masking is asked for.

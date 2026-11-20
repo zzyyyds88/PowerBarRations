@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { cleanup, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -137,12 +136,9 @@ afterEach(() => {
 })
 
 describe('渠道速度面板', () => {
-  it('shows per-channel speed, idle/paused states and window switching', async () => {
+  it('shows per-channel speed and idle/paused states on the fixed realtime window', async () => {
     mockData()
-    const onWindowChange = vi.fn()
-    renderConsolePage(
-      <ChannelSpeedPanel window='15m' onWindowChange={onWindowChange} />
-    )
+    renderConsolePage(<ChannelSpeedPanel />)
 
     expect(await screen.findByText('channel-fast')).toBeInTheDocument()
     expect(await screen.findByText('55.6')).toBeInTheDocument()
@@ -165,9 +161,9 @@ describe('渠道速度面板', () => {
         'Output speed = all completion tokens in the window; live traffic = input + output tokens over the last 15 minutes.'
       )
     ).toBeInTheDocument()
-
-    await userEvent.setup().click(screen.getByRole('tab', { name: '5m' }))
-    expect(onWindowChange).toHaveBeenCalledWith('5m')
+    // 时间档位已移除：渠道速度只显示实时值。
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
+    expect(screen.getByText('Live · 30s · 5s')).toBeInTheDocument()
   })
 
   it('keeps all configured channels visible when the window has no traffic', async () => {
@@ -182,9 +178,7 @@ describe('渠道速度面板', () => {
         tokens_total: 0,
       }))
     )
-    renderConsolePage(
-      <ChannelSpeedPanel window='15m' onWindowChange={() => undefined} />
-    )
+    renderConsolePage(<ChannelSpeedPanel />)
 
     await waitFor(() => {
       expect(
@@ -197,11 +191,9 @@ describe('渠道速度面板', () => {
     expect(screen.getByText('0 / 4')).toBeInTheDocument()
   })
 
-  it('keeps live traffic on the fixed 15m window when speed uses 5m', async () => {
+  it('requests the 30s realtime window plus the fixed 15m live-traffic window', async () => {
     mockData()
-    renderConsolePage(
-      <ChannelSpeedPanel window='5m' onWindowChange={() => undefined} />
-    )
+    renderConsolePage(<ChannelSpeedPanel />)
 
     expect(await screen.findByText('channel-fast')).toBeInTheDocument()
     await waitFor(() => {
@@ -214,16 +206,14 @@ describe('渠道速度面板', () => {
           return params.to - params.from
         })
         .filter((span) => span > 0)
-      expect(spans).toEqual(expect.arrayContaining([5 * 60, 15 * 60]))
+      expect(spans).toEqual(expect.arrayContaining([30, 15 * 60]))
     })
     expect(screen.getByText('66.7 tok/s')).toBeInTheDocument()
   })
 
   it('shows a readable error and retry action', async () => {
     mockedGet.mockRejectedValue(new Error('boom'))
-    renderConsolePage(
-      <ChannelSpeedPanel window='15m' onWindowChange={() => undefined} />
-    )
+    renderConsolePage(<ChannelSpeedPanel />)
 
     expect(
       await screen.findByText('Channel speed is unavailable')

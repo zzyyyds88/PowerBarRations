@@ -3528,6 +3528,11 @@
     "This window": "現在のウィンドウ",
     "Fixed 15m": "固定15分",
     "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.": "生成速度 = ウィンドウ内の全 completion tokens / 生成時間合計（並行ストリームは合算）。",
-    "Generation speed": "生成速度"
+    "Generation speed": "生成速度",
+    "Apply recommended": "推奨設定を適用",
+    "Applying…": "適用中…",
+    "Recommended baseline applied. Masking stays off until you enable it.": "推奨ベースラインを適用しました。マスキングは手動で有効にするまでオフのままです。",
+    "Could not apply the recommended configuration": "推奨設定を適用できませんでした",
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "マスキングはオフです。「シークレット」「個人データ」をオンにするか独自の語を追加して保存してください。それまでは何もマスクされません。"
   }
 }

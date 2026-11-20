@@ -361,6 +361,10 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicy(),
 		},
 		{
+			Method: http.MethodGet, Path: "/privacy/recommended", Handler: GetPrivacyRecommended,
+			Policy: opsPolicy(),
+		},
+		{
 			Method: http.MethodPut, Path: "/privacy/settings", Handler: UpdatePrivacySettings,
 			DryRun: DryRunPreview, DryRunReason: "归一化后的设置与字段级 diff，不落库、不下载模型",
 			Policy: opsPolicyOptionWrite(),

@@ -34,7 +34,7 @@ it('groups usage, channels and settings without flattening the menu', () => {
 
   expect(
     childUrls(general?.items.find((item) => item.title === 'Nav usage'))
-  ).toEqual(['/overview', '/logs/requests', '/logs/sessions', '/logs/context'])
+  ).toEqual(['/logs/requests', '/logs/sessions', '/logs/context'])
   expect(
     childUrls(
       general?.items.find((item) => item.title === 'Nav channels and models')
@@ -44,15 +44,18 @@ it('groups usage, channels and settings without flattening the menu', () => {
     '/connections/health',
     '/connections/catalog',
   ])
+  // 概览是操作员看完实时拓扑后的第一个落点，因此直接排在实时路由之后。
   expect(general?.items.map((item) => item.title)).toEqual([
     'Nav live routing',
+    'Nav overview',
     'Nav routing',
     'Nav channels and models',
     'Nav api keys',
     'Nav usage',
-    'Nav masking',
   ])
+  // 脱敏是实例级配置，不是日志视图；它属于系统区，不在用量分组里。
   expect(admin?.items.map((item) => item.title)).toEqual([
+    'Nav masking',
     'Nav audit logs',
     'Nav system tasks',
     'Nav settings',
