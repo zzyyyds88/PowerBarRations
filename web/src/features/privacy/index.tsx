@@ -43,6 +43,7 @@ import { PrivacySettingsCard } from './components/privacy-settings-card'
 import {
   downloadPrivacyModel,
   getPrivacyModel,
+  getPrivacyRecommended,
   getPrivacySettings,
   getPrivacySummary,
   listPrivacyRecords,
@@ -171,6 +172,48 @@ export function PrivacyPage() {
       )
     },
   })
+  // 「应用推荐配置」只换检测口径（kinds/rules/words/actions/allow/shape/min_score），
+  // 三个总开关保持用户当前值——推荐基线不替用户打开脱敏。
+  const applyRecommendedMutation = useMutation({
+    mutationFn: async () => {
+      const current = settingsQuery.data
+      if (!current) throw new Error(t('Could not load privacy settings'))
+      const recommended = await getPrivacyRecommended()
+      return updatePrivacySettings({
+        ...current,
+        kinds: recommended.kinds,
+        words: recommended.words,
+        words_any_case: recommended.words_any_case,
+        words_whole: recommended.words_whole,
+        rules: recommended.rules,
+        actions: recommended.actions,
+        allow: recommended.allow,
+        shape: recommended.shape,
+        model: {
+          enabled: current.model.enabled,
+          required: current.model.required,
+          min_score: recommended.model.min_score,
+        },
+      })
+    },
+    onSuccess: (saved) => {
+      setDraft(saved)
+      void queryClient.invalidateQueries({ queryKey: ['privacy-settings'] })
+      void queryClient.invalidateQueries({ queryKey: ['privacy-model'] })
+      toast.success(
+        t(
+          'Recommended baseline applied. Masking stays off until you enable it.'
+        )
+      )
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('Could not apply the recommended configuration')
+      )
+    },
+  })
   const downloadMutation = useMutation({
     mutationFn: downloadPrivacyModel,
     onSuccess: () => {
@@ -241,6 +284,19 @@ export function PrivacyPage() {
       )}
     >
       <div className='space-y-3'>
+        {!settings.active && (
+          <div className='border-warning/30 bg-warning/10 flex flex-wrap items-start gap-2 rounded-md border px-3 py-2 text-xs'>
+            <ShieldCheck
+              className='mt-0.5 size-3.5 shrink-0'
+              aria-hidden='true'
+            />
+            <span>
+              {t(
+                'Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.'
+              )}
+            </span>
+          </div>
+        )}
         <div className='flex flex-wrap items-center gap-2'>
           <Kpi
             label={t('Masked values')}
@@ -274,6 +330,8 @@ export function PrivacyPage() {
             onChange={setDraft}
             onSave={() => saveMutation.mutate(settings)}
             saving={saveMutation.isPending}
+            onApplyRecommended={() => applyRecommendedMutation.mutate()}
+            applyingRecommended={applyRecommendedMutation.isPending}
             model={modelQuery.data}
             onDownload={() => downloadMutation.mutate()}
             downloading={downloadMutation.isPending}

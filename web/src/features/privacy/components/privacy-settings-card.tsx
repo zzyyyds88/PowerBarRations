@@ -132,6 +132,9 @@ export function PrivacySettingsCard(props: {
   onChange: (next: PrivacySettings) => void
   onSave: () => void
   saving: boolean
+  /** 只重置检测口径（kinds/rules/words/actions/allow/shape/min_score），不动总开关。 */
+  onApplyRecommended: () => void
+  applyingRecommended: boolean
   model: PrivacyModelStatus | undefined
   onDownload: () => void
   downloading: boolean
@@ -158,16 +161,30 @@ export function PrivacySettingsCard(props: {
       icon={<ShieldCheck className='size-4' aria-hidden='true' />}
       iconTone='success'
       action={
-        <Button
-          type='button'
-          size='sm'
-          className='h-8'
-          onClick={props.onSave}
-          disabled={props.saving}
-        >
-          <Save className='size-3.5' aria-hidden='true' />
-          {props.saving ? t('Saving…') : t('Save')}
-        </Button>
+        <div className='flex items-center gap-2'>
+          <Button
+            type='button'
+            size='sm'
+            variant='outline'
+            className='h-8'
+            onClick={props.onApplyRecommended}
+            disabled={props.applyingRecommended || props.saving}
+          >
+            {props.applyingRecommended
+              ? t('Applying…')
+              : t('Apply recommended')}
+          </Button>
+          <Button
+            type='button'
+            size='sm'
+            className='h-8'
+            onClick={props.onSave}
+            disabled={props.saving}
+          >
+            <Save className='size-3.5' aria-hidden='true' />
+            {props.saving ? t('Saving…') : t('Save')}
+          </Button>
+        </div>
       }
       contentClassName='space-y-4 p-4'
     >

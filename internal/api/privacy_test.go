@@ -171,3 +171,27 @@ func TestPrivacyRecordsAndSummary(t *testing.T) {
 	assert.Equal(t, 2, summary.Requests)
 	assert.EqualValues(t, 1, summary.Blocked)
 }
+
+// 推荐基线是只读语义：接口返回的形状必须与 privacy.Recommended() 一致，
+// 且三个总开关为 false——调用这个端点不会开启脱敏。
+func TestPrivacyRecommended(t *testing.T) {
+	setupPrivacyTestDB(t)
+
+	c, recorder := privacyRequest(t, http.MethodGet, "/api/privacy/recommended", nil)
+	GetPrivacyRecommended(c)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	var got privacy.Settings
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &got))
+	assert.False(t, got.Active)
+	assert.False(t, got.Secrets)
+	assert.False(t, got.Personal)
+	assert.False(t, got.Model.Enabled)
+	assert.Equal(t, privacy.DefaultModelMinScore, got.Model.MinScore)
+	assert.Equal(t, privacy.Recommended().Kinds, got.Kinds)
+
+	// 调用前后当前设置不变（推荐基线不是写入）。
+	current, err := privacy.Load()
+	require.NoError(t, err)
+	assert.False(t, current.Active, "读取推荐基线不得打开脱敏")
+}

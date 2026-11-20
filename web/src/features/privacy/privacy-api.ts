@@ -118,6 +118,15 @@ export async function getPrivacySettings(): Promise<PrivacySettings> {
   return res.data
 }
 
+/**
+ * 发布方推荐基线（privacy-spec §4）。总开关恒为 false——它只描述
+ * 「打开开关后应该长什么样」，不代表当前已启用。
+ */
+export async function getPrivacyRecommended(): Promise<PrivacySettings> {
+  const res = await api.get<PrivacySettings>('/api/privacy/recommended')
+  return res.data
+}
+
 export async function updatePrivacySettings(
   settings: PrivacySettings
 ): Promise<PrivacySettings> {

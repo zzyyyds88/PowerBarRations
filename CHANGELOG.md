@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **脱敏推荐基线**：新增 `GET /api/privacy/recommended`（`privacy.Recommended()`），把「打开开关后应该长什么样」变成后端唯一真源——`kinds` 按 magpie 类别默认（六项高置信度默认勾选）、`actions` 空（全 `mask`）、`min_score=0.80`；**三个总开关恒为 false**，脱敏仍须手动开启。控制台脱敏页新增「应用推荐配置」，只重置检测口径、不动总开关，并在未启用时给出显式提示。
 - **Anthropic Files 网关侧存储**（ADR 0011）：`anthropic-beta: files-api-*` 的 `/v1/files*` 由网关暂存字节，不要求 `X-PBR-Lane`、不参与选路、不转发上游；`/v1/messages` 引用 `file_id` 时展开为内联 base64。单文件 64 MiB、总量 1 GiB、按 `expires_after` 过期，归属绑定客户端密钥，进 `pbr_files` 表 + `pbr-files` 目录，导出不含字节。与 ADR 0010 的 OpenAI Files 语义按 beta 头分流并存。
 - **OpenAI Responses 入站**：`POST /v1/responses`（流式/非流式）与 chat 共用车道语义；`/v1/messages/count_tokens` 恢复。
 - **Files / Batch 异步对象**（ADR 0010）：`X-PBR-Lane` 显式寻址、创建即固定单渠道、流式代理与 512 MiB 上限、跨车道隔离、元数据保留与清理；不参与故障转移。

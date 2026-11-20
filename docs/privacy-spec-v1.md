@@ -115,6 +115,21 @@
 - `model.min_score`：0.50–0.99；`model.enabled` 打开才下载/加载模型；`model.required` 只在
   `enabled` 时有效。
 
+### 4.1 推荐基线（默认不启用）
+
+发布方维护一份**推荐基线**（`privacy.Recommended()`，`GET /api/privacy/recommended`）：
+
+- `kinds` 按 magpie `Categories.On`：`ssn` / `passport` / `iban` / `birthday` / `mac` / `serial`
+  默认勾选；`home` / `userhost` / `ip` / `bucket` 这些高噪声项默认不勾。
+- `actions` 为空（全部 `mask`）、`words` / `rules` / `allow` 为空、`shape=false`、
+  `model.min_score=0.80`。
+- **三个总开关 `secrets` / `personal` / `model.enabled` 恒为 `false`**：脱敏必须由用户在
+  设置页手动开启。新实例的 `Defaults()` 就是这份基线；`active=false` 时转发路径零开销。
+
+控制台的「应用推荐配置」只写检测口径（`kinds` / `words` / `rules` / `actions` / `allow` /
+`shape` / `min_score`），**不改三个总开关**——避免一次「恢复推荐」把正在生效的脱敏悄悄关掉，
+也避免把关闭中的实例擅自打开。该动作走 `PUT /api/privacy/settings`，仍是全量替换 + 写后回读。
+
 ## 5. 占位符与仓库
 
 ### 5.1 占位符

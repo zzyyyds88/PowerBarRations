@@ -3528,6 +3528,11 @@
     "This window": "Fenêtre actuelle",
     "Fixed 15m": "15 min fixe",
     "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.": "Vitesse de génération = tous les tokens de sortie / temps de génération cumulé sur la fenêtre (les flux simultanés s’additionnent).",
-    "Generation speed": "Vitesse de génération"
+    "Generation speed": "Vitesse de génération",
+    "Apply recommended": "Appliquer la configuration recommandée",
+    "Applying…": "Application…",
+    "Recommended baseline applied. Masking stays off until you enable it.": "Configuration recommandée appliquée. Le masquage reste désactivé jusqu'à ce que vous l'activiez.",
+    "Could not apply the recommended configuration": "Impossible d'appliquer la configuration recommandée",
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Le masquage est désactivé. Activez Secrets, Données personnelles ou ajoutez vos propres mots, puis enregistrez — rien n'est masqué avant cela."
   }
 }

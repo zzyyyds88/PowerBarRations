@@ -173,3 +173,53 @@ func TestResponseWriterRestoresSplitSSE(t *testing.T) {
 		t.Fatalf("restored stream = %q", got)
 	}
 }
+
+// 推荐基线是「打开开关后应该长什么样」，不是「现在就打开」：
+// 三个总开关必须保持 false，否则新实例会默认开始改写转发字节。
+func TestRecommendedKeepsMaskingOff(t *testing.T) {
+	s := Recommended()
+	if s.Secrets || s.Personal || s.Model.Enabled {
+		t.Fatalf("recommended must not enable masking: secrets=%v personal=%v model=%v",
+			s.Secrets, s.Personal, s.Model.Enabled)
+	}
+	if s.Model.Required {
+		t.Fatal("recommended must not require the model")
+	}
+	if s.Model.MinScore != DefaultModelMinScore {
+		t.Fatalf("min_score = %v, want %v", s.Model.MinScore, DefaultModelMinScore)
+	}
+	if s.ActiveNow() {
+		t.Fatal("recommended must be inactive by default")
+	}
+	n, err := Normalize(s)
+	if err != nil {
+		t.Fatalf("recommended must normalize: %v", err)
+	}
+	if n.Active {
+		t.Fatal("normalized recommended must stay inactive")
+	}
+	// 推荐基线必须与 Defaults() 完全一致，避免新实例和「应用推荐配置」漂移。
+	d := Defaults()
+	if len(d.Kinds) != len(n.Kinds) {
+		t.Fatalf("kind count = %d, want %d", len(n.Kinds), len(d.Kinds))
+	}
+	for id, on := range d.Kinds {
+		if n.Kinds[id] != on {
+			t.Fatalf("kind %s = %v, want %v", id, n.Kinds[id], on)
+		}
+	}
+}
+
+// 推荐基线勾选的是高置信度类别：ip/home/userhost/bucket 这些高噪声项不勾。
+func TestRecommendedKindsFollowCategoryDefaults(t *testing.T) {
+	s := Recommended()
+	on := map[string]bool{}
+	for _, c := range redact.Categories {
+		on[c.ID] = c.On
+	}
+	for id, want := range on {
+		if s.Kinds[id] != want {
+			t.Fatalf("kind %s = %v, want %v", id, s.Kinds[id], want)
+		}
+	}
+}

@@ -94,6 +94,15 @@ func privacySettingsDiff(before, after privacy.Settings) map[string]any {
 	return out
 }
 
+// GetPrivacyRecommended GET /api/v1/privacy/recommended
+//
+// 返回发布方推荐基线（privacy-spec §4）。它是只读的「应该长什么样」，不是
+// 「现在是什么」：三个总开关刻意保持 false，脱敏仍须用户在设置页手动开启。
+// 控制台用它实现「应用推荐配置」，避免前端自己硬编码一份业务真源。
+func GetPrivacyRecommended(c *gin.Context) {
+	c.JSON(http.StatusOK, privacy.Recommended())
+}
+
 // GetPrivacyModel GET /api/v1/privacy/model
 func GetPrivacyModel(c *gin.Context) {
 	s, err := privacy.Load()

@@ -3528,6 +3528,11 @@
     "This window": "目前視窗",
     "Fixed 15m": "固定 15 分鐘",
     "Generation speed = all completion tokens / generation time across every request in the window, so concurrent streams add up.": "生成速度 = 視窗內全部 completion tokens / 生成耗時合計（並行流會疊加）。",
-    "Generation speed": "生成速度"
+    "Generation speed": "生成速度",
+    "Apply recommended": "套用推薦設定",
+    "Applying…": "正在套用…",
+    "Recommended baseline applied. Masking stays off until you enable it.": "已套用推薦基準。脫敏仍保持關閉，需要你手動開啟。",
+    "Could not apply the recommended configuration": "無法套用推薦設定",
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "脫敏目前是關閉的。開啟「密鑰」「個人資料」或加入自訂詞後按儲存才會生效——在此之前不會脫敏任何內容。"
   }
 }
