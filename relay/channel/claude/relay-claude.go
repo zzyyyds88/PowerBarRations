@@ -306,6 +306,11 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		return nil, err
 	}
 
+	// 上游建流后零有效帧 = 空响应，按成员级失败处理（routing-spec §4.1）。
+	if helper.StreamFailedWithoutFrames(c, info) {
+		return nil, helper.EmptyStreamError()
+	}
+
 	HandleStreamFinalResponse(c, info, claudeInfo)
 	return claudeInfo.Usage, nil
 }

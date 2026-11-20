@@ -224,6 +224,8 @@ L2 与 L3 是本文新增的两层，专门回答"真实用户操作"与"真实 
 | **入站 `/v1/responses`**（`router/relay-router.go`、`relay/`） | L0 + L1（流式/非流式/503/能力枚举）+ L2（模型面调用）+ L4（`e2e`） |
 | **流内错误分类**（`relay/helper/stream_reject.go`、各格式管道） | L0 + L1（四格式判定/提交前换人/提交后透传）+ L4（`fault_injection`） |
 | **异步对象 Files/Batch**（`relay/`、`model/`、`router/`） | L0 + L1（`X-PBR-Lane` 必填/跨车道隔离/不支持协议/上限/映射表）+ L2（创建/查询/取消 runbook）+ L4（`e2e`，含缺失 lane 头 400） |
+| **Anthropic Files 网关侧存储**（`internal/filestore`、`relay/async`、`model/pbr_file.go`、`relaykit/dto/claude.go`、`relay/claude_handler.go`） | L0 + L1（beta 头分流/配额/过期/跨密钥隔离/路径穿越拒绝/`file_id` 展开为 base64/展开失败返回 400）+ L2（上传→引用→清理 runbook）+ L4（`e2e`，含"上游收到的请求是 base64 而非 file_id"断言） |
+| **流式提交与空响应**（`relay/helper`、各流式 handler、`relay/common/relay_info.go`） | L0 + L1（每个写出 `data:` 帧的入口必须打提交标记与首字耗时/零帧空流判 `bad_response`/正常流不被误判）+ L4（`fault_injection` 空流用例） |
 | **前端工程清理 / 视觉基线**（`web/src/routes`、`web/src/components`、`web/src/features`） | L0（pnpm 全量 + routeTree/ignore 守卫）+ L3 + L3-E2E + L4（`a3`） |
 | 部署/镜像 | L4（`deploy`） |
 | 文档 | 无需 |

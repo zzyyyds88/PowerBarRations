@@ -43,6 +43,25 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		return newConvertRequestFailedError(c, info, err)
 	}
 
+	// Anthropic Files 引用展开（ADR 0011）：把 source.type=file + file_id 换成内联
+	// base64，必须早于协议转换与直通判定——上游渠道不认识 file_id，转换器遇到它
+	// 只会丢弃并记诊断。展开失败返回 400，让客户端重传（它的既有重试约定）。
+	passThrough := model_setting.GetGlobalSettings().PassThroughRequestEnabled ||
+		info.ChannelSetting.PassThroughBodyEnabled
+	if !passThrough {
+		if apiErr := materializeClaudeFileRefs(c, info, request); apiErr != nil {
+			return apiErr
+		}
+	} else if claudeRequestHasFileRefs(request) {
+		// 直通模式原样转发字节，网关无法展开；记诊断而不是静默放过。
+		info.RecordConversionDiagnostics(c, []types.ConversionDiagnostic{{
+			Code:     "unsupported_media_source",
+			Path:     "messages",
+			Message:  "passthrough mode cannot expand Anthropic file_id references; the upstream will receive them verbatim",
+			Severity: types.ConversionDiagnosticError,
+		}})
+	}
+
 	adaptor := GetAdaptor(info.ApiType)
 	if adaptor == nil {
 		return types.NewError(fmt.Errorf("invalid api type: %d", info.ApiType), types.ErrorCodeInvalidApiType, types.ErrOptionWithSkipRetry())

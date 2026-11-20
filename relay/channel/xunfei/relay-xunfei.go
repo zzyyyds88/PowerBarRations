@@ -149,9 +149,11 @@ func xunfeiStreamHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, a
 				return true
 			}
 			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
+			helper.MarkStreamCommitted(c)
 			return true
 		case <-stopChan:
 			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
+			helper.MarkStreamCommitted(c)
 			return false
 		}
 	})

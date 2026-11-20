@@ -53,6 +53,9 @@ func TestMain(m *testing.M) {
 	if err := model.AutoMigrateAsyncObjects(db); err != nil {
 		panic("failed to migrate async objects: " + err.Error())
 	}
+	if err := model.AutoMigratePBRFiles(db); err != nil {
+		panic("failed to migrate pbr files: " + err.Error())
+	}
 	os.Exit(m.Run())
 }
 
@@ -60,6 +63,7 @@ func resetAsyncState(t *testing.T) {
 	t.Helper()
 	for _, table := range []string{
 		"pbr_async_objects",
+		"pbr_files",
 		"pbr_request_logs",
 		"pbr_stats_hourly",
 		"lane_members",

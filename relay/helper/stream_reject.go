@@ -9,6 +9,7 @@ import (
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
+	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
@@ -176,4 +177,35 @@ func StreamCommitted(c *gin.Context) bool {
 		return false
 	}
 	return common.GetContextKeyBool(c, constant.ContextKeyPBRStreamCommitted)
+}
+
+// StreamFailedWithoutFrames 本次流式尝试是否属于"上游已建流但零有效帧"。
+//
+// 传输层拿到 200 + text/event-stream，但上游一帧内容都没发（读超时、立即 EOF、
+// 只有 `[DONE]`）——这是上游的空响应，不是成功。此前各 handler 收尾时把
+// "末帧解析失败"只写日志就吞掉，于是这种请求以 200 + success=true + 零输出落库，
+// 客户端干等到超时，车道运行态完全没记这次失败（routing-spec §4.1 把它归为
+// 上游空响应）。
+//
+// 判定必须晚于"是否有帧"的统计、早于任何终态帧写出：已提交（客户端已收到
+// 数据）时不能改判，否则会把正常流截成错误。
+func StreamFailedWithoutFrames(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	if info.ReceivedResponseCount > 0 {
+		return false
+	}
+	return !StreamCommitted(c)
+}
+
+// EmptyStreamError 把"零帧空流"包装成成员级失败。
+//
+// 复用 ErrorCodeEmptyResponse：internal/route 已把它归入 bad_response，
+// 因而自动获得"同成员重试 + 换成员 + 冷却"语义，不需要改错误分类器。
+func EmptyStreamError() *types.NewAPIError {
+	return types.NewError(
+		fmt.Errorf("upstream stream ended without any data frame"),
+		types.ErrorCodeEmptyResponse,
+	)
 }

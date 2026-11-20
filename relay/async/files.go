@@ -16,6 +16,12 @@ import (
 // GET /files/:id/content。全部要求 X-PBR-Lane（ADR 0010）。
 
 func (h *Handler) handleCreateFile(c *gin.Context) {
+	// Anthropic Files 语义由网关自己暂存字节（ADR 0011）：不要求车道、不选路、
+	// 不转发上游。分流必须在 requireLane 之前，否则永远拿不到 400 以外的结果。
+	if h.dispatchAnthropicFiles(c) {
+		return
+	}
+
 	log := newAsyncLog(model.PBRAsyncObjectKindFile)
 	defer log.finish(c)
 
@@ -95,6 +101,12 @@ func (h *Handler) handleCreateFile(c *gin.Context) {
 }
 
 func (h *Handler) handleListFiles(c *gin.Context) {
+	// Anthropic Files 语义由网关自己暂存字节（ADR 0011）：不要求车道、不选路、
+	// 不转发上游。分流必须在 requireLane 之前，否则永远拿不到 400 以外的结果。
+	if h.dispatchAnthropicFiles(c) {
+		return
+	}
+
 	log := newAsyncLog(model.PBRAsyncObjectKindFile)
 	defer log.finish(c)
 
@@ -128,6 +140,12 @@ func (h *Handler) handleListFiles(c *gin.Context) {
 }
 
 func (h *Handler) handleGetFile(c *gin.Context) {
+	// Anthropic Files 语义由网关自己暂存字节（ADR 0011）：不要求车道、不选路、
+	// 不转发上游。分流必须在 requireLane 之前，否则永远拿不到 400 以外的结果。
+	if h.dispatchAnthropicFiles(c) {
+		return
+	}
+
 	log := newAsyncLog(model.PBRAsyncObjectKindFile)
 	defer log.finish(c)
 
@@ -173,6 +191,12 @@ func (h *Handler) handleGetFile(c *gin.Context) {
 }
 
 func (h *Handler) handleDeleteFile(c *gin.Context) {
+	// Anthropic Files 语义由网关自己暂存字节（ADR 0011）：不要求车道、不选路、
+	// 不转发上游。分流必须在 requireLane 之前，否则永远拿不到 400 以外的结果。
+	if h.dispatchAnthropicFiles(c) {
+		return
+	}
+
 	log := newAsyncLog(model.PBRAsyncObjectKindFile)
 	defer log.finish(c)
 
@@ -219,6 +243,12 @@ func (h *Handler) handleDeleteFile(c *gin.Context) {
 }
 
 func (h *Handler) handleFileContent(c *gin.Context) {
+	// Anthropic Files 语义由网关自己暂存字节（ADR 0011）：不要求车道、不选路、
+	// 不转发上游。分流必须在 requireLane 之前，否则永远拿不到 400 以外的结果。
+	if h.dispatchAnthropicFiles(c) {
+		return
+	}
+
 	log := newAsyncLog(model.PBRAsyncObjectKindFile)
 	defer log.finish(c)
 

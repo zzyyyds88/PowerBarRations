@@ -346,6 +346,13 @@ func migrateDB() error {
 		common.SysError("failed to migrate pbr_async_objects: " + err.Error())
 	}
 
+	// 网关侧 Anthropic Files 元数据表（ADR 0011 / design-v1 §4.2）：与上面的
+	// pbr_async_objects 完全独立——那张表记"固定在哪家上游"，这张表记"字节在
+	// 本机、归属哪个客户端密钥"。
+	if err := AutoMigratePBRFiles(DB); err != nil {
+		common.SysError("failed to migrate pbr_files: " + err.Error())
+	}
+
 	// W7（design-v1 §10.2.1）：计费/多用户相关表随多用户面物理删除，AutoMigrate
 	// 只保留 PBR 自有表与仍被保留管理面使用的基座表（User 仅作系统用户锚点）。
 	if err := DB.AutoMigrate(

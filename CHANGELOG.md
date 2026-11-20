@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **Anthropic Files 网关侧存储**（ADR 0011）：`anthropic-beta: files-api-*` 的 `/v1/files*` 由网关暂存字节，不要求 `X-PBR-Lane`、不参与选路、不转发上游；`/v1/messages` 引用 `file_id` 时展开为内联 base64。单文件 64 MiB、总量 1 GiB、按 `expires_after` 过期，归属绑定客户端密钥，进 `pbr_files` 表 + `pbr-files` 目录，导出不含字节。与 ADR 0010 的 OpenAI Files 语义按 beta 头分流并存。
 - **OpenAI Responses 入站**：`POST /v1/responses`（流式/非流式）与 chat 共用车道语义；`/v1/messages/count_tokens` 恢复。
 - **Files / Batch 异步对象**（ADR 0010）：`X-PBR-Lane` 显式寻址、创建即固定单渠道、流式代理与 512 MiB 上限、跨车道隔离、元数据保留与清理；不参与故障转移。
 - **可观测性**：`GET /metrics`（Prometheus，管理密钥 Bearer，含请求/耗时/首字/token/成本/上游错误/熔断/渠道可用）；请求日志新增 `price_band`。
@@ -61,6 +62,8 @@
 - **表格与移动端可读性**：Keys/Audit 表格取消逐字换行、固定关键列宽；概览 KPI 手机两列；日志筛选栏单行化；系统任务移动端改卡片。
 
 ### Fixed
+- **Anthropic 入站首字恒为空**：`/v1/messages` 的流式主出口 `ClaudeData` 写出 `data:` 帧却没打提交标记，导致首字耗时（`ttft_ms`）永远为 0、控制台显示"不适用"；同一缺陷还让提交后收到的流内 error 帧被误判成"提交前"。补齐该出口与 zhipu/xunfei/cohere/palm 四个 legacy 适配器的提交标记。
+- **流式空响应被记成成功**：上游建流后零有效帧（首事件超时、立即 EOF、只有 `[DONE]`）时，各 handler 把末帧解析失败只写日志就吞掉，最终落库 `success=true` + `completion=0`，客户端拿到 200 空流。现按 `bad_response`/`empty_response` 判成员级失败，覆盖 6 个流式 handler。
 - 修复 `web/.gitignore` 的 `logs` 规则吞掉 `src/routes/_authenticated/logs/`，导致日志工作区路由从未入库、源码重建后整块消失的问题（已补 routeTree import 守卫）。
 - **manual 车道点名成员不再悬空**：渠道/模型清理、成员组编辑/删除、孤儿清理、上游模型应用、渠道改名都会同步重写或清空失效的 `active_member`；空 pin 进入“待点名”状态并在路由卡片/编排器显著告警，运行期健康计数不再把 manual 车道未点名的成员算作可用。
 - **渠道模型清理与渠道写入同事务**：`PUT /channels`、`PUT /api/channel`、`sync-models`、上游 apply、模型目录删除不再先提交渠道再清理车道；`?force=1` 与成员组硬拦语义统一，模型目录删除的 force 不再是空操作。

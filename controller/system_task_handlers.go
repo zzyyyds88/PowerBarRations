@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/filestore"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/service"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
@@ -18,6 +19,71 @@ import (
 func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
+	service.RegisterSystemTaskHandler(fileCleanupHandler{})
+	service.RegisterSystemTaskHandler(asyncObjectCleanupHandler{})
+}
+
+// fileCleanupHandler 定期清理网关侧 Anthropic Files 的过期对象（ADR 0011）。
+// 只删行 + 尽力删字节；失败仅告警，不阻塞后续任务。
+type fileCleanupHandler struct{}
+
+func (fileCleanupHandler) Type() string { return model.SystemTaskTypeFileCleanup }
+
+func (fileCleanupHandler) Enabled() bool { return true }
+
+// 一小时一轮：缺省 TTL 是 24h、上限 7d，小时级延迟对配额回收足够，
+// 又不至于让过期对象长期占盘。
+func (fileCleanupHandler) Interval() time.Duration { return time.Hour }
+
+func (fileCleanupHandler) NewPayload() any { return nil }
+
+func (fileCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	now := time.Now()
+	ids, err := model.PBRFileExpiredIDs(now)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	deleted, err := model.DeleteExpiredPBRFiles(now, ids)
+	for _, id := range ids {
+		// 行已删，字节删失败只是残留；下一轮会再试（Remove 对不存在的路径视为成功，
+		// 因此这里只对真实错误告警）。
+		if removeErr := filestore.Remove(id); removeErr != nil {
+			common.SysLog(fmt.Sprintf("file_cleanup: remove bytes for %s failed: %v", id, removeErr))
+		}
+	}
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed,
+			map[string]any{"expired": len(ids), "deleted": deleted}, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded,
+		map[string]any{"expired": len(ids), "deleted": deleted}, nil)
+}
+
+// asyncObjectCleanupHandler 定期清理「上游已过期超过保留期」的 OpenAI 异步对象
+// 元数据行（ADR 0010 承诺"清理走既有系统任务"，此前 model.CleanupExpiredAsyncObjects
+// 在非测试代码中零调用点，pbr_async_objects 只增不减）。
+type asyncObjectCleanupHandler struct{}
+
+func (asyncObjectCleanupHandler) Type() string { return model.SystemTaskTypeAsyncTaskPoll }
+
+func (asyncObjectCleanupHandler) Enabled() bool { return true }
+
+// 一天一轮：保留期是 30 天，日级粒度足够；也避免每小时扫一张只增不删的表。
+func (asyncObjectCleanupHandler) Interval() time.Duration { return 24 * time.Hour }
+
+func (asyncObjectCleanupHandler) NewPayload() any { return nil }
+
+func (asyncObjectCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	deleted, err := model.CleanupExpiredAsyncObjects(time.Now())
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed,
+			map[string]any{"deleted": deleted}, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded,
+		map[string]any{"deleted": deleted}, nil)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
