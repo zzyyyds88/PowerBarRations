@@ -3533,6 +3533,11 @@
     "Applying…": "正在应用…",
     "Recommended baseline applied. Masking stays off until you enable it.": "已应用推荐基线。脱敏仍保持关闭，需要你手动开启。",
     "Could not apply the recommended configuration": "无法应用推荐配置",
-    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "脱敏当前是关闭的。打开「密钥」「个人数据」或添加自定义词后点保存才会生效——在此之前不会脱敏任何内容。"
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "脱敏当前是关闭的。打开「密钥」「个人数据」或添加自定义词后点保存才会生效——在此之前不会脱敏任何内容。",
+    "Masking is on": "脱敏已启用",
+    "Masking is off": "脱敏未启用",
+    "{{count}} custom words": "{{count}} 个自定义词",
+    "New requests are masked before they leave the gateway.": "新请求在离开网关前会被脱敏。",
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "当前不会脱敏任何内容。打开「密钥」「个人数据」或添加自定义词后点保存。"
   }
 }

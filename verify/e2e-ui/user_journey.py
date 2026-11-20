@@ -934,6 +934,11 @@ def main():
         body = cdp.val("document.body.innerText") or ""
         check("脱敏页可从菜单进入", "Masking" in body or "脱敏" in body, body[-400:])
         check("脱敏设置卡可见", "Privacy masking" in body or "隐私脱敏" in body, body[-400:])
+        check("脱敏页显示是否已启用",
+              cdp.val("(() => { const el=document.querySelector('[data-privacy-status]'); return el ? el.getAttribute('data-privacy-status') : ''; })()") in ("active", "inactive")
+              and ("Masking is on" in body or "Masking is off" in body
+                   or "脱敏已启用" in body or "脱敏未启用" in body),
+              body[:400])
 
         # 打开密钥开关并保存（真实点击 checkbox 与 Save）。
         cdp.val(js_click_selector('[data-privacy-toggle="secrets"]'))

@@ -3533,6 +3533,11 @@
     "Applying…": "Đang áp dụng…",
     "Recommended baseline applied. Masking stays off until you enable it.": "Đã áp dụng cấu hình đề xuất. Che giấu vẫn tắt cho đến khi bạn bật.",
     "Could not apply the recommended configuration": "Không thể áp dụng cấu hình đề xuất",
-    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Che giấu đang tắt. Bật Khóa bí mật, Dữ liệu cá nhân hoặc thêm từ của bạn rồi Lưu — chưa có gì được che giấu trước đó."
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Che giấu đang tắt. Bật Khóa bí mật, Dữ liệu cá nhân hoặc thêm từ của bạn rồi Lưu — chưa có gì được che giấu trước đó.",
+    "Masking is on": "Che giấu đang bật",
+    "Masking is off": "Che giấu đang tắt",
+    "{{count}} custom words": "{{count}} từ tùy chỉnh",
+    "New requests are masked before they leave the gateway.": "Yêu cầu mới được che giấu trước khi rời cổng.",
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Không có gì được che giấu. Bật Khóa bí mật, Dữ liệu cá nhân hoặc thêm từ của bạn rồi Lưu."
   }
 }

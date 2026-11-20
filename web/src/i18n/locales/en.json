@@ -3533,6 +3533,11 @@
     "Applying…": "Applying…",
     "Recommended baseline applied. Masking stays off until you enable it.": "Recommended baseline applied. Masking stays off until you enable it.",
     "Could not apply the recommended configuration": "Could not apply the recommended configuration",
-    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do."
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.",
+    "Masking is on": "Masking is on",
+    "Masking is off": "Masking is off",
+    "{{count}} custom words": "{{count}} custom words",
+    "New requests are masked before they leave the gateway.": "New requests are masked before they leave the gateway.",
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save."
   }
 }
