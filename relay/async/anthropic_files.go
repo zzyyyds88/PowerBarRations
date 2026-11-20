@@ -1,7 +1,6 @@
 package async
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -616,21 +615,6 @@ func mimeByExtension(filename string) string {
 	default:
 		return "application/octet-stream"
 	}
-}
-
-// AnthropicFileContentBlock 把网关侧文件展开成 Claude 图片/文档内容块所需的
-// base64 数据（供 relay/claude_handler.go 的 file_id 展开使用）。
-//
-// 返回的 mimeType 来自落库记录而不是客户端声明，避免被伪造的 media_type 误导。
-func AnthropicFileContentBytes(record *model.PBRFile) (string, string, error) {
-	if record == nil {
-		return "", "", errors.New("filestore: nil file record")
-	}
-	data, err := filestore.ReadAll(record.ObjectId)
-	if err != nil {
-		return "", "", err
-	}
-	return base64.StdEncoding.EncodeToString(data), record.MimeType, nil
 }
 
 // osStatPBRFile 判断磁盘上是否已存在该对象（ID 碰撞时的兜底检查）。
