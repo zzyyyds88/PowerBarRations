@@ -100,6 +100,59 @@ function Kpi(props: { label: string; value: string; tone?: string }) {
 }
 
 /**
+ * 脱敏是否正在生效的显式状态条。
+ *
+ * 只用已保存的设置判断（draft 未保存不算生效）；同时列出具体是哪几路检测在跑，
+ * 避免操作员面对三个开关还要自己推断。
+ */
+function MaskingStatus(props: { settings: PrivacySettings }) {
+  const { t } = useTranslation()
+  const s = props.settings
+  const parts: string[] = []
+  if (s.secrets) parts.push(t('Secrets'))
+  if (s.personal) parts.push(t('Personal data'))
+  if (s.words.length > 0) {
+    parts.push(t('{{count}} custom words', { count: s.words.length }))
+  }
+  if (s.model.enabled) parts.push(t('Local model'))
+  const detail = parts.join(' · ')
+
+  return (
+    <div
+      data-privacy-status={s.active ? 'active' : 'inactive'}
+      className={cn(
+        'flex flex-wrap items-start gap-2 rounded-md border px-3 py-2 text-xs',
+        s.active
+          ? 'border-success/30 bg-success/10'
+          : 'border-warning/30 bg-warning/10'
+      )}
+    >
+      <ShieldCheck className='mt-0.5 size-3.5 shrink-0' aria-hidden='true' />
+      <span>
+        <span className='font-semibold'>
+          {s.active ? t('Masking is on') : t('Masking is off')}
+        </span>
+        {s.active ? (
+          <>
+            {' — '}
+            {detail}
+            {' · '}
+            {t('New requests are masked before they leave the gateway.')}
+          </>
+        ) : (
+          <>
+            {' — '}
+            {t(
+              'Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.'
+            )}
+          </>
+        )}
+      </span>
+    </div>
+  )
+}
+
+/**
  * Privacy masking (privacy-spec §7, ui-spec §6 日志): configuration, a
  * try-it box and the metadata-only record of what requests masked.
  */
@@ -284,19 +337,7 @@ export function PrivacyPage() {
       )}
     >
       <div className='space-y-3'>
-        {!settings.active && (
-          <div className='border-warning/30 bg-warning/10 flex flex-wrap items-start gap-2 rounded-md border px-3 py-2 text-xs'>
-            <ShieldCheck
-              className='mt-0.5 size-3.5 shrink-0'
-              aria-hidden='true'
-            />
-            <span>
-              {t(
-                'Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.'
-              )}
-            </span>
-          </div>
-        )}
+        <MaskingStatus settings={settings} />
         <div className='flex flex-wrap items-center gap-2'>
           <Kpi
             label={t('Masked values')}

@@ -3533,6 +3533,11 @@
     "Applying…": "Применение…",
     "Recommended baseline applied. Masking stays off until you enable it.": "Рекомендуемая конфигурация применена. Маскирование остаётся выключенным, пока вы его не включите.",
     "Could not apply the recommended configuration": "Не удалось применить рекомендуемую конфигурацию",
-    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Маскирование выключено. Включите «Секреты», «Персональные данные» или добавьте свои слова и сохраните — до этого ничего не маскируется."
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Маскирование выключено. Включите «Секреты», «Персональные данные» или добавьте свои слова и сохраните — до этого ничего не маскируется.",
+    "Masking is on": "Маскирование включено",
+    "Masking is off": "Маскирование выключено",
+    "{{count}} custom words": "{{count}} своих слов",
+    "New requests are masked before they leave the gateway.": "Новые запросы маскируются перед отправкой из шлюза.",
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Ничего не маскируется. Включите «Секреты», «Персональные данные» или добавьте свои слова и сохраните."
   }
 }

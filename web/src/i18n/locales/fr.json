@@ -3533,6 +3533,11 @@
     "Applying…": "Application…",
     "Recommended baseline applied. Masking stays off until you enable it.": "Configuration recommandée appliquée. Le masquage reste désactivé jusqu'à ce que vous l'activiez.",
     "Could not apply the recommended configuration": "Impossible d'appliquer la configuration recommandée",
-    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Le masquage est désactivé. Activez Secrets, Données personnelles ou ajoutez vos propres mots, puis enregistrez — rien n'est masqué avant cela."
+    "Masking is off. Turn on Secrets, Personal data or add your own words, then Save — nothing is masked until you do.": "Le masquage est désactivé. Activez Secrets, Données personnelles ou ajoutez vos propres mots, puis enregistrez — rien n'est masqué avant cela.",
+    "Masking is on": "Le masquage est activé",
+    "Masking is off": "Le masquage est désactivé",
+    "{{count}} custom words": "{{count}} mots personnalisés",
+    "New requests are masked before they leave the gateway.": "Les nouvelles requêtes sont masquées avant de quitter la passerelle.",
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Rien n'est masqué. Activez Secrets, Données personnelles ou ajoutez vos propres mots, puis enregistrez."
   }
 }
