@@ -774,16 +774,21 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		testRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
 	}
 
+	// 模型测试必须给推理模型留出推理 + 输出空间：DeepSeek V4.1 flash 这类带
+	// reasoning_content 的模型在 16 个 token 内连推理都放不下，上游直接回 502
+	// （2026-11-21 tokenav 渠道实证：16→502，64 起 200）。o 系/thinking/默认三个
+	// 分支同属该缺陷，统一提到 512；gemini 维持既有 3000；claude thinking 走
+	// anthropic 适配器自身的测试路径，保持跳过语义不变。
 	if dto.IsOpenAIReasoningOModel(model) {
-		testRequest.MaxCompletionTokens = lo.ToPtr(uint(16))
+		testRequest.MaxCompletionTokens = lo.ToPtr(uint(512))
 	} else if strings.Contains(model, "thinking") {
 		if !strings.Contains(model, "claude") {
-			testRequest.MaxTokens = lo.ToPtr(uint(50))
+			testRequest.MaxTokens = lo.ToPtr(uint(512))
 		}
 	} else if strings.Contains(model, "gemini") {
 		testRequest.MaxTokens = lo.ToPtr(uint(3000))
 	} else {
-		testRequest.MaxTokens = lo.ToPtr(uint(16))
+		testRequest.MaxTokens = lo.ToPtr(uint(512))
 	}
 
 	return testRequest
