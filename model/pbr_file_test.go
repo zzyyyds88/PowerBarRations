@@ -50,7 +50,7 @@ func TestPBRFileIDFormat(t *testing.T) {
 		"",
 		"pbrfile-",
 		"pbrfile-abc",
-		"pbrfile-0123456789abcdef0123456",  // 23 位
+		"pbrfile-0123456789abcdef0123456",   // 23 位
 		"pbrfile-0123456789abcdef012345678", // 25 位
 		"pbrfile-0123456789ABCDEF01234567",  // 大写
 		"PBRFILE-0123456789abcdef01234567",

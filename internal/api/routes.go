@@ -153,13 +153,13 @@ func GetRoute(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"model":      resolved.Model,
-		"source":     resolved.Source,
-		"routable":   resolved.Source == model.RouteSourceExplicit,
+		"model":         resolved.Model,
+		"source":        resolved.Source,
+		"routable":      resolved.Source == model.RouteSourceExplicit,
 		"mode":          resolved.Mode,
 		"active_member": resolved.ActiveMember,
 		"config":        resolved.Config,
 		"members":       members,
-		"candidates": candidates,
+		"candidates":    candidates,
 	})
 }

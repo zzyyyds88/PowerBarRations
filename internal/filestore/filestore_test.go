@@ -93,10 +93,10 @@ func TestPathRejectsInvalidIDs(t *testing.T) {
 	for _, id := range []string{
 		"../../etc/passwd",
 		"pbrfile-../../etc/passwd",
-		"pbrfile-0123456789abcdef0123456",   // 少一位
-		"pbrfile-0123456789ABCDEF01234567",  // 大写
-		"pbrfile-gggggggggggggggggggggggg",  // 非十六进制
-		"file-0123456789abcdef01234567",     // 前缀不对
+		"pbrfile-0123456789abcdef0123456",  // 少一位
+		"pbrfile-0123456789ABCDEF01234567", // 大写
+		"pbrfile-gggggggggggggggggggggggg", // 非十六进制
+		"file-0123456789abcdef01234567",    // 前缀不对
 		"",
 	} {
 		_, err := Path(id)

@@ -53,9 +53,9 @@ type PBRFile struct {
 	// TokenId 归属的客户端密钥。读/删/展开都必须匹配，跨密钥一律视为不存在。
 	TokenId int `json:"-" gorm:"not null;index"`
 	// Filename 客户端上传时提供的文件名（仅用于回显，不参与路径派生）。
-	Filename string `json:"filename" gorm:"type:varchar(255)"`
-	MimeType string `json:"mime_type" gorm:"type:varchar(128);index"`
-	SizeBytes int64 `json:"size_bytes"`
+	Filename  string `json:"filename" gorm:"type:varchar(255)"`
+	MimeType  string `json:"mime_type" gorm:"type:varchar(128);index"`
+	SizeBytes int64  `json:"size_bytes"`
 	// Sha256 内容摘要，用于回读校验与排障；不用于去重。
 	Sha256 string `json:"sha256" gorm:"type:varchar(64)"`
 	// CreatedAt / ExpiresAt 均为 Unix 秒。ExpiresAt=0 表示不过期（当前不会产生）。

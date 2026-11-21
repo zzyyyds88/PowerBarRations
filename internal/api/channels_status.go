@@ -214,7 +214,7 @@ func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef,
 				continue
 			}
 			refs = append(refs, channelStatusLaneRef{
-				Lane:          laneName,
+				Lane: laneName,
 				// 成员身份统一用所选模型（与 route.memberLabel/attempts 同口径），
 				// 上游真名单独放 upstream_model，避免同一成员出现两种名字。
 				Member:        m.Channel + "/" + m.Model,

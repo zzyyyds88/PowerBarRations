@@ -89,22 +89,22 @@ func TestChannelSpeedAggregatesPerChannel(t *testing.T) {
 }
 
 type channelSpeedRow struct {
-	Channel     string  `json:"channel"`
-	Enabled     bool    `json:"enabled"`
-	Requests    int64   `json:"requests"`
-	Successes   int64   `json:"successes"`
-	Failures    int64   `json:"failures"`
-	SuccessRate float64 `json:"success_rate"`
-	P50TotalMs  int64   `json:"p50_total_ms"`
-	P95TotalMs  int64   `json:"p95_total_ms"`
-	OutputTPS   float64 `json:"output_tps"`
-	TPSSamples  int64   `json:"tps_samples"`
+	Channel        string  `json:"channel"`
+	Enabled        bool    `json:"enabled"`
+	Requests       int64   `json:"requests"`
+	Successes      int64   `json:"successes"`
+	Failures       int64   `json:"failures"`
+	SuccessRate    float64 `json:"success_rate"`
+	P50TotalMs     int64   `json:"p50_total_ms"`
+	P95TotalMs     int64   `json:"p95_total_ms"`
+	OutputTPS      float64 `json:"output_tps"`
+	TPSSamples     int64   `json:"tps_samples"`
 	OutputRate     float64 `json:"output_tokens_per_second"`
 	GenerationRate float64 `json:"generation_tokens_per_second"`
-	TokensIn    int64   `json:"tokens_in"`
-	TokensOut   int64   `json:"tokens_out"`
-	TokensTotal int64   `json:"tokens_total"`
-	Cost        float64 `json:"estimated_cost"`
+	TokensIn       int64   `json:"tokens_in"`
+	TokensOut      int64   `json:"tokens_out"`
+	TokensTotal    int64   `json:"tokens_total"`
+	Cost           float64 `json:"estimated_cost"`
 }
 
 // 已删除渠道的历史日志不得变成"幽灵渠道"。

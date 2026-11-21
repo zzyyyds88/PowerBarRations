@@ -74,25 +74,25 @@ func modelStatusRows(from, until int64, groupBy string) []gin.H {
 	out := make([]gin.H, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, gin.H{
-			"model":          r.Key,
-			"requests":       r.Requests,
-			"successes":      r.Successes,
-			"failures":       r.Requests - r.Successes,
-			"success_rate":   r.SuccessRate,
-			"p50_total_ms":   r.P50TotalMs,
-			"p95_total_ms":   r.P95TotalMs,
-			"avg_ttft_ms":    r.AvgTTFTMs,
-			"output_tps":     r.OutputTPS,
-			"tps_samples":    r.TPSSamples,
+			"model":        r.Key,
+			"requests":     r.Requests,
+			"successes":    r.Successes,
+			"failures":     r.Requests - r.Successes,
+			"success_rate": r.SuccessRate,
+			"p50_total_ms": r.P50TotalMs,
+			"p95_total_ms": r.P95TotalMs,
+			"avg_ttft_ms":  r.AvgTTFTMs,
+			"output_tps":   r.OutputTPS,
+			"tps_samples":  r.TPSSamples,
 			// 渠道/模型的整体输出速度：窗口内全部 completion_tokens / 窗口秒数。
 			// 与 output_tps（干净样本的生成阶段速度）是不同口径。
 			"output_tokens_per_second": r.OutputRate,
 			// 生成阶段聚合速率：Σcompletion_tokens / Σ生成耗时（含并发合计）。
 			"generation_tokens_per_second": r.GenerationRate,
-			"tokens_in":      r.TokensIn,
-			"tokens_out":     r.TokensOut,
-			"tokens_total":   r.TokensIn + r.TokensOut,
-			"estimated_cost": r.Cost,
+			"tokens_in":                    r.TokensIn,
+			"tokens_out":                   r.TokensOut,
+			"tokens_total":                 r.TokensIn + r.TokensOut,
+			"estimated_cost":               r.Cost,
 		})
 	}
 	return out
@@ -143,7 +143,7 @@ func groupedMetricRows(from, until int64, groupColumn string) []groupedMetricRow
 	// GenMs 用**生成阶段**耗时（流式 total_ms-ttft_ms，非流式 total_ms），
 	// 覆盖窗口内全部请求（不只干净样本），用于 GenerationRate 聚合。
 	query := model.DB.Table("pbr_request_logs").
-		Select(groupColumn+" AS key, COUNT(*) AS requests, " +
+		Select(groupColumn + " AS key, COUNT(*) AS requests, " +
 			"SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes, " +
 			"COALESCE(AVG(CASE WHEN is_stream THEN ttft_ms END), 0) AS avg_ttft_ms, " +
 			"COALESCE(SUM(prompt_tokens), 0) AS tokens_in, " +
@@ -172,7 +172,7 @@ func groupedMetricRows(from, until int64, groupColumn string) []groupedMetricRow
 	}
 	var tpsRows []tpsRow
 	tpsQuery := model.DB.Table("pbr_request_logs").
-		Select(groupColumn+" AS key, COALESCE(SUM(completion_tokens), 0) AS tokens_out, " +
+		Select(groupColumn + " AS key, COALESCE(SUM(completion_tokens), 0) AS tokens_out, " +
 			"COALESCE(SUM(CASE WHEN is_stream THEN MAX(total_ms - ttft_ms, 1) ELSE total_ms END), 0) AS gen_ms, " +
 			"COUNT(*) AS samples").
 		Where(nonEmpty + " AND success = 1 AND total_attempts <= 1").
