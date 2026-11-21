@@ -3538,6 +3538,23 @@
     "Masking is off": "Маскирование выключено",
     "{{count}} custom words": "{{count}} своих слов",
     "New requests are masked before they leave the gateway.": "Новые запросы маскируются перед отправкой из шлюза.",
-    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Ничего не маскируется. Включите «Секреты», «Персональные данные» или добавьте свои слова и сохраните."
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Ничего не маскируется. Включите «Секреты», «Персональные данные» или добавьте свои слова и сохраните.",
+    "Retire channel \"{{name}}\"": "Вывести канал «{{name}}» из эксплуатации",
+    "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.": "Вывод отключает канал, удаляет его из цепочек и групп участников, сам канал и помечает историю как выведенную. Действие необратимо.",
+    "Loading the retirement plan…": "Составляем план вывода…",
+    "Could not load the retirement plan.": "Не удалось получить план вывода.",
+    "The channel is disabled first, then its references are removed.": "Сначала канал отключается, затем ссылки удаляются за вас.",
+    "Lanes cleaned (kept, members removed)": "Цепочки с удалёнными участниками (сохранены)",
+    "Lanes deleted (no members left)": "Цепочки, удалённые целиком (участников не осталось)",
+    "Member groups to update (groups are kept)": "Группы участников для изменения (сами группы сохраняются)",
+    "Removing a channel from a member group affects every lane referencing that group.": "Удаление канала из группы влияет на все цепочки, ссылающиеся на эту группу.",
+    "Member groups left empty (kept)": "Опустевшие группы участников (сохранены)",
+    "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.": "{{logs}} записей журнала и {{stats}} строк статистики будут переименованы в форму «имя (выведено)».",
+    "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.": "{{count}} несроковых асинхронных объектов (Files/Batches) закреплены за этим каналом и будут ждать очистки по истечении срока.",
+    "Type the channel name to confirm": "Введите имя канала для подтверждения",
+    "Type \"{{name}}\" to enable retirement.": "Введите «{{name}}», чтобы активировать кнопку.",
+    "Retire and delete": "Вывести и удалить",
+    "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Канал выведен: очищено цепочек — {{cleaned}}, удалено — {{deleted}}, записей истории переименовано — {{logs}}.",
+    "Failed to retire the channel": "Не удалось вывести канал"
   }
 }

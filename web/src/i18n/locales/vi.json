@@ -3538,6 +3538,23 @@
     "Masking is off": "Che giấu đang tắt",
     "{{count}} custom words": "{{count}} từ tùy chỉnh",
     "New requests are masked before they leave the gateway.": "Yêu cầu mới được che giấu trước khi rời cổng.",
-    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Không có gì được che giấu. Bật Khóa bí mật, Dữ liệu cá nhân hoặc thêm từ của bạn rồi Lưu."
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Không có gì được che giấu. Bật Khóa bí mật, Dữ liệu cá nhân hoặc thêm từ của bạn rồi Lưu.",
+    "Retire channel \"{{name}}\"": "Cho kênh \"{{name}}\" nghỉ hưu",
+    "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.": "Nghỉ hưu sẽ dừng kênh, gỡ nó khỏi các tuyến và nhóm thành viên, xóa kênh và đánh dấu lịch sử là đã nghỉ hưu. Không thể hoàn tác.",
+    "Loading the retirement plan…": "Đang tạo kế hoạch nghỉ hưu…",
+    "Could not load the retirement plan.": "Không thể tải kế hoạch nghỉ hưu.",
+    "The channel is disabled first, then its references are removed.": "Kênh được tắt trước, hệ thống sẽ gỡ các tham chiếu giúp bạn.",
+    "Lanes cleaned (kept, members removed)": "Tuyến được giữ lại (đã gỡ thành viên)",
+    "Lanes deleted (no members left)": "Tuyến bị xóa (hết thành viên)",
+    "Member groups to update (groups are kept)": "Nhóm thành viên sẽ gỡ kênh này (giữ lại nhóm)",
+    "Removing a channel from a member group affects every lane referencing that group.": "Gỡ kênh khỏi nhóm thành viên ảnh hưởng đến mọi tuyến tham chiếu nhóm đó.",
+    "Member groups left empty (kept)": "Nhóm thành viên trở nên trống (giữ lại)",
+    "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.": "{{logs}} bản ghi yêu cầu và {{stats}} dòng thống kê sẽ được đổi tên theo dạng đã nghỉ hưu.",
+    "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.": "{{count}} đối tượng bất đồng bộ chưa hết hạn (Files/Batches) đang gắn với kênh này và sẽ chờ dọn dẹp khi hết hạn.",
+    "Type the channel name to confirm": "Nhập tên kênh để xác nhận",
+    "Type \"{{name}}\" to enable retirement.": "Nhập \"{{name}}\" để bật nút nghỉ hưu.",
+    "Retire and delete": "Nghỉ hưu và xóa",
+    "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Kênh đã nghỉ hưu: làm sạch {{cleaned}} tuyến, xóa {{deleted}} tuyến, đổi tên {{logs}} bản ghi lịch sử.",
+    "Failed to retire the channel": "Không thể cho kênh nghỉ hưu"
   }
 }

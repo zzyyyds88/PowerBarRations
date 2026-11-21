@@ -1510,6 +1510,10 @@ func openAPIPaths() gin.H {
 			"put":    secured("put", "渠道全量 upsert（key 只写不读）", append(pathParam("name"), dryRunParam))["put"],
 			"delete": secured("delete", "删除渠道", pathParam("name"))["delete"],
 		},
+		"/channels/{name}/retire": gin.H{
+			"post": secured("post", "退役编排（design-v1 §7.9）：停用 → 解除引用（散成员与成员组条目，组保留）→ 删除渠道 → 历史标记（改名「原名（已退役 时间）」）。dry-run 返回逐项预览",
+				append(pathParam("name"), dryRunParam))["post"],
+		},
 		"/model-status": gin.H{
 			"get": secured("get", "按上游模型聚合的运行表现（只读）：成功率 / 平均延迟 / 输出速度(tps) / token 数",
 				[]gin.H{queryParam("from", "起始时间（RFC3339 或 Unix 秒；省略=最近 24 小时）"),

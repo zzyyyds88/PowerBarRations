@@ -169,6 +169,72 @@ export async function deleteChannel(id: number): Promise<void> {
 }
 
 /**
+ * 渠道退役预览（design-v1 §7.9）。dry_run 只读，逐项列出将要发生的事。
+ */
+export interface ChannelRetirePlan {
+  name: string
+  disable: boolean
+  /** 保留但移除了本渠道成员的车道。 */
+  lanes_cleaned: string[]
+  /** 成员清空后整条删除的车道（含通过成员组间接失效的）。 */
+  lanes_deleted: string[]
+  /** 将从中移除本渠道条目的成员组（组本身保留）。 */
+  groups_affected: string[]
+  /** 移除后变空的成员组（去留由运维决定）。 */
+  groups_emptied: string[]
+  /** 将改写为「原名（已退役 时间）」的请求日志条数。 */
+  logs_rename: number
+  /** 将改写的统计聚合行数（channel / channel_model 维度）。 */
+  stats_rows_rename: number
+  /** 固定到本渠道的未过期异步对象（Files/Batch），退役后等待过期清理。 */
+  pending_async_objects: number
+}
+
+/**
+ * 渠道退役执行结果（与预览同形，外加改写后的展示名与逐项计数）。
+ */
+export interface ChannelRetireResult {
+  retired: boolean
+  name: string
+  retired_as: string
+  disable: boolean
+  lanes_cleaned: string[]
+  lanes_deleted: string[]
+  groups_affected: string[]
+  groups_emptied: string[]
+  manual_lanes_cleared: string[]
+  logs_renamed: number
+  stats_rows_rename: number
+  pending_async_objects: number
+}
+
+/**
+ * Fetch the retirement plan (dry run; no writes).
+ */
+export async function fetchRetireChannelPlan(
+  name: string
+): Promise<ChannelRetirePlan> {
+  const res = await api.post(
+    `/api/channels/${encodeURIComponent(name)}/retire?dry_run=true`
+  )
+  return (res.data?.plan ?? res.data) as ChannelRetirePlan
+}
+
+/**
+ * Execute the retirement. 控制台"删除"入口走这里；严格 DELETE 语义保持不变。
+ */
+export async function retireChannel(
+  name: string
+): Promise<ChannelRetireResult> {
+  const res = await api.post(
+    `/api/channels/${encodeURIComponent(name)}/retire`,
+    undefined,
+    channelActionConfig()
+  )
+  return res.data as ChannelRetireResult
+}
+
+/**
  * Batch delete channels
  *
  * 成功体是裸删除数（失败时整批拒绝并返回 409 + details.blocked）。

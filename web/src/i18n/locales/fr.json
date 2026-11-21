@@ -3538,6 +3538,23 @@
     "Masking is off": "Le masquage est désactivé",
     "{{count}} custom words": "{{count}} mots personnalisés",
     "New requests are masked before they leave the gateway.": "Les nouvelles requêtes sont masquées avant de quitter la passerelle.",
-    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Rien n'est masqué. Activez Secrets, Données personnelles ou ajoutez vos propres mots, puis enregistrez."
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Rien n'est masqué. Activez Secrets, Données personnelles ou ajoutez vos propres mots, puis enregistrez.",
+    "Retire channel \"{{name}}\"": "Retirer le canal « {{name}} »",
+    "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.": "Le retrait désactive le canal, le retire des routes et des groupes de membres, le supprime et marque son historique comme retiré. Action irréversible.",
+    "Loading the retirement plan…": "Chargement du plan de retrait…",
+    "Could not load the retirement plan.": "Impossible de charger le plan de retrait.",
+    "The channel is disabled first, then its references are removed.": "Le canal est d'abord désactivé, puis ses références sont retirées.",
+    "Lanes cleaned (kept, members removed)": "Routes nettoyées (conservées, membres retirés)",
+    "Lanes deleted (no members left)": "Routes supprimées (plus aucun membre)",
+    "Member groups to update (groups are kept)": "Groupes de membres à mettre à jour (les groupes sont conservés)",
+    "Removing a channel from a member group affects every lane referencing that group.": "Retirer un canal d'un groupe affecte toutes les routes qui référencent ce groupe.",
+    "Member groups left empty (kept)": "Groupes de membres devenus vides (conservés)",
+    "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.": "{{logs}} entrées de journal et {{stats}} lignes de statistiques seront renommées sous la forme retirée.",
+    "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.": "{{count}} objets asynchrones non expirés (Files/Batches) sont liés à ce canal et attendront le nettoyage par expiration.",
+    "Type the channel name to confirm": "Saisissez le nom du canal pour confirmer",
+    "Type \"{{name}}\" to enable retirement.": "Saisissez « {{name}} » pour activer le retrait.",
+    "Retire and delete": "Retirer et supprimer",
+    "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Canal retiré : {{cleaned}} routes nettoyées, {{deleted}} routes supprimées, {{logs}} entrées d'historique renommées.",
+    "Failed to retire the channel": "Échec du retrait du canal"
   }
 }

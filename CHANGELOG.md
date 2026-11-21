@@ -5,6 +5,7 @@
 ## [Unreleased]
 
 ### Added
+- **渠道退役编排**（design-v1 §7.9）：`POST /api/channels/{name}/retire` 把"停用 → 解除引用 → 删除 → 历史标记"做成一个显式编排——控制台"删除"入口改为两步确认（先预览引用/清理/历史改写清单，再输入渠道全名解锁），确认后系统替运维摘除散成员与成员组条目（成员清空的车道整条删除，**组本身保留**并把变空组单独列出），历史请求记录与 `channel`/`channel_model` 统计改写为 `原名（已退役 时间）`，避免同名新渠道与退役历史混在一起。API 的 `DELETE /api/channels/{name}` 严格语义不变（仍被引用即 409）。退役是**唯一允许变更车道/成员组的渠道动作**，必须预览 + 二次确认 + 逐项审计。
 - **脱敏推荐基线**：新增 `GET /api/privacy/recommended`（`privacy.Recommended()`），把「打开开关后应该长什么样」变成后端唯一真源——`kinds` 按 magpie 类别默认（六项高置信度默认勾选）、`actions` 空（全 `mask`）、`min_score=0.80`；**三个总开关恒为 false**，脱敏仍须手动开启。控制台脱敏页新增「应用推荐配置」，只重置检测口径、不动总开关，并在未启用时给出显式提示。
 - **Anthropic Files 网关侧存储**（ADR 0011）：`anthropic-beta: files-api-*` 的 `/v1/files*` 由网关暂存字节，不要求 `X-PBR-Lane`、不参与选路、不转发上游；`/v1/messages` 引用 `file_id` 时展开为内联 base64。单文件 64 MiB、总量 1 GiB、按 `expires_after` 过期，归属绑定客户端密钥，进 `pbr_files` 表 + `pbr-files` 目录，导出不含字节。与 ADR 0010 的 OpenAI Files 语义按 beta 头分流并存。
 - **OpenAI Responses 入站**：`POST /v1/responses`（流式/非流式）与 chat 共用车道语义；`/v1/messages/count_tokens` 恢复。

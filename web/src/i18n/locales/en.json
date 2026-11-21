@@ -3538,6 +3538,23 @@
     "Masking is off": "Masking is off",
     "{{count}} custom words": "{{count}} custom words",
     "New requests are masked before they leave the gateway.": "New requests are masked before they leave the gateway.",
-    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save."
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.",
+    "Retire channel \"{{name}}\"": "Retire channel \"{{name}}\"",
+    "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.": "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.",
+    "Loading the retirement plan…": "Loading the retirement plan…",
+    "Could not load the retirement plan.": "Could not load the retirement plan.",
+    "The channel is disabled first, then its references are removed.": "The channel is disabled first, then its references are removed.",
+    "Lanes cleaned (kept, members removed)": "Lanes cleaned (kept, members removed)",
+    "Lanes deleted (no members left)": "Lanes deleted (no members left)",
+    "Member groups to update (groups are kept)": "Member groups to update (groups are kept)",
+    "Removing a channel from a member group affects every lane referencing that group.": "Removing a channel from a member group affects every lane referencing that group.",
+    "Member groups left empty (kept)": "Member groups left empty (kept)",
+    "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.": "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.",
+    "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.": "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.",
+    "Type the channel name to confirm": "Type the channel name to confirm",
+    "Type \"{{name}}\" to enable retirement.": "Type \"{{name}}\" to enable retirement.",
+    "Retire and delete": "Retire and delete",
+    "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.",
+    "Failed to retire the channel": "Failed to retire the channel"
   }
 }

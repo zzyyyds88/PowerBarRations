@@ -187,6 +187,13 @@ func opsRoutes() []OpsRoute {
 			Policy: opsPolicyWith(deletedCountSuccess),
 		},
 		{
+			// 退役编排（design-v1 §7.9）：唯一允许变更车道/成员组的渠道动作，
+			// 因此 dry-run 必须逐项预览；执行结果逐项进审计。
+			Method: http.MethodPost, Path: "/channels/:name/retire", Handler: RetireChannel,
+			DryRun: DryRunPreview, DryRunReason: "将停用；将清理/删除的车道；将移除条目的成员组与变空组；将改写为「原名（已退役 时间）」的历史记录条数",
+			Policy: opsPolicy(),
+		},
+		{
 			Method: http.MethodPost, Path: "/channels/upstream-updates/detect-all", Handler: DetectAllUpstream,
 			DryRun: DryRunReject, DryRunReason: "触发探测任务，不改配置；应用变更走 apply",
 			Policy: opsPolicy(),
