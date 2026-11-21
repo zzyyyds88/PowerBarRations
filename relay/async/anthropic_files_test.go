@@ -3,9 +3,9 @@ package async
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"

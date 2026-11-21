@@ -87,7 +87,9 @@ func TestOaiStreamHandlerPassesThroughErrorFrameAfterCommit(t *testing.T) {
 }
 
 func TestOaiStreamHandlerIgnoresHeartbeatAndNullError(t *testing.T) {
-	body := "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"lane-model\",\"choices\":[{\"index\":0,\"delta\":{}}],\"error\":null}\n" +
+	// "error":null 不是错误帧（§4.4 判定只认非空 error 对象）；携带内容的帧
+	// 照常提交透传。零载荷帧（delta:{}）按内容帧口径是开场帧，见空流用例。
+	body := "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"lane-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}],\"error\":null}\n" +
 		"data: [DONE]\n"
 	c, recorder, resp, info := newStreamRejectContext(t, body, types.RelayFormatOpenAI)
 
@@ -96,6 +98,22 @@ func TestOaiStreamHandlerIgnoresHeartbeatAndNullError(t *testing.T) {
 	require.Nil(t, apiErr, "error:null 不是错误帧")
 	assert.Contains(t, recorder.Body.String(), "\"error\":null", "心跳/正常帧照常转发")
 	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
+}
+
+// 零载荷帧（delta:{} + "error":null）没有任何内容：按内容帧口径是空流，
+// 不是成功——即使它不是错误帧（§4.4 判定与空流判定是两回事）。
+func TestOaiStreamHandlerZeroPayloadFrameIsEmptyStream(t *testing.T) {
+	body := "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"lane-model\",\"choices\":[{\"index\":0,\"delta\":{}}],\"error\":null}\n" +
+		"data: [DONE]\n"
+	c, recorder, resp, info := newStreamRejectContext(t, body, types.RelayFormatOpenAI)
+
+	_, apiErr := OaiStreamHandler(c, info, resp)
+
+	require.NotNil(t, apiErr, "零载荷帧 = 空流，必须换成员")
+	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject),
+		"不是流内错误帧：失败原因是空响应而非上游拒绝")
+	assert.Empty(t, recorder.Body.String(), "提交前不写任何帧给客户端")
 }
 
 func TestOaiResponsesStreamHandlerRejectsFailedFrameBeforeCommit(t *testing.T) {
@@ -127,13 +145,29 @@ func TestOaiResponsesStreamHandlerPassesThroughFailedFrameAfterCommit(t *testing
 }
 
 func TestOaiResponsesStreamHandlerIgnoresFailedWithoutError(t *testing.T) {
-	body := "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r1\",\"status\":\"failed\"}}\n"
+	// 已提交（内容帧已交付）后的 response.failed 不带 error 对象：不是流内
+	// 错误帧（§4.4 只认非空 error 对象），原样透传、不留痕。
+	body := "event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n" +
+		"data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r1\",\"status\":\"failed\"}}\n"
 	c, recorder, resp, info := newStreamRejectContext(t, body, types.RelayFormatOpenAIResponses)
 
 	_, apiErr := OaiResponsesStreamHandler(c, info, resp)
 
-	require.Nil(t, apiErr, "不带 error 的 response.failed 是正常终态事件")
+	require.Nil(t, apiErr, "不带 error 的 response.failed 不是错误帧")
 	assert.Contains(t, recorder.Body.String(), "response.failed")
+	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
+}
+
+// 零载荷：仅 response.failed（不带 error、无任何内容帧）= 空流，换成员。
+func TestOaiResponsesStreamHandlerFailedWithoutErrorAloneIsEmptyStream(t *testing.T) {
+	body := "data: {\"type\":\"response.failed\",\"response\":{\"id\":\"r1\",\"status\":\"failed\"}}\n"
+	c, _, resp, info := newStreamRejectContext(t, body, types.RelayFormatOpenAIResponses)
+
+	_, apiErr := OaiResponsesStreamHandler(c, info, resp)
+
+	require.NotNil(t, apiErr, "零载荷 = 空流")
+	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
 	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
 }
 

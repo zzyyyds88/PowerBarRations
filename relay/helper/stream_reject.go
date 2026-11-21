@@ -193,10 +193,13 @@ func StreamFailedWithoutFrames(c *gin.Context, info *relaycommon.RelayInfo) bool
 	if info == nil {
 		return false
 	}
-	if info.ReceivedResponseCount > 0 {
+	// 内容帧口径（routing-spec §3 第 6 步 / §4.1.1）：提交 ⟺ 已写出内容帧。
+	// 仅角色/开场帧的不算——那正是"HTTP 200 空流"的形态。
+	// 收到过内容帧但尚未写出的（末帧在守卫之后按既有设计转发）同样不算空流。
+	if info.ReceivedContentCount > 0 || StreamCommitted(c) {
 		return false
 	}
-	return !StreamCommitted(c)
+	return true
 }
 
 // EmptyStreamError 把"零帧空流"包装成成员级失败。

@@ -1111,7 +1111,7 @@ curl -s "$PBR/api/channels/channel-a/status?window=24h" -H "Authorization: Beare
   `Σcompletion_tokens / Σ生成耗时`，生成耗时 = 流式取 `max(total_ms − ttft_ms, 1)`、
   非流式取 `total_ms`——把首字等待排除在外，才是"吐字速度"；多次尝试的累计时长
   含等待与失败往返，不代表生成速度，不计入。`tps_samples = 0` 时界面显示 `-`。
-  `ttft_ms` 在**第一帧数据转发给客户端**时打点（`relay/helper.MarkFirstByte`，只记一次），
+  `ttft_ms` 在**首个内容帧转发给客户端**时打点（`relay/helper.MarkFirstByte`，只记一次；2026-11-21 起从"第一帧"口径收敛为内容帧口径，见 routing-spec §3 第 6 步——仅角色/开场帧不计），
   故升级前的历史行 `ttft_ms` 为 `0`，这些行只影响"平均首字"的样本量，不影响成功率与请求数。
   同一取舍：数据源是明细日志，`POST /logs/prune` 清理后该表为空数组。
 - `summary.p50_total_ms` / `p95_total_ms` / `avg_ttft_ms` 来自**明细日志**（`pbr_request_logs`）

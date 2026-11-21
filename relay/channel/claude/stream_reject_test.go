@@ -81,8 +81,14 @@ func TestClaudeStreamHandlerRejectsErrorObjectBeforeCommit(t *testing.T) {
 	assert.Empty(t, recorder.Body.String())
 }
 
+// 提交点 = 内容帧（routing-spec §3 第 6 步 / §4.1.1）：message_start 只是
+// 开场帧，不计提交；必须在 content_block_delta 交付之后，错误帧才算"提交后"。
+const claudeContentFrame = "event: content_block_delta\n" +
+	"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n"
+
 func TestClaudeStreamHandlerPassesThroughErrorEventAfterCommit(t *testing.T) {
-	c, recorder, resp, info := newClaudeStreamRejectContext(t, claudeMessageStartFrame+claudeErrorFrame, types.RelayFormatClaude)
+	c, recorder, resp, info := newClaudeStreamRejectContext(
+		t, claudeMessageStartFrame+claudeContentFrame+claudeErrorFrame, types.RelayFormatClaude)
 
 	_, apiErr := ClaudeStreamHandler(c, resp, info)
 
@@ -94,9 +100,25 @@ func TestClaudeStreamHandlerPassesThroughErrorEventAfterCommit(t *testing.T) {
 	assert.Equal(t, claudeErrorMessage, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
 }
 
+// message_start + error：没有任何内容帧 ⇒ 未提交，按成员级拒绝换成员，
+// 暂存的开场帧一并丢弃（客户端不收到任何字节）。
+func TestClaudeStreamHandlerRejectsErrorBeforeAnyContent(t *testing.T) {
+	c, recorder, resp, info := newClaudeStreamRejectContext(t, claudeMessageStartFrame+claudeErrorFrame, types.RelayFormatClaude)
+
+	_, apiErr := ClaudeStreamHandler(c, resp, info)
+
+	require.NotNil(t, apiErr, "开场帧不算提交：内容帧之前的错误帧必须换成员")
+	assert.Equal(t, types.ErrorCodeUpstreamReject, apiErr.GetErrorCode())
+	// 提交前的拒绝报文随错误进入本次尝试的 attempts 记录（§4.4）；
+	// StreamReject 留痕键是"提交后透传"专用，此处应为空。
+	assert.Contains(t, apiErr.Error(), claudeErrorMessage)
+	assert.Empty(t, recorder.Body.String(), "提交前不写任何帧给客户端")
+	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
+}
+
 func TestClaudeStreamHandlerIgnoresNullError(t *testing.T) {
-	body := "event: message_start\n" +
-		"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-x\",\"content\":[],\"error\":null}}\n"
+	// "error":null 不是错误帧（§4.4 只认非空 error 对象）；带内容则照常交付。
+	body := claudeMessageStartFrame + claudeContentFrame
 	c, recorder, resp, info := newClaudeStreamRejectContext(t, body, types.RelayFormatClaude)
 
 	_, apiErr := ClaudeStreamHandler(c, resp, info)
@@ -104,6 +126,22 @@ func TestClaudeStreamHandlerIgnoresNullError(t *testing.T) {
 	require.Nil(t, apiErr, "error:null 不是错误帧")
 	assert.Contains(t, recorder.Body.String(), "message_start")
 	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject))
+}
+
+// 只有开场帧（哪怕带 "error":null）没有任何内容帧 = 空流，按成员失败换人。
+// 这正是线上实案（OpenCode 免费额度耗尽）的形态：开场帧 + 流内报错。
+func TestClaudeStreamHandlerMessageStartOnlyIsEmptyStream(t *testing.T) {
+	body := "event: message_start\n" +
+		"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-x\",\"content\":[],\"error\":null}}\n"
+	c, recorder, resp, info := newClaudeStreamRejectContext(t, body, types.RelayFormatClaude)
+
+	_, apiErr := ClaudeStreamHandler(c, resp, info)
+
+	require.NotNil(t, apiErr, "只有开场帧没有内容帧 = 空流")
+	assert.Equal(t, types.ErrorCodeEmptyResponse, apiErr.GetErrorCode())
+	assert.Empty(t, common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject),
+		"error:null 不是错误帧：失败原因是空响应而非上游拒绝")
+	assert.Empty(t, recorder.Body.String(), "提交前不写任何帧给客户端")
 }
 
 func TestClaudeResponsesStreamHandlerRejectsErrorEventBeforeCommit(t *testing.T) {
@@ -117,7 +155,8 @@ func TestClaudeResponsesStreamHandlerRejectsErrorEventBeforeCommit(t *testing.T)
 }
 
 func TestClaudeResponsesStreamHandlerPassesThroughErrorEventAfterCommit(t *testing.T) {
-	c, recorder, resp, info := newClaudeStreamRejectContext(t, claudeMessageStartFrame+claudeErrorFrame, types.RelayFormatOpenAIResponses)
+	c, recorder, resp, info := newClaudeStreamRejectContext(
+		t, claudeMessageStartFrame+claudeContentFrame+claudeErrorFrame, types.RelayFormatOpenAIResponses)
 
 	usage, apiErr := ClaudeResponsesStreamHandler(c, resp, info)
 
