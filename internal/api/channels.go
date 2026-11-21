@@ -405,6 +405,50 @@ func DeleteChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": true, "name": name})
 }
 
+// RetireChannel POST /api/v1/channels/{name}/retire
+//
+// 退役编排（design-v1 §7.9）：停用 → 解除引用（散成员 + 成员组条目）→ 删除 →
+// 历史标记。它是唯一允许变更车道/成员组的渠道动作，因此 dry_run 必须先给出
+// 完整预览；执行结果逐项返回并进审计（api-spec §5.3）。
+func RetireChannel(c *gin.Context) {
+	name := c.Param("name")
+	if _, err := findChannelByName(name); err != nil {
+		if writeChannelLookupError(c, err) {
+			return
+		}
+		apierr.NotFound(c, apierr.CodeChannelNotFound, "channel '"+name+"' not found", "GET /api/v1/channels")
+		return
+	}
+	if dryRun(c) {
+		plan, err := model.GetRetirePlan(name)
+		if err != nil {
+			writeAPIError(c, err)
+			return
+		}
+		// 预览也留痕：api-spec §2.6 要求 dry_run 记进审计，"谁在何时探测过
+		// 破坏性变更"事后可查。
+		writeAudit(c, "retire", "channel", name)
+		c.JSON(http.StatusOK, gin.H{"dry_run": true, "plan": plan})
+		return
+	}
+	result, err := model.RetireChannel(name, time.Now())
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	// 运行态收尾与 PUT /channels 的清理路径同口径：删掉的车道从运行态摘除，
+	// manual 车道的活动成员清账（它们的成员被退役移除后不再指向有效对象）。
+	for _, laneName := range result.LanesDeleted {
+		route.Default.Remove(laneName)
+	}
+	if len(result.LanesCleaned) > 0 {
+		result.ManualLanesCleared, _ = model.ReconcileManualActiveMembersByNames(result.LanesCleaned)
+	}
+	model.InitChannelCache()
+	writeAudit(c, "delete", "channel", name, result)
+	c.JSON(http.StatusOK, result)
+}
+
 func findChannelByName(name string) (*model.Channel, error) {
 	return model.GetChannelByName(name)
 }
