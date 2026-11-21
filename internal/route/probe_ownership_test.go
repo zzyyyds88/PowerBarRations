@@ -113,16 +113,28 @@ func TestProbeOwnershipClearedOnSuccess(t *testing.T) {
 }
 
 // 我方超时被翻译成"同时命中 DeadlineExceeded 与 Canceled"的错误链后，
-// 分类必须判为真实失败（soft_transient），不得退化成 canceled（审查 F1）。
+// 分类必须判为真实失败（timeout），不得退化成 canceled（审查 F1）。
+// 2026-11-21 起 timeout 拆出自 soft_transient（routing-spec §4.1）：
+// 已送达但无响应的上游不再同成员原地重试，立即换人。
 func TestClassifyPrefersDeadlineOverCanceled(t *testing.T) {
 	wrapped := fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, context.Canceled)
 	assert.True(t, errors.Is(wrapped, context.DeadlineExceeded))
 	assert.True(t, errors.Is(wrapped, context.Canceled))
 
 	err := types.NewError(wrapped, types.ErrorCodeDoRequestFailed)
-	assert.Equal(t, KindSoftTransient, Classify(err))
+	assert.Equal(t, KindTimeout, Classify(err))
 	assert.True(t, ShouldSwitchMember(Classify(err)), "超时必须换人")
-	assert.True(t, ShouldRetrySameMember(Classify(err)), "软故障在原成员预算内先重试")
+	assert.False(t, ShouldRetrySameMember(Classify(err)), "已送达但无响应的上游不同成员重试（§4.1）")
+
+	// 未送达类瞬断（dial 失败、connection reset、EOF）仍是 soft_transient，
+	// 保留原地重试：换一条连接即可，不算上游的响应问题。
+	undelivered := types.NewError(fmt.Errorf("dial tcp: connection refused"), types.ErrorCodeDoRequestFailed)
+	assert.Equal(t, KindSoftTransient, Classify(undelivered))
+	assert.True(t, ShouldRetrySameMember(Classify(undelivered)), "未送达类瞬断保留原地重试")
+
+	// 渠道响应超时同样是我方 deadline 判定。
+	respTimeout := types.NewError(fmt.Errorf("channel response exceeded"), types.ErrorCodeChannelResponseTimeExceeded)
+	assert.Equal(t, KindTimeout, Classify(respTimeout))
 
 	// 纯客户端取消仍然不乱换人。
 	pureCancel := types.NewError(fmt.Errorf("read: %w", context.Canceled), types.ErrorCodeDoRequestFailed)

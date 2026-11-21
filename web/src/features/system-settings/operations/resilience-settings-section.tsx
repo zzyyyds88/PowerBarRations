@@ -125,7 +125,13 @@ const ALLOWED_FAIL_FIELDS = [
     key: 'soft_transient',
     label: 'Transient allowed fails',
     description:
-      '5xx and connection errors: consecutive failures before the circuit opens.',
+      '5xx and undelivered-connection errors: consecutive failures before the circuit opens.',
+  },
+  {
+    key: 'timeout',
+    label: 'Timeout allowed fails',
+    description:
+      'Member-level deadline timeouts (delivered but no first event): consecutive failures before the circuit opens.',
   },
   {
     key: 'soft_rate_limit',
@@ -145,6 +151,7 @@ const DEFAULT_ALLOWED_FAILS: Record<string, number> = {
   hard_auth: 2,
   hard_quota: 2,
   soft_transient: 4,
+  timeout: 4,
   soft_rate_limit: 10,
   bad_response: 3,
 }

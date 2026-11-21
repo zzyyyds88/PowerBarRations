@@ -169,6 +169,7 @@ func defaultAllowedFails() map[ErrorKind]int {
 		KindHardAuth:      2,
 		KindHardQuota:     2,
 		KindSoftTransient: 4,
+		KindTimeout:       4,
 		KindSoftRateLimit: 10,
 		KindBadResponse:   3,
 	}
@@ -177,7 +178,7 @@ func defaultAllowedFails() map[ErrorKind]int {
 // IsAllowedFailKind 判断错误类型是否可作为 allowed_fails 的配置键。
 func IsAllowedFailKind(kind string) bool {
 	switch ErrorKind(kind) {
-	case KindHardAuth, KindHardQuota, KindSoftTransient, KindSoftRateLimit, KindBadResponse:
+	case KindHardAuth, KindHardQuota, KindSoftTransient, KindTimeout, KindSoftRateLimit, KindBadResponse:
 		return true
 	default:
 		return false
@@ -549,7 +550,7 @@ func weightOf(kind ErrorKind) float64 {
 	switch kind {
 	case KindHardAuth, KindHardQuota, KindBadResponse:
 		return weightHard
-	case KindSoftTransient:
+	case KindSoftTransient, KindTimeout:
 		return weightSoft
 	case KindSoftRateLimit:
 		return weightLimit
@@ -687,8 +688,8 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 	circuit.FailsByKind[kind]++
 	circuit.recordOutcome(false)
 
-	// 软瞬时故障（soft_transient：5xx / 超时 / 连接被重置 / EOF）的冷却**分级**，
-	// 而不是一次就锁满档。
+	// 软瞬时故障（soft_transient：5xx / 未送达类瞬断；timeout：成员级超时，§4.1 拆出）
+	// 的冷却**分级**，而不是一次就锁满档。
 	//
 	// 理由（2026-10-23 实案）：原先任何一次软失败都会把这个成员锁掉整段
 	// member_cooldown_seconds（现网 60s，含抖动上偏最多 72s），期间选路完全跳过它 ——
@@ -704,7 +705,7 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 	// 其余类型维持满档：soft_rate_limit（429，上游明确要求慢一点，且尊重 Retry-After）、
 	// hard_auth / hard_quota（凭据/欠费，秒级不会自愈）、bad_response（成员自身故障）。
 	if applyCooldown && memberCooldownSeconds > 0 {
-		if kind == KindSoftTransient {
+		if kind == KindSoftTransient || kind == KindTimeout {
 			base := memberCooldownSeconds
 			div := 1
 			switch circuit.FailsByKind[kind] {
