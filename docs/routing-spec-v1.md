@@ -219,7 +219,8 @@ type LaneRuntime struct {
 | 类别 | 判据 | 是否原地重试 | 是否触发冷却/熔断 | 是否换下一成员 |
 |---|---|---|---|---|
 | `soft_rate_limit` | HTTP 429 / 明确的限流体 | 是（预算内） | 计数权重低，不单凭它打开熔断 | 是 |
-| `soft_transient` | 408、5xx、连接超时/EOF | 是（预算内） | 是；成员冷却**分级**：连续第 n 次 → n=1 `base/8`、n=2 `base/4`、n=3 `base/2`、n≥4 `base`（下限 5s，成功清零）。见 §4.5 | 是 |
+| `timeout` | **我方成员级 deadline 到期**（2026-11-21 立，拆出自 `soft_transient`）：流式首个有效事件超时、非流式响应超时、响应头等待超时——**请求已送达上游**，但窗口内未产生首个有效事件/响应 | **否**——已送达但无响应的上游，同成员重试大概率重复失败（参考 magpie `replayable` 的实践：只有"请求根本没送达"才值得原地重发）。生产 2026-11-21 实证：高峰期一次请求在同一成员上白等 30s×2，整条链串行 1412×2 → 一枝春×2 → tokenav×2 → 基元律动才成功，总耗时 200s | 是；与 `soft_transient` **完全同档**（§4.5 分级递减、`circuit_allowed_fails` 默认 4、熔断权重同软档） | 是，立即 |
+| `soft_transient` | 408、5xx、**"未送达"类传输瞬断**（dial 失败、connection reset、EOF——请求根本没到上游，原地重试换一条连接即可） | 是（预算内） | 是；成员冷却**分级**：连续第 n 次 → n=1 `base/8`、n=2 `base/4`、n=3 `base/2`、n≥4 `base`（下限 5s，成功清零）。见 §4.5 | 是 |
 | `hard_auth` | 401 / 403（非欠费类）、key 失效 | 否，立即 | 是，冷却取较长档（§6） | 是 |
 | `hard_quota` | 命中欠费/额度关键词（如 `arrearage` 等，条目属部署数据）；**内置判定（2026-11-21 立）**：报文含 `free-limit` / `free usage limit` / `usage limit` / `quota exceeded` / `insufficient quota` 之一即归本类（上游免费档/配额耗尽，秒级不会自愈，不得反复撞墙） | 否，立即 | 是，冷却取较长档（§6） | 是 |
 | `upstream_reject` | **上游对"该成员"的拒绝**：400/422（未命中欠费关键词、非我方校验错误），或**流内 error 帧**（§4.4，提交前） | 否（同一份请求体再打一次仍是拒绝） | **否**——成员无过错 | **是** |
@@ -237,7 +238,7 @@ type LaneRuntime struct {
 全成员不可选 → PBR 瞬时 `503 No available channel` → 上游 Hermes 判定模型降级。
 
 **① 分级冷却**（`internal/route/runtime.go::recordFailure`）
-`soft_transient`（5xx / 超时 / EOF）的成员冷却按**连续**失败次数 n 递减；上游空响应不在此列——建流后零有效帧按 `bad_response` 处理（§4.1）：
+`soft_transient`（5xx / EOF）与 `timeout`（§4.1 拆出的成员级超时）的成员冷却按**连续**失败次数 n 递减，两档语义完全一致；上游空响应不在此列——建流后零有效帧按 `bad_response` 处理（§4.1）：
 
 | n | 冷却 | 60s 车道的实际值 |
 |---|---|---|

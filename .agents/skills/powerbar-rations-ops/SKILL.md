@@ -265,7 +265,7 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
   `member_stream_first_event_timeout_seconds` 流式**首个有效 SSE 事件**超时（心跳/注释行不解除）；
   `member_cooldown_seconds` 失败冷却；`member_affinity_seconds` 亲和保持（默认 0 = 关闭）。
   **注意：`hard_auth` / `hard_quota`（鉴权失败、欠费）类失败的冷却 = 2 × `member_cooldown_seconds`**
-  （硬故障倍率 2）；软故障（`soft_transient` / `soft_rate_limit`）按原值。
+  （硬故障倍率 2）；软故障（`soft_transient` / `timeout` / `soft_rate_limit`）按原值。
 - 省略 `config` = 用系统 `lane_defaults`（见 §6.3）。
 
 ### 5.3 `GET /lanes/{name}/health` 形状
@@ -286,7 +286,7 @@ available_member_count}`；explicit 车道额外给 `healthy_member_count` / `he
 - `circuit` ∈ `closed` / `open` / `half_open`；`cooldown_until` / `circuit_open_until` 是
   **RFC3339 字符串或 null**（不是 unix 毫秒 0）。`affinity` 是对象或 null。
 - `last_error_kind` 出现在有过失败的成员上，取值：`hard_auth` / `hard_quota` / `soft_transient` /
-  `soft_rate_limit` / `upstream_reject` / `client_error` / `bad_response` / `canceled`（分类口径见
+  `timeout` / `soft_rate_limit` / `upstream_reject` / `client_error` / `bad_response` / `canceled`（分类口径见
   routing-spec §4.1）。**`upstream_reject` = 该成员拒绝过这份请求（内容审查、参数不支持等），
   不代表它故障**——这类拒绝不写冷却、不计熔断分，车道会自动换成员消化；只有全部成员都拒绝时
   才会成为最终失败（此时返回的是上游原错误，不是 503）。
