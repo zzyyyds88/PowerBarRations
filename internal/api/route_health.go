@@ -252,6 +252,11 @@ func writeProbeRecord(channel *model.Channel, result ProbeMember) {
 // 说明：探活走的是带内请求（不是只连 TCP），因此能区分"通但模型不存在"与"不通"。
 // 该形态只对 OpenAI 兼容类上游有意义；原生协议渠道（Anthropic/Gemini/Vertex 等）
 // 会以 unsupported 明确返回，不做假阳性判定。
+//
+// max_tokens 不能取 1：推理模型（带 reasoning_content 的 DeepSeek/o 系等）在
+// 1 个 token 内连推理都放不下，上游会直接回 502 之类错误，把健康的渠道探成
+// soft_transient 误报。128 足够容纳"推理 + 一两个输出 token"，同时保持探活
+// 成本可忽略。
 func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel string) ProbeMember {
 	result := ProbeMember{Channel: channel.Name, UpstreamModel: upstreamModel}
 	if isProbeUnsupported(channel.Type) {
@@ -273,7 +278,7 @@ func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel str
 		result.UpstreamModel = upstreamModel
 	}
 	payload := `{"model":` + strconv.Quote(upstreamModel) +
-		`,"messages":[{"role":"user","content":"ping"}],"max_tokens":1,"stream":false}`
+		`,"messages":[{"role":"user","content":"ping"}],"max_tokens":128,"stream":false}`
 	requestURL := relaycommon.GetFullRequestURL(baseURL, "/v1/chat/completions", channel.Type)
 
 	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
