@@ -269,14 +269,14 @@ type LaneRuntime struct {
   - `upstream_reject` **必须换成员**：这是本规格要的"车道内部消化上游拒绝"——下游（harness）不该因为某一条腿的内容审查而整体降级。
   - 同一成员在本请求内**不再重试**：确定性拒绝，重试只是浪费。（选路据此一次性吃掉该成员在本请求内的尝试预算，见 §3.1、§9。）
 
-### 4.1.1 内容帧判定（提交点口径的逐格式清单，规范单处）
+### 4.1.1 内容帧判定（提交点口径的判定规则，规范单处）
 
-"携带载荷的帧"按入站格式定义如下；**判定收敛到共享实现**（`relay/helper`），各格式流式写出路径一律经它提交，禁止各自另立口径：
+**判定采用结构帧黑名单而非内容白名单**：只列出确定"不带载荷"的开场/收尾帧，其余一律视为内容帧。两种清单的失败模式不对称——白名单漏列一个未知载荷事件会把健康流误判为失败（换人重试 = 工具重复调用），黑名单漏列的后果只是"提交得早一点"（旧行为）。**判定收敛到共享实现**（`relay/helper`），各格式流式写出路径一律经它提交，禁止各自另立口径：
 
-- **OpenAI chat SSE**：`choices[].delta` 满足其一——`content` 非空、`tool_calls` 非空、`reasoning_content` 非空、`function_call` 非空。仅 `role` 的开场增量、`finish_reason` 尾帧、`usage` 尾帧不算。
-- **OpenAI Responses SSE**：事件类型为 `response.output_text.delta` / `response.function_call_arguments.delta` / `response.reasoning_summary_text.delta` / `response.reasoning_text.delta` / `response.refusal.delta`。`response.created` / `*.added` / `*.done` / `response.completed` 等结构帧不算。
-- **Anthropic SSE**：`content_block_delta`（`text_delta` / `input_json_delta` / `thinking_delta`）。`message_start` / `content_block_start` / `message_delta` / `message_stop` / `ping` 不算。
-- **Gemini**：`candidates[].content.parts[]` 非空（含 `text` / `functionCall` / `thought`）。空 parts 的元数据帧不算。
+- **OpenAI chat SSE**（按 payload 计算，不枚举事件名）：所有 `choices[].delta` 均无载荷（`content` / `tool_calls` / `reasoning_content` / `reasoning` 全空）⇒ 结构帧（开场增量、`finish_reason` 尾帧、`usage` 尾帧）；任一 delta 带载荷 ⇒ 内容帧。
+- **OpenAI Responses SSE**（结构帧黑名单）：`response.created` / `response.queued` / `response.in_progress` / `response.output_item.added|done` / `response.content_part.added|done` / `response.reasoning_summary_part.added|done` / `response.completed|failed|incomplete|canceled|cancelled|done` / `response.output_text.done` / `response.function_call_arguments.done` / `response.refusal.done` / `response.reasoning_summary_text.done` 之外的帧（全部 `*.delta`、`image_generation_call.partial_image` 等）⇒ 内容帧。
+- **Anthropic SSE**（结构帧黑名单）：`message_start` / `content_block_start` / `message_delta` / `message_stop` / `ping` 之外（`content_block_delta` 及未知类型）⇒ 内容帧。
+- **Gemini**（按 payload 计算）：`candidates[].content.parts[]` 全空 ⇒ 结构帧；任一 part 带 `text` / `functionCall` / `inlineData` ⇒ 内容帧。
 
 - **有界暂存**：非内容帧按到达顺序暂存，总量上界 64 KiB（超出即 flush + 提交，兜底防止无界缓冲）；EOF/错误到达时暂存帧**丢弃**（不转发）。
 - **flush 保序**：内容帧到达时先按原顺序 flush 暂存帧再写内容帧，客户端收到的字节序与健康流完全一致。
