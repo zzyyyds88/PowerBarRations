@@ -34,7 +34,19 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 		if echoModel != "" {
 			data = string(helper.RewriteModelField([]byte(data), echoModel))
 		}
-		return helper.StringData(c, data)
+		// 内容帧口径（routing-spec §3 第 6 步）：未提交时解析判定该帧是否
+		// 携带载荷——开场帧暂存（不写下游），内容帧 flush 暂存后提交。
+		// 已提交后直写，零额外解析开销。判定用一次性解析，交付始终用原始
+		// 字节（raw 透传不得重编排：上游帧里的 error:null 等字段必须保真）。
+		if helper.StreamCommitted(c) {
+			return helper.StringData(c, data)
+		}
+		var chunk dto.ChatCompletionsStreamResponse
+		if err := common.UnmarshalJsonStr(data, &chunk); err != nil {
+			// 解析失败按原样透传并提交（保守：宁可交付也不错杀健康流）。
+			return helper.StringData(c, data)
+		}
+		return helper.StringDataGated(c, data, helper.IsContentOpenaiChunk(&chunk))
 	}
 
 	var lastStreamResponse dto.ChatCompletionsStreamResponse

@@ -116,6 +116,31 @@ func SetQuotaKeywordMatcher(matcher func(string) bool) {
 }
 
 // Classify 按 routing-spec §4.1 把一次尝试的错误归类。
+
+// builtInQuotaPatterns 是"上游免费档/配额耗尽"的内置判定词（小写匹配）。
+// 部署侧关键词（quotaKeywordMatcher）之外的通用兜底，规范见 routing-spec §4.1。
+var builtInQuotaPatterns = []string{
+	"free usage limit",
+	"free-limit",
+	"usage limit reached",
+	"quota exceeded",
+	"insufficient quota",
+	"quota exceeded for",
+}
+
+func isBuiltInQuotaMessage(message string) bool {
+	if message == "" {
+		return false
+	}
+	lower := strings.ToLower(message)
+	for _, pattern := range builtInQuotaPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 func Classify(err *types.NewAPIError) ErrorKind {
 	if err == nil {
 		return ""
@@ -132,6 +157,13 @@ func Classify(err *types.NewAPIError) ErrorKind {
 	}
 	// 关键词优先于状态码（欠费类以 400 到达）。
 	if quotaKeywordMatcher != nil && quotaKeywordMatcher(err.Error()) {
+		return KindHardQuota
+	}
+	// 内置配额判定（routing-spec §4.1，2026-11-21 立）：上游免费档/配额耗尽是
+	// 持续性故障（秒级不会自愈），必须归 hard_quota 拿长冷却，不能每次都花
+	// 几十秒撞同一堵墙。放在 upstream_reject 之前：流内 error 帧（提交前）的
+	// 报文里带这类字样时同样进长冷却。
+	if isBuiltInQuotaMessage(err.Error()) {
 		return KindHardQuota
 	}
 	if err.GetErrorCode() == ErrorCodeNoAvailableChannel {

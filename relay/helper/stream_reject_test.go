@@ -154,7 +154,10 @@ func TestClaudeDataMarksCommitAndFirstByte(t *testing.T) {
 		write func(*gin.Context) error
 	}{
 		{"ClaudeData", func(c *gin.Context) error {
-			return ClaudeData(c, dto.ClaudeResponse{Type: "message_start"})
+			return ClaudeData(c, dto.ClaudeResponse{
+				Type:  "content_block_delta",
+				Delta: &dto.ClaudeMediaMessage{Type: "text_delta", Text: strPtr("hi")},
+			})
 		}},
 		{"ClaudeChunkData", func(c *gin.Context) error {
 			ClaudeChunkData(c, dto.ClaudeResponse{Type: "content_block_delta"}, `{"type":"content_block_delta"}`)
@@ -198,8 +201,13 @@ func TestStreamFailedWithoutFrames(t *testing.T) {
 	assert.True(t, StreamFailedWithoutFrames(c, &relaycommon.RelayInfo{}),
 		"未提交 + 零帧 = 上游空响应")
 
-	assert.False(t, StreamFailedWithoutFrames(c, &relaycommon.RelayInfo{ReceivedResponseCount: 1}),
-		"收到过有效帧就不是空流")
+	// 内容帧口径（routing-spec §4.1.1）：仅收到角色/开场帧（ReceivedResponseCount>0）
+	// 不算交付——那正是"HTTP 200 空流"的形态，必须仍判为失败。
+	c1, _ := gin.CreateTestContext(httptest.NewRecorder())
+	require.NoError(t, ClaudeData(c1, dto.ClaudeResponse{Type: "message_start"}))
+	assert.False(t, StreamCommitted(c1), "开场帧不提交")
+	assert.True(t, StreamFailedWithoutFrames(c1, &relaycommon.RelayInfo{ReceivedResponseCount: 1}),
+		"只有开场帧没有内容帧 = 仍是空流")
 
 	// 已提交（客户端已拿到内容）时不能改判成错误，否则会把正常流截断。
 	c2, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -216,3 +224,5 @@ func TestEmptyStreamErrorClassification(t *testing.T) {
 	assert.Equal(t, route.KindBadResponse, route.Classify(err))
 	assert.True(t, route.ShouldSwitchMember(route.Classify(err)))
 }
+
+func strPtr(s string) *string { return &s }

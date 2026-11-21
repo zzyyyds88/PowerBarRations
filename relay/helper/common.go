@@ -66,16 +66,13 @@ func ClaudeData(c *gin.Context, resp dto.ClaudeResponse) error {
 	jsonData, err := common.Marshal(resp)
 	if err != nil {
 		common.SysError("error marshalling stream response: " + err.Error())
-	} else {
-		c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-		c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonData)})
-		// 这里同样写出了真正的 `data:` 帧，必须打提交标记（routing-spec §3 第 6 步）：
-		// 它是 Claude 入站（/v1/messages）流式的主出口，漏打会让提交后收到的流内
-		// error 帧被误判成"提交前"而尝试故障转移，同时首字耗时永远记不到。
-		MarkStreamCommitted(c)
+		return nil
 	}
-	_ = FlushWriter(c)
-	return nil
+	// 提交点 = 内容帧（routing-spec §3 第 6 步 / §4.1.1）：开场帧先暂存，
+	// 内容帧到达时按序 flush 并提交；内容帧之前出现流内错误帧或 EOF 则
+	// 未提交（成员失败 + 故障转移，暂存帧丢弃）。
+	return writeStreamEvent(c, IsContentClaudeResponse(resp),
+		fmt.Sprintf("event: %s\n", resp.Type), "data: "+string(jsonData))
 }
 
 // 数据帧写入口。三个函数写出的是真正携带内容的 `data:` 帧，因此都要打"已提交"
@@ -86,10 +83,8 @@ func ClaudeChunkData(c *gin.Context, resp dto.ClaudeResponse, data string) {
 		return
 	}
 
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s\n", data)})
-	MarkStreamCommitted(c)
-	_ = FlushWriter(c)
+	_ = writeStreamEvent(c, IsContentClaudeResponse(resp),
+		fmt.Sprintf("event: %s\n", resp.Type), "data: "+data+"\n")
 }
 
 func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data string) error {
@@ -97,10 +92,8 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
-	MarkStreamCommitted(c)
-	return FlushWriter(c)
+	return writeStreamEvent(c, IsContentResponsesChunk(resp),
+		fmt.Sprintf("event: %s\n", resp.Type), "data: "+data)
 }
 
 func StringData(c *gin.Context, str string) error {
@@ -112,6 +105,12 @@ func StringData(c *gin.Context, str string) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
+	// 通用写入口（Gemini 原生、legacy 适配器、[DONE] 等）：无逐格式判定可用，
+	// 维持"数据帧即提交"的旧口径——与 §4.1.1 的差异仅限这些 niche 路径，
+	// 主入站格式（openai chat / responses / anthropic）各自有类型化判定。
+	if err := flushHeldStreamFrames(c); err != nil {
+		return err
+	}
 	c.Render(-1, common.CustomEvent{Data: "data: " + str})
 	MarkStreamCommitted(c)
 	return FlushWriter(c)
@@ -136,11 +135,25 @@ func ObjectData(c *gin.Context, object any) error {
 	if object == nil {
 		return errors.New("object is nil")
 	}
+	// 类型化内容判定（routing-spec §4.1.1）：主入站格式的流式对象在此判
+	// "是否携带载荷"，未提交时开场帧走暂存；其余对象类型（legacy 适配器、
+	// 非流式响应体）维持"数据帧即提交"的通用口径。
+	isContent := true
+	switch v := object.(type) {
+	case *dto.ChatCompletionsStreamResponse:
+		isContent = IsContentOpenaiChunk(v)
+	case dto.ChatCompletionsStreamResponse:
+		isContent = IsContentOpenaiChunk(&v)
+	case *dto.GeminiChatResponse:
+		isContent = IsContentGeminiResponse(v)
+	case dto.GeminiChatResponse:
+		isContent = IsContentGeminiResponse(&v)
+	}
 	jsonData, err := common.Marshal(object)
 	if err != nil {
 		return fmt.Errorf("error marshalling object: %w", err)
 	}
-	return StringData(c, string(jsonData))
+	return StringDataGated(c, string(jsonData), isContent)
 }
 
 func Done(c *gin.Context) {

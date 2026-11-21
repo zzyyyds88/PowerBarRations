@@ -124,9 +124,13 @@ type RelayInfo struct {
 	// ClaudeToChatStreamState / ChatToGeminiStreamState hold per-attempt
 	// stream converters. InitChannelMeta nils them so a retry cannot resume a
 	// dirty converter (advanced tool index / finalized).
-	ClaudeToChatStreamState   any
-	ChatToGeminiStreamState   any
-	ReceivedResponseCount     int
+	ClaudeToChatStreamState any
+	ChatToGeminiStreamState any
+	ReceivedResponseCount   int
+	// ReceivedContentCount 内容帧口径（routing-spec §4.1.1）：本次尝试从上游
+	// 收到的"携带载荷"帧数。角色/开场帧不计——空流守卫（§4.1）据此判定，
+	// 避免"HTTP 200 + 只有开场帧 + 流内报错"被记成成功。
+	ReceivedContentCount      int
 	RequestId                 string
 	IsClaudeBetaQuery         bool // /v1/messages?beta=true
 	IsChannelTest             bool // channel test request
@@ -204,6 +208,7 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	// ReceivedResponseCount 是"本次上游响应实际收到的有效帧数"，同样属于
 	// per-attempt：不重置会让上一次尝试的帧数掩盖这一次的空流（空流判定依赖它）。
 	info.ReceivedResponseCount = 0
+	info.ReceivedContentCount = 0
 	info.ClaudeToChatStreamState = nil
 	info.ChatToGeminiStreamState = nil
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
