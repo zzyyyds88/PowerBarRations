@@ -438,7 +438,8 @@
 | GET | `/api/channels` | 列表 |
 | GET | `/api/channels/{name}` | 详情 |
 | PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时按成员所选模型判定**：被移除模型仍被车道/成员组引用则 409 `conflict`，**车道名在 `error.details.lanes`、成员组名在 `error.details.groups`**（机器可判定，不要解析 message）。`?force=1` 只允许清理散成员（从命中车道移除本渠道的**被移除模型**成员，成员清空的空车道整条删除）；**成员组引用一律阻断，必须先编辑组**。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
-| DELETE | `/api/channels/{name}` | 删除；被车道或成员组引用时 409 `conflict`，引用它的车道名在 `error.details.lanes`、成员组名在 `error.details.groups` |
+| DELETE | `/api/channels/{name}` | 删除；被车道或成员组引用时 409 `conflict`，引用它的车道名在 `error.details.lanes`、成员组名在 `error.details.groups`。**严格语义不变**；控制台"删除"入口走下面的 retire |
+| POST | `/api/channels/{name}/retire?dry_run=` | **退役编排**（design-v1 §7.9）：事务内 停用 → 移除全部散成员（成员清空的车道整条删除）→ 从成员组移除条目（**组保留**；变空组列在 `groups_emptied`）→ 通过空组失效的车道一并删除 → 删除渠道 → 历史标记（`pbr_request_logs` 按 `member_channel_id`、`pbr_stats_hourly` 的 `channel`/`channel_model` 组键改写为 `原名（已退役 YYYY-MM-DD HH:MM）`）。成功返回 `{"retired":true,"name",lanes_cleaned,lanes_deleted,groups_affected,groups_emptied,manual_lanes_cleared,logs_renamed,stats_rows_renamed,pending_async_objects}`。`dry_run=true` 返回 `{dry_run:true,plan:{...}}`（逐项预览，不落库）；`dry_run` 类别 preview |
 | GET | `/api/channels/status` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.12；控制台「渠道状态」页用它一次取全量 |
 | GET | `/api/channel-speed` | **按渠道聚合的实时速度**（只读）：`?from=&to=`（省略 = 最近 15 分钟）。按渠道返回请求数、成功率、延迟分位、输出速度（干净样本 tps）与 Token；只返回配置的渠道，空闲渠道也出现并带零值。形状与口径见 §6.14 |
 | GET | `/api/channels/{name}/status` | **单渠道状态详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.12 |
@@ -725,6 +726,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 | PUT | `/api/channels/by-tag` | `diff.channels.update`；被引用 → 409 + `details.blocked` |
 | POST | `/api/channels/by-tag/status` | `diff.channels.update` |
 | DELETE | `/api/channels/disabled` | `diff.channels.remove`；被引用 → 409 + `details.blocked` |
+| POST | `/api/channels/{name}/retire` | `{dry_run:true, plan:{disable, lanes_cleaned, lanes_deleted, groups_affected, groups_emptied, logs_rename, pending_async_objects}}`，逐项预览不落库（design-v1 §7.9） |
 | POST | `/api/channels/{name}/multi-keys` | `diff.channels.update`（`get_key_status` 是读动作，照常返回） |
 | POST | `/api/channels/{name}/upstream-updates/apply` | `diff.models.{add,remove}` |
 | POST | `/api/channels/upstream-updates/apply-all` | 逐渠道 `diff` 汇总 |
