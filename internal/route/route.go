@@ -94,8 +94,14 @@ type ErrorKind string
 const (
 	KindSoftRateLimit ErrorKind = "soft_rate_limit"
 	KindSoftTransient ErrorKind = "soft_transient"
-	KindHardAuth      ErrorKind = "hard_auth"
-	KindHardQuota     ErrorKind = "hard_quota"
+	// KindTimeout 我方成员级 deadline 到期（routing-spec §4.1，2026-11-21 拆出自
+	// soft_transient）：流式首帧/非流式响应/响应头等待超时——请求已送达上游但
+	// 窗口内未产出首个有效事件。已送达但无响应的上游同成员重试大概率重复失败
+	// （magpie replayable 实践），故不再原地重试、立即换成员；冷却/熔断与
+	// soft_transient 完全同档（§4.5 分级递减、allowed_fails 默认 4、权重同软档）。
+	KindTimeout  ErrorKind = "timeout"
+	KindHardAuth ErrorKind = "hard_auth"
+	KindHardQuota ErrorKind = "hard_quota"
 	// KindUpstreamReject 上游对"该成员"的拒绝（routing-spec §4.1/§4.4）：400/422，
 	// 或提交前的流内 error 帧。确定性错误（同一份请求体再打仍是拒绝），
 	// 但换一条腿可能就过——所以换成员、同一成员不重试；成员本身无过错——
@@ -151,7 +157,8 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		// 超时会被当成"客户端断开"——不重试、不换人、不冷却（routing-spec §8）。
 		if errors.Is(err, context.DeadlineExceeded) {
 			// 超时是我们自己设的 deadline（含等待响应头阶段的翻译），属真实失败。
-			return KindSoftTransient
+			// 2026-11-21 拆出独立类别：已送达但无响应的上游不同成员原地重试（§4.1）。
+			return KindTimeout
 		}
 		return KindCanceled
 	}
@@ -183,7 +190,8 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		// 注意：这里的超时来自我们为每次尝试设的 deadline，属"真实失败"，必须计入冷却。
 		return KindSoftTransient
 	case types.ErrorCodeChannelResponseTimeExceeded:
-		return KindSoftTransient
+		// 渠道响应超时同样是我方 deadline 判定，归 timeout（§4.1）。
+		return KindTimeout
 	case types.ErrorCodeChannelNoAvailableKey, types.ErrorCodeChannelInvalidKey:
 		return KindHardAuth
 	}
@@ -226,7 +234,7 @@ func Classify(err *types.NewAPIError) ErrorKind {
 // ShouldSwitchMember 该错误是否应换下一个成员（routing-spec §4.1 最后一列）。
 func ShouldSwitchMember(kind ErrorKind) bool {
 	switch kind {
-	case KindSoftRateLimit, KindSoftTransient, KindHardAuth, KindHardQuota, KindBadResponse, KindUpstreamReject:
+	case KindSoftRateLimit, KindSoftTransient, KindTimeout, KindHardAuth, KindHardQuota, KindBadResponse, KindUpstreamReject:
 		return true
 	default:
 		return false
