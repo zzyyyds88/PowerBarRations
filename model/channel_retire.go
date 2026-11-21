@@ -147,12 +147,12 @@ func RetireChannel(name string, now time.Time) (*RetireResult, error) {
 // 共享同一份判定（干跑与实跑不会有第二种语义）。
 func retirePlanTx(tx *gorm.DB, channel *Channel) (*RetirePlan, error) {
 	plan := &RetirePlan{
-		Name:                channel.Name,
-		Disable:             channel.Status != common.ChannelStatusManuallyDisabled,
-		LanesCleaned:        []string{},
-		LanesDeleted:        []string{},
-		GroupsAffected:      []string{},
-		GroupsEmptied:       []string{},
+		Name:           channel.Name,
+		Disable:        channel.Status != common.ChannelStatusManuallyDisabled,
+		LanesCleaned:   []string{},
+		LanesDeleted:   []string{},
+		GroupsAffected: []string{},
+		GroupsEmptied:  []string{},
 	}
 
 	// 散成员所在车道。
