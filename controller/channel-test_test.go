@@ -3,6 +3,7 @@ package controller
 import (
 	"testing"
 
+	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 
 	"github.com/stretchr/testify/assert"
@@ -45,4 +46,21 @@ func TestBuildTestRequestLeavesRoomForReasoning(t *testing.T) {
 	require.True(t, ok)
 	require.NotNil(t, gotG.MaxTokens)
 	assert.EqualValues(t, 3000, *gotG.MaxTokens)
+}
+
+// 前端测试对话框手动选择端点类型时走 buildTestRequest 的 endpoint_type 分支：
+// 该形态的 OpenAI/Anthropic 同样不得用 16——推理模型在 16 个 token 内连推理
+// 都放不下，上游直接 502（同 TestBuildTestRequestLeavesRoomForReasoning 的实证）。
+func TestBuildTestRequestEndpointTypeLeavesRoomForReasoning(t *testing.T) {
+	req := buildTestRequest("deepseek-v4.1-flash-1017", string(constant.EndpointTypeOpenAI), nil, false)
+	got, ok := req.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.NotNil(t, got.MaxTokens)
+	assert.GreaterOrEqual(t, *got.MaxTokens, uint(512), "endpoint_type=openai 分支同样必须给推理留空间")
+
+	cReq := buildTestRequest("claude-sonnet-4-5-thinking", string(constant.EndpointTypeAnthropic), nil, false)
+	gotC, ok := cReq.(*dto.ClaudeRequest)
+	require.True(t, ok)
+	require.NotNil(t, gotC.MaxTokens)
+	assert.GreaterOrEqual(t, *gotC.MaxTokens, uint(512), "endpoint_type=anthropic 分支同样必须给推理留空间")
 }
