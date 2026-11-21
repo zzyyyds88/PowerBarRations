@@ -1,7 +1,6 @@
 package helper
 
 import (
-	"bytes"
 	"errors"
 	"strings"
 
@@ -20,60 +19,6 @@ import (
 //
 // 上界 64 KiB：超出立即 flush + 提交兜底（design §16.6——缓冲必须有界），
 // 防止某些非标准上游持续吐非内容帧把内存吃穿。
-
-const maxHeldStreamBytes = 64 << 10
-
-type streamHoldState struct {
-	buf  bytes.Buffer
-	held bool
-}
-
-func holdState(c *gin.Context) *streamHoldState {
-	if existing, ok := c.Get(constHeldStreamKey); ok {
-		if st, ok := existing.(*streamHoldState); ok {
-			return st
-		}
-	}
-	st := &streamHoldState{}
-	c.Set(constHeldStreamKey, st)
-	return st
-}
-
-const constHeldStreamKey = "pbr_stream_hold"
-
-// holdStreamFrame 暂存一段已渲染的 SSE 字节。返回 false 表示不能暂存
-// （超上界），调用方需按内容帧写出并提交。
-func holdStreamFrame(c *gin.Context, rendered string) bool {
-	st := holdState(c)
-	if st.buf.Len()+len(rendered) > maxHeldStreamBytes {
-		return false
-	}
-	st.buf.WriteString(rendered)
-	st.held = true
-	return true
-}
-
-// flushHeldStreamFrames 把暂存字节按原顺序写给客户端；无暂存时为 no-op。
-// 只在提交（内容帧写出）时调用。
-func flushHeldStreamFrames(c *gin.Context) error {
-	st := holdState(c)
-	if !st.held {
-		return nil
-	}
-	if _, err := c.Writer.Write(st.buf.Bytes()); err != nil {
-		return err
-	}
-	st.held = false
-	st.buf.Reset()
-	return nil
-}
-
-// discardHeldStreamFrames 丢弃暂存帧（成员失败 / 未提交收尾时）。
-func discardHeldStreamFrames(c *gin.Context) {
-	st := holdState(c)
-	st.buf.Reset()
-	st.held = false
-}
 
 // writeStreamEvent 写一帧 SSE（event 与 data 两段，按既有 helper 的渲染顺序）。
 //
@@ -94,12 +39,12 @@ func writeStreamEvent(c *gin.Context, isContent bool, event, data string) error 
 		// SSE 空行终止符（\n\n，见 common.writeData），event 段不补。暂存原始
 		// 片段会在 flush 后缺终止符，把下一个事件粘进同一个 SSE 块。
 		eventRendered, dataRendered := renderEventPieces(event, data)
-		if holdStreamFrame(c, eventRendered) && holdStreamFrame(c, dataRendered) {
+		if common.HoldStreamFrame(c, eventRendered) && common.HoldStreamFrame(c, dataRendered) {
 			return nil
 		}
 		// 暂存超上界：降级为内容帧处理（flush + 提交），防止无界缓冲。
 	}
-	if err := flushHeldStreamFrames(c); err != nil {
+	if err := common.FlushHeldStreamFrames(c); err != nil {
 		return err
 	}
 	if event != "" {

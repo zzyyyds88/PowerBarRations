@@ -168,6 +168,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// "先建流、再把拒绝写进流里"（routing-spec §4.4）。
 		writeChatStreamErrorFrame(w, modelName)
 		return
+	case "opening_then_free_limit_error":
+		// 线上实案复刻（hermes-fund → 1412/OpenCode 免费额度耗尽）：先发一个
+		// 纯角色的开场帧（无载荷），再在流内报免费额度错误后收流。提交点收敛到
+		// 内容帧后，开场帧被网关暂存、错误帧构成提交前拒绝 ⇒ 换成员 + 长冷却。
+		writeOpeningThenFreeLimitError(w)
+		return
 	}
 
 	if behavior.Status != 0 && behavior.Status != http.StatusOK {
@@ -471,6 +477,38 @@ func writeChatStreamErrorFrame(w http.ResponseWriter, modelName string) {
 		},
 	})
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+	if flusher != nil {
+		flusher.Flush()
+	}
+}
+
+// writeOpeningThenFreeLimitError 复刻"开场帧 + 流内免费额度错误"的实案形态：
+// 第一帧只有 role 没有载荷（内容帧口径下属开场帧，网关应暂存），第二帧是
+// FreeUsageLimitError 错误帧（提交前拒绝，报文命中 hard_quota 内置判定词）。
+func writeOpeningThenFreeLimitError(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	flusher, _ := w.(http.Flusher)
+
+	opening, _ := json.Marshal(map[string]any{
+		"id":      "chatcmpl-limit",
+		"object":  "chat.completion.chunk",
+		"created": time.Now().Unix(),
+		"choices": []map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant"}}},
+	})
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", opening)
+	if flusher != nil {
+		flusher.Flush()
+	}
+
+	reject, _ := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"message": "run failed: provider.free-limit Free usage limit reached. Connect a provider or subscribe to OpenCode Go to keep going, or switch models.",
+			"type":    "FreeUsageLimitError",
+		},
+	})
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", reject)
 	if flusher != nil {
 		flusher.Flush()
 	}

@@ -108,7 +108,7 @@ func StringData(c *gin.Context, str string) error {
 	// 通用写入口（Gemini 原生、legacy 适配器、[DONE] 等）：无逐格式判定可用，
 	// 维持"数据帧即提交"的旧口径——与 §4.1.1 的差异仅限这些 niche 路径，
 	// 主入站格式（openai chat / responses / anthropic）各自有类型化判定。
-	if err := flushHeldStreamFrames(c); err != nil {
+	if err := common.FlushHeldStreamFrames(c); err != nil {
 		return err
 	}
 	c.Render(-1, common.CustomEvent{Data: "data: " + str})
