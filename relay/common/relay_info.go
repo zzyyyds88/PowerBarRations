@@ -209,6 +209,9 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	// per-attempt：不重置会让上一次尝试的帧数掩盖这一次的空流（空流判定依赖它）。
 	info.ReceivedResponseCount = 0
 	info.ReceivedContentCount = 0
+	// 暂存的开场帧按成员尝试隔离：上一条腿失败后其暂存帧必须丢弃，
+	// 否则新成员的内容帧 flush 时会把旧腿的开场帧泄漏给客户端。
+	common.DiscardHeldStreamFrames(c)
 	info.ClaudeToChatStreamState = nil
 	info.ChatToGeminiStreamState = nil
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)

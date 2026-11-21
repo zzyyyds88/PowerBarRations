@@ -49,10 +49,13 @@ const (
 	// ContextKeyPBRKeyId / ContextKeyPBRKeyName 模型面本次使用的客户端密钥身份（分账与日志归属）。
 	ContextKeyPBRKeyId   ContextKey = "pbr_key_id"
 	ContextKeyPBRKeyName ContextKey = "pbr_key_name"
-	// ContextKeyPBRStreamCommitted 本请求是否已向客户端写出过**数据帧**（`data:`）。
-	// 流式故障转移的提交判定用它，而不是"写过任何字节"：SSE 注释/心跳帧（`: PING`）
-	// 不携带内容、客户端可忽略，不能因为发过心跳就关掉故障转移（routing-spec §3 第 6 步、§4.4）。
+	// ContextKeyPBRStreamCommitted 本请求是否已向客户端写出过**内容帧**（routing-spec
+	// §4.1.1：角色/开场帧不算——它们在网关内存有界暂存，内容帧到达才按序 flush 提交）。
+	// 流式故障转移的提交判定用它：提交后错误原样透传（§4.3），提交前错误换成员（§4.4）。
 	ContextKeyPBRStreamCommitted ContextKey = "pbr_stream_committed"
+	// ContextKeyPBRStreamHeld 未提交期间暂存的开场帧字节（有界）。按成员尝试隔离：
+	// 每次尝试开始时重置（InitChannelMeta），上一条腿的暂存帧随其失败一并丢弃。
+	ContextKeyPBRStreamHeld ContextKey = "pbr_stream_held"
 	// ContextKeyPBRStreamReject 提交后收到的流内 error 帧报文（routing-spec §4.3/§4.4）：
 	// 此时不能故障转移，但日志必须如实记录 error_kind=upstream_reject + 该报文，
 	// 使"客户端拿到 200 流、流内却被上游判拒"的失败可被检索（此前完全不可见）。
