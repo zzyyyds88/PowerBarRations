@@ -3538,6 +3538,23 @@
     "Masking is off": "脫敏未啟用",
     "{{count}} custom words": "{{count}} 個自訂詞",
     "New requests are masked before they leave the gateway.": "新請求在離開閘道前會被脫敏。",
-    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "目前不會脫敏任何內容。開啟「密鑰」「個人資料」或加入自訂詞後按儲存。"
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "目前不會脫敏任何內容。開啟「密鑰」「個人資料」或加入自訂詞後按儲存。",
+    "Retire channel \"{{name}}\"": "退役頻道「{{name}}」",
+    "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.": "退役會先停用該頻道，把它從車道與成員組中移除並刪除，同時把歷史記錄標記為已退役。此操作不可復原。",
+    "Loading the retirement plan…": "正在產生退役計畫…",
+    "Could not load the retirement plan.": "無法取得退役計畫。",
+    "The channel is disabled first, then its references are removed.": "頻道會先停用，再由系統替你移除參照。",
+    "Lanes cleaned (kept, members removed)": "保留但移除成員的車道",
+    "Lanes deleted (no members left)": "成員清空後整條刪除的車道",
+    "Member groups to update (groups are kept)": "將移除本頻道條目的成員組（組保留）",
+    "Removing a channel from a member group affects every lane referencing that group.": "從成員組移除頻道會影響所有參照該組的車道。",
+    "Member groups left empty (kept)": "移除後變空的成員組（保留）",
+    "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.": "{{logs}} 筆請求記錄與 {{stats}} 列統計將改寫為「原名（已退役 時間）」。",
+    "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.": "{{count}} 個未過期非同步物件（Files/Batch）固定在本頻道，退役後等待過期清理。",
+    "Type the channel name to confirm": "輸入頻道全名以確認",
+    "Type \"{{name}}\" to enable retirement.": "輸入「{{name}}」以解鎖退役按鈕。",
+    "Retire and delete": "確認退役並刪除",
+    "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "頻道已退役：清理 {{cleaned}} 條車道、刪除 {{deleted}} 條車道、改寫 {{logs}} 筆歷史記錄。",
+    "Failed to retire the channel": "退役失敗"
   }
 }

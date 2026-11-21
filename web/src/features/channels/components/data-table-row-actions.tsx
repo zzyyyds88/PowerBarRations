@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import type { Row } from '@tanstack/react-table'
 import {
   MoreHorizontal,
@@ -36,8 +35,6 @@ import {
 import { useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -63,9 +60,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { MODEL_FETCHABLE_TYPES } from '../constants'
 import {
-  type ChannelActionFailure,
   channelsQueryKeys,
-  handleDeleteChannel,
   handleTestChannel,
   handleToggleChannelStatus,
   isChannelEnabled,
@@ -75,6 +70,7 @@ import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
+import { RetireChannelDialog } from './retire-channel-dialog'
 
 interface DataTableRowActionsProps {
   row: Row<Channel>
@@ -87,12 +83,9 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const { setOpen, setCurrentRow, upstream } = useChannels()
   const queryClient = useQueryClient()
   const currentUser = useAuthStore((s) => s.auth.user)
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [retireOpen, setRetireOpen] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const [deleteFailure, setDeleteFailure] =
-    useState<ChannelActionFailure | null>(null)
 
   const isEnabled = isChannelEnabled(channel)
   const isMultiKey = isMultiKeyChannel(channel)
@@ -153,23 +146,6 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
       await handleToggleChannelStatus(channel.id, channel.status, queryClient)
     } finally {
       setIsTogglingStatus(false)
-    }
-  }
-
-  const handleConfirmDelete = async () => {
-    if (!canEditSensitive) return
-    setIsDeleting(true)
-    try {
-      const failure = await handleDeleteChannel(channel.id, queryClient)
-      if (failure) {
-        // 被车道引用等失败：保留确认框并展示原因/清单，不静默关闭。
-        setDeleteFailure(failure)
-      } else {
-        setDeleteFailure(null)
-        setDeleteConfirmOpen(false)
-      }
-    } finally {
-      setIsDeleting(false)
     }
   }
 
@@ -374,7 +350,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             onSelect={(e) => {
               e.preventDefault()
               if (!canEditSensitive) return
-              setDeleteConfirmOpen(true)
+              setRetireOpen(true)
             }}
             className='text-destructive focus:text-destructive'
           >
@@ -386,70 +362,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ConfirmDialog
-        open={deleteConfirmOpen}
-        onOpenChange={(nextOpen) => {
-          setDeleteConfirmOpen(nextOpen)
-          if (!nextOpen) setDeleteFailure(null)
+      <RetireChannelDialog
+        open={retireOpen}
+        onOpenChange={(nextOpen) => setRetireOpen(nextOpen)}
+        channelName={channel.name}
+        onSuccess={() => {
+          void queryClient.invalidateQueries({
+            queryKey: channelsQueryKeys.all,
+          })
         }}
-        title={t('Delete Channel')}
-        desc={t(
-          'Are you sure you want to delete channel "{{name}}"? This action cannot be undone.',
-          { name: channel.name }
-        )}
-        confirmText={t('Delete')}
-        destructive
-        isLoading={isDeleting}
-        handleConfirm={handleConfirmDelete}
-      >
-        {deleteFailure && (
-          <Alert variant='destructive'>
-            <AlertDescription>
-              <p>{deleteFailure.message || t('Failed to delete channel')}</p>
-              {deleteFailure.lanes.length > 0 && (
-                <ul className='mt-2 list-disc space-y-1 ps-5'>
-                  {deleteFailure.lanes.map((lane) => (
-                    <li key={lane}>
-                      <Link
-                        to='/routes'
-                        search={{ model: lane }}
-                        className='underline underline-offset-2'
-                      >
-                        {lane}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {deleteFailure.groups.length > 0 && (
-                <div className='mt-2'>
-                  <p className='font-medium'>{t('Member groups')}</p>
-                  <ul className='list-disc space-y-1 ps-5'>
-                    {deleteFailure.groups.map((group) => (
-                      <li key={group}>
-                        <Link
-                          to='/routes'
-                          search={{ group }}
-                          className='underline underline-offset-2'
-                        >
-                          {group}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <Link
-                to='/routes'
-                search={{}}
-                className='mt-3 inline-block font-medium underline underline-offset-2'
-              >
-                {t('Routing & Failover')}
-              </Link>
-            </AlertDescription>
-          </Alert>
-        )}
-      </ConfirmDialog>
+      />
     </div>
   )
 }

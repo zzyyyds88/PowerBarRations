@@ -79,7 +79,7 @@ function channelReferenceFailure(
  * 渠道写操作成功后统一失效缓存：渠道列表之外，路由页的 pbr-routable-models
  * 也依赖渠道成员/状态，必须一起失效，否则路由与故障切换仍显示旧的可调用状态。
  */
-function invalidateChannelCaches(queryClient?: QueryClient): void {
+export function invalidateChannelCaches(queryClient?: QueryClient): void {
   // all 前缀同时覆盖列表、详情与渠道状态页；只失效 lists 会让启停/删除后的
   // 状态页继续显示旧数据。
   queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.all })

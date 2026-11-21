@@ -3538,6 +3538,23 @@
     "Masking is off": "マスキングは無効です",
     "{{count}} custom words": "カスタム語 {{count}} 件",
     "New requests are masked before they leave the gateway.": "新しいリクエストはゲートウェイを出る前にマスクされます。",
-    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "何もマスクされていません。「シークレット」「個人データ」をオンにするか独自の語を追加して保存してください。"
+    "Nothing is masked. Turn on Secrets, Personal data or add your own words, then Save.": "何もマスクされていません。「シークレット」「個人データ」をオンにするか独自の語を追加して保存してください。",
+    "Retire channel \"{{name}}\"": "チャネル「{{name}}」を退役",
+    "Retiring stops the channel, removes it from lanes and member groups, deletes it, and marks its history as retired. This cannot be undone.": "退役ではチャネルを停止し、ルートとメンバーグループから取り除いて削除し、履歴を「退役済み」として記録します。取り消せません。",
+    "Loading the retirement plan…": "退役プランを生成中…",
+    "Could not load the retirement plan.": "退役プランを取得できませんでした。",
+    "The channel is disabled first, then its references are removed.": "チャネルは先に停止され、参照はシステムが取り除きます。",
+    "Lanes cleaned (kept, members removed)": "メンバーを取り除いたルート（ルートは残存）",
+    "Lanes deleted (no members left)": "メンバーが空になったため削除されるルート",
+    "Member groups to update (groups are kept)": "本チャネルの項目を取り除くメンバーグループ（グループは残存）",
+    "Removing a channel from a member group affects every lane referencing that group.": "メンバーグループからチャネルを取り除くと、そのグループを参照するすべてのルートに影響します。",
+    "Member groups left empty (kept)": "空になったメンバーグループ（残存）",
+    "{{logs}} request log entries and {{stats}} stats rows will be renamed to the retired form.": "{{logs}} 件のリクエストログと {{stats}} 行の統計が退役形式に改名されます。",
+    "{{count}} unexpired async objects (Files/Batches) are pinned to this channel and will wait for expiry cleanup.": "未期限切れの非同期オブジェクト（Files/Batch）{{count}} 件がこのチャネルに固定されており、期限切れクリーンアップを待ちます。",
+    "Type the channel name to confirm": "確認するためチャネル名を入力",
+    "Type \"{{name}}\" to enable retirement.": "「{{name}}」と入力するとボタンが有効になります。",
+    "Retire and delete": "退役して削除",
+    "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "チャネルを退役しました：ルート整理 {{cleaned}} 件、削除 {{deleted}} 件、履歴改名 {{logs}} 件。",
+    "Failed to retire the channel": "退役に失敗しました"
   }
 }
