@@ -22,6 +22,7 @@ func TestSupportedEventTypesIsCanonicalAndDetached(t *testing.T) {
 		EventCooldown,
 		EventLaneRecovered,
 		EventLaneUnavailable,
+		EventMemberPaced,
 		EventMemberRecovered,
 		EventReset,
 		EventSkip,

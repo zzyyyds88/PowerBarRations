@@ -42,6 +42,9 @@ func testRoute(lane string, members int, maxAttempts int) *model.ResolvedRoute {
 			Model:         "model-1",
 			UpstreamModel: "model-1",
 			Priority:      100 - i,
+			// 夹具对齐生产形态：ResolveRoute 只返回渠道存在的成员，
+			// ChannelEnabled 恒为 true；健康快照用它判断 availability。
+			ChannelEnabled: true,
 		})
 	}
 	return resolved

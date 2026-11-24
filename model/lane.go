@@ -790,6 +790,14 @@ func expandLaneChain(lane *Lane) ([]RouteMember, error) {
 
 // expandLaneChainWithDB 是 expandLaneChain 的 db 参数版本；事务内必须传 tx。
 func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
+	members, _, err := expandLaneChainWithVersion(db, lane)
+	return members, err
+}
+
+// expandLaneChainWithVersion 与 expandLaneChainWithDB 相同，额外返回所引成员组的
+// 最大 UpdatedAt（无组引用时为 0）。ResolveRoute 用它把组编辑纳入 LaneVersion，
+// 使 PruneStaleState 的"过期配置不剪枝"守卫对组成员变更同样生效（routing-spec §1.3）。
+func expandLaneChainWithVersion(db *gorm.DB, lane *Lane) ([]RouteMember, int64, error) {
 	groupIds := make([]int, 0, 4)
 	for _, m := range lane.Members {
 		if m.GroupId != 0 {
@@ -797,12 +805,18 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 		}
 	}
 	groups := map[int]*MemberGroup{}
+	var groupVersion int64
 	if len(groupIds) > 0 {
 		loaded, err := loadMemberGroupsByIDsWithDB(db, groupIds)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		groups = loaded
+		for _, g := range groups {
+			if g != nil && g.UpdatedAt > groupVersion {
+				groupVersion = g.UpdatedAt
+			}
+		}
 	}
 	members := make([]RouteMember, 0, len(lane.Members))
 	for i := range lane.Members {
@@ -810,7 +824,7 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 		if m.GroupId == 0 {
 			rm, err := routeMemberFromLaneMemberWithDB(db, m)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			members = append(members, rm)
 			continue
@@ -823,7 +837,7 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 			item := &group.Members[j]
 			ch, chErr := channelOrNilWithDB(db, item.ChannelId)
 			if chErr != nil {
-				return nil, chErr
+				return nil, 0, chErr
 			}
 			name := ""
 			if ch != nil {
@@ -844,7 +858,7 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 			})
 		}
 	}
-	return members, nil
+	return members, groupVersion, nil
 }
 
 // ValidateLaneActiveMember 校验 manual 车道的点名成员：非空 active_member
@@ -1048,9 +1062,14 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	if pinned != nil {
 		route.PinnedMemberId = pinned.Id
 	}
-	members, err := expandLaneChain(lane)
+	members, groupVersion, err := expandLaneChainWithVersion(DB, lane)
 	if err != nil {
 		return nil, err
+	}
+	if groupVersion > route.LaneVersion {
+		// 只改成员组（不改车道）时也让 LaneVersion 前进，PruneStaleState 的
+		// "过期配置不剪枝"守卫才能拒绝旧快照（routing-spec §1.3 / ADR 0013）。
+		route.LaneVersion = groupVersion
 	}
 	route.Members = members
 	sort.SliceStable(route.Members, func(i, j int) bool {

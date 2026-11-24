@@ -99,8 +99,8 @@ const (
 	// 窗口内未产出首个有效事件。已送达但无响应的上游同成员重试大概率重复失败
 	// （magpie replayable 实践），故不再原地重试、立即换成员；冷却/熔断与
 	// soft_transient 完全同档（§4.5 分级递减、allowed_fails 默认 4、权重同软档）。
-	KindTimeout  ErrorKind = "timeout"
-	KindHardAuth ErrorKind = "hard_auth"
+	KindTimeout   ErrorKind = "timeout"
+	KindHardAuth  ErrorKind = "hard_auth"
 	KindHardQuota ErrorKind = "hard_quota"
 	// KindUpstreamReject 上游对"该成员"的拒绝（routing-spec §4.1/§4.4）：400/422，
 	// 或提交前的流内 error 帧。确定性错误（同一份请求体再打仍是拒绝），
@@ -128,7 +128,7 @@ func SetQuotaKeywordMatcher(matcher func(string) bool) {
 var builtInQuotaPatterns = []string{
 	"free usage limit",
 	"free-limit",
-	"usage limit reached",
+	"usage limit",
 	"quota exceeded",
 	"insufficient quota",
 	"quota exceeded for",
@@ -177,17 +177,27 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		// 成员耗尽：语义上是"服务不可用"而非"请求不合法"，日志里不能记成 client_error。
 		return KindSoftTransient
 	}
+	// 注意：基座的 types.NewError 默认把 StatusCode 设成 500，我方内部错误（请求转换失败等）
+	// 都是"500 + skipRetry"。因此 skipRetry 必须优先于状态码判定，否则我方校验类错误
+	// 会被当成上游软故障，触发换人与冷却——正是 routing-spec §4.1 禁止的"坏请求打冷健康成员"。
+	// skipRetry 必须早于错误码与状态码分支：我方构造的"请求本身不合法"错误
+	// （请求体解析失败、我方可判定的校验失败）即使带 BadResponse/DoRequestFailed
+	// 错误码，也不得重试或冷却健康成员（routing-spec §4.1.2）。
+	// NoAvailableChannel 例外已在上面处理（它是"成员耗尽"而非坏请求）。
+	if types.IsSkipRetryError(err) {
+		return KindClientError
+	}
 	switch err.GetErrorCode() {
 	case types.ErrorCodeUpstreamReject:
 		// 流内 error 帧（提交前）由转发管道识别并以此码上报（routing-spec §4.4）。
 		return KindUpstreamReject
 	case types.ErrorCodeBadResponse, types.ErrorCodeBadResponseBody, types.ErrorCodeEmptyResponse,
 		types.ErrorCodeReadResponseBodyFailed:
-		// 200 但响应不合法/无法解析（routing-spec §4.1 的 bad_response）。
+		// 200 但响应体不合法/无法解析（routing-spec §4.1 的 bad_response）。
 		return KindBadResponse
 	case types.ErrorCodeDoRequestFailed:
-		// 传输层失败：连接失败、超时、EOF 都归软故障（§4.1 明确把"连接超时/EOF"列为 soft_transient）。
-		// 注意：这里的超时来自我们为每次尝试设的 deadline，属"真实失败"，必须计入冷却。
+		// 传输层失败：连接失败、超时、EOF 归软故障。真正的我方 deadline 已在
+		// 函数开头由 errors.Is(DeadlineExceeded) 归 timeout（错误链保留后可达）。
 		return KindSoftTransient
 	case types.ErrorCodeChannelResponseTimeExceeded:
 		// 渠道响应超时同样是我方 deadline 判定，归 timeout（§4.1）。
@@ -196,38 +206,49 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		return KindHardAuth
 	}
 	// 200 + 响应体内带 error 对象：上游用 HTTP 200 承载了自己的拒绝（routing-spec §4.4 的
-	// 非流式同形）。RelayError 是 OpenAIError 说明错误体来自上游而非我方构造，按成员级
-	// 拒绝处理（换成员、不冷却）；响应体解析失败走上面的 bad_response，不受影响。
-	if err.StatusCode == http.StatusOK {
-		if _, ok := err.RelayError.(types.OpenAIError); ok {
-			return KindUpstreamReject
-		}
-	}
-	// 注意：基座的 types.NewError 默认把 StatusCode 设成 500，我方内部错误（请求转换失败等）
-	// 都是"500 + skipRetry"。因此 skipRetry 必须优先于状态码判定，否则我方校验类错误
-	// 会被当成上游软故障，触发换人与冷却——正是 routing-spec §4.1 禁止的"坏请求打冷健康成员"。
-	if types.IsSkipRetryError(err) {
-		return KindClientError
+	// 非流式同形）。任一入站格式的错误对象都按成员级拒绝处理（换成员、不冷却）。
+	if err.StatusCode == http.StatusOK && isUpstreamErrorObject(err.RelayError) {
+		return KindUpstreamReject
 	}
 	switch code := err.StatusCode; {
 	case code == http.StatusTooManyRequests:
 		return KindSoftRateLimit
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
 		return KindHardAuth
-	case code == http.StatusBadRequest || code == http.StatusUnprocessableEntity:
-		// routing-spec §4.1：400/422（未命中欠费关键词、非我方校验错误）默认是
-		// **成员级拒绝**——上游的 400 绝大多数是它自己的判断（内容审查、参数不支持、
-		// 上下文超限等），因厂商而异，换一条腿常常就能过；且成员本身没有故障。
-		// 只有上面 skipRetry 分支（我方可证明"请求本身不合法"）才是 client_error。
+	case code == http.StatusBadRequest || code == http.StatusUnprocessableEntity,
+		code == http.StatusUnavailableForLegalReasons:
+		// 400/422：上游对该成员的拒绝（内容审查、参数不支持等），换成员可能就过。
+		// 451：因法律原因不可用，属确定性拒绝，不是瞬时故障。
 		return KindUpstreamReject
+	case code == http.StatusPaymentRequired:
+		// 402：欠费（未命中关键词时的兜底），按额度问题处理，不反复撞墙。
+		return KindHardQuota
+	case code == http.StatusRequestEntityTooLarge:
+		// 413：请求过大，同一份请求体重打必然失败；是请求本身的问题。
+		return KindClientError
+	case code == 499:
+		// 非标准码：客户端关闭请求（nginx 约定），按取消处理。
+		return KindCanceled
 	case code == http.StatusRequestTimeout, code == http.StatusServiceUnavailable, code >= 500:
 		return KindSoftTransient
 	default:
 		// 其余 4xx（404 成员无此模型、405/409 等）与状态码 0/异常：一律按可逃逸的
-		// 瞬时失败处理（routing-spec §4.1 只把 400/422 定义为成员级拒绝）。
+		// 瞬时失败处理（routing-spec §4.1 只把 400/422/451 定义为成员级拒绝）。
 		// 若把 404 这类"上游确实没有该模型"的失败归成不可逃逸形态，请求会不换人、
 		// 不冷却，直接撞死在第一个成员上。
 		return KindSoftTransient
+	}
+}
+
+// isUpstreamErrorObject 判断 RelayError 是否是上游错误对象（值或指针形式）。
+// 200 状态码下携带上游 error 表示"上游用 200 承载了拒绝"，与上游构造无关的
+// 我方错误不会走到这里。
+func isUpstreamErrorObject(relayError any) bool {
+	switch relayError.(type) {
+	case types.OpenAIError, *types.OpenAIError, types.ClaudeError, *types.ClaudeError:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -552,7 +573,30 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 		s.markAttemptedLocked(key)
 
 		memberCfg := s.configFor(s.current)
-		if kind == KindUpstreamReject {
+		if kind == KindSoftRateLimit {
+			// 429 先落减速（即使接下来还要原地重试）：这是上游的实时背压信号，
+			// 运行态必须立刻反映，不能等预算耗尽才记（routing-spec §4.1.1）。
+			// recordFailure 对 429 只写 PacedUntil，重复调用只是把截止时间往后推。
+			s.Runtime.withLock(func() {
+				s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, lastErr.RetryAfterSeconds, false, CurrentCircuitSettings())
+				s.Runtime.releaseProbe(key)
+				if s.claimedProbe == key {
+					s.claimedProbe = ""
+				}
+			})
+			if budgetLeft && ShouldRetrySameMember(kind) {
+				// 原地重试的等待取 max(retry_interval, 剩余减速)：上游说了
+				// Retry-After 5s、本地间隔 3s，就必须等满 5s 再打（§3.1）。
+				s.attempts[s.current]++
+				s.rounds++
+				s.attemptStartedAt = time.Now()
+				wait := time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second
+				if remain := s.Runtime.paceRemaining(key); remain > wait {
+					wait = remain
+				}
+				return member, wait, true
+			}
+		} else if kind == KindUpstreamReject {
 			// 成员级拒绝（routing-spec §4.1/§4.4）：同一份请求体再打同一成员仍是拒绝，
 			// 所以不原地重试；一次性耗尽该成员在本请求内的剩余预算以推进成员链，
 			// 且**不写冷却、不计熔断分**（成员本身无过错，下一份请求它可能完全正常）。
@@ -573,10 +617,11 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			s.rounds++
 			s.attemptStartedAt = time.Now()
 			return member, time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second, true
-		} else {
+		} else if kind != KindSoftRateLimit {
 			// 尝试预算耗尽或硬故障：写入冷却与熔断计分后换人。
 			// §2.1：manual 车道不参与冷却——人工指定的成员就是唯一选择，冷却在此
 			// 没有可换的替代者，只会把请求变成 503；熔断计分照常。
+			// 429 已在上面写过减速，落到这里只继续换人，不能重复判罚。
 			manual := s.Route.Mode == model.LaneModeManual
 			s.Runtime.withLock(func() {
 				s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, lastErr.RetryAfterSeconds, !manual, CurrentCircuitSettings())
@@ -793,7 +838,15 @@ func (s *State) recordAffinitySkipsLocked(affinityIdx int) {
 		if s.attempts[idx] >= s.budgetFor(idx) {
 			continue
 		}
-		s.recordSkipLocked(memberKeyOf(&s.Route.Members[idx]), memberLabel(&s.Route.Members[idx]))
+		key := memberKeyOf(&s.Route.Members[idx])
+		// 人工停用是配置态结论，与运行态冷却/熔断无关；必须在 SkipReason 之前
+		// 交出 `disabled`，否则一条被关掉的成员会被解释成"在冷却"
+		// （routing-spec §5.3/§9）。
+		if s.Route.Members[idx].Disabled {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
+			continue
+		}
+		s.recordSkipLocked(key, memberLabel(&s.Route.Members[idx]))
 	}
 }
 
