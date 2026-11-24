@@ -1089,7 +1089,12 @@ func (s *State) ThrottledMember() *model.RouteMember {
 }
 
 // CommitThrottled 在排队取得槽位后提交该成员为本次尝试：
-// 计数一次真实尝试并设为当前成员。槽位已被别人抢走/预算耗尽则返回 false。
+// 计数一次真实尝试并设为当前成员。预算耗尽或成员在排队期间进入冷却/熔断则返回 false。
+//
+// 这里**不能**再调用 admissionReady：调用方已在 Wait 里拿到该成员的槽位，inflight
+// 已计入本次请求；再按"是否就绪"复核会把自己刚占的槽判成已满，使排队成功的请求
+// 必然回落为本地 429（2026-11-24 测试环境复现）。槽位归属由 AdmissionTicket 保证，
+// 只需复核成员运行态仍可发（排队期间可能被同车道其它请求打进冷却/熔断）。
 func (s *State) CommitThrottled() (*model.RouteMember, bool) {
 	if s == nil {
 		return nil, false
@@ -1103,8 +1108,15 @@ func (s *State) CommitThrottled() (*model.RouteMember, bool) {
 	if s.attempts[idx] >= s.budgetFor(idx) {
 		return nil, false
 	}
-	if !s.admissionAllowsLocked(&s.Route.Members[idx]) {
-		return nil, false
+	if s.Runtime != nil {
+		key := memberKeyOf(&s.Route.Members[idx])
+		unavailable := false
+		s.Runtime.withLock(func() {
+			unavailable = s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availOK
+		})
+		if unavailable {
+			return nil, false
+		}
 	}
 	s.attempts[idx]++
 	s.rounds++

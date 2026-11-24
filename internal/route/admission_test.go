@@ -224,8 +224,23 @@ func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 	require.NotNil(t, candidate)
 	assert.Equal(t, "channel-a", candidate.Channel)
 
-	blocked.SetAdmissionReady(func(*model.RouteMember) bool { return true })
+	// Wait 取得槽位后 inflight 已计入本次请求，就绪回调此刻必然返回 false；
+	// 槽位归属由 ticket 保证，CommitThrottled 不得再按 admissionReady 复核，
+	// 否则排队成功的请求会把自己刚占的槽判成已满并回落为本地 429。
 	committed, ok := blocked.CommitThrottled()
 	require.True(t, ok)
 	assert.Equal(t, "channel-a", committed.Channel)
+
+	// 排队期间该成员被同车道其它请求打进冷却：即使已取得准入槽位也不得提交，
+	// 调用方会释放槽位并改选其它成员。
+	cooling := NewState(testRoute("lane-admission-select", 2, 1))
+	cooling.SetAdmissionReady(func(*model.RouteMember) bool { return false })
+	_, _, ok = cooling.Next(nil)
+	require.False(t, ok)
+	coolingCandidate := cooling.ThrottledMember()
+	require.NotNil(t, coolingCandidate)
+	coolingKey := memberKeyOf(coolingCandidate)
+	cooling.Runtime.withLock(func() { cooling.Runtime.Cooldowns[coolingKey] = nowMs() + 60_000 })
+	_, ok = cooling.CommitThrottled()
+	assert.False(t, ok, "排队期间进入冷却的成员不得提交")
 }

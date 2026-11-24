@@ -56,3 +56,39 @@ func TestPruneMissingMemberChannelsSkipsOrphans(t *testing.T) {
 	require.True(t, ok)
 	assert.NotEmpty(t, diff.Skipped)
 }
+
+// 组引用元素只带 Group（Channel 为空），必须留给 pruneMissingGroupsAndRefs 判定；
+// 若按"渠道名为空"剪掉，导出→导入会把组引用车道清空并禁用（2026-11-24 复现）。
+func TestPruneMissingMemberChannelsKeepsGroupRefs(t *testing.T) {
+	db := setupAPITestDB(t)
+	ch := &model.Channel{Name: "group-ch", Type: 1, Key: "sk", Status: common.ChannelStatusEnabled, Group: "default", Models: "m"}
+	require.NoError(t, db.Create(ch).Error)
+
+	bundle := &ConfigBundle{
+		Version: "v1",
+		Lanes: []LaneConfig{
+			{
+				Name: "group-lane", Enabled: testBoolPtr(true), Mode: testStringPtr(model.LaneModeFailover),
+				Members: []LaneMemberConfig{
+					{Group: "stable", Priority: 2},
+					{Channel: "group-ch", Model: "m", Priority: 1},
+				},
+			},
+			{
+				Name: "only-group", Enabled: testBoolPtr(true), Mode: testStringPtr(model.LaneModeFailover),
+				Members: []LaneMemberConfig{{Group: "stable", Priority: 1}},
+			},
+		},
+	}
+	result := ImportResult{Valid: true, Diff: map[string]any{"lanes": newDiffList()}}
+
+	pruneMissingMemberChannels(bundle, &result)
+
+	assert.Empty(t, result.Warnings)
+	assert.Len(t, bundle.Lanes[0].Members, 2)
+	assert.Equal(t, "stable", bundle.Lanes[0].Members[0].Group)
+	require.NotNil(t, bundle.Lanes[1].Enabled)
+	assert.True(t, *bundle.Lanes[1].Enabled, "组引用车道不得被剪空禁用")
+	assert.Len(t, bundle.Lanes[1].Members, 1)
+	assert.Equal(t, "stable", bundle.Lanes[1].Members[0].Group)
+}

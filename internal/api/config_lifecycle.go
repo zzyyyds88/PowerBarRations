@@ -571,6 +571,13 @@ func pruneMissingMemberChannels(bundle *ConfigBundle, result *ImportResult) {
 		lane := &bundle.Lanes[i]
 		kept := make([]LaneMemberConfig, 0, len(lane.Members))
 		for _, m := range lane.Members {
+			// 组引用元素只带 Group，Channel 为空；它是否存在由
+			// pruneMissingGroupsAndRefs 判定。这里若按"渠道名为空"丢弃，
+			// 导出→导入会把整条组引用车道剪空并禁用（2026-11-24 复现）。
+			if strings.TrimSpace(m.Group) != "" {
+				kept = append(kept, m)
+				continue
+			}
 			name := strings.TrimSpace(m.Channel)
 			if name == "" {
 				continue
