@@ -41,6 +41,8 @@ type ChannelConfig struct {
 	Proxy         *string  `json:"proxy,omitempty"`
 	// Prices 渠道级上游单价（成本折算）；空表导出为 []，与"缺席=保持原值"区分。
 	Prices []dto.ChannelModelPrice `json:"prices"`
+	// RateLimits 出站准入（ADR 0012）；空表导出为 []。
+	RateLimits []dto.ChannelRateLimit `json:"rate_limits"`
 	// ModelMapping 模型名 → 上游真名；空表导出为 {}（ADR 0005/0008）。
 	ModelMapping map[string]string `json:"model_mapping"`
 	// StatusCodeMapping 上游状态码 → 对外状态码；空表导出为 {}（ADR 0013）。
@@ -457,6 +459,10 @@ func channelPayloadFromConfig(config ChannelConfig) *channelPayload {
 	if config.Prices != nil {
 		prices := config.Prices
 		payload.Prices = &prices
+	}
+	if config.RateLimits != nil {
+		limits := config.RateLimits
+		payload.RateLimits = &limits
 	}
 	if config.ModelMapping != nil {
 		mapping := config.ModelMapping
@@ -1220,6 +1226,10 @@ func exportedChannelConfig(channel *model.Channel, models []string) ChannelConfi
 	if prices == nil {
 		prices = []dto.ChannelModelPrice{}
 	}
+	rateLimits := channel.GetSetting().PBRRateLimits
+	if rateLimits == nil {
+		rateLimits = []dto.ChannelRateLimit{}
+	}
 	mapping := channel.ModelMappingMap()
 	if mapping == nil {
 		mapping = map[string]string{}
@@ -1240,6 +1250,7 @@ func exportedChannelConfig(channel *model.Channel, models []string) ChannelConfi
 		Enabled:           &enabled,
 		Proxy:             &proxy,
 		Prices:            prices,
+		RateLimits:        rateLimits,
 		ModelMapping:      mapping,
 		StatusCodeMapping: statusMapping,
 		KeySet:            strings.TrimSpace(channel.Key) != "",

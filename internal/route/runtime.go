@@ -38,10 +38,12 @@ const (
 	EventReset           = events.EventReset
 	EventSkip            = events.EventSkip
 	EventUpstreamBurst   = events.EventUpstreamBurst
-	EventMemberPaced     = events.EventMemberPaced
-	EventMemberRecovered = events.EventMemberRecovered
-	EventLaneUnavailable = events.EventLaneUnavailable
-	EventLaneRecovered   = events.EventLaneRecovered
+	// EventAdaptiveLimitChanged AIMD 上限变化（routing-spec §3.2）。
+	EventAdaptiveLimitChanged = events.EventAdaptiveLimitChanged
+	EventMemberPaced          = events.EventMemberPaced
+	EventMemberRecovered      = events.EventMemberRecovered
+	EventLaneUnavailable      = events.EventLaneUnavailable
+	EventLaneRecovered        = events.EventLaneRecovered
 )
 
 // 故障权重：硬故障计数权重高、软故障（429）权重低，
@@ -1331,7 +1333,10 @@ type MemberHealth struct {
 	ProbePending     bool      `json:"probe_pending"`
 	Inflight         int       `json:"inflight"`
 	Queued           int       `json:"queued"`
+	RPMUsed          int       `json:"rpm_used"`
 	AdaptiveLimit    *int      `json:"adaptive_limit"`
+	// TTFTBaselineMs 自适应模式学到的 TTFT 基线（无样本为 0）。
+	TTFTBaselineMs float64 `json:"ttft_baseline_ms,omitempty"`
 	// RejectStreak 连续 upstream_reject 次数（routing-spec §4.1）。
 	//
 	// upstream_reject 按设计不计冷却、不计熔断分——成员本身没故障。但「同一成员
@@ -1444,6 +1449,16 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 			item.RejectStreak = circuit.RejectStreak
 		}
 		item.PacedUntil = msToRFC3339(r.paceUntil(key))
+		// 出站准入运行态（routing-spec §3.2）：按 (channelId, 成员所选模型) 读。
+		stats := DefaultAdmission.Stats(AdmissionKey(member.ChannelId, member.Model))
+		item.Inflight = stats.Inflight
+		item.Queued = stats.Queued
+		item.RPMUsed = stats.RPMUsed
+		if stats.Adaptive {
+			limit := int(stats.AdaptiveLimit)
+			item.AdaptiveLimit = &limit
+			item.TTFTBaselineMs = stats.TTFTBaselineMs
+		}
 		// probe_pending 的语义是"该成员当前占用探测槽"（routing-spec §7），
 		// 不是"车道里有别的成员在探测"——后者会把开放熔断的成员误标成探测中。
 		item.ProbePending = r.HasProbe && r.ProbeMember == key

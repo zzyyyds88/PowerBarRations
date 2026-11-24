@@ -76,6 +76,8 @@ type channelPayload struct {
 	// StatusCodeMapping 上游状态码 → 对外状态码（ADR 0013）：只改客户端展示码，
 	// 不参与分类/重试/冷却。省略保持原值；显式 {} 清空。
 	StatusCodeMapping *map[string]string `json:"status_code_mapping"`
+	// RateLimits 出站准入配置（ADR 0012）；省略保持原值，显式 [] 清空。
+	RateLimits *[]dto.ChannelRateLimit `json:"rate_limits"`
 }
 
 func channelResponse(ch *model.Channel) gin.H {
@@ -97,6 +99,10 @@ func channelResponse(ch *model.Channel) gin.H {
 	if prices == nil {
 		prices = []dto.ChannelModelPrice{}
 	}
+	rateLimits := ch.GetSetting().PBRRateLimits
+	if rateLimits == nil {
+		rateLimits = []dto.ChannelRateLimit{}
+	}
 	resp := gin.H{
 		"name":                ch.Name,
 		"type":                ChannelTypeSlug(ch.Type),
@@ -108,6 +114,7 @@ func channelResponse(ch *model.Channel) gin.H {
 		"prices":              prices,
 		"model_mapping":       ch.ModelMappingMap(),
 		"status_code_mapping": ch.StatusCodeMappingMap(),
+		"rate_limits":         rateLimits,
 		"key_set":             strings.TrimSpace(key) != "",
 		"key_prefix":          prefix,
 		"created_at":          rfc3339(ch.CreatedTime),
@@ -578,8 +585,7 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 		channel.Setting = &encoded
 	}
 
-	if payload.ModelMapping != nil {
-		// 渠道模型映射（模型名 → 上游真名）：两边都不得为空，值去空。
+	if payload.ModelMapping != nil { // 渠道模型映射（模型名 → 上游真名）：两边都不得为空，值去空。
 		cleaned := map[string]string{}
 		for routeKey, upstream := range *payload.ModelMapping {
 			routeKey = strings.TrimSpace(routeKey)
@@ -615,6 +621,31 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 			return nil, &apiError{code: apierr.CodeValidationFailed, message: err.Error()}
 		}
 		channel.StatusCodeMapping = &encoded
+	}
+
+	if payload.RateLimits != nil {
+		// 出站准入（ADR 0012）：模型名非空且同渠道唯一；队列/窗口参数非负。
+		cleaned := make([]dto.ChannelRateLimit, 0, len(*payload.RateLimits))
+		seen := map[string]bool{}
+		for _, item := range *payload.RateLimits {
+			item.Normalize()
+			if err := item.Validate(); err != nil {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: err.Error()}
+			}
+			if seen[item.Model] {
+				return nil, &apiError{code: apierr.CodeValidationFailed, message: "rate_limits: duplicate model '" + item.Model + "'"}
+			}
+			seen[item.Model] = true
+			cleaned = append(cleaned, item)
+		}
+		setting := channel.GetSetting()
+		setting.PBRRateLimits = cleaned
+		raw, err := json.Marshal(setting)
+		if err != nil {
+			return nil, &apiError{code: apierr.CodeValidationFailed, message: "invalid rate_limits"}
+		}
+		encoded := string(raw)
+		channel.Setting = &encoded
 	}
 
 	// key 只写不读：省略则保留原值（新建时为空）。

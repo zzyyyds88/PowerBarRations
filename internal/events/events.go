@@ -30,6 +30,10 @@ const (
 	EventLaneUnavailable = "lane_unavailable"
 	// EventLaneRecovered 车道恢复：不可用期后第一次成功服务。
 	EventLaneRecovered = "lane_recovered"
+	// EventMemberThrottled 出站准入未就绪（队列满/排队超时），routing-spec §3.2。
+	EventMemberThrottled = "member_throttled"
+	// EventAdaptiveLimitChanged AIMD 自适应上限变化，routing-spec §3.2。
+	EventAdaptiveLimitChanged = "adaptive_limit_changed"
 
 	// 渠道与上游健康事件。
 	EventChannelDisabled = "channel_disabled"
@@ -62,6 +66,8 @@ var supportedTypes = map[string]struct{}{
 	EventMemberRecovered: {},
 	EventLaneUnavailable: {},
 	EventLaneRecovered:   {},
+	EventMemberThrottled: {},
+	EventAdaptiveLimitChanged: {},
 	EventChannelDisabled: {},
 	EventChannelEnabled:  {},
 	EventChannelDeleted:  {},

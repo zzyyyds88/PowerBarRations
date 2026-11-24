@@ -284,6 +284,8 @@ type Attempt struct {
 	DurationMs int64     `json:"duration_ms,omitempty"`
 	ErrorKind  ErrorKind `json:"error_kind,omitempty"`
 	Msg        string    `json:"msg,omitempty"`
+	// WaitMs 出站准入实际排队时长（routing-spec §3.2；0 = 未排队）。
+	WaitMs int64 `json:"wait_ms,omitempty"`
 }
 
 // State 一次请求内的选路运行态。请求作用域，随 gin.Context 生命周期结束。
@@ -322,6 +324,11 @@ type State struct {
 	// snapshotSig 当前 Route 快照的内容签名（applyRouteLocked 时刷新），
 	// 用于重读时判定"配置是否真的变了"。
 	snapshotSig string
+	// admissionReady 出站准成就绪回调（nil = 不做准入）；由 middleware 注入
+	// （routing-spec §3.2）。回调必须无阻塞、不查库。
+	admissionReady func(*model.RouteMember) bool
+	// throttledIdx 本轮因准入未就绪被跳过的首成员（用于排队/本地 429）。
+	throttledIdx int
 }
 
 func laneKeyOf(resolved *model.ResolvedRoute) string {
@@ -446,6 +453,7 @@ func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
 		s.attempts[i] = oldAttempts[memberKeyOf(&resolved.Members[i])]
 	}
 	s.current = -1
+	s.throttledIdx = -1
 	if currentKey != "" {
 		s.current = s.indexOfKey(currentKey)
 	}
@@ -743,6 +751,7 @@ func (s *State) pickFailoverLocked() (*model.RouteMember, bool) {
 // Runtime.mu 由内部获取。返回 -1 表示无可选成员。
 func (s *State) chooseFailoverLocked() int {
 	chosen := -1
+	s.throttledIdx = -1
 	s.Runtime.withLock(func() {
 		// 亲和期内沿用当前成员（§6：不提前切回高优先级成员）。
 		if s.Runtime.HasCurrent && s.Runtime.AffinityUntil > nowMs() {
@@ -750,6 +759,7 @@ func (s *State) chooseFailoverLocked() int {
 				key := memberKeyOf(&s.Route.Members[idx])
 				if !s.Route.Members[idx].Disabled &&
 					s.attempts[idx] < s.budgetFor(idx) &&
+					s.admissionAllowsLocked(&s.Route.Members[idx]) &&
 					s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availSkip {
 					// 亲和绕过的高优先级成员必须留痕，否则 attempts 链无法解释
 					// "为什么没用 P1"（routing-spec §6/§9）。
@@ -769,6 +779,16 @@ func (s *State) chooseFailoverLocked() int {
 			// 会把整条链每轮唯一的恢复探测机会吃掉（routing-spec §2.2）。
 			if s.Route.Members[idx].Disabled {
 				s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
+				continue
+			}
+			// 出站准入：未就绪的成员本轮让位给低优先级但就绪的成员
+			// （routing-spec §3.2 "a full one gives way first"）。健康但仍未就绪的
+			// 成员记下来，供 middleware 排队或本地 429。
+			if !s.admissionAllowsLocked(&s.Route.Members[idx]) {
+				s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "throttled")
+				if s.throttledIdx < 0 {
+					s.throttledIdx = idx
+				}
 				continue
 			}
 			switch s.Runtime.availabilityOf(key, CurrentCircuitSettings()) {
@@ -810,6 +830,13 @@ func (s *State) chooseFailoverLocked() int {
 				}
 				key := memberKeyOf(&s.Route.Members[idx])
 				if s.Runtime.circuitOpen(key) {
+					continue
+				}
+				// 准入未就绪的成员不能借恐慌模式绕过闸门。
+				if !s.admissionAllowsLocked(&s.Route.Members[idx]) {
+					if s.throttledIdx < 0 {
+						s.throttledIdx = idx
+					}
 					continue
 				}
 				until := s.Runtime.cooldownUntil(key)
@@ -856,6 +883,7 @@ func (s *State) recordAffinitySkipsLocked(affinityIdx int) {
 
 // pickManualLocked 只用手工指定的成员；不可用即"无可用"，不静默换人（routing-spec §2.1）。
 func (s *State) pickManualLocked() (*model.RouteMember, bool) {
+	s.throttledIdx = -1
 	idx := s.activeMemberIndex()
 	if idx < 0 || s.attempts[idx] >= s.budgetFor(idx) {
 		return nil, false
@@ -868,6 +896,13 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 		// 也不因为这次关闭而写冷却或改动熔断状态。
 		if s.Route.Members[idx].Disabled {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
+			return
+		}
+		// 出站准入不改变 manual 的"只走点名成员"语义：未就绪时排队/本地 429，
+		// 绝不换人（routing-spec §2.1/§3.2）。
+		if !s.admissionAllowsLocked(&s.Route.Members[idx]) {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "throttled")
+			s.throttledIdx = idx
 			return
 		}
 		// §2.1：manual **不参与冷却**（人工指定的成员就是唯一选择，冷却在此
@@ -1025,8 +1060,83 @@ func (s *State) ReportMemberConfigSkip(member *model.RouteMember, reason string)
 	}
 }
 
-// ReleaseProbe 归还本请求占用的探测槽（幂等）。
-//
+// SetAdmissionReady 注入出站准成就绪回调（routing-spec §3.2）。
+// 传 nil 关闭准入。回调在选路锁内执行，必须无阻塞、不查库。
+func (s *State) SetAdmissionReady(fn func(*model.RouteMember) bool) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.admissionReady = fn
+	s.mu.Unlock()
+}
+
+func (s *State) admissionAllowsLocked(member *model.RouteMember) bool {
+	return s.admissionReady == nil || s.admissionReady(member)
+}
+
+// ThrottledMember 本轮因准入未就绪被跳过的首成员（无则 nil）。
+func (s *State) ThrottledMember() *model.RouteMember {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.throttledIdx >= 0 && s.throttledIdx < len(s.Route.Members) {
+		return &s.Route.Members[s.throttledIdx]
+	}
+	return nil
+}
+
+// CommitThrottled 在排队取得槽位后提交该成员为本次尝试：
+// 计数一次真实尝试并设为当前成员。槽位已被别人抢走/预算耗尽则返回 false。
+func (s *State) CommitThrottled() (*model.RouteMember, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := s.throttledIdx
+	if idx < 0 || idx >= len(s.Route.Members) {
+		return nil, false
+	}
+	if s.attempts[idx] >= s.budgetFor(idx) {
+		return nil, false
+	}
+	if !s.admissionAllowsLocked(&s.Route.Members[idx]) {
+		return nil, false
+	}
+	s.attempts[idx]++
+	s.rounds++
+	s.attemptStartedAt = time.Now()
+	s.markCurrentLocked(idx)
+	s.throttledIdx = -1
+	return &s.Route.Members[idx], true
+}
+
+// ExhaustThrottled 记一次"准入失败"（队列满/排队超时）：attempt 状态 throttled，
+// 耗尽该成员本请求内预算，供 middleware 换下一个候选或返回本地 429。
+// **不写冷却、不计熔断**（排队不是成员失败，routing-spec §3.2）。
+func (s *State) ExhaustThrottled(waitMs int64) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx := s.throttledIdx
+	if idx < 0 || idx >= len(s.Route.Members) {
+		return
+	}
+	key := memberKeyOf(&s.Route.Members[idx])
+	s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "throttled")
+	if n := len(s.history); n > 0 {
+		s.history[n-1].WaitMs = waitMs
+	}
+	s.attempts[idx] = s.budgetFor(idx)
+	s.throttledIdx = -1
+}
+
+// ReleaseProbe 归还本请求占用的探测槽（幂等）。//
 // 调用方必须在这些路径上调用，否则探测槽会被永久占住、该成员此后永远取不到探测机会：
 // 候选成员自身不可用被跳过、错误不换人（client_error/canceled）、请求收尾。
 //
@@ -1109,6 +1219,7 @@ func (s *State) LogAttempts() []model.PBRAttempt {
 			DurationMs: item.DurationMs,
 			ErrorKind:  string(item.ErrorKind),
 			Msg:        item.Msg,
+			WaitMs:     item.WaitMs,
 		})
 	}
 	return out
@@ -1195,4 +1306,28 @@ func WriteNoAvailableChannel(c *gin.Context, modelName string) {
 // IsNoAvailable 判定错误是否为"无可用成员"。
 func IsNoAvailable(err *types.NewAPIError) bool {
 	return err != nil && err.GetErrorCode() == ErrorCodeNoAvailableChannel
+}
+
+// CodeLocalThrottle 本地出站准入拒绝的稳定错误码（routing-spec §4.2/§3.2）。
+const CodeLocalThrottle = "local_throttle"
+
+// LocalThrottleError 构造本地 429（队列满/排队超界）：连接仍然健康，
+// 只是本地配额忙——**不是 503、不是成员失败**（ADR 0012 第 9 条）。
+func LocalThrottleError(modelName string, wait time.Duration) *types.NewAPIError {
+	if wait < time.Second {
+		wait = time.Second
+	}
+	seconds := int((wait + time.Second - 1) / time.Second)
+	err := types.WithOpenAIError(types.OpenAIError{
+		Message: "Too many concurrent requests for model " + modelName,
+		Type:    "rate_limit_error",
+		Code:    CodeLocalThrottle,
+	}, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+	err.RetryAfterSeconds = seconds
+	return err
+}
+
+// IsLocalThrottle 判定错误是否为本地准入拒绝。
+func IsLocalThrottle(err *types.NewAPIError) bool {
+	return err != nil && err.GetErrorCode() == CodeLocalThrottle
 }

@@ -181,6 +181,63 @@ type ChannelSettings struct {
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
 	// PBRPrices 渠道级上游单价（成本折算用，见 ChannelModelPrice）。
 	PBRPrices []ChannelModelPrice `json:"pbr_prices,omitempty"`
+	// PBRRateLimits 渠道级出站准入（routing-spec §3.2 / ADR 0012）。
+	PBRRateLimits []ChannelRateLimit `json:"pbr_rate_limits,omitempty"`
+}
+
+// ChannelRateLimit 是渠道上某个声明模型的出站准入配置（ADR 0012）。
+//
+// 两个固定上限为 0 = 不限制（默认）；MaxConcurrency = -1 = 自适应 AIMD。
+// QueueLimit 为 0 时按 DefaultQueueLimit；QueueWaitSeconds 为 0 = 不排队。
+type ChannelRateLimit struct {
+	Model            string `json:"model"`
+	MaxConcurrency   int    `json:"max_concurrency"`
+	MaxRPM           int    `json:"max_rpm"`
+	QueueLimit       int    `json:"queue_limit,omitempty"`
+	QueueWaitSeconds int    `json:"queue_wait_seconds,omitempty"`
+}
+
+const (
+	// AdaptiveConcurrency 是 max_concurrency 的自适应哨兵值。
+	AdaptiveConcurrency = -1
+	// DefaultQueueLimit 是 queue_limit=0 时的每成员排队上限。
+	DefaultQueueLimit = 32
+)
+
+// Normalize 清理准入配置的首尾空白，并给 queue_limit 填默认值。
+func (r *ChannelRateLimit) Normalize() {
+	if r == nil {
+		return
+	}
+	r.Model = strings.TrimSpace(r.Model)
+	if r.QueueLimit == 0 {
+		// 0 = 取默认上限；负数非法，保留给 Validate 拒绝。
+		r.QueueLimit = DefaultQueueLimit
+	}
+}
+
+// Validate 校验一行准入配置（api-spec §4.1）：模型名非空、
+// max_concurrency >= -1、其余非负。
+func (r *ChannelRateLimit) Validate() error {
+	if r == nil {
+		return nil
+	}
+	if strings.TrimSpace(r.Model) == "" {
+		return errors.New("rate_limits: model name must not be empty")
+	}
+	if r.MaxConcurrency < AdaptiveConcurrency {
+		return errors.New("rate_limits: max_concurrency must be >= -1")
+	}
+	if r.MaxRPM < 0 {
+		return errors.New("rate_limits: max_rpm must be >= 0")
+	}
+	if r.QueueLimit < 0 {
+		return errors.New("rate_limits: queue_limit must be >= 0")
+	}
+	if r.QueueWaitSeconds < 0 {
+		return errors.New("rate_limits: queue_wait_seconds must be >= 0")
+	}
+	return nil
 }
 
 const (

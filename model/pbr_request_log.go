@@ -43,6 +43,8 @@ type PBRAttempt struct {
 	DurationMs int64  `json:"duration_ms"`
 	ErrorKind  string `json:"error_kind,omitempty"`
 	Msg        string `json:"msg,omitempty"`
+	// WaitMs 出站准入实际排队时长（routing-spec §3.2；0/省略 = 未排队）。
+	WaitMs int64 `json:"wait_ms,omitempty"`
 }
 
 // PBRLogCarrier 请求作用域的日志载体；由 PBR 路由在各阶段填充。

@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,7 +81,12 @@ func PBRServe(c *gin.Context) bool {
 	carrier.Lane = resolved.Model
 
 	state := route.NewState(resolved)
-	if _, ok := PBRNextChannel(c, state, modelName, nil); !ok {
+	if _, throttleErr, ok := PBRNextChannel(c, state, modelName, nil); !ok {
+		if throttleErr != nil {
+			// 本地准入拒绝（不是车道不可用）：429 + Retry-After，不登记 lane_unavailable。
+			writeLocalThrottle(c, state, throttleErr)
+			return true
+		}
 		// 无任何渠道声明该模型，或全部成员都不可选，与"全部成员耗尽"同形
 		// （routing-spec §1.1 第 3 条）。
 		// 车道级事件：请求按"全部成员不可选"收尾时登记一次 lane_unavailable
@@ -111,11 +117,111 @@ func PBRServe(c *gin.Context) bool {
 //
 // lastErr 为上一次尝试的错误；首次调用传 nil。返回 false 表示没有可用成员，
 // 调用方应按 routing-spec §4.2 快抛 503。
-func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastErr *types.NewAPIError) (*model.Channel, bool) {
-	if state == nil {
-		return nil, false
+// pbrAdmissionTicketKey 当前尝试持有的准入槽位（controller 在尝试结束时释放）。
+const pbrAdmissionTicketKey = "pbr_admission_ticket"
+
+// TakeAdmissionTicket 取出并清空本请求当前的准入槽位（幂等）。
+func TakeAdmissionTicket(c *gin.Context) *route.AdmissionTicket {
+	if c == nil {
+		return nil
 	}
+	value, ok := c.Get(pbrAdmissionTicketKey)
+	if !ok {
+		return nil
+	}
+	c.Set(pbrAdmissionTicketKey, nil)
+	ticket, _ := value.(*route.AdmissionTicket)
+	return ticket
+}
+
+func setAdmissionTicket(c *gin.Context, ticket *route.AdmissionTicket) {
+	if c == nil || ticket == nil {
+		return
+	}
+	c.Set(pbrAdmissionTicketKey, ticket)
+}
+
+// writeLocalThrottle 写出本地 429（routing-spec §4.2 例外）并落日志。
+func writeLocalThrottle(c *gin.Context, state *route.State, throttleErr *types.NewAPIError) {
+	if throttleErr == nil {
+		return
+	}
+	if throttleErr.RetryAfterSeconds > 0 {
+		c.Header("Retry-After", strconv.Itoa(throttleErr.RetryAfterSeconds))
+	}
+	carrier := model.EnsurePBRLogCarrier(c)
+	carrier.Success = false
+	carrier.HTTPStatus = http.StatusTooManyRequests
+	carrier.ErrorKind = string(route.KindLocalThrottle)
+	carrier.ErrorSummary = throttleErr.MaskSensitiveError()
+	if state != nil {
+		if attempts := state.LogAttempts(); len(attempts) > 0 {
+			carrier.Attempts = attempts
+			carrier.TotalAttempts = len(attempts)
+		}
+	}
+	model.WritePBRLog(c)
+	ClearServedByHeader(c)
+	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": throttleErr.ToOpenAIError()})
+}
+
+// channelRateLimitFor 取该成员（按所选模型寻址）的准入配置。
+func channelRateLimitFor(channel *model.Channel, member *model.RouteMember) route.RateLimitConfig {
+	if channel == nil || member == nil {
+		return route.RateLimitConfig{}
+	}
+	for _, item := range channel.GetSetting().PBRRateLimits {
+		if strings.TrimSpace(item.Model) != strings.TrimSpace(member.Model) {
+			continue
+		}
+		limit := item.QueueLimit
+		if limit == 0 {
+			limit = 32
+		}
+		return route.RateLimitConfig{
+			MaxConcurrency:   item.MaxConcurrency,
+			MaxRPM:           item.MaxRPM,
+			QueueLimit:       limit,
+			QueueWaitSeconds: item.QueueWaitSeconds,
+		}
+	}
+	return route.RateLimitConfig{}
+}
+
+// PBRNextChannel 推进成员链并完成出站准入（routing-spec §3/§3.2）。
+//
+// 返回 (*channel, *localThrottleError, ok)：
+//   - ok=true 表示已取到渠道与准入槽位（槽位可能为 nil = 未启用限流）；
+//   - ok=false 且 err!=nil 表示本地准入拒绝（429 + Retry-After）；
+//   - ok=false 且 err==nil 表示车道真正不可用（503）。
+func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastErr *types.NewAPIError) (*model.Channel, *types.NewAPIError, bool) {
+	if state == nil {
+		return nil, nil, false
+	}
+	cfgCache := map[string]route.RateLimitConfig{}
+	cfgFor := func(member *model.RouteMember) route.RateLimitConfig {
+		key := route.AdmissionKey(member.ChannelId, member.Model)
+		if cfg, ok := cfgCache[key]; ok {
+			return cfg
+		}
+		cfg := route.RateLimitConfig{}
+		if channel, err := model.GetChannelById(member.ChannelId, true); err == nil && channel != nil {
+			cfg = channelRateLimitFor(channel, member)
+		}
+		cfgCache[key] = cfg
+		return cfg
+	}
+	state.SetAdmissionReady(func(member *model.RouteMember) bool {
+		cfg := cfgFor(member)
+		if !cfg.Enabled() {
+			return true
+		}
+		return route.DefaultAdmission.Ready(route.AdmissionKey(member.ChannelId, member.Model), cfg)
+	})
+
 	first := true
+	throttledAny := false
+	var retryWait time.Duration
 	for {
 		var (
 			member *model.RouteMember
@@ -126,20 +232,64 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 			member, delay, ok = state.Next(lastErr)
 			first = false
 		} else {
-			// 候选成员自身不可用（渠道缺失/被禁用/取不到 key）：直接换下一个，
-			// 不把它计入"尝试失败"——失败计数应来自真实的上游尝试（routing-spec §3.1）。
+			// 候选成员自身不可用（渠道缺失/被禁用/取不到 key）或准入未就绪：
+			// 直接换下一个，不计入"尝试失败"（routing-spec §3.1）。
 			member, delay, ok = state.Next(nil)
 		}
 		if !ok {
-			return nil, false
+			candidate := state.ThrottledMember()
+			if candidate == nil {
+				if throttledAny {
+					if retryWait < time.Second {
+						retryWait = time.Second
+					}
+					return nil, route.LocalThrottleError(modelName, retryWait), false
+				}
+				return nil, nil, false
+			}
+			key := route.AdmissionKey(candidate.ChannelId, candidate.Model)
+			cfg := cfgFor(candidate)
+			throttledAny = true
+			if estimate := route.DefaultAdmission.Estimate(key, cfg); estimate > 0 &&
+				(retryWait == 0 || estimate < retryWait) {
+				retryWait = estimate
+			}
+			if cfg.QueueWaitSeconds <= 0 {
+				state.ExhaustThrottled(0)
+				continue
+			}
+			ticket, wait, waitErr := route.DefaultAdmission.Wait(c.Request.Context(),
+				key, state.Route.Model, cfg)
+			if wait > 0 && (retryWait == 0 || wait < retryWait) {
+				retryWait = wait
+			}
+			if waitErr != nil {
+				state.ExhaustThrottled(wait.Milliseconds())
+				continue
+			}
+			committed, committedOK := state.CommitThrottled()
+			if !committedOK {
+				ticket.Release("", 0)
+				state.ExhaustThrottled(wait.Milliseconds())
+				continue
+			}
+			member = committed
+			setAdmissionTicket(c, ticket)
 		}
 		if delay > 0 {
-			// 同成员原地重试的间隔（routing-spec §3.1 / 六键 member_retry_interval_seconds）。
-			time.Sleep(delay)
+			// 同成员原地重试的间隔（routing-spec §3.1 / member_retry_interval_seconds）。
+			select {
+			case <-time.After(delay):
+			case <-c.Request.Context().Done():
+				return nil, nil, false
+			}
 		}
 
 		channel, err := model.GetChannelById(member.ChannelId, true)
 		if err != nil || channel == nil || channel.Status != common.ChannelStatusEnabled {
+			if ticket := TakeAdmissionTicket(c); ticket != nil {
+				ticket.Release("", 0)
+			}
 			logger.LogWarn(c, fmt.Sprintf("pbr: 跳过不可用成员 channel_id=%d model=%s", member.ChannelId, member.UpstreamModel))
 			// routing-spec §5.3：渠道停用/缺失属配置态跳过（channel_disabled），
 			// 不写冷却、不计熔断分；只耗尽本请求内该成员预算并留痕。
@@ -149,6 +299,9 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 			continue
 		}
 		if apiErr := SetupContextForSelectedChannel(c, channel, modelName); apiErr != nil {
+			if ticket := TakeAdmissionTicket(c); ticket != nil {
+				ticket.Release("", 0)
+			}
 			logger.LogWarn(c, fmt.Sprintf("pbr: 成员 channel_id=%d model=%s 注入上下文失败: %s", member.ChannelId, member.UpstreamModel, apiErr.Error()))
 			// 上下文注入失败 = 该成员当前配置不可用（缺 key/base_url 等），
 			// 同样是配置态跳过，不惩罚成员。
@@ -156,6 +309,29 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 			state.ReleaseProbe()
 			continue
 		}
+
+		// 未经排队路径的成员（已选路但尚未取槽）在此非阻塞取槽。
+		if existing := TakeAdmissionTicket(c); existing != nil {
+			setAdmissionTicket(c, existing)
+		} else {
+			cfg := cfgFor(member)
+			if cfg.Enabled() {
+				key := route.AdmissionKey(member.ChannelId, member.Model)
+				ticket, acquireErr := route.DefaultAdmission.Acquire(key, cfg)
+				if acquireErr != nil {
+					// 竞态：选路时还就绪，取槽时已被同车道并发请求占满。
+					throttledAny = true
+					if estimate := route.DefaultAdmission.Estimate(key, cfg); estimate > 0 &&
+						(retryWait == 0 || estimate < retryWait) {
+						retryWait = estimate
+					}
+					state.ExhaustThrottled(0)
+					continue
+				}
+				setAdmissionTicket(c, ticket)
+			}
+		}
+
 		// 成员级改名：上游真名与路由键解耦（design-v1 §3.3）。
 		common.SetContextKey(c, constant.ContextKeyPBRUpstreamModel, member.UpstreamModel)
 		if carrier := model.GetPBRLogCarrier(c); carrier != nil {
@@ -170,7 +346,7 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 		common.SetContextKey(c, constant.ContextKeyPBRNonStreamTimeout, cfg.MemberNonStreamResponseTimeoutSeconds)
 		common.SetContextKey(c, constant.ContextKeyPBRStreamFirstEventTimeout, cfg.MemberStreamFirstEventTimeoutSeconds)
 		SetServedByHeader(c, channel, member)
-		return channel, true
+		return channel, nil, true
 	}
 }
 

@@ -305,7 +305,7 @@ func enqueueEvent(ev events.Event) {
 // isDiagnosticEvent 判断事件是否只用于排障展示、不进入 webhook。
 func isDiagnosticEvent(eventType string) bool {
 	switch eventType {
-	case events.EventCooldown, events.EventCircuitHalfOpen, events.EventSkip, events.EventMemberPaced, events.EventMemberRecovered:
+	case events.EventCooldown, events.EventCircuitHalfOpen, events.EventSkip, events.EventMemberPaced, events.EventMemberRecovered, events.EventMemberThrottled, events.EventAdaptiveLimitChanged:
 		return true
 	default:
 		return false
