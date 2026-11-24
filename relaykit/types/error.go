@@ -94,9 +94,14 @@ const (
 )
 
 type NewAPIError struct {
-	Err            error
-	RelayError     any
-	skipRetry      bool
+	Err        error
+	RelayError any
+	skipRetry  bool
+	// displayMessage 客户端可见的展示文案（可脱敏/可替换上游原文）。
+	// 它只影响 ToOpenAIError/ToClaudeError/MaskSensitiveError 的输出，
+	// 不替换 Err——错误链必须保留，否则 errors.Is(DeadlineExceeded/Canceled)
+	// 会失效，超时与客户端取消会被误分类（ADR 0013）。
+	displayMessage string
 	recordErrorLog *bool
 	errorType      ErrorType
 	errorCode      ErrorCode
@@ -154,9 +159,14 @@ func (e *NewAPIError) ErrorWithStatusCode() string {
 	return fmt.Sprintf("status_code=%d, %s", e.StatusCode, msg)
 }
 
+// MaskSensitiveError 返回可展示/可入库的脱敏文案。
+// displayMessage 已由设置方负责脱敏，优先返回；否则对 Err 做通用脱敏。
 func (e *NewAPIError) MaskSensitiveError() string {
 	if e == nil {
 		return ""
+	}
+	if e.displayMessage != "" {
+		return e.displayMessage
 	}
 	if e.Err == nil {
 		return string(e.errorCode)
@@ -182,8 +192,23 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 	return fmt.Sprintf("status_code=%d, %s", e.StatusCode, msg)
 }
 
+// SetMessage 设置客户端可见的展示文案。不替换 Err——错误链用于分类与排障（ADR 0013）。
 func (e *NewAPIError) SetMessage(message string) {
-	e.Err = errors.New(message)
+	if e == nil {
+		return
+	}
+	e.displayMessage = message
+}
+
+// DisplayMessage 返回客户端可见文案（未设置时回落 Error()）。
+func (e *NewAPIError) DisplayMessage() string {
+	if e == nil {
+		return ""
+	}
+	if e.displayMessage != "" {
+		return e.displayMessage
+	}
+	return e.Error()
 }
 
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
@@ -209,6 +234,9 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Param:   "",
 			Code:    e.errorCode,
 		}
+	}
+	if e.displayMessage != "" {
+		result.Message = e.displayMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
@@ -238,6 +266,9 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Message: e.Error(),
 			Type:    string(e.errorType),
 		}
+	}
+	if e.displayMessage != "" {
+		result.Message = e.displayMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
@@ -294,7 +325,13 @@ func NewOpenAIError(err error, errorCode ErrorCode, statusCode int, ops ...NewAP
 		Type:    string(errorCode),
 		Code:    errorCode,
 	}
-	return WithOpenAIError(openaiError, statusCode, ops...)
+	e := WithOpenAIError(openaiError, statusCode, ops...)
+	// 保留原始 cause：errors.Is(DeadlineExceeded/Canceled) 依赖这条链（ADR 0013）。
+	// 展示文案仍走 RelayError.Message，不受影响。
+	if err != nil {
+		e.Err = err
+	}
+	return e
 }
 
 func InitOpenAIError(errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {
@@ -408,12 +445,15 @@ func ErrOptionWithRetryAfter(seconds int) NewAPIErrorOptions {
 	}
 }
 
+// ErrOptionWithHideErrMsg 设置客户端可见文案，同时**保留**底层 Err 的错误链。
+// 旧实现用 errors.New(replaceStr) 覆盖 e.Err，会销毁 DeadlineExceeded/Canceled 链，
+// 导致超时被归为 soft_transient、客户端取消被归为成员故障（ADR 0013）。
 func ErrOptionWithHideErrMsg(replaceStr string) NewAPIErrorOptions {
 	return func(e *NewAPIError) {
 		if kitutil.Debug.Load() {
 			fmt.Printf("ErrOptionWithHideErrMsg: %s, origin error: %s", replaceStr, e.Err)
 		}
-		e.Err = errors.New(replaceStr)
+		e.displayMessage = replaceStr
 	}
 }
 
