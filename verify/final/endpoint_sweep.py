@@ -111,12 +111,18 @@ def main() -> int:
 
     results = []
     deferred_deletes = []
+    deferred_destructive = []
     for path, methods in paths.items():
         for method, _operation in methods.items():
             method = method.lower()
             if method == "delete":
                 # DELETE 会破坏后续探针的前置状态：先记录，稍后为每个端点单独造对象再删。
                 deferred_deletes.append(path)
+                continue
+            if method == "post" and path == "/channels/{name}/retire":
+                # retire 会删除探针渠道，导致后续 status/sync-models/test 全部 404。
+                # 放到主循环末尾执行；它不是 DELETE，不能被 deferred_deletes 覆盖。
+                deferred_destructive.append((path, method))
                 continue
             if method not in ("get", "post", "put"):
                 continue
@@ -148,6 +154,23 @@ def main() -> int:
                 "expected_missing": expected,
                 "note": "删除/不存在对象" if expected and status == 404 else "",
             })
+
+    # —— 破坏性 POST 延后执行（retire 会删除探针渠道） ——
+    for path, method in deferred_destructive:
+        url = base + "/api/v1" + fill(path)
+        command = [
+            "curl", "-s", "--max-time", "8", "-o", "/dev/null", "-w", "%{http_code}",
+            "-X", method.upper(),
+            "-H", f"Authorization: Bearer {key}",
+        ]
+        body = BODIES.get((method, path))
+        if body is not None:
+            command += ["-H", "Content-Type: application/json", "-d", json.dumps(body)]
+        command.append(url)
+        raw = subprocess.run(command, capture_output=True, text=True).stdout.strip()
+        status = int(raw) if raw.isdigit() else 0
+        results.append({"method": method, "path": path, "status": status,
+                        "expected_missing": False, "note": "破坏性操作延后执行"})
 
     # —— DELETE 全量实跑 ——
     # 每个 DELETE 端点都先造出目标对象再删，确保走的是"真的删掉"分支而不是"对象不存在"。

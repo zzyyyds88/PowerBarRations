@@ -280,3 +280,42 @@ func TestReportMemberConfigSkipIsNotFailure(t *testing.T) {
 	require.True(t, ok)
 	assert.NotEqual(t, key, memberKeyOf(next))
 }
+
+// 车道整链替换会换 memberId：清理旧键前必须把唯一同源成员的运行态迁到新键，
+// 否则"打开编辑再保存"会清空冷却/熔断（L2 runbook 3d）。
+func TestPruneMigratesRuntimeAcrossMemberIdChange(t *testing.T) {
+	withFakeClock(t)
+	runtime := Default.For("lane-prune-migrate")
+	oldKey := "20:model-x#1"
+	newKey := "20:model-x#2"
+	until := nowMs() + 120_000
+	runtime.withLock(func() {
+		runtime.Cooldowns[oldKey] = until
+		runtime.PacedUntil[oldKey] = until
+		runtime.Circuits[oldKey] = &Circuit{State: CircuitOpen, OpenUntil: until, ConsecutiveFailures: 1}
+		runtime.HasCurrent = true
+		runtime.CurrentMember = oldKey
+		runtime.pruneStaleLocked(map[string]bool{newKey: true})
+		assert.Equal(t, until, runtime.Cooldowns[newKey])
+		assert.Equal(t, until, runtime.PacedUntil[newKey])
+		require.NotNil(t, runtime.Circuits[newKey])
+		assert.Equal(t, CircuitOpen, runtime.Circuits[newKey].State)
+		assert.Equal(t, newKey, runtime.CurrentMember)
+		assert.Zero(t, runtime.Cooldowns[oldKey])
+		assert.Nil(t, runtime.Circuits[oldKey])
+	})
+}
+
+// 重复成员（同渠道同模型多条）无法判定旧键归属：不得迁移，宁可丢也不串。
+func TestPruneDoesNotMigrateAmbiguousDuplicateMembers(t *testing.T) {
+	withFakeClock(t)
+	runtime := Default.For("lane-prune-ambiguous")
+	oldKey := "21:model-y#1"
+	valid := map[string]bool{"21:model-y#2": true, "21:model-y#3": true}
+	runtime.withLock(func() {
+		runtime.Cooldowns[oldKey] = nowMs() + 120_000
+		runtime.pruneStaleLocked(valid)
+		assert.Zero(t, runtime.Cooldowns[oldKey])
+		assert.Empty(t, runtime.Cooldowns)
+	})
+}

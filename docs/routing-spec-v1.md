@@ -487,9 +487,12 @@ type LaneRuntime struct {
 
 ### 5.1 键与状态
 
-- 键 = `channelId : memberId`（成员粒度；`memberId` 是车道成员条目的 id，组内成员用 `member_group_items` 的 id）。
+- 键 = `channelId:upstreamModel#memberId`（成员粒度；`memberId` 是车道成员条目的 id，组内成员用 `member_group_items` 的 id）。
   **同车道重复 `(渠道, 模型)` 的两条成员条目各自独立**（ADR 0009/ADR 0013），不共享冷却/熔断/预算；
   对外事件与日志的 `member` 标签仍是 `channel/model`。
+  **车道编辑后的迁移**：成员写入是整链替换，`memberId` 必然变化；`PruneStaleState` 在清理旧键前做一次
+  **唯一映射**迁移（同一 `(channelId, upstreamModel)` 旧键与新键各只有一条时，把冷却/减速/熔断/探测槽/当前成员
+  迁到新键）。重复成员无法判定归属，宁可不猜——各自独立运行态优先（否则"打开编辑再保存"会清空冷却）。
 - 三态：`closed / open / half_open`。
 
 ### 5.2 转换

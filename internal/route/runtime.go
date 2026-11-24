@@ -1085,6 +1085,13 @@ func (r *Runtime) Reset() ResetResult {
 // （成员全部按"无冷却/无熔断"处理），不写入注册表。
 func (reg *Registry) Health(key string, resolved *model.ResolvedRoute, settings CircuitSettings) HealthSnapshot {
 	if runtime := reg.Get(key); runtime != nil {
+		// 只读面也要先收敛成员键迁移：车道编辑会换 memberId，健康快照必须
+		// 看到迁移后的冷却/熔断，而不是冷启形状（routing-spec §1.3）。
+		valid := make(map[string]bool, len(resolved.Members))
+		for i := range resolved.Members {
+			valid[memberKeyOf(&resolved.Members[i])] = true
+		}
+		runtime.PruneStaleState(valid, resolved.LaneVersion)
 		return runtime.Health(resolved, settings)
 	}
 	empty := newRuntime()
@@ -1244,6 +1251,13 @@ func (r *Runtime) PruneStaleState(valid map[string]bool, laneVersion int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// 键迁移与"清理过期状态"分开：同版本/相同签名的并发编辑（两次 PUT 落在
+	// 同一秒）仍可能换了 memberId，健康快照必须看到迁移后的状态。只有不比
+	// 已知版本更旧的解析结果才允许迁移（避免旧快照把新状态搬回去）。
+	if laneVersion == 0 || r.prunedVersion == 0 || laneVersion >= r.prunedVersion {
+		r.migrateStaleMemberKeysLocked(valid)
+	}
+
 	if !r.prunedInit {
 		// 首次观测：只登记，未清理（此时没有可比对的旧状态）。
 		r.prunedInit = true
@@ -1284,6 +1298,7 @@ func memberSetSignature(valid map[string]bool) string {
 
 // pruneStaleLocked 真正执行残留清理。调用方持 r.mu。
 func (r *Runtime) pruneStaleLocked(valid map[string]bool) {
+	r.migrateStaleMemberKeysLocked(valid)
 	for key := range r.Cooldowns {
 		if !valid[key] {
 			delete(r.Cooldowns, key)
@@ -1308,6 +1323,69 @@ func (r *Runtime) pruneStaleLocked(valid map[string]bool) {
 		r.CurrentMember = ""
 		r.AffinityUntil = 0
 		r.AffinityArmed = false
+	}
+}
+
+// migrateStaleMemberKeysLocked 把"车道编辑导致 memberId 变化"的旧运行态迁移到
+// 新键上。
+//
+// 写入是整链替换（先删光再重插），memberId 必然变化；运行态键含 memberId 时，
+// 一次"打开编辑再保存"就会让成员的冷却/熔断凭空消失（runbook 3d 的
+// "关→开往返运行态逐字段不变"）。这里在清理旧键前做一次**唯一映射**迁移：
+// 仅当同一 (channelId, upstreamModel) 在旧键与新键中都只有一条时迁移；
+// 重复成员（同名同模型多条）无法判定归属，宁可不猜（各自独立运行态优先）。
+func (r *Runtime) migrateStaleMemberKeysLocked(valid map[string]bool) {
+	if len(valid) == 0 {
+		return
+	}
+	validByPrefix := map[string][]string{}
+	for key := range valid {
+		prefix := eventMember(key)
+		validByPrefix[prefix] = append(validByPrefix[prefix], key)
+	}
+	staleByPrefix := map[string][]string{}
+	addStale := func(key string) {
+		if valid[key] {
+			return
+		}
+		prefix := eventMember(key)
+		staleByPrefix[prefix] = append(staleByPrefix[prefix], key)
+	}
+	for key := range r.Cooldowns {
+		addStale(key)
+	}
+	for key := range r.PacedUntil {
+		addStale(key)
+	}
+	for key := range r.Circuits {
+		addStale(key)
+	}
+	for prefix, staleKeys := range staleByPrefix {
+		targets := validByPrefix[prefix]
+		if len(targets) != 1 {
+			continue
+		}
+		target := targets[0]
+		for _, staleKey := range staleKeys {
+			if staleKey == target {
+				continue
+			}
+			if until, ok := r.Cooldowns[staleKey]; ok && r.Cooldowns[target] == 0 {
+				r.Cooldowns[target] = until
+			}
+			if until, ok := r.PacedUntil[staleKey]; ok && r.PacedUntil[target] == 0 {
+				r.PacedUntil[target] = until
+			}
+			if circuit, ok := r.Circuits[staleKey]; ok && r.Circuits[target] == nil {
+				r.Circuits[target] = circuit
+			}
+			if r.HasProbe && r.ProbeMember == staleKey {
+				r.ProbeMember = target
+			}
+			if r.HasCurrent && r.CurrentMember == staleKey {
+				r.CurrentMember = target
+			}
+		}
 	}
 }
 
