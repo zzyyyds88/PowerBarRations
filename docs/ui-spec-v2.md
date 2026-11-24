@@ -202,6 +202,10 @@ v2 的 IA 只服务这六个问题。
 - **渠道**（"Channels"，路径 `/connections/channels`）：表格（渠道/协议/状态/响应/用量/创建时间/操作）；行编辑走右侧 Sheet；页头「导出 CSV」（不含密钥）。
   - 操作列只常驻「编辑」与「测试连接」（测试为图标按钮，带 `aria-label`）；启停、状态、复制、删除等
     动作收进 `...` 菜单，**启用/暂停不得作为常驻红色文字按钮**（§7）。
+  - **「测试连接」成功即清除惩罚态**（routing-spec §5.4）：成功后 toast 明示
+    「连接正常，已清除该成员的冷却/熔断」，并在响应带 `penalty_cleared.lanes` 时列出受影响车道；
+    本来就没有惩罚态时只报「连接正常」，不虚构清理条数。失败时保留上游原文与 `error_kind`，
+    **不得**暗示运行态被改动。
   - **删除入口 = 退役确认（两步，design-v1 §7.9）**：点「删除」先调 `POST /channels/{name}/retire?dry_run=true`
     拿预览——弹窗列出将停用、将从哪些车道清理/哪些车道整条删除、受影响的成员组（含**通过组受影响的
     其他车道**，明示共享链的连带影响）、将改写为「原名（已退役 时间）」的历史记录条数、未过期异步对象提示；
@@ -305,9 +309,13 @@ v2 的 IA 只服务这六个问题。
 | 已暂停 / Paused | 人工停用，保留成员链 | neutral |
 | 自动暂停 / Auto-paused | 系统因连续失败停用 | warning |
 | 冷却中 / Cooling down | 软故障冷却 | warning |
+| 限流中 / Rate limited | 上游 429 减速中（`paced_until`），成员**仍可用** | info（不是 warning） |
 | 熔断中 / Circuit open | 熔断退避 | warning |
 
 - 状态 = 图标 + 文案，颜色只做强化；不得只靠颜色。
+- **「限流中」与「冷却中」必须是两个独立状态**（routing-spec §4.1.1）：前者是上游要求放慢
+  （`paced_until`，`available=true`），后者是成员故障（`cooldown_until`，`available=false`）。
+  不得把两者合并成同一个告警色/同一句文案——合并会让运维把"正常限流"误读成"渠道坏了"。
 - 手工停用是 **Paused**，不是 Disabled；`Delete`/`Disable` 不作为常驻红色文字动作。
 
 ## 8. 编辑面
@@ -331,6 +339,21 @@ v2 的 IA 只服务这六个问题。
   - 校验错误就地提示（非法 HH:MM、空 `days`、超过 64 条）；
   - **DeepSeek 官方峰谷预设**按钮：只填结构，数值由运维按采购价修改，不写死部署数据；
   - **批量粘贴导入**：JSON 数组或 CSV（`model,input,output,cache_read,cache_write,timezone,days,start,end`），解析后先表格预览，确认后随渠道 `PUT` 提交；预览复用 `?dry_run=true`。
+
+## 9.1 出站准入（渠道 Sheet「并发」页签）
+
+- 渠道 Sheet 新增「并发」页签，按渠道声明的模型编辑 `rate_limits`（routing-spec §3.2、
+  [ADR 0012](adr/0012-outbound-admission-control.md)）：`model`（从渠道模型清单选择）、
+  `max_concurrency`、`max_rpm`、`queue_limit`、`queue_wait_seconds`。
+- **默认全部留空 = 不限制**；`max_concurrency` 提供「自动」选项（存 `-1`，AIMD 自适应），
+  选中后不显示数字输入，改为展示运行态学到的当前上限。
+- `queue_limit = 0` 用默认 32；`queue_wait_seconds = 0` 表示不排队。
+  行内校验整数范围（`max_concurrency >= -1`，其余 `>= 0`）与 model 不重复；
+  保存随渠道 `PUT` 提交，`?dry_run=true` 预览。
+- 渠道列表/模型目录只读展示当前生效的并发与 RPM 上限（无配置显示 `—`，自适应显示「自动 (当前 N)」）；
+  该页签**不参与**车道编排，也不得变成新的路由开关。
+- 实时路由/健康视图展示成员的 `inflight` / `rpm_used` / `queued` / `adaptive_limit`
+  （运行态，重启清零）；请求日志的 `throttled` 与 `wait_ms` 可检索。
 
 ## 10. 验收
 
