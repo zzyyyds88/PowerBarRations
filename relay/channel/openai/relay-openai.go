@@ -197,11 +197,10 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		return nil, helper.NewUpstreamStreamRejectError(streamRejectMsg)
 	}
 
-	// 上游建流后一帧有效数据都没发（读超时 / 立即 EOF / 只有 [DONE]）：
-	// 这是上游空响应，不是成功。必须在写任何终态帧之前判掉，否则客户端会拿到
-	// 一个 200 的空流、车道运行态也记不到这次失败（routing-spec §4.1）。
-	if helper.StreamFailedWithoutFrames(c, info) {
-		return nil, helper.EmptyStreamError()
+	// 非正常结束（超时/取消/读流失败）与零内容帧空流都必须按真实原因分类
+	// （ADR 0013 第 4 条）：不能用 EmptyStreamError 顶替 timeout/canceled。
+	if streamErr := helper.StreamOutcomeError(c, info); streamErr != nil {
+		return nil, streamErr
 	}
 
 	// 处理最后的响应

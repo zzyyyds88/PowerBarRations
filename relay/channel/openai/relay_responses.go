@@ -158,9 +158,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, helper.NewUpstreamStreamRejectError(streamRejectMsg)
 	}
 
-	// 上游建流后零有效帧 = 空响应，按成员级失败处理（routing-spec §4.1）。
-	if helper.StreamFailedWithoutFrames(c, info) {
-		return nil, helper.EmptyStreamError()
+	// 非正常结束与零内容帧空流按真实原因分类（ADR 0013 第 4 条）。
+	if streamErr := helper.StreamOutcomeError(c, info); streamErr != nil {
+		return nil, streamErr
 	}
 
 	if usage.CompletionTokens == 0 {

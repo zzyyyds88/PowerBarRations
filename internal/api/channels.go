@@ -13,6 +13,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/service"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -72,6 +73,9 @@ type channelPayload struct {
 	Prices        *[]dto.ChannelModelPrice `json:"prices"`
 	// ModelMapping 模型名 → 上游真名（ADR 0005/0008）；省略则保持原值。
 	ModelMapping *map[string]string `json:"model_mapping"`
+	// StatusCodeMapping 上游状态码 → 对外状态码（ADR 0013）：只改客户端展示码，
+	// 不参与分类/重试/冷却。省略保持原值；显式 {} 清空。
+	StatusCodeMapping *map[string]string `json:"status_code_mapping"`
 }
 
 func channelResponse(ch *model.Channel) gin.H {
@@ -94,19 +98,20 @@ func channelResponse(ch *model.Channel) gin.H {
 		prices = []dto.ChannelModelPrice{}
 	}
 	resp := gin.H{
-		"name":           ch.Name,
-		"type":           ChannelTypeSlug(ch.Type),
-		"base_url":       ch.GetBaseURL(),
-		"models":         models,
-		"param_override": jsonObject(derefString(ch.ParamOverride)),
-		"enabled":        ch.Status == common.ChannelStatusEnabled,
-		"proxy":          ch.GetSetting().Proxy,
-		"prices":         prices,
-		"model_mapping":  ch.ModelMappingMap(),
-		"key_set":        strings.TrimSpace(key) != "",
-		"key_prefix":     prefix,
-		"created_at":     rfc3339(ch.CreatedTime),
-		"updated_at":     rfc3339(ch.UpdatedAt),
+		"name":                ch.Name,
+		"type":                ChannelTypeSlug(ch.Type),
+		"base_url":            ch.GetBaseURL(),
+		"models":              models,
+		"param_override":      jsonObject(derefString(ch.ParamOverride)),
+		"enabled":             ch.Status == common.ChannelStatusEnabled,
+		"proxy":               ch.GetSetting().Proxy,
+		"prices":              prices,
+		"model_mapping":       ch.ModelMappingMap(),
+		"status_code_mapping": ch.StatusCodeMappingMap(),
+		"key_set":             strings.TrimSpace(key) != "",
+		"key_prefix":          prefix,
+		"created_at":          rfc3339(ch.CreatedTime),
+		"updated_at":          rfc3339(ch.UpdatedAt),
 	}
 	return resp
 }
@@ -593,6 +598,23 @@ func buildChannel(name string, existing *model.Channel, payload *channelPayload,
 		}
 		encoded := string(raw)
 		channel.ModelMapping = &encoded
+	}
+
+	if payload.StatusCodeMapping != nil {
+		// 状态码映射只改客户端可见码（ADR 0013）：目标 400–599，禁 2xx 与 503。
+		cleaned := map[string]string{}
+		for source, target := range *payload.StatusCodeMapping {
+			cleaned[strings.TrimSpace(source)] = strings.TrimSpace(target)
+		}
+		raw, err := json.Marshal(cleaned)
+		if err != nil {
+			return nil, &apiError{code: apierr.CodeValidationFailed, message: "invalid status_code_mapping"}
+		}
+		encoded := string(raw)
+		if err := service.ValidateStatusCodeMapping(encoded); err != nil {
+			return nil, &apiError{code: apierr.CodeValidationFailed, message: err.Error()}
+		}
+		channel.StatusCodeMapping = &encoded
 	}
 
 	// key 只写不读：省略则保留原值（新建时为空）。

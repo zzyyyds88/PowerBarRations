@@ -135,43 +135,66 @@ func parseRetryAfterHeader(raw string) int {
 	return 0
 }
 
-// ResetStatusCode 按渠道级 status_code_mapping 改写上游错误码。
+// ResetStatusCode 按渠道级 status_code_mapping 写入对外状态码（MappedStatusCode）。
+//
+// 只影响客户端看到的状态码，**不改 StatusCode**：错误分类、重试、冷却与熔断
+// 仍按原始上游码判定（ADR 0013 / routing-spec §4.1.2）。
 //
 // 保留码：503 是模型面的**专属契约**（routing-spec §4.2 / ADR 0002），表示"没有可用
-// 渠道"，下游 fallback 分类依赖它。若允许把任意上游错误（429/500 等）映射成 503，
-// 下游会把"上游抖动"误判为"路由全挂"，破坏该契约。因此这里显式拒绝映射到 503。
+// 渠道"，下游 fallback 分类依赖它。若允许把任意上游错误映射成 503，下游会把
+// "上游抖动"误判为"路由全挂"，破坏该契约。目标码限定 400–599，2xx 一律拒绝。
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {
 	if newApiErr == nil {
 		return
 	}
-	if statusCodeMappingStr == "" || statusCodeMappingStr == "{}" {
-		return
-	}
-	statusCodeMapping := make(map[string]any)
-	err := common.Unmarshal([]byte(statusCodeMappingStr), &statusCodeMapping)
-	if err != nil {
+	mapping, err := parseStatusCodeMapping(statusCodeMappingStr)
+	if err != nil || len(mapping) == 0 {
 		return
 	}
 	if newApiErr.StatusCode == http.StatusOK {
 		return
 	}
-	codeStr := strconv.Itoa(newApiErr.StatusCode)
-	if value, ok := statusCodeMapping[codeStr]; ok {
-		intCode, ok := parseStatusCodeMappingValue(value)
-		if !ok {
-			return
-		}
-		if isReservedStatusCode(intCode) {
-			return
-		}
-		newApiErr.StatusCode = intCode
+	if mapped, ok := mapping[newApiErr.StatusCode]; ok {
+		newApiErr.MappedStatusCode = mapped
 	}
 }
 
-// isReservedStatusCode 判定目标码是否为不可被渠道映射占用的保留码。
-// 目前仅 503：模型面用它表达"无可选成员"，语义由 ADR 0002 锁定。
-func isReservedStatusCode(code int) bool {
-	return code == http.StatusServiceUnavailable
+// ValidateStatusCodeMapping 校验渠道写入口收到的 status_code_mapping。
+// 键与值都必须是十进制 HTTP 状态码；目标码限定 400–599，禁止 2xx 与 503。
+// 空值与 `{}` 合法（表示不映射/清空）。
+func ValidateStatusCodeMapping(raw string) error {
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "{}" {
+		return nil
+	}
+	if _, err := parseStatusCodeMapping(raw); err != nil {
+		return err
+	}
+	return nil
+}
+
+// parseStatusCodeMapping 解析并校验映射表。返回 nil 错误时 map 一定合法。
+func parseStatusCodeMapping(raw string) (map[int]int, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || trimmed == "{}" {
+		return nil, nil
+	}
+	var decoded map[string]any
+	if err := common.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return nil, fmt.Errorf("status_code_mapping 必须是 JSON 对象")
+	}
+	result := make(map[int]int, len(decoded))
+	for key, value := range decoded {
+		source, err := strconv.Atoi(strings.TrimSpace(key))
+		if err != nil || source < 100 || source > 599 {
+			return nil, fmt.Errorf("status_code_mapping 的键必须是 100–599 的十进制状态码：%q", key)
+		}
+		target, ok := parseStatusCodeMappingValue(value)
+		if !ok || target < 400 || target > 599 || target == http.StatusServiceUnavailable {
+			return nil, fmt.Errorf("status_code_mapping 的目标码必须是 400–599 且不能是 503：%q -> %v", key, value)
+		}
+		result[source] = target
+	}
+	return result, nil
 }
 
 func parseStatusCodeMappingValue(value any) (int, bool) {

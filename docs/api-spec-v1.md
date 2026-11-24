@@ -586,7 +586,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`rate_limits`** / **`model_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`，成员**恒带 `enabled`**，组引用元素原样导出）、**`member_groups`（含组内成员与组开关）**与 `system_options`。 |
+| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`rate_limits`** / **`model_mapping`** / **`status_code_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`，成员**恒带 `enabled`**，组引用元素原样导出）、**`member_groups`（含组内成员与组开关）**与 `system_options`。 |
 | POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。**成员的 `enabled` 必须随导出/导入往返**（导出的关闭状态在导入后仍是关闭；导入文件里省略该字段按 §4.2 的三态规则处理：新建成员 = 启用、命中既有成员 = 保留原值），否则"导出→清空→导入"会把运维人工停用的成员静默放回选路。**成员组先于车道导入**（车道链上的组引用按组名解析；bundle 与库里都没有的组引用从链上跳过并计入 `warnings`）。**导出文件只用于同版本 PBR 实例间还原配置**（bundle 内声明的渠道在构造车道时即视为存在，成员按名字回填真实渠道 id）；只有"bundle 与库里都没有"的成员才被跳过，并在 `warnings` / `diff.skipped` 列出，成员清空的启用车道转为停用。**它不是旧系统迁移或数据恢复工具；密钥明文不在文件里** |
 | — | `diff` 形状（import 响应） | **组名与导出体刻意不同名，两组都是稳定契约**：`diff.channels` / `diff.lanes` / **`diff.keys`** 是 `{add, update, unchanged, remove, skipped}` 五数组；**`diff.options` 是 `{"changed": [...]}`**（不是五数组）。注意命名差异：导出体里叫 `client_keys`、`system_options`，diff 里叫 `keys`、`options`——按本节取键，不要按导出体字段名去取 `diff.client_keys`（会拿到 `undefined`，把"有变更"误判成"无变更"）。 |
 

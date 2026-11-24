@@ -94,6 +94,27 @@ func TestValidateChannelTrimsName(t *testing.T) {
 	assert.Equal(t, "GcmodAi", channel.Name)
 }
 
+// 渠道写入口必须校验状态码映射：目标是 400–599，禁 2xx 与 503（ADR 0013）。
+func TestValidateChannelRejectsInvalidStatusCodeMapping(t *testing.T) {
+	valid := []string{"", "{}", `{"429":"400"}`, `{"500":502}`}
+	for _, raw := range valid {
+		channel := &model.Channel{
+			Type:              constant.ChannelTypeOpenAI,
+			StatusCodeMapping: common.GetPointer(raw),
+		}
+		require.NoError(t, validateChannel(channel, false), "应接受 %q", raw)
+	}
+
+	invalid := []string{`not-json`, `{"429":"200"}`, `{"429":"503"}`, `{"bad":"400"}`, `{"429":"bad"}`}
+	for _, raw := range invalid {
+		channel := &model.Channel{
+			Type:              constant.ChannelTypeOpenAI,
+			StatusCodeMapping: common.GetPointer(raw),
+		}
+		require.Error(t, validateChannel(channel, false), "应拒绝 %q", raw)
+	}
+}
+
 func TestValidateChannelRequiresNewAPIBaseURL(t *testing.T) {
 	tests := []struct {
 		name    string

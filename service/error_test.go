@@ -23,44 +23,51 @@ func TestResetStatusCode(t *testing.T) {
 		name             string
 		statusCode       int
 		statusCodeConfig string
-		expectedCode     int
+		expectedMapped   int
 	}{
 		{
 			name:             "map string value to non-reserved code",
 			statusCode:       429,
 			statusCodeConfig: `{"429":"502"}`,
-			expectedCode:     502,
+			expectedMapped:   502,
 		},
 		{
 			name:             "map int value to non-reserved code",
 			statusCode:       429,
 			statusCodeConfig: `{"429":502}`,
-			expectedCode:     502,
+			expectedMapped:   502,
 		},
 		{
 			// 审查 B6：503 是模型面「没有可用渠道」的保留码，禁止被渠道映射占用。
 			name:             "refuse mapping to reserved 503 (string)",
 			statusCode:       429,
 			statusCodeConfig: `{"429":"503"}`,
-			expectedCode:     429,
+			expectedMapped:   0,
 		},
 		{
 			name:             "refuse mapping to reserved 503 (int)",
 			statusCode:       500,
 			statusCodeConfig: `{"500":503}`,
-			expectedCode:     500,
+			expectedMapped:   0,
 		},
 		{
 			name:             "skip invalid string value",
 			statusCode:       429,
 			statusCodeConfig: `{"429":"bad-code"}`,
-			expectedCode:     429,
+			expectedMapped:   0,
 		},
 		{
 			name:             "skip status code 200",
 			statusCode:       200,
-			statusCodeConfig: `{"200":503}`,
-			expectedCode:     200,
+			statusCodeConfig: `{"200":502}`,
+			expectedMapped:   0,
+		},
+		{
+			// ADR 0013：2xx 一律不是合法目标码。
+			name:             "refuse mapping to 2xx",
+			statusCode:       429,
+			statusCodeConfig: `{"429":"200"}`,
+			expectedMapped:   0,
 		},
 	}
 
@@ -72,8 +79,40 @@ func TestResetStatusCode(t *testing.T) {
 				StatusCode: tc.statusCode,
 			}
 			ResetStatusCode(newAPIError, tc.statusCodeConfig)
-			require.Equal(t, tc.expectedCode, newAPIError.StatusCode)
+			require.Equal(t, tc.statusCode, newAPIError.StatusCode,
+				"映射不得改写原始状态码：分类/冷却/熔断依赖它")
+			require.Equal(t, tc.expectedMapped, newAPIError.MappedStatusCode)
+			if tc.expectedMapped > 0 {
+				require.Equal(t, tc.expectedMapped, newAPIError.ClientStatusCode())
+			} else {
+				require.Equal(t, tc.statusCode, newAPIError.ClientStatusCode())
+			}
 		})
+	}
+}
+
+func TestValidateStatusCodeMapping(t *testing.T) {
+	t.Parallel()
+	valid := []string{
+		"",
+		"{}",
+		`{"429":"400"}`,
+		`{"500":502,"429":400}`,
+	}
+	for _, raw := range valid {
+		require.NoError(t, ValidateStatusCodeMapping(raw), "应接受 %q", raw)
+	}
+	invalid := []string{
+		`not-json`,
+		`[]`,
+		`{"abc":"400"}`,
+		`{"429":"200"}`,
+		`{"429":"503"}`,
+		`{"429":"99"}`,
+		`{"429":"bad"}`,
+	}
+	for _, raw := range invalid {
+		require.Error(t, ValidateStatusCodeMapping(raw), "应拒绝 %q", raw)
 	}
 }
 

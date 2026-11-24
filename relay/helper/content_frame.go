@@ -1,6 +1,9 @@
 package helper
 
 import (
+	"encoding/json"
+	"strings"
+
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
@@ -59,9 +62,11 @@ func IsContentResponsesChunk(resp dto.ResponsesStreamResponse) bool {
 }
 
 // isContentOpenaiChunk OpenAI chat SSE（含兼容上游的同形 chunk）。
-// delta 满足其一即内容：content / tool_calls / reasoning_content / reasoning。
-// 仅 role 的开场增量、finish_reason 尾帧、usage 尾帧不算——这三个是
-// OpenAI chat 流的全部结构帧形态，按 payload 计算而非事件名枚举。
+// delta 满足其一即内容：content / tool_calls / reasoning_content / reasoning /
+// annotations（OpenRouter 等流式引用）。仅 role 的开场增量、finish_reason 尾帧、
+// usage 尾帧不算——这三个是 OpenAI chat 流的全部结构帧形态，按 payload 计算而
+// 非事件名枚举。annotations 是**载荷**：只有它、没有正文的帧也是客户端要收的
+// 内容（否则该帧会被当成"零帧空流"而触发换人重试）。
 func IsContentOpenaiChunk(chunk *dto.ChatCompletionsStreamResponse) bool {
 	if chunk == nil {
 		return false
@@ -71,15 +76,27 @@ func IsContentOpenaiChunk(chunk *dto.ChatCompletionsStreamResponse) bool {
 		if (delta.Content != nil && *delta.Content != "") ||
 			len(delta.ToolCalls) > 0 ||
 			(delta.ReasoningContent != nil && *delta.ReasoningContent != "") ||
-			(delta.Reasoning != nil && *delta.Reasoning != "") {
+			(delta.Reasoning != nil && *delta.Reasoning != "") ||
+			hasJSONPayload(delta.Annotations) {
 			return true
 		}
 	}
 	return false
 }
 
+// hasJSONPayload 判断 RawMessage 是否承载真实载荷（排除空值、null 与空数组）。
+func hasJSONPayload(raw json.RawMessage) bool {
+	payload := nonNullJSON(raw)
+	if len(payload) == 0 {
+		return false
+	}
+	return strings.TrimSpace(string(payload)) != "[]"
+}
+
 // isContentGeminiResponse Gemini 原生 JSON 对象流：candidates[].content.parts
-// 非空（text / functionCall / inlineData）算内容；空 parts 的元数据帧不算。
+// 非空即内容——text / functionCall / inlineData / functionResponse /
+// executableCode / codeExecutionResult 都是客户端要收的载荷；空 parts 的
+// 元数据帧不算。
 func IsContentGeminiResponse(resp *dto.GeminiChatResponse) bool {
 	if resp == nil {
 		return false
@@ -87,7 +104,9 @@ func IsContentGeminiResponse(resp *dto.GeminiChatResponse) bool {
 	for i := range resp.Candidates {
 		for j := range resp.Candidates[i].Content.Parts {
 			part := &resp.Candidates[i].Content.Parts[j]
-			if part.Text != "" || part.FunctionCall != nil || part.InlineData != nil {
+			if part.Text != "" || part.FunctionCall != nil || part.InlineData != nil ||
+				part.FunctionResponse != nil || part.ExecutableCode != nil ||
+				part.CodeExecutionResult != nil {
 				return true
 			}
 		}

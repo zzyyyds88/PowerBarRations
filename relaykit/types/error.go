@@ -106,7 +106,11 @@ type NewAPIError struct {
 	errorType      ErrorType
 	errorCode      ErrorCode
 	StatusCode     int
-	Metadata       json.RawMessage
+	// MappedStatusCode 渠道级 status_code_mapping 解析出的对外状态码（0 = 未映射）。
+	// 它只影响写给客户端的响应码，不改 StatusCode——错误分类、重试、冷却与熔断
+	// 必须继续按原始上游码判定（ADR 0013 / routing-spec §4.1.2）。
+	MappedStatusCode int
+	Metadata         json.RawMessage
 	// RetryAfterSeconds 上游 Retry-After 头解析出的建议等待秒数（0 = 未提供）。
 	// 选路层用它把成员冷却至少延长到上游要求的时间，避免继续撞限流。
 	RetryAfterSeconds int
@@ -132,6 +136,21 @@ func (e *NewAPIError) GetErrorType() ErrorType {
 		return ""
 	}
 	return e.errorType
+}
+
+// ClientStatusCode 返回写给客户端的 HTTP 状态码。
+//
+// MappedStatusCode 非零时优先（渠道级 status_code_mapping 的展示映射，ADR 0013）；
+// 映射只允许 400–599，因此这里再做一次防御性范围检查，异常值回落到原始状态码。
+// 错误分类（internal/route.Classify）始终读 StatusCode，不读本方法。
+func (e *NewAPIError) ClientStatusCode() int {
+	if e == nil {
+		return 0
+	}
+	if e.MappedStatusCode >= 400 && e.MappedStatusCode <= 599 {
+		return e.MappedStatusCode
+	}
+	return e.StatusCode
 }
 
 func (e *NewAPIError) Error() string {

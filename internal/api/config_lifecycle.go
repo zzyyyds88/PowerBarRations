@@ -43,7 +43,9 @@ type ChannelConfig struct {
 	Prices []dto.ChannelModelPrice `json:"prices"`
 	// ModelMapping 模型名 → 上游真名；空表导出为 {}（ADR 0005/0008）。
 	ModelMapping map[string]string `json:"model_mapping"`
-	KeySet       bool              `json:"key_set"`
+	// StatusCodeMapping 上游状态码 → 对外状态码；空表导出为 {}（ADR 0013）。
+	StatusCodeMapping map[string]string `json:"status_code_mapping"`
+	KeySet            bool              `json:"key_set"`
 }
 
 // LaneMemberConfig 车道成员的可导出形态（**两态**，api-spec §4.2）：散成员含
@@ -459,6 +461,10 @@ func channelPayloadFromConfig(config ChannelConfig) *channelPayload {
 	if config.ModelMapping != nil {
 		mapping := config.ModelMapping
 		payload.ModelMapping = &mapping
+	}
+	if config.StatusCodeMapping != nil {
+		mapping := config.StatusCodeMapping
+		payload.StatusCodeMapping = &mapping
 	}
 	return payload
 }
@@ -1218,20 +1224,25 @@ func exportedChannelConfig(channel *model.Channel, models []string) ChannelConfi
 	if mapping == nil {
 		mapping = map[string]string{}
 	}
+	statusMapping := channel.StatusCodeMappingMap()
+	if statusMapping == nil {
+		statusMapping = map[string]string{}
+	}
 	baseURL := channel.GetBaseURL()
 	enabled := channel.Status == common.ChannelStatusEnabled
 	proxy := channel.GetSetting().Proxy
 	return ChannelConfig{
-		Name:          channel.Name,
-		Type:          ChannelTypeSlug(channel.Type),
-		BaseURL:       &baseURL,
-		Models:        models,
-		ParamOverride: jsonObject(derefString(channel.ParamOverride)),
-		Enabled:       &enabled,
-		Proxy:         &proxy,
-		Prices:        prices,
-		ModelMapping:  mapping,
-		KeySet:        strings.TrimSpace(channel.Key) != "",
+		Name:              channel.Name,
+		Type:              ChannelTypeSlug(channel.Type),
+		BaseURL:           &baseURL,
+		Models:            models,
+		ParamOverride:     jsonObject(derefString(channel.ParamOverride)),
+		Enabled:           &enabled,
+		Proxy:             &proxy,
+		Prices:            prices,
+		ModelMapping:      mapping,
+		StatusCodeMapping: statusMapping,
+		KeySet:            strings.TrimSpace(channel.Key) != "",
 	}
 }
 
