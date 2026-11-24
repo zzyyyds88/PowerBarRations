@@ -62,6 +62,8 @@ export interface MemberLiveInput {
   available?: boolean
   circuit?: string
   cooldownUntil?: string | null
+  /** 限流减速截止（429 语义；与冷却分开，不影响 available）。 */
+  pacedUntil?: string | null
   circuitOpenUntil?: string | null
   probing?: boolean
   current?: boolean
@@ -114,12 +116,14 @@ export function resolveMemberLiveState(
 
   const cooldownLeft = secondsUntil(input.cooldownUntil, now)
   if (cooldownLeft !== null) {
-    return {
-      ...base,
-      kind:
-        input.lastErrorKind === 'soft_rate_limit' ? 'rate-limited' : 'cooldown',
-      secondsLeft: cooldownLeft,
-    }
+    return { ...base, kind: 'cooldown', secondsLeft: cooldownLeft }
+  }
+
+  // 429 只减速（routing-spec §4.1.1）：成员仍 available，不是冷却/故障。
+  // 单独成『限流中』，排障时不会误判成上游挂了。
+  const pacedLeft = secondsUntil(input.pacedUntil, now)
+  if (pacedLeft !== null) {
+    return { ...base, kind: 'rate-limited', secondsLeft: pacedLeft }
   }
 
   // 连续被拒是配置态结论，不是运行故障：upstream_reject 不计熔断、不写冷却，
@@ -160,6 +164,7 @@ export function memberStateInput(
     available: member.available,
     circuit: member.circuit,
     cooldownUntil: member.cooldown_until,
+    pacedUntil: member.paced_until,
     circuitOpenUntil: member.circuit_open_until,
     probing: member.probing,
     current: member.current,
@@ -219,6 +224,13 @@ export function laneAvailability(
   const available = snapshot.members.filter(
     (member) => member.enabled !== false && member.available
   ).length
+  if (lane.mode === 'manual') {
+    // manual 只有点名成员参与选路：非点名成员 available=false 是设计使然，
+    // 不能算进 degraded 分母（否则每条 manual 车道永远显示"部分可用"）。
+    return available > 0
+      ? { available: 1, total: 1, health: 'healthy' }
+      : { available: 0, total: 1, health: 'unavailable' }
+  }
   if (total === 0) return { available: 0, total, health: 'healthy' }
   if (available === 0) return { available, total, health: 'unavailable' }
   if (available < total) return { available, total, health: 'degraded' }

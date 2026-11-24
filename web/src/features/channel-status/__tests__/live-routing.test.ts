@@ -151,7 +151,8 @@ describe('resolveMemberLiveState', () => {
   it('distinguishes rate limits from generic cooldowns', () => {
     const rateLimited = resolveMemberLiveState(
       {
-        cooldownUntil: inSeconds(30),
+        available: true,
+        pacedUntil: inSeconds(30),
         lastErrorKind: 'soft_rate_limit',
       },
       NOW
@@ -272,6 +273,20 @@ describe('laneAvailability', () => {
       health: 'disabled',
     })
     expect(laneAvailability(lane()).health).toBe('waiting')
+  })
+
+  it('uses only the named member as the manual lane denominator', () => {
+    // manual 只有 active_member 参与选路：其他成员 available=false 是设计使然，
+    // 不能把整条车道渲染成 degraded（routing-spec §2.1/§7）。
+    const live = snapshot([
+      laneMember(),
+      laneMember({ member: 'beta/model', channel: 'beta', available: false }),
+    ])
+    expect(laneAvailability(lane({ mode: 'manual' }), live)).toEqual({
+      available: 1,
+      total: 1,
+      health: 'healthy',
+    })
   })
 
   it('counts group references by their member count', () => {

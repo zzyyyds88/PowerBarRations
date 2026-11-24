@@ -3555,6 +3555,19 @@
     "Type \"{{name}}\" to enable retirement.": "Type \"{{name}}\" to enable retirement.",
     "Retire and delete": "Retire and delete",
     "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.",
-    "Failed to retire the channel": "Failed to retire the channel"
+    "Failed to retire the channel": "Failed to retire the channel",
+    "Concurrency": "Concurrency",
+    "Outbound admission control": "Outbound admission control",
+    "Max concurrency": "Max concurrency",
+    "Max RPM": "Max RPM",
+    "Queue limit": "Queue limit",
+    "Queue wait (seconds)": "Queue wait (seconds)",
+    "Add a model to limit": "Add a model to limit",
+    "No concurrency limits configured. Requests are sent upstream without local admission control.": "No concurrency limits configured. Requests are sent upstream without local admission control.",
+    "Per-model concurrency and RPM limits enforced before sending upstream.": "Per-model concurrency and RPM limits enforced before sending upstream.",
+    "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.",
+    "Rate limited": "Rate limited",
+    "Queued": "Queued",
+    "Remove model": "Remove model"
   }
 }

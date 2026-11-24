@@ -49,6 +49,8 @@ export function LaneRuntimeCell(props: LaneRuntimeCellProps) {
     if (label === 'Half-open') return t('Half-open')
     if (label === 'Affinity') return t('Affinity')
     if (label === 'Probing') return t('Probing')
+    if (label === 'Rate limited') return t('Rate limited')
+    if (label === 'Queued') return t('Queued')
     if (label === 'Manually disabled') return t('Manually disabled')
     return t('Current')
   }

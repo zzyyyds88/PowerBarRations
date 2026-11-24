@@ -31,6 +31,8 @@ export type MemberStateLabel =
   | 'Half-open'
   | 'Affinity'
   | 'Probing'
+  | 'Rate limited'
+  | 'Queued'
   | 'Current'
   | 'Manually disabled'
 
@@ -86,6 +88,23 @@ export function laneMemberStates(
       label: 'Cooldown',
       variant: 'warning',
       detail: formatUntil(member.cooldown_until),
+    })
+  }
+  // 限流减速（routing-spec §4.1.1）：429 只放慢成员，不是故障、不影响可选性；
+  // 必须与「冷却中」分开成 info 徽章，否则会误导排障去查上游故障。
+  const pacedMs = untilMs(member.paced_until)
+  if (!Number.isNaN(pacedMs) && pacedMs > now) {
+    states.push({
+      label: 'Rate limited',
+      variant: 'info',
+      detail: formatUntil(member.paced_until),
+    })
+  }
+  if ((member.queued ?? 0) > 0) {
+    states.push({
+      label: 'Queued',
+      variant: 'info',
+      detail: String(member.queued),
     })
   }
   const affinity = snapshot.affinity

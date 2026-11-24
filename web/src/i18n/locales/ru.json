@@ -3555,6 +3555,19 @@
     "Type \"{{name}}\" to enable retirement.": "Введите «{{name}}», чтобы активировать кнопку.",
     "Retire and delete": "Вывести и удалить",
     "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Канал выведен: очищено цепочек — {{cleaned}}, удалено — {{deleted}}, записей истории переименовано — {{logs}}.",
-    "Failed to retire the channel": "Не удалось вывести канал"
+    "Failed to retire the channel": "Не удалось вывести канал",
+    "Concurrency": "Управление параллелизмом",
+    "Outbound admission control": "Исходящий контроль допуска",
+    "Max concurrency": "Макс. параллелизм",
+    "Max RPM": "Запросов в минуту (RPM)",
+    "Queue limit": "Лимит очереди",
+    "Queue wait (seconds)": "Ожидание в очереди (сек)",
+    "Add a model to limit": "Добавить модель для ограничения",
+    "No concurrency limits configured. Requests are sent upstream without local admission control.": "Лимиты параллелизма не настроены. Запросы отправляются вверх по потоку без локального контроля допуска.",
+    "Per-model concurrency and RPM limits enforced before sending upstream.": "Для каждой модели применяются лимиты параллелизма и RPM перед отправкой вверх по потоку.",
+    "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = без ограничений. max_concurrency -1 включает адаптивный AIMD; queue_limit 0 использует 32; queue_wait_seconds 0 отключает очередь.",
+    "Rate limited": "Ограничено",
+    "Queued": "В очереди",
+    "Remove model": "Удалить модель"
   }
 }

@@ -1,5 +1,5 @@
-/*! LICENSE: 7f.5ce817714a.js.LICENSE.txt */
-"use strict";(self.rspackChunkpowerbar_rations_web=self.rspackChunkpowerbar_rations_web||[]).push([["7f"],{XL(e,t,n){var a=n("B"),r=n("dt"),s=n("yA"),l=n("wJ"),o=n("Ac");function i(e){let{t}=(0,s.Bd)();return(0,a.jsx)(l.g,{state:"error",tone:"danger",icon:e.icon??r.A,title:e.title??t("Oops! Something went wrong"),description:e.description,className:e.className,action:null!=e.onRetry||null!=e.action?(0,a.jsxs)(a.Fragment,{children:[null!=e.onRetry&&(0,a.jsx)(o.$,{variant:"outline",size:"sm",onClick:e.onRetry,children:t("Retry")}),e.action]}):void 0})}n.d(t,{W:()=>i})},Ny(e,t,n){n.d(t,{K:()=>x});var a=n("B"),r=n("iDI"),s=n("h"),l=n("YV");let o=`
+/*! LICENSE: 7.6343c0f0a9.js.LICENSE.txt */
+"use strict";(self.rspackChunkpowerbar_rations_web=self.rspackChunkpowerbar_rations_web||[]).push([[7],{XL(e,t,n){var a=n("B"),r=n("dt"),s=n("yA"),l=n("wJ"),o=n("Ac");function i(e){let{t}=(0,s.Bd)();return(0,a.jsx)(l.g,{state:"error",tone:"danger",icon:e.icon??r.A,title:e.title??t("Oops! Something went wrong"),description:e.description,className:e.className,action:null!=e.onRetry||null!=e.action?(0,a.jsxs)(a.Fragment,{children:[null!=e.onRetry&&(0,a.jsx)(o.$,{variant:"outline",size:"sm",onClick:e.onRetry,children:t("Retry")}),e.action]}):void 0})}n.d(t,{W:()=>i})},Ny(e,t,n){n.d(t,{K:()=>x});var a=n("B"),r=n("iDI"),s=n("h"),l=n("YV");let o=`
 <style>
   :host {
     display: block;

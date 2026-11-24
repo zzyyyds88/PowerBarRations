@@ -675,7 +675,7 @@ test('editing opens the shared configuration and omits an unchanged key on updat
   expect(screen.getByRole('combobox', { name: 'Protocol' })).toHaveValue(
     PROTOCOL_OPTION_LABELS['OpenAI compatible']
   )
-  expect(screen.getAllByRole('tab')).toHaveLength(5)
+  expect(screen.getAllByRole('tab')).toHaveLength(6)
   expect(
     screen.getByRole('tab', { name: /Connection & Models/ })
   ).toHaveAccessibleName(/Ready/)

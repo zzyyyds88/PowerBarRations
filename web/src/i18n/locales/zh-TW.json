@@ -3555,6 +3555,19 @@
     "Type \"{{name}}\" to enable retirement.": "輸入「{{name}}」以解鎖退役按鈕。",
     "Retire and delete": "確認退役並刪除",
     "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "頻道已退役：清理 {{cleaned}} 條車道、刪除 {{deleted}} 條車道、改寫 {{logs}} 筆歷史記錄。",
-    "Failed to retire the channel": "退役失敗"
+    "Failed to retire the channel": "退役失敗",
+    "Concurrency": "並發控制",
+    "Outbound admission control": "出站准入",
+    "Max concurrency": "最大並發",
+    "Max RPM": "每分鐘請求上限 (RPM)",
+    "Queue limit": "排隊上限",
+    "Queue wait (seconds)": "最長排隊秒數",
+    "Add a model to limit": "新增要限流的模型",
+    "No concurrency limits configured. Requests are sent upstream without local admission control.": "未配置並發限制：請求將不加本地准入地直接發往上游。",
+    "Per-model concurrency and RPM limits enforced before sending upstream.": "按模型限制發往上游的並發數與每分鐘請求數。",
+    "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = 不限制；max_concurrency 填 -1 啟用自適應 AIMD；queue_limit 0 使用預設 32；queue_wait_seconds 0 表示不排隊。",
+    "Rate limited": "限流中",
+    "Queued": "排隊中",
+    "Remove model": "移除模型"
   }
 }

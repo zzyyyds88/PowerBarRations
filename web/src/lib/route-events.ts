@@ -41,6 +41,15 @@ export interface LaneMemberHealth {
   rolling_success_rate?: number
   /** 冷却截止（RFC3339；null=不在冷却）。 */
   cooldown_until: string | null
+  /** 限流减速截止（RFC3339；null=未减速）。与冷却分开：减速不影响 available。 */
+  paced_until?: string | null
+  /** 出站准入运行态（routing-spec §3.2）。 */
+  inflight?: number
+  queued?: number
+  rpm_used?: number
+  /** 自适应模式当前上限（非自适应为 null/省略）。 */
+  adaptive_limit?: number | null
+  ttft_baseline_ms?: number
   /** 熔断打开到期（RFC3339；仅 circuit 非 closed 时有意义）。 */
   circuit_open_until?: string | null
   last_error_kind?: string

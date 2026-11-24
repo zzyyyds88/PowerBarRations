@@ -60,6 +60,7 @@ import {
   ChannelFormatFields,
   ChannelPassthroughFields,
   ChannelPricesFields,
+  ChannelRateLimitsFields,
   ChannelProxyFields,
   ChannelSystemPromptFields,
   ChannelSystemPromptOverrideFields,
@@ -170,6 +171,11 @@ export function ChannelMutateDialogView(props: {
         prices={
           <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
             <ChannelPricesFields />
+          </div>
+        }
+        rateLimits={
+          <div className='border-border/60 bg-muted/10 rounded-lg border p-4'>
+            <ChannelRateLimitsFields />
           </div>
         }
         request={

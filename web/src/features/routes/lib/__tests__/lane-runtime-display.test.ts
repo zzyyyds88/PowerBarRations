@@ -110,3 +110,29 @@ describe('laneMemberStates', () => {
     ).toBe(3)
   })
 })
+
+// 429 只减速：paced_until 必须显示独立的 info「限流中」，与 warning 冷却分开。
+describe('laneMemberStates paced/queue', () => {
+  it('shows Rate limited separately from Cooldown', () => {
+    const paced = laneMemberStates(
+      snapshot(),
+      member({ paced_until: FUTURE, cooldown_until: null }),
+      NOW
+    )
+    const labels = paced.map((state) => state.label)
+    expect(labels).toContain('Rate limited')
+    expect(labels).not.toContain('Cooldown')
+    expect(paced.find((state) => state.label === 'Rate limited')?.variant).toBe(
+      'info'
+    )
+  })
+
+  it('shows Queued when admission has waiting requests', () => {
+    const states = laneMemberStates(
+      snapshot(),
+      member({ queued: 2, inflight: 1 }),
+      NOW
+    )
+    expect(states.map((state) => state.label)).toContain('Queued')
+  })
+})

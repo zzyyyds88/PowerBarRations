@@ -3555,6 +3555,19 @@
     "Type \"{{name}}\" to enable retirement.": "「{{name}}」と入力するとボタンが有効になります。",
     "Retire and delete": "退役して削除",
     "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "チャネルを退役しました：ルート整理 {{cleaned}} 件、削除 {{deleted}} 件、履歴改名 {{logs}} 件。",
-    "Failed to retire the channel": "退役に失敗しました"
+    "Failed to retire the channel": "退役に失敗しました",
+    "Concurrency": "同時実行制御",
+    "Outbound admission control": "送信前の受け入れ制御",
+    "Max concurrency": "最大同時実行数",
+    "Max RPM": "毎分リクエスト数 (RPM)",
+    "Queue limit": "キュー上限",
+    "Queue wait (seconds)": "キュー待機（秒）",
+    "Add a model to limit": "制限するモデルを追加",
+    "No concurrency limits configured. Requests are sent upstream without local admission control.": "同時実行制限が未設定です。リクエストはローカル受け入れ制御なしで上流へ送信されます。",
+    "Per-model concurrency and RPM limits enforced before sending upstream.": "モデルごとの同時実行数と RPM 制限を上流送信前に適用します。",
+    "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = 無制限。max_concurrency -1 で適応型 AIMD を有効化、queue_limit 0 は 32 を使用、queue_wait_seconds 0 はキューなし。",
+    "Rate limited": "制限中",
+    "Queued": "待機中",
+    "Remove model": "モデルを削除"
   }
 }

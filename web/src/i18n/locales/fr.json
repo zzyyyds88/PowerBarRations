@@ -3555,6 +3555,19 @@
     "Type \"{{name}}\" to enable retirement.": "Saisissez « {{name}} » pour activer le retrait.",
     "Retire and delete": "Retirer et supprimer",
     "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Canal retiré : {{cleaned}} routes nettoyées, {{deleted}} routes supprimées, {{logs}} entrées d'historique renommées.",
-    "Failed to retire the channel": "Échec du retrait du canal"
+    "Failed to retire the channel": "Échec du retrait du canal",
+    "Concurrency": "Contrôle de concurrence",
+    "Outbound admission control": "Contrôle d'admission sortant",
+    "Max concurrency": "Concurrence maximale",
+    "Max RPM": "Requêtes par minute (RPM)",
+    "Queue limit": "Limite de file d'attente",
+    "Queue wait (seconds)": "Attente en file (secondes)",
+    "Add a model to limit": "Ajouter un modèle à limiter",
+    "No concurrency limits configured. Requests are sent upstream without local admission control.": "Aucune limite de concurrence configurée. Les requêtes sont envoyées en amont sans contrôle d'admission local.",
+    "Per-model concurrency and RPM limits enforced before sending upstream.": "Les limites de concurrence et de RPM par modèle sont appliquées avant l’envoi en amont.",
+    "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = illimité. max_concurrency -1 active l'AIMD adaptatif ; queue_limit 0 utilise 32 ; queue_wait_seconds 0 désactive la file d'attente.",
+    "Rate limited": "Limité",
+    "Queued": "En file d'attente",
+    "Remove model": "Supprimer le modèle"
   }
 }

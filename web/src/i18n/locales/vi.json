@@ -3555,6 +3555,19 @@
     "Type \"{{name}}\" to enable retirement.": "Nhập \"{{name}}\" để bật nút nghỉ hưu.",
     "Retire and delete": "Nghỉ hưu và xóa",
     "Channel retired: {{cleaned}} lanes cleaned, {{deleted}} lanes removed, {{logs}} history entries renamed.": "Kênh đã nghỉ hưu: làm sạch {{cleaned}} tuyến, xóa {{deleted}} tuyến, đổi tên {{logs}} bản ghi lịch sử.",
-    "Failed to retire the channel": "Không thể cho kênh nghỉ hưu"
+    "Failed to retire the channel": "Không thể cho kênh nghỉ hưu",
+    "Concurrency": "Kiểm soát đồng thời",
+    "Outbound admission control": "Kiểm soát tiếp nhận đầu ra",
+    "Max concurrency": "Đồng thời tối đa",
+    "Max RPM": "Yêu cầu mỗi phút (RPM)",
+    "Queue limit": "Giới hạn hàng đợi",
+    "Queue wait (seconds)": "Chờ hàng đợi (giây)",
+    "Add a model to limit": "Thêm mô hình để giới hạn",
+    "No concurrency limits configured. Requests are sent upstream without local admission control.": "Chưa cấu hình giới hạn đồng thời. Yêu cầu được gửi lên thượng nguồn không qua kiểm soát tiếp nhận cục bộ.",
+    "Per-model concurrency and RPM limits enforced before sending upstream.": "Áp dụng giới hạn đồng thời và RPM theo mô hình trước khi gửi lên thượng nguồn.",
+    "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = không giới hạn. max_concurrency -1 bật AIMD thích ứng; queue_limit 0 dùng 32; queue_wait_seconds 0 tắt hàng đợi.",
+    "Rate limited": "Đang giới hạn",
+    "Queued": "Đang xếp hàng",
+    "Remove model": "Xóa mô hình"
   }
 }

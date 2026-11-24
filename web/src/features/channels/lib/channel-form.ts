@@ -32,6 +32,7 @@ import {
   type Channel,
   type ChannelModelPrice,
   type ChannelProtocol,
+  type ChannelRateLimit,
 } from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
@@ -294,6 +295,18 @@ export const channelFormSchema = z
         })
       )
       .optional(),
+    // 出站准入（ADR 0012）：按所选模型配置并发/RPM 与有界排队。
+    pbr_rate_limits: z
+      .array(
+        z.object({
+          model: z.string(),
+          max_concurrency: z.number().int().min(-1),
+          max_rpm: z.number().int().min(0),
+          queue_limit: z.number().int().min(0).optional(),
+          queue_wait_seconds: z.number().int().min(0).optional(),
+        })
+      )
+      .optional(),
     // Type-specific settings (stored in settings JSON)
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -468,6 +481,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   system_prompt: '',
   system_prompt_override: false,
   pbr_prices: [],
+  pbr_rate_limits: [],
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -508,6 +522,7 @@ export function transformChannelToFormDefaults(
     system_prompt: '',
     system_prompt_override: false,
     pbr_prices: [] as ChannelModelPrice[],
+    pbr_rate_limits: [] as ChannelRateLimit[],
   }
 
   if (channel.setting) {
@@ -528,6 +543,9 @@ export function transformChannelToFormDefaults(
         system_prompt_override: parsed.system_prompt_override || false,
         pbr_prices: Array.isArray(parsed.pbr_prices)
           ? (parsed.pbr_prices as ChannelModelPrice[])
+          : [],
+        pbr_rate_limits: Array.isArray(parsed.pbr_rate_limits)
+          ? (parsed.pbr_rate_limits as ChannelRateLimit[])
           : [],
       }
     } catch (error) {
@@ -656,6 +674,20 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   const channelPrices = normalizePricesForSetting(formData.pbr_prices ?? [])
   if (channelPrices.length > 0) {
     settingObj.pbr_prices = channelPrices
+  }
+
+  // 出站准入（ADR 0012）：只保留有模型名的行；空表不落库（与"未配置"等价）。
+  const rateLimits = (formData.pbr_rate_limits ?? [])
+    .map((item) => ({
+      model: item.model.trim(),
+      max_concurrency: item.max_concurrency,
+      max_rpm: item.max_rpm,
+      queue_limit: item.queue_limit ?? 0,
+      queue_wait_seconds: item.queue_wait_seconds ?? 0,
+    }))
+    .filter((item) => item.model !== '')
+  if (rateLimits.length > 0) {
+    settingObj.pbr_rate_limits = rateLimits
   }
 
   const protocol = normalizeHttpProtocol(formData.http_protocol)

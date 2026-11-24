@@ -29,6 +29,7 @@ export type ChannelConfigurationSection =
   | 'connection'
   | 'routing'
   | 'prices'
+  | 'concurrency'
   | 'request'
   | 'other'
 
@@ -45,6 +46,10 @@ const CONFIGURATION_BLOCKS = {
     fields: ['test_model', 'auto_ban'],
   },
   channelPrices: { section: 'prices', fields: ['pbr_prices'] },
+  channelRateLimits: {
+    section: 'concurrency',
+    fields: ['pbr_rate_limits'],
+  },
   overrideRules: {
     section: 'request',
     fields: ['status_code_mapping', 'param_override', 'header_override'],
@@ -131,6 +136,7 @@ export function getChannelConfigurationState(
       values.test_model?.trim() || (values.auto_ban ?? 1) !== 1
     ),
     channelPrices: Boolean(values.pbr_prices?.length),
+    channelRateLimits: Boolean(values.pbr_rate_limits?.length),
     overrideRules:
       hasConfiguredJson(values.status_code_mapping) ||
       hasConfiguredJson(values.param_override) ||
@@ -178,6 +184,7 @@ export function getChannelConfigurationState(
     connection: 'idle',
     routing: 'idle',
     prices: 'idle',
+    concurrency: 'idle',
     request: 'idle',
     other: 'idle',
   }
