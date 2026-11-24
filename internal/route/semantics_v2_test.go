@@ -2,6 +2,7 @@ package route
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -168,4 +169,114 @@ func TestResetClearsPaceAndLaneDown(t *testing.T) {
 		assert.False(t, runtime.HasCurrent)
 		assert.Empty(t, runtime.CurrentMember)
 	})
+}
+
+// --- 探活清惩罚态（routing-spec §5.4） ---
+
+func TestClearMemberPenaltyAcrossLanes(t *testing.T) {
+	withFakeClock(t)
+	key := func(memberId int) string { return fmt.Sprintf("14:model-probe#%d", memberId) }
+
+	laneA := Default.For("lane-probe-clear-a")
+	laneB := Default.For("lane-probe-clear-b")
+	for _, runtime := range []*Runtime{laneA, laneB} {
+		runtime.withLock(func() {
+			runtime.Cooldowns[key(1)] = nowMs() + 60_000
+			runtime.PacedUntil[key(1)] = nowMs() + 30_000
+			runtime.Circuits[key(1)] = &Circuit{
+				State: CircuitOpen, OpenUntil: nowMs() + 60_000,
+				Score: 3, ConsecutiveFailures: 2, LastErrorKind: KindHardAuth,
+			}
+		})
+	}
+	// laneB 的成员探测槽在途：必须跳过并报出，不得破坏单探测槽不变量。
+	laneB.withLock(func() {
+		laneB.HasProbe = true
+		laneB.ProbeMember = key(1)
+	})
+
+	cleared := Default.ClearMemberPenalty(14, "model-probe", 1)
+	assert.Equal(t, []string{"lane-probe-clear-a"}, cleared.Lanes)
+	assert.Equal(t, 1, cleared.Members)
+	assert.Equal(t, []string{"lane-probe-clear-b"}, cleared.ProbeBusyLanes)
+
+	laneA.withLock(func() {
+		assert.Zero(t, laneA.Cooldowns[key(1)])
+		assert.Zero(t, laneA.PacedUntil[key(1)])
+		assert.Equal(t, CircuitClosed, laneA.Circuits[key(1)].State)
+		assert.Zero(t, laneA.Circuits[key(1)].Score)
+		assert.Zero(t, laneA.Circuits[key(1)].ConsecutiveFailures)
+	})
+	laneB.withLock(func() {
+		assert.NotZero(t, laneB.Cooldowns[key(1)], "探测槽在途时该车道不得被清理")
+	})
+}
+
+func TestClearMemberPenaltyDropsProbeBusyFlagAfterRelease(t *testing.T) {
+	withFakeClock(t)
+	key := "15:model-probe#2"
+	runtime := Default.For("lane-probe-clear-release")
+	runtime.withLock(func() {
+		runtime.Cooldowns[key] = nowMs() + 60_000
+		runtime.HasProbe = true
+		runtime.ProbeMember = key
+	})
+	first := Default.ClearMemberPenalty(15, "model-probe", 2)
+	assert.Empty(t, first.Lanes)
+	assert.Equal(t, []string{"lane-probe-clear-release"}, first.ProbeBusyLanes)
+
+	runtime.withLock(func() {
+		runtime.HasProbe = false
+		runtime.ProbeMember = ""
+	})
+	second := Default.ClearMemberPenalty(15, "model-probe", 2)
+	assert.Equal(t, []string{"lane-probe-clear-release"}, second.Lanes)
+	assert.Equal(t, 1, second.Members)
+}
+
+// 渠道级探活没有 memberId：清理该 (channel, model) 下的全部成员条目。
+func TestClearMemberPenaltyChannelScopeClearsAllMemberIDs(t *testing.T) {
+	withFakeClock(t)
+	runtime := Default.For("lane-probe-clear-channel")
+	for _, memberId := range []int{1, 2} {
+		key := fmt.Sprintf("16:model-shared#%d", memberId)
+		runtime.withLock(func() {
+			runtime.Cooldowns[key] = nowMs() + 60_000
+		})
+	}
+	cleared := Default.ClearMemberPenalty(16, "model-shared", 0)
+	assert.Contains(t, cleared.Lanes, "lane-probe-clear-channel")
+	assert.Equal(t, 2, cleared.Members)
+}
+
+// 渠道停用属配置态跳过：不写冷却、不计熔断分（routing-spec §5.3）。
+func TestReportMemberConfigSkipIsNotFailure(t *testing.T) {
+	withFakeClock(t)
+	resolved := testRoute("lane-config-skip", 2, 2)
+	resolved.Members[0].ChannelEnabled = false
+	state := NewState(resolved)
+	member, _, ok := state.Next(nil)
+	require.True(t, ok)
+	require.NotNil(t, member)
+	key := memberKeyOf(member)
+
+	state.ReportMemberConfigSkip(member, "channel disabled or missing")
+	state.Runtime.withLock(func() {
+		assert.Zero(t, state.Runtime.Cooldowns[key], "渠道停用不得写冷却")
+		circuit := state.Runtime.Circuits[key]
+		if circuit != nil {
+			assert.Zero(t, circuit.Score, "渠道停用不得计熔断分")
+			assert.Zero(t, circuit.ConsecutiveFailures)
+		}
+	})
+	statuses := map[string]string{}
+	for _, attempt := range state.History() {
+		statuses[attempt.Member] = attempt.Status
+	}
+	assert.Equal(t, "channel_disabled", statuses[memberLabel(member)])
+
+	// 配置跳过耗尽本请求内该成员预算，下一轮必须换人。
+	next, _, ok := state.Next(nil)
+	require.True(t, ok)
+	assert.NotEqual(t, key, memberKeyOf(next))
 }

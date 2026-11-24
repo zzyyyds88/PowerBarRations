@@ -901,6 +901,9 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
 
 `probed` 为本次实际探测的成员数；每个成员结果除 `status` / `duration_ms` / `error_kind` / `msg` 外，还保留早期实现的兼容字段 `ok`（是否成功）、`status_code`（上游 HTTP 状态，未拿到为 0）、`latency_ms`（耗时，与 `duration_ms` 同值）。
 
+- **判定按真实响应**（ADR 0013 第 5 条）：`200 + {"error":...}` 必须判失败（`error_kind=upstream_reject`）；2xx 但没有 completion choices 判 `bad_response`；失败分类与转发共用 `route.Classify`（401/403→`hard_auth`、402→`hard_quota`、429→`soft_rate_limit`、5xx→`soft_transient`、超时→`timeout`、连接失败→`network_error`）。原生协议渠道不支持 OpenAI Chat 探活形态时返回独立 `error_kind=unsupported`，不得伪装成 `network_error`。
+- **模型口径**：探活模型取 `?model=`（所选模型名），经渠道 `model_mapping` 换成上游真名；缺省取渠道声明清单第一个。两者都为空时返回 `error_kind=invalid_request`，**不再回落 `gpt-4o-mini`**（用未声明模型探活会把配置缺失伪装成上游结论）。Azure 渠道使用 `/openai/deployments/{deployment}/chat/completions?api-version=...`。
+
 - **探活覆盖全部成员，包括被人工停用的**（`probed` 等于成员链全长）。理由：探活不经选路——它直接按成员链逐个对上游发最小真实请求，不读冷却/熔断表、不占用探测槽；"不参与选路"和"不许探测上游"是两件事：关掉一个成员恰恰常常是因为它可疑，此时"能不能先单独看一眼它通不通"正是运维需要的能力，跳过它等于把诊断入口一起关掉。
 - 被停用成员的探活结果**照常如实返回**，不加"已停用所以忽略"之类的修饰；调用方靠成员链自身的 `enabled`（§5.7 / §6.5）判断该结果对应一个在用的还是一个停用的成员。
 - **探活成功会清除该成员的惩罚态**（routing-spec §5.4，2026-11-23 立）：删除冷却、熔断回到 `closed`、连续拒绝计数清零，并记 `member_recovered`（`detail=from=manual_probe`）。作用域是该成员在**所有车道**的运行态（同一渠道×模型可被多条车道共享）。响应新增 `penalty_cleared`：
@@ -909,7 +912,7 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
   { "lane": "lane-alpha", "probed": 2, "penalty_cleared": { "lanes": ["lane-alpha"], "members": 1 }, "results": [ ... ] }
   ```
 
-  `lanes` 是实际被清理的车道名（去重、升序）；`members` 是成功清除惩罚态的成员数（探活成功但本来就没有惩罚态时为 0，`lanes` 为空数组）。探活失败**不动任何运行态**，也不累计熔断分。
+  `lanes` 是实际被清理的车道名（去重、升序）；`members` 是成功清除惩罚态的成员数（探活成功但本来就没有惩罚态时为 0，`lanes` 为空数组）。探活失败**不动任何运行态**，也不累计熔断分。若该成员正占用半开探测槽，本次不清理并在 `penalty_cleared.probe_busy_lanes` 列出对应车道（保持单探测槽不变量，可等探测结束后重试）。
 
 ### 6.5 车道健康快照（冷却/熔断/亲和）
 
@@ -1045,7 +1048,7 @@ curl -s -X PUT $PBR/api/system/options \
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
 - `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
-- `probe_concurrency`（默认 4）限制 `POST /lanes/{name}/probe` 对上游的并发压力。
+- `probe_concurrency`（默认 4，取值 1–16）限制 `POST /lanes/{name}/probe` 与探活任务对上游的并发压力；超出上限的写配置返回 422，读取时钳制到上限。
 - **没有全局单价选项**：成本折算只用渠道级 `prices`（§4.1），渠道未配价即不折算（0）。
 
 ### 6.10 导出 / 导入（同版本配置快照）

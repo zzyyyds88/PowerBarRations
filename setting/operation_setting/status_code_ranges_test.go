@@ -36,13 +36,10 @@ func TestParseHTTPStatusCodeRanges_NoComma_IsInvalid(t *testing.T) {
 }
 
 func TestShouldDisableByStatusCode(t *testing.T) {
-	orig := AutomaticDisableStatusCodeRanges
-	t.Cleanup(func() { AutomaticDisableStatusCodeRanges = orig })
+	orig := AutomaticDisableStatusCodesToString()
+	t.Cleanup(func() { _ = AutomaticDisableStatusCodesFromString(orig) })
 
-	AutomaticDisableStatusCodeRanges = []StatusCodeRange{
-		{Start: 401, End: 403},
-		{Start: 500, End: 599},
-	}
+	require.NoError(t, AutomaticDisableStatusCodesFromString("401-403,500-599"))
 
 	require.True(t, ShouldDisableByStatusCode(401))
 	require.True(t, ShouldDisableByStatusCode(403))

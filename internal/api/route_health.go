@@ -2,7 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +20,8 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	relaycommon "github.com/zzyyyds88/PowerBarRations/relay/common"
+	"github.com/zzyyyds88/PowerBarRations/relay/helper"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -100,6 +108,16 @@ type ProbeMember struct {
 	StatusCode    int    `json:"status_code"`
 	LatencyMs     int64  `json:"latency_ms"`
 	Error         string `json:"error,omitempty"`
+	// PenaltyCleared 仅渠道级探活（POST /channels/{name}/test）回填：
+	// 本次成功探活清除了哪些车道的成员惩罚态（routing-spec §5.4）。
+	PenaltyCleared *PenaltyCleared `json:"penalty_cleared,omitempty"`
+}
+
+// PenaltyCleared 探活成功后的惩罚态清理摘要（api-spec §5.3 / §6.4）。
+type PenaltyCleared struct {
+	Lanes          []string `json:"lanes"`
+	Members        int      `json:"members"`
+	ProbeBusyLanes []string `json:"probe_busy_lanes,omitempty"`
 }
 
 // finish 统一补齐 status/duration_ms/error_kind/msg 与兼容字段。
@@ -113,6 +131,8 @@ func (p *ProbeMember) finish() {
 	p.LatencyMs = p.DurationMs
 	if p.OK {
 		p.Status = "success"
+		p.ErrorKind = ""
+		p.Msg = ""
 		return
 	}
 	p.Status = "failed"
@@ -120,26 +140,22 @@ func (p *ProbeMember) finish() {
 		p.Msg = p.Error
 	}
 	if p.ErrorKind == "" {
-		p.ErrorKind = classifyProbeError(p.StatusCode)
+		p.ErrorKind = classifyProbeError(p.StatusCode, p.Msg)
 	}
 }
 
-// classifyProbeError 把探活失败归类，便于 AI 区分"上游不可达/超时/鉴权失败"。
-func classifyProbeError(statusCode int) string {
-	switch {
-	case statusCode == 0:
-		return "network_error" // 连接失败/超时/DNS 等，未拿到 HTTP 状态
-	case statusCode == http.StatusUnauthorized, statusCode == http.StatusForbidden:
-		return "hard_auth"
-	case statusCode == http.StatusTooManyRequests:
-		return "soft_rate_limit"
-	case statusCode >= 500:
-		return "soft_transient"
-	case statusCode >= 400:
-		return "client_error"
-	default:
-		return "unknown"
+// classifyProbeError 把探活失败归入路由错误分类（共享 route.Classify，
+// ADR 0013 第 5 条）：探活与转发必须用同一套分类，否则"探活说鉴权失败、
+// 转发却冷却 60s"这类口径漂移无法排查。
+func classifyProbeError(statusCode int, message string) string {
+	if statusCode == 0 {
+		return "network_error"
 	}
+	err := types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, statusCode)
+	if kind := route.Classify(err); kind != "" {
+		return string(kind)
+	}
+	return "unknown"
 }
 
 // ProbeLane POST /api/v1/lanes/{name}/probe：逐成员探活（routing-spec §7.7）。
@@ -148,6 +164,9 @@ func classifyProbeError(statusCode int) string {
 // 随成员数线性增长，与"避免对上游造成突发压力"的设计意图相反；现在并发
 // 执行但受上限约束。结果按成员原顺序回填，便于调用方按位置比对。
 func ProbeLane(c *gin.Context) {
+	if rejectDryRunProbe(c) {
+		return
+	}
 	resolved, key, err := resolveRuntimeRoute(c.Param("name"))
 	if err != nil {
 		writeAPIError(c, err)
@@ -183,7 +202,53 @@ func ProbeLane(c *gin.Context) {
 		}(i, member)
 	}
 	wg.Wait()
-	c.JSON(http.StatusOK, gin.H{"lane": key, "probed": len(results), "results": results})
+
+	// 探活成功 = 一次真实的上游成功往返：清除该成员在所有车道的惩罚态
+	// （routing-spec §5.4）。失败不动运行态。
+	lanes := map[string]struct{}{}
+	busy := map[string]struct{}{}
+	clearedMembers := 0
+	for i := range results {
+		if !results[i].OK {
+			continue
+		}
+		member := resolved.Members[i]
+		cleared := route.Default.ClearMemberPenalty(member.ChannelId, member.UpstreamModel, member.MemberId)
+		clearedMembers += cleared.Members
+		for _, lane := range cleared.Lanes {
+			lanes[lane] = struct{}{}
+		}
+		for _, lane := range cleared.ProbeBusyLanes {
+			busy[lane] = struct{}{}
+		}
+	}
+	penalty := PenaltyCleared{Lanes: sortedStringSetKeys(lanes), Members: clearedMembers, ProbeBusyLanes: sortedStringSetKeys(busy)}
+	c.JSON(http.StatusOK, gin.H{
+		"lane":            key,
+		"probed":          len(results),
+		"penalty_cleared": penalty,
+		"results":         results,
+	})
+}
+
+// rejectDryRunProbe 在 handler 内再做一次 dry_run 拒绝：路由层中间件已经拒绝，
+// 这里保证即使 handler 被复用/直调也不会真的向上游发请求（ADR 0013 第 5 条）。
+func rejectDryRunProbe(c *gin.Context) bool {
+	if !dryRun(c) {
+		return false
+	}
+	apierr.Write(c, http.StatusBadRequest, apierr.CodeDryRunNotSupported, dryRunRejectMessage,
+		"probe performs a real upstream request; remove ?dry_run=true")
+	return true
+}
+
+func sortedStringSetKeys(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for key := range set {
+		out = append(out, key)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // CurrentProbeConcurrency 探活并发上限（design-v1 §16.6，默认 4）。
@@ -198,6 +263,9 @@ func CurrentProbeConcurrency() int {
 	if err != nil || parsed <= 0 {
 		return route.DefaultProbeConcurrency
 	}
+	if parsed > route.MaxProbeConcurrency {
+		return route.MaxProbeConcurrency
+	}
 	return parsed
 }
 
@@ -206,6 +274,9 @@ func CurrentProbeConcurrency() int {
 // 每次探活写一条探活记录（`pbr_probe_logs`），供渠道健康详情的"探活历史"
 // （api-spec §6.12）。留痕失败不影响探活结论本身。
 func TestChannel(c *gin.Context) {
+	if rejectDryRunProbe(c) {
+		return
+	}
 	channel, err := findChannelByName(c.Param("name"))
 	if err != nil {
 		if writeChannelLookupError(c, err) {
@@ -214,15 +285,38 @@ func TestChannel(c *gin.Context) {
 		apierr.NotFound(c, apierr.CodeChannelNotFound, "channel '"+c.Param("name")+"' not found", "GET /api/v1/channels")
 		return
 	}
-	testModel := strings.TrimSpace(c.Query("model"))
-	if testModel == "" {
+	selectedModel := strings.TrimSpace(c.Query("model"))
+	if selectedModel == "" {
 		models := channel.GetModels()
 		if len(models) > 0 {
-			testModel = strings.TrimSpace(models[0])
+			selectedModel = strings.TrimSpace(models[0])
 		}
 	}
-	result := probeChannel(c.Request.Context(), channel, testModel)
+	result := ProbeMember{Channel: channel.Name, UpstreamModel: selectedModel}
+	if selectedModel == "" {
+		// 不再回落 gpt-4o-mini：用未声明的模型探活会把"配置缺失"伪装成
+		// "上游失败/成功"，结论不可用于排障（ADR 0013 第 5 条）。
+		result.Error = "no model declared or selected for probe"
+		result.ErrorKind = "invalid_request"
+		result.finish()
+		writeProbeRecord(channel, result)
+		c.JSON(http.StatusOK, result)
+		return
+	}
+	upstreamModel := selectedModel
+	if mapped := channel.ModelMappingMap()[selectedModel]; strings.TrimSpace(mapped) != "" {
+		upstreamModel = strings.TrimSpace(mapped)
+	}
+	result = probeChannel(c.Request.Context(), channel, upstreamModel)
 	result.finish()
+	if result.OK {
+		cleared := route.Default.ClearMemberPenalty(channel.Id, upstreamModel, 0)
+		result.PenaltyCleared = &PenaltyCleared{
+			Lanes:          cleared.Lanes,
+			Members:        cleared.Members,
+			ProbeBusyLanes: cleared.ProbeBusyLanes,
+		}
+	}
 	writeProbeRecord(channel, result)
 	c.JSON(http.StatusOK, result)
 }
@@ -261,6 +355,7 @@ func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel str
 	result := ProbeMember{Channel: channel.Name, UpstreamModel: upstreamModel}
 	if isProbeUnsupported(channel.Type) {
 		result.Error = "unsupported: channel type does not accept the OpenAI chat probe shape"
+		result.ErrorKind = "unsupported"
 		return result
 	}
 	key, _, keyErr := channel.GetNextEnabledKey()
@@ -273,19 +368,22 @@ func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel str
 		result.Error = "channel base_url is empty"
 		return result
 	}
-	if strings.TrimSpace(upstreamModel) == "" {
-		upstreamModel = "gpt-4o-mini"
-		result.UpstreamModel = upstreamModel
+	upstreamModel = strings.TrimSpace(upstreamModel)
+	if upstreamModel == "" {
+		result.Error = "no model declared or selected for probe"
+		result.ErrorKind = "invalid_request"
+		return result
 	}
 	payload := `{"model":` + strconv.Quote(upstreamModel) +
 		`,"messages":[{"role":"user","content":"ping"}],"max_tokens":128,"stream":false}`
-	requestURL := relaycommon.GetFullRequestURL(baseURL, "/v1/chat/completions", channel.Type)
+	requestURL := probeRequestURL(channel, baseURL, upstreamModel)
 
 	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(probeCtx, http.MethodPost, requestURL, strings.NewReader(payload))
 	if err != nil {
 		result.Error = err.Error()
+		result.ErrorKind = "invalid_request"
 		return result
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -300,17 +398,76 @@ func probeChannel(ctx context.Context, channel *model.Channel, upstreamModel str
 	result.LatencyMs = time.Since(start).Milliseconds()
 	if err != nil {
 		result.Error = err.Error()
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			result.ErrorKind = string(route.KindTimeout)
+		case errors.Is(err, context.Canceled):
+			result.ErrorKind = string(route.KindCanceled)
+		default:
+			result.ErrorKind = "network_error"
+		}
 		return result
 	}
 	defer resp.Body.Close()
+	// 上游错误体可能很大；探活只需要足够判断错误类型与报文摘要。
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	result.StatusCode = resp.StatusCode
-	result.OK = resp.StatusCode >= 200 && resp.StatusCode < 300
-	if !result.OK {
-		buf := make([]byte, 512)
-		n, _ := resp.Body.Read(buf)
-		result.Error = strings.TrimSpace(string(buf[:n]))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		result.Error = strings.TrimSpace(string(body))
+		if result.Error == "" {
+			result.Error = fmt.Sprintf("upstream returned HTTP %d", resp.StatusCode)
+		}
+		result.ErrorKind = classifyProbeError(resp.StatusCode, result.Error)
+		return result
 	}
+
+	// 200 不一定是成功：上游可能用 200 承载错误对象（ADR 0013 第 5 条）。
+	if msg, isErr := helper.IsUpstreamErrorFrame(body); isErr {
+		result.Error = msg
+		result.ErrorKind = string(route.KindUpstreamReject)
+		return result
+	}
+	var completion struct {
+		Choices []json.RawMessage `json:"choices"`
+	}
+	if err := common.Unmarshal(body, &completion); err != nil {
+		result.Error = "invalid probe response: " + err.Error()
+		result.ErrorKind = string(route.KindBadResponse)
+		return result
+	}
+	if len(completion.Choices) == 0 {
+		result.Error = "upstream returned no completion choices"
+		result.ErrorKind = string(route.KindBadResponse)
+		return result
+	}
+	result.OK = true
 	return result
+}
+
+// probeRequestURL 与转发适配器保持同一 URL 口径：Azure 需要 deployment 路径与
+// api-version，其他 OpenAI 兼容渠道走 /v1/chat/completions（自定义渠道保留
+// base_url 自带的版本段）。
+func probeRequestURL(channel *model.Channel, baseURL, upstreamModel string) string {
+	if channel.Type == constant.ChannelTypeAzure {
+		deployment := upstreamModel
+		// 与 openai adaptor 一致：2025-05-10 之前创建的渠道按旧约定去掉点名中的点。
+		if channel.CreatedTime > 0 && channel.CreatedTime < constant.AzureNoRemoveDotTime {
+			deployment = strings.ReplaceAll(deployment, ".", "")
+		}
+		apiVersion := strings.TrimSpace(channel.Other)
+		if apiVersion == "" {
+			apiVersion = constant.AzureDefaultAPIVersion
+		}
+		requestPath := fmt.Sprintf("/openai/deployments/%s/chat/completions?api-version=%s",
+			url.PathEscape(deployment), url.QueryEscape(apiVersion))
+		return relaycommon.GetFullRequestURL(baseURL, requestPath, channel.Type)
+	}
+	if channel.Type == constant.ChannelTypeCustom {
+		if strings.Contains(baseURL, "{model}") {
+			return strings.ReplaceAll(baseURL, "{model}", upstreamModel)
+		}
+	}
+	return relaycommon.GetFullRequestURL(baseURL, "/v1/chat/completions", channel.Type)
 }
 
 // 与 new-api 自身标注"不支持测试"的类型保持一致，另加原生协议渠道。

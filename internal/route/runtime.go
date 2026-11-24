@@ -152,6 +152,10 @@ const DefaultLogRetentionDays = 30
 // DefaultProbeConcurrency 探活默认并发上限（design-v1 §16.6）。
 const DefaultProbeConcurrency = 4
 
+// MaxProbeConcurrency 探活并发硬上限：探活是对上游的突发流量，配置再大也不允许
+// 无界并发（design-v1 §16.6）。超界值在读取时钳制，写入侧返回 400。
+const MaxProbeConcurrency = 16
+
 // DefaultCircuitSettings 默认值。累计阈值取 5：单次请求无论内部重试几次只记一次
 // 失败分（硬故障 1.0 / 软故障 0.6），因此两次硬故障不再立即熔断；429 权重 0.2，
 // 单靠累计分需要 25 次。另有滚动窗口失败率证据（默认 rollingFailureRateThreshold，
@@ -1073,6 +1077,130 @@ func (r *Runtime) Reset() ResetResult {
 	r.CurrentMember = ""
 	r.appendEvent(EventReset, "", "circuits cleared")
 	return result
+}
+
+// MemberPenaltyClearResult 探活成功后跨车道的惩罚态清理结果（routing-spec §5.4）。
+type MemberPenaltyClearResult struct {
+	// Lanes 实际被清理的车道名（去重、升序）。
+	Lanes []string
+	// Members 成功清除惩罚态的成员条目数（本来无惩罚态则不计）。
+	Members int
+	// ProbeBusyLanes 该成员正在占用探测槽、按单探测槽不变量跳过清理的车道。
+	ProbeBusyLanes []string
+}
+
+// ClearMemberPenalty 清除某成员在**所有车道**的运行态惩罚（routing-spec §5.4）。
+//
+// memberId > 0 时只清精确的 `channelId:model:memberId`（车道逐成员探活）；
+// memberId == 0 时清该 `channelId:model` 下的全部成员条目（渠道级探活没有
+// 成员 id，它证明的是这条上游通路本身可用）。
+//
+// 探测槽在途的成员不清理（保持单探测槽不变量），在 ProbeBusyLanes 里报出。
+func (reg *Registry) ClearMemberPenalty(channelId int, upstreamModel string, memberId int) MemberPenaltyClearResult {
+	result := MemberPenaltyClearResult{}
+	if channelId <= 0 || strings.TrimSpace(upstreamModel) == "" {
+		return result
+	}
+	prefix := strconv.Itoa(channelId) + ":" + upstreamModel
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	for laneName, runtime := range reg.lanes {
+		if runtime == nil {
+			continue
+		}
+		cleared, probeBusy := runtime.clearMemberPenalty(prefix, memberId)
+		if cleared > 0 {
+			result.Lanes = append(result.Lanes, laneName)
+			result.Members += cleared
+		}
+		if probeBusy {
+			result.ProbeBusyLanes = append(result.ProbeBusyLanes, laneName)
+		}
+	}
+	sort.Strings(result.Lanes)
+	sort.Strings(result.ProbeBusyLanes)
+	return result
+}
+
+// clearMemberPenalty 清除本车道上匹配 prefix（及 memberId）的成员惩罚态。
+// 返回 (清除条目数, 是否因探测槽在途而跳过)。
+func (r *Runtime) clearMemberPenalty(prefix string, memberId int) (int, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	suffix := ""
+	if memberId > 0 {
+		suffix = "#" + strconv.Itoa(memberId)
+	}
+	matches := func(key string) bool {
+		if !strings.HasPrefix(key, prefix) {
+			return false
+		}
+		if suffix == "" {
+			rest := key[len(prefix):]
+			return rest == "" || strings.HasPrefix(rest, "#")
+		}
+		return key == prefix+suffix
+	}
+	keys := map[string]struct{}{}
+	for key := range r.Cooldowns {
+		if matches(key) {
+			keys[key] = struct{}{}
+		}
+	}
+	for key := range r.PacedUntil {
+		if matches(key) {
+			keys[key] = struct{}{}
+		}
+	}
+	for key, circuit := range r.Circuits {
+		if matches(key) && (circuit.State != CircuitClosed || circuit.Score > 0 ||
+			circuit.ConsecutiveFailures > 0 || circuit.RejectStreak > 0) {
+			keys[key] = struct{}{}
+		}
+	}
+	cleared := 0
+	probeBusy := false
+	for key := range keys {
+		if r.HasProbe && r.ProbeMember == key {
+			probeBusy = true
+			continue
+		}
+		hadCooldown := false
+		if _, ok := r.Cooldowns[key]; ok {
+			hadCooldown = true
+		}
+		hadPace := false
+		if _, ok := r.PacedUntil[key]; ok {
+			hadPace = true
+		}
+		delete(r.Cooldowns, key)
+		delete(r.PacedUntil, key)
+		circuit := r.Circuits[key]
+		if circuit != nil {
+			wasOpen := circuit.State != CircuitClosed
+			hadFailure := wasOpen || circuit.LastErrorKind != "" || circuit.Score > 0 ||
+				circuit.ConsecutiveFailures > 0 || circuit.RejectStreak > 0
+			circuit.State = CircuitClosed
+			circuit.Score = 0
+			circuit.ConsecutiveFailures = 0
+			circuit.FailsByKind = nil
+			circuit.OpenUntil = 0
+			circuit.HalfOpenSuccesses = 0
+			circuit.OpenCount = 0
+			circuit.RejectStreak = 0
+			circuit.LastTransitionAt = nowMs()
+			if wasOpen {
+				r.appendEvent(EventCircuitClosed, key, "recovered_by_manual_probe")
+			}
+			if hadCooldown || hadPace || hadFailure {
+				r.appendEvent(EventMemberRecovered, key, "from=manual_probe")
+			}
+		} else if hadCooldown || hadPace {
+			r.appendEvent(EventMemberRecovered, key, "from=manual_probe")
+		}
+		cleared++
+	}
+	return cleared, probeBusy
 }
 
 // PruneStaleState 清理已不在成员链里的残留状态（routing-spec §1.3：

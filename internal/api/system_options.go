@@ -109,8 +109,9 @@ func encodeLaneDefaults(cfg *model.LaneRelayConfig) (string, error) {
 // 关键词本来也是与"小写化后的上游错误信息"做不区分大小写匹配，小写即规范形。
 func currentSystemOptions() systemOptions {
 	settings := route.CurrentCircuitSettings()
-	keywords := make([]string, 0, len(operation_setting.AutomaticDisableKeywords))
-	for _, keyword := range operation_setting.AutomaticDisableKeywords {
+	snapshot := operation_setting.AutomaticDisableKeywordsSnapshot()
+	keywords := make([]string, 0, len(snapshot))
+	for _, keyword := range snapshot {
 		if keyword = strings.ToLower(strings.TrimSpace(keyword)); keyword != "" {
 			keywords = append(keywords, keyword)
 		}
@@ -335,8 +336,8 @@ func PutSystemOptions(c *gin.Context) {
 		updates[route.OptionLogRetentionDays] = strconv.Itoa(*patch.LogRetentionDays)
 	}
 	if patch.ProbeConcurrency != nil {
-		if *patch.ProbeConcurrency <= 0 {
-			apierr.Validation(c, "probe_concurrency must be > 0")
+		if *patch.ProbeConcurrency <= 0 || *patch.ProbeConcurrency > route.MaxProbeConcurrency {
+			apierr.Validation(c, "probe_concurrency must be between 1 and "+strconv.Itoa(route.MaxProbeConcurrency))
 			return
 		}
 		updates[route.OptionProbeConcurrency] = strconv.Itoa(*patch.ProbeConcurrency)

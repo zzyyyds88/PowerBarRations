@@ -967,6 +967,12 @@ func (s *State) SuccessAttempt(member string) Attempt {
 //
 // 成员当前不在 s.current（还没被选中就发现不可用）时，也补一条 failed 尝试，
 // 让 attempts 链能解释"为什么这个成员被跳过"。
+// ReportMemberUnavailable 记录一次真实的"成员尝试失败"（上游请求已发生但失败），
+// 按 soft_transient 写冷却/熔断。异步对象链路（relay/async）在创建失败时用它，
+// 与主转发链路的 Next(lastErr) 同口径。
+//
+// 注意：**配置态不可用**（渠道被停用/缺失、base_url 或 key 缺失）不得走这里，
+// 否则一次人工停用会把成员写成"故障"；那类跳过用 ReportMemberConfigSkip。
 func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string) {
 	if s == nil || member == nil || s.Runtime == nil {
 		return
@@ -974,7 +980,7 @@ func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key := memberKeyOf(member)
-	// §2.1：manual 车道不参与冷却（同 Next 的失败归属路径），熔断计分照常。
+	// §2.1：manual 车道不参与冷却（与 Next 的失败归属路径一致），熔断计分照常。
 	manual := s.Route.Mode == model.LaneModeManual
 	s.Runtime.withLock(func() {
 		s.history = append(s.history, Attempt{
@@ -987,6 +993,32 @@ func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string
 		s.Runtime.recordFailure(key, KindSoftTransient, s.cooldownSeconds, 0, !manual, CurrentCircuitSettings())
 	})
 	s.markAttemptedLocked(key)
+}
+
+// ReportMemberConfigSkip 记录"成员因配置态不可用被跳过"（routing-spec §5.3）：
+// 渠道停用/缺失、base_url 或 key 缺失属配置问题，**不写冷却、不计熔断分**。
+// 只耗尽该成员在本请求内的尝试预算并留一条 `channel_disabled` 记录，
+// 避免预算 >1 时反复选中同一个配置错误的成员。
+func (s *State) ReportMemberConfigSkip(member *model.RouteMember, reason string) {
+	if s == nil || member == nil || s.Runtime == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := memberKeyOf(member)
+	for idx := range s.Route.Members {
+		if memberKeyOf(&s.Route.Members[idx]) == key {
+			s.attempts[idx] = s.budgetFor(idx)
+			break
+		}
+	}
+	s.recordSkipWithStatusLocked(key, memberLabel(member), "channel_disabled")
+	if reason != "" {
+		// 只留排查线索，不进运行态：这是配置问题，不是上游故障。
+		s.Runtime.withLock(func() {
+			s.Runtime.appendEvent(events.EventSkip, key, "channel_disabled reason="+reason)
+		})
+	}
 }
 
 // ReleaseProbe 归还本请求占用的探测槽（幂等）。

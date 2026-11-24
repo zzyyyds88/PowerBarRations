@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type StatusCodeRange struct {
@@ -12,10 +13,17 @@ type StatusCodeRange struct {
 	End   int
 }
 
-var AutomaticDisableStatusCodeRanges = []StatusCodeRange{{Start: 401, End: 401}}
+// 自动禁用的状态码范围与关键词一样会热更新；读写必须加锁，避免请求路径
+// 与配置保存并发读写同一个切片（Go 的 slice 替换不是原子操作）。
+var (
+	automaticDisableStatusCodeMu     sync.RWMutex
+	automaticDisableStatusCodeRanges = []StatusCodeRange{{Start: 401, End: 401}}
+)
 
 func AutomaticDisableStatusCodesToString() string {
-	return statusCodeRangesToString(AutomaticDisableStatusCodeRanges)
+	automaticDisableStatusCodeMu.RLock()
+	defer automaticDisableStatusCodeMu.RUnlock()
+	return statusCodeRangesToString(automaticDisableStatusCodeRanges)
 }
 
 func AutomaticDisableStatusCodesFromString(s string) error {
@@ -23,12 +31,16 @@ func AutomaticDisableStatusCodesFromString(s string) error {
 	if err != nil {
 		return err
 	}
-	AutomaticDisableStatusCodeRanges = ranges
+	automaticDisableStatusCodeMu.Lock()
+	automaticDisableStatusCodeRanges = ranges
+	automaticDisableStatusCodeMu.Unlock()
 	return nil
 }
 
 func ShouldDisableByStatusCode(code int) bool {
-	return shouldMatchStatusCodeRanges(AutomaticDisableStatusCodeRanges, code)
+	automaticDisableStatusCodeMu.RLock()
+	defer automaticDisableStatusCodeMu.RUnlock()
+	return shouldMatchStatusCodeRanges(automaticDisableStatusCodeRanges, code)
 }
 
 func statusCodeRangesToString(ranges []StatusCodeRange) string {
