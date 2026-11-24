@@ -28,7 +28,7 @@ func init() {
 		if message == "" {
 			return false
 		}
-		keywords := operation_setting.AutomaticDisableKeywords
+		keywords := operation_setting.AutomaticDisableKeywordsSnapshot()
 		if len(keywords) == 0 {
 			return false
 		}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -111,11 +113,24 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if carrier == nil {
 			return
 		}
+		// 兜底释放：任何未走正常出口的路径（panic/提前 return）都不能漏槽。
+		releaseAdmissionTicket(c, newAPIError)
 		carrier.Success = newAPIError == nil
 		carrier.HTTPStatus = http.StatusOK
 		if newAPIError != nil {
-			carrier.HTTPStatus = newAPIError.StatusCode
+			// 已提交（至少一个内容帧已写给客户端）：传输层是 200，不能再改写成
+			// 错误状态；日志仍记本次失败与分类（ADR 0013 / routing-spec §4.3）。
+			if helper.StreamCommitted(c) {
+				carrier.HTTPStatus = http.StatusOK
+			} else {
+				carrier.HTTPStatus = newAPIError.StatusCode
+			}
 			carrier.ErrorKind = string(pbrroute.Classify(newAPIError))
+			if pbrroute.IsLocalThrottle(newAPIError) {
+				// local_throttle 不是成员失败分类（Classify 会按 429 归 soft_rate_limit），
+				// 日志与看板必须看到"本地准入拒绝"这个独立原因（routing-spec §3.2）。
+				carrier.ErrorKind = string(pbrroute.KindLocalThrottle)
+			}
 			// 用基座的脱敏版本：上游错误体可能回显凭据，而 error_summary 会经 API 原样返回
 			carrier.ErrorSummary = newAPIError.MaskSensitiveErrorWithStatusCode()
 		} else if msg := common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject); msg != "" {
@@ -173,6 +188,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// 只有成功响应才应保留（design-v1 §4.1）。任何重试过程中最后选中的
 			// 成员都不能代表"本次请求被谁服务"。
 			middleware.ClearServedByHeader(c)
+			if helper.StreamCommitted(c) {
+				// 已提交：响应头与内容帧都已写出，不能再追加错误 JSON（会把正常
+				// 的 200 流截成坏流）。只记真实失败，状态码保持 200（ADR 0013）。
+				logger.LogError(c, fmt.Sprintf("relay error after response committed: %s", common.LocalLogPreview(newAPIError.Error())))
+				return
+			}
 			if pbrroute.IsNoAvailable(newAPIError) {
 				// 成员链耗尽的固定 body（routing-spec §4.2）：下游 fallback 分类依赖它，
 				// 因此不走通用错误序列化，也不加请求 id 后缀。
@@ -181,19 +202,35 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			// 客户端看到的是展示映射后的状态码（status_code_mapping，ADR 0013）；
+			// 分类与运行态判定始终使用原始 StatusCode。
+			clientStatus := newAPIError.ClientStatusCode()
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
 			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
+				c.JSON(clientStatus, gin.H{
 					"type":  "error",
 					"error": newAPIError.ToClaudeError(),
 				})
 			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
+				c.JSON(clientStatus, gin.H{
 					"error": newAPIError.ToOpenAIError(),
 				})
 			}
+		}
+	}()
+
+	// 异常兜底：供应商适配器里的一次 panic 不能把请求留成半截响应（design §16.6）。
+	// 注册在错误写出 defer 之后 → 先于它执行，能把 panic 变成一条结构化失败。
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.LogError(c, fmt.Sprintf("relay panic: %v\n%s", recovered, debug.Stack()))
+			newAPIError = types.NewError(
+				fmt.Errorf("relay panic: %v", recovered),
+				types.ErrorCodeBadResponse,
+				types.ErrOptionWithStatusCode(http.StatusInternalServerError),
+			)
 		}
 	}()
 
@@ -303,16 +340,25 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		if newAPIError == nil {
+			releaseAdmissionTicket(c, newAPIError)
 			relayInfo.LastError = nil
 			// 上报成功：解除冷却、复位熔断、按需启动亲和（routing-spec §5/§6）。
 			pbrState.OnSuccess()
 			return
 		}
+		releaseAdmissionTicket(c, newAPIError)
 
 		relayInfo.LastError = newAPIError
 		if carrier := model.GetPBRLogCarrier(c); carrier != nil {
 			carrier.Attempts = pbrState.LogAttempts()
 			carrier.TotalAttempts = len(carrier.Attempts)
+		}
+
+		if helper.StreamCommitted(c) {
+			// 已提交：错误原样交给客户端并结束，不换成员、不重试、不二次写
+			// （routing-spec §4.3 / ADR 0013）。也不能走 processChannelError 的
+			// 自动禁用等副作用——内容已经交付给客户端。
+			break
 		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
@@ -462,7 +508,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, pbrState *pbrroute.
 		return channelFromSelectedContext(c), nil
 	}
 	// 重试选路由车道成员链推进（routing-spec §3）。
-	channel, ok := middleware.PBRNextChannel(c, pbrState, info.OriginModelName, info.LastError)
+	channel, admissionErr, ok := middleware.PBRNextChannel(c, pbrState, info.OriginModelName, info.LastError)
+	if admissionErr != nil {
+		// 本地准入拒绝（429）：不登记 lane_unavailable、不合成 503。
+		if admissionErr.RetryAfterSeconds > 0 {
+			c.Header("Retry-After", strconv.Itoa(admissionErr.RetryAfterSeconds))
+		}
+		return nil, admissionErr
+	}
 	if !ok {
 		// 车道不可用：登记一次车道级事件（同一停摆期只发一次，routing-spec §7）。
 		pbrState.NoteLaneUnavailable()
@@ -492,6 +545,24 @@ func channelFromSelectedContext(c *gin.Context) *model.Channel {
 		Name:    c.GetString("channel_name"),
 		AutoBan: &autoBanInt,
 	}
+}
+
+// releaseAdmissionTicket 归还本次尝试持有的出站准入槽位（幂等）。
+// 自适应上限按本次真实结果更新：成功传空 kind，失败传 Classify 结果。
+func releaseAdmissionTicket(c *gin.Context, err *types.NewAPIError) {
+	ticket := middleware.TakeAdmissionTicket(c)
+	if ticket == nil {
+		return
+	}
+	kind := pbrroute.ErrorKind("")
+	if err != nil {
+		kind = pbrroute.Classify(err)
+	}
+	var ttftMs int64
+	if common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs) > 0 {
+		ttftMs = int64(common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs))
+	}
+	ticket.Release(kind, ttftMs)
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError) bool {

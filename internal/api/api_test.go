@@ -102,14 +102,11 @@ func TestAuditTimestampsAreRFC3339(t *testing.T) {
 // → 再导出（小写）"会让第一次往返就报 options 变更。故 currentSystemOptions
 // 必须输出规范形（trim + 小写）。
 func TestSystemOptionsKeywordsAreNormalized(t *testing.T) {
-	original := operation_setting.AutomaticDisableKeywords
-	t.Cleanup(func() { operation_setting.AutomaticDisableKeywords = original })
+	original := operation_setting.AutomaticDisableKeywordsToString()
+	t.Cleanup(func() { operation_setting.AutomaticDisableKeywordsFromString(original) })
 
-	operation_setting.AutomaticDisableKeywords = []string{
-		"  Your Credit Balance Is Too Low  ",
-		"PERMISSION DENIED",
-		"",
-	}
+	// 写入侧会 trim + 小写；读侧再做一次规范形，保证 export→import 幂等。
+	operation_setting.AutomaticDisableKeywordsFromString("  Your Credit Balance Is Too Low  \nPERMISSION DENIED\n")
 
 	options := currentSystemOptions()
 	assert.Equal(t, []string{"your credit balance is too low", "permission denied"}, options.AutomaticDisableKeywords,

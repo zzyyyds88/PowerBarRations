@@ -34,8 +34,13 @@ func TestConsecutiveUpstreamRejectsApplyShortCooldown(t *testing.T) {
 
 	runtime.withLock(func() {
 		until := runtime.Cooldowns[key]
-		assert.Equal(t, before+int64(rejectCooldownSeconds)*1000, until,
+		// 冷却带 0–20% 确定性抖动并封顶（routing-spec §6），不能断言精确值。
+		base := int64(rejectCooldownSeconds) * 1000
+		upper := base + base/5
+		assert.GreaterOrEqual(t, until, before+base,
 			"连续拒绝应写入 reject_cooldown_seconds 的冷却")
+		assert.LessOrEqual(t, until, before+upper,
+			"拒绝冷却只允许 0–20% 上偏抖动")
 		circuit := runtime.Circuits[key]
 		require.NotNil(t, circuit)
 		assert.Zero(t, circuit.Score, "上游拒绝不是成员故障，不得计入熔断分")

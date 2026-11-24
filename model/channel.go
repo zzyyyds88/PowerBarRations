@@ -840,6 +840,42 @@ func (channel *Channel) GetStatusCodeMapping() string {
 	return *channel.StatusCodeMapping
 }
 
+// StatusCodeMappingMap 解析渠道 status_code_mapping（上游码 → 对外码，ADR 0013）。
+// 值可能是字符串或数字（历史写入），统一归一化成十进制字符串；空表/非法 JSON
+// 一律返回空表（不映射）。
+func (channel *Channel) StatusCodeMappingMap() map[string]string {
+	out := map[string]string{}
+	raw := strings.TrimSpace(channel.GetStatusCodeMapping())
+	if raw == "" || raw == "{}" {
+		return out
+	}
+	parsed := map[string]any{}
+	if err := common.UnmarshalJsonStr(raw, &parsed); err != nil {
+		return map[string]string{}
+	}
+	for key, value := range parsed {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			if v = strings.TrimSpace(v); v != "" {
+				out[key] = v
+			}
+		case float64:
+			out[key] = strconv.Itoa(int(v))
+		case int:
+			out[key] = strconv.Itoa(v)
+		default:
+			if v := strings.TrimSpace(fmt.Sprint(value)); v != "" {
+				out[key] = v
+			}
+		}
+	}
+	return out
+}
+
 func (channel *Channel) Insert() error {
 	if strings.TrimSpace(channel.Name) == "" {
 		return &ChannelNameConflictError{Reason: "empty"}

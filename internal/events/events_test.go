@@ -13,6 +13,7 @@ func TestSupportedEventTypesIsCanonicalAndDetached(t *testing.T) {
 	types := SupportedEventTypes()
 	sort.Strings(types)
 	expected := []string{
+		EventAdaptiveLimitChanged,
 		EventChannelDeleted,
 		EventChannelDisabled,
 		EventChannelEnabled,
@@ -22,7 +23,9 @@ func TestSupportedEventTypesIsCanonicalAndDetached(t *testing.T) {
 		EventCooldown,
 		EventLaneRecovered,
 		EventLaneUnavailable,
+		EventMemberPaced,
 		EventMemberRecovered,
+		EventMemberThrottled,
 		EventReset,
 		EventSkip,
 		EventUpstreamBurst,

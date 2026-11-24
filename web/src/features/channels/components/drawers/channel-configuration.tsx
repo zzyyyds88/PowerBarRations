@@ -41,6 +41,7 @@ type ChannelConfigurationProps = {
   models: ReactNode
   routing: ReactNode
   prices: ReactNode
+  rateLimits: ReactNode
   request: ReactNode
   other: ReactNode
 }
@@ -103,6 +104,7 @@ export function ChannelConfiguration(props: ChannelConfigurationProps) {
     { id: 'connection', label: t('Connection & Models') },
     { id: 'routing', label: t('Routing & Mapping') },
     { id: 'prices', label: t('Upstream unit prices') },
+    { id: 'concurrency', label: t('Concurrency') },
     { id: 'request', label: t('Request & Response') },
     { id: 'other', label: t('Other Settings') },
   ] as const
@@ -153,6 +155,14 @@ export function ChannelConfiguration(props: ChannelConfigurationProps) {
       >
         {(props.section === 'routing' || visited.has('routing')) &&
           props.routing}
+      </TabsContent>
+      <TabsContent
+        value='concurrency'
+        keepMounted
+        className='-m-1 min-h-0 space-y-5 overflow-y-auto overscroll-contain p-1'
+      >
+        {(props.section === 'concurrency' || visited.has('concurrency')) &&
+          props.rateLimits}
       </TabsContent>
       <TabsContent
         value='prices'

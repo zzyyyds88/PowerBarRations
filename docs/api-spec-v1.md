@@ -139,6 +139,11 @@
         { "days": [1, 2, 3, 4, 5], "start": "00:30", "end": "08:30", "input": 5, "output": 10 }
       ] }
   ],
+  "rate_limits": [
+    { "model": "model-1", "max_concurrency": 2, "max_rpm": 12, "queue_limit": 32, "queue_wait_seconds": 30 },
+    { "model": "model-2", "max_concurrency": -1 }
+  ],
+  "status_code_mapping": { "429": "400" },
   "model_mapping": { "model-1": "vendor-a/model-1" },
   "key_set": true,
   "key_prefix": "sk-a",
@@ -156,6 +161,8 @@
   `https://host` ≡ `https://host/v1` ≡ `https://host/v1/chat/completions`。
   旧数据（只填 host 或版本段）行为不变；Custom(8) 的 `base_url` 原样保留（支持 `{model}` 变量与完整端点）。
 - `prices`：**渠道级上游单价**（人民币 / 百万 token），只用于成本折算；同一模型在不同渠道可配不同采购价。**渠道未配价即不折算（0）——没有全局单价层**。省略该字段时保持原值。**可选峰谷**：价格行可带 `timezone`（默认 `Asia/Shanghai`）与有序 `bands`；band 字段 `days`（1–7，周一=1，**指时段起始日**）、`start`/`end`（HH:MM，左闭右开，`start > end` 允许跨午夜）、`input`/`output`/`cache_read`/`cache_write`（缺省继承行级值）。按**请求开始时间**在该时区匹配第一条命中，未命中用行级字段兜底；每行 ≤64 个 band，允许重叠（先命中者生效）。校验失败 → `400 invalid_prices`。旧单层价格等价于全天一个 band，无需迁移。
+- `rate_limits`：**出站准入控制**（routing-spec §3.2、[ADR 0012](adr/0012-outbound-admission-control.md)），按渠道声明的模型名寻址，与 `prices` 同口径。每行字段：`model`（非空、同渠道内唯一）、`max_concurrency`（同时在上游的请求上限，`0` = 不限制、**`-1` = 自适应 AIMD**）、`max_rpm`（滑动 60 秒窗口内的上游尝试次数上限，`0` = 不限制）、`queue_limit`（每成员排队上限，`0` = 默认 32）、`queue_wait_seconds`（单请求最长排队秒数，`0` = 不排队）。**两个固定上限默认 `0`（不限制）**——实测现有流量的在飞峰值仅 9，默认闸门只增加延迟；需要限流时按渠道显式开启。**省略该字段 = 保持原值**（与 `prices` 一致）；显式 `[]` = 清空。校验失败 → `400 validation_failed`（`max_concurrency < -1`、`max_rpm < 0`、`queue_limit < 0`、`queue_wait_seconds < 0` 均为非法）。槽位、RPM 窗口、自适应上限与排队数是进程内运行态，重启清空；探活/渠道测试不排队、不计 RPM。准入排队超界时模型面返回 `429` + `Retry-After`（routing-spec §4.2），日志 `error_kind=local_throttle`。**启用限流/自适应的成员，上游 429 不再写成员冷却**（只降并发 + 暂停 1 秒，routing-spec §3.2）。
+- `status_code_mapping`：**上游状态码 → 对外状态码**（JSON dict，键值都是十进制状态码字符串，如 `{"429":"400"}`）。**只影响客户端看到的状态码，不参与错误分类**：重试/冷却/熔断仍按原始上游码判定（routing-spec §4.1.2）。目标码限定 **400–599**，**禁止 2xx 与 503**（503 是模型面"无可用渠道"的专属契约，ADR 0002）。后端在渠道写入口做同等校验（非法 → `400 validation_failed`）；`?dry_run=true` 同样校验。省略该字段时保持原值；显式 `{}` = 清空。
 - `model_mapping`：**渠道模型映射**（JSON dict，**模型名 → 上游真名**），用于上游命名与成员所选模型名不一致的情况。**这是上游改名的唯一入口**（成员级改名已移除，[ADR 0008](adr/0008-member-stores-selected-model.md)）：成员上游真名恒为 `model_mapping[成员所选模型] ?? 成员所选模型`，改一次即对该渠道所有车道成员生效。省略该字段时保持原值。
 
 ### 4.2 Lane
@@ -287,9 +294,9 @@
 }
 ```
 
-`status ∈ success | failed | cooldown | circuit_break | skipped | disabled`。`disabled` 表示该成员被人工停用（成员级 `enabled=false`，§4.2）而被跳过——**不是故障**，与 `cooldown`/`circuit_break`/`skipped`（运行态不可选）必须可区分；`disabled` 的尝试不产生冷却、不计入熔断。
+`status ∈ success | failed | cooldown | circuit_break | skipped | disabled | throttled`。`disabled` 表示该成员被人工停用（成员级 `enabled=false`，§4.2）而被跳过——**不是故障**，与 `cooldown`/`circuit_break`/`skipped`（运行态不可选）必须可区分；`disabled` 的尝试不产生冷却、不计入熔断。`throttled` 表示该成员因**本地出站准入**（并发槽位满、排队超界或队列满，routing-spec §3.2）未被使用——同样不是故障，不写冷却、不计熔断；该条带 `wait_ms`（实际排队时长）。
 
-`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled` / `test`——`test` 为渠道测试等管理动作记录）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）。**`error_kind` 取值域** = routing-spec §4.1 的分类：`soft_rate_limit` / `soft_transient` / **`timeout`**（我方成员级 deadline 到期：流式首帧/非流式响应/响应头等待超时；冷却熔断与 `soft_transient` 同档，但**不在同一成员原地重试**）/ `hard_auth` / `hard_quota` / **`upstream_reject`**（上游对该成员的拒绝：400/422 或流内 error 帧；会被车道内部换成员消化，只在"所有成员都拒绝"时成为最终失败）/ `client_error` / `bad_response` / `canceled`。**一个例外**：流式请求已提交后收到的流内 error 帧（routing-spec §4.4）——传输层记 `success=true` + 200（客户端确实拿到了 200 流），但 `error_kind=upstream_reject`、`error_summary` 记上游报文，使这类此前完全不可见的失败可被检索。`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。`price_band` 为命中的峰谷时段下标（-1 = 未命中、使用行级兜底价；旧单层价格恒为 -1）。**缓存折算按 `usage_semantic` 区分**：`openai`/`gemini`（含历史空值）的 prompt 含缓存命中，计费输入 = `prompt − cache_read`；`anthropic` 的 prompt 不含缓存，全额计输入价（design §16.9#7）。**所有日志统一写 `request_logs` 一张表**：`type` 区分消耗（2）与错误（5）；模型面请求的 `user_id/username/ip` 为空（调用方身份是客户端密钥 `key_name`），渠道测试等管理动作记录管理员。基座 `logs` 表停写（历史数据保留只读）。
+`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled` / `test`——`test` 为渠道测试等管理动作记录）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）。**`error_kind` 取值域** = routing-spec §4.1 的分类：`soft_rate_limit` / `soft_transient` / **`timeout`**（我方成员级 deadline 到期：流式首帧/非流式响应/响应头等待超时；冷却熔断与 `soft_transient` 同档，但**不在同一成员原地重试**）/ `hard_auth` / `hard_quota` / **`upstream_reject`**（上游对该成员的拒绝：400/422 或流内 error 帧；会被车道内部换成员消化，只在"所有成员都拒绝"时成为最终失败）/ `client_error` / `bad_response` / `canceled`，以及 **`local_throttle`**（本地出站准入排队超界/队列满，routing-spec §3.2；只出现在请求日志，**不是成员失败分类**，不写冷却、不计熔断，成员 `last_error_kind` 不出现该值）。**一个例外**：流式请求已提交后收到的流内 error 帧（routing-spec §4.4）——传输层记 `success=true` + 200（客户端确实拿到了 200 流），但 `error_kind=upstream_reject`、`error_summary` 记上游报文，使这类此前完全不可见的失败可被检索。`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。`price_band` 为命中的峰谷时段下标（-1 = 未命中、使用行级兜底价；旧单层价格恒为 -1）。**缓存折算按 `usage_semantic` 区分**：`openai`/`gemini`（含历史空值）的 prompt 含缓存命中，计费输入 = `prompt − cache_read`；`anthropic` 的 prompt 不含缓存，全额计输入价（design §16.9#7）。**所有日志统一写 `request_logs` 一张表**：`type` 区分消耗（2）与错误（5）；模型面请求的 `user_id/username/ip` 为空（调用方身份是客户端密钥 `key_name`），渠道测试等管理动作记录管理员。基座 `logs` 表停写（历史数据保留只读）。
 
 **会话与客户端**：`session_id` / `session_key` / `client` / 子代理字段的提取与归一口径见 [usage-spec-v1.md](usage-spec-v1.md) §3–§4。`session_id` 为空表示未归属；`client` 是 magpie `AgentOf` 语义的原始结果（库保留 `curl` 等产品名），只作展示与聚合，不参与鉴权或选路；`client_group` 把 HTTP 库/运行时/SDK 与 `other` 归为 `script`，`client_name` 是已知 agent 的显示名——两者都是后端计算的展示字段，控制台不得自建第二张客户端表。`context_*` 是每条 chat-like 请求的上下文摘要（token 数/窗口/是否已按上游计数校准/解析状态，见 usage-spec §5–§6）；列表项只带这四个摘要字段，**完整分区明细只在 `GET /api/logs/{id}` 返回**：
 
@@ -397,7 +404,7 @@
 
 > **根路径文档页不属于 OpenAPI 契约面**：`GET /doc`（面向 AI 的管理 API 手册，`text/markdown`；浏览器 `Accept: text/html` 时返回说明页）、`GET /llms.txt`（与 `/doc` 同源的纯文本手册）、`GET /doc/ui`（复用 Scalar 的交互式文档，指向 `/api/openapi.json`）三者**免鉴权**、返回手册/UI 页面而非可被工具解析的资源，因此**刻意不登记进 `openapi.json`**（其 `servers` 只声明 `/api`）。该边界由 `router/openapi_coverage_test.go` 的 `TestDocRoutesAreOutsideOpenAPI` 固化：三者必须已注册、且不得出现在 openapi 中。
 | GET | `/api/system/options` | 全局选项 |
-| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`circuit_half_open_successes`、`circuit_allowed_fails`（按错误类型的连续失败容忍次数，键为 `hard_auth`/`hard_quota`/`soft_transient`/`timeout`/`soft_rate_limit`/`bad_response`）、`upstream_burst_threshold`、`upstream_burst_window_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
+| PUT | `/api/system/options` | 更新全局选项（按字段部分更新：body 中缺席的键保持原值）。可写键：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`circuit_half_open_successes`、`circuit_allowed_fails`（按错误类型的连续失败容忍次数，键为 `hard_auth`/`hard_quota`/`soft_transient`/`timeout`/`bad_response`；**`soft_rate_limit` 键仅为兼容保留、不生效**，429 不计熔断分，见 routing-spec §4.1.1）、`upstream_burst_threshold`、`upstream_burst_window_seconds`、`log_retention_days`、`probe_concurrency`、`automatic_enable_channel_enabled`、`automatic_disable_channel_enabled`、`automatic_disable_keywords`、**`lane_defaults`**（默认六键，见 §4.2；只影响新建车道与未显式配置的车道） |
 
 ### 5.2 车道
 
@@ -443,7 +450,7 @@
 | GET | `/api/channels/status` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.12；控制台「渠道状态」页用它一次取全量 |
 | GET | `/api/channel-speed` | **按渠道聚合的实时速度**（只读）：`?from=&to=`（省略 = 最近 15 分钟）。按渠道返回请求数、成功率、延迟分位、输出速度（干净样本 tps）与 Token；只返回配置的渠道，空闲渠道也出现并带零值。形状与口径见 §6.14 |
 | GET | `/api/channels/{name}/status` | **单渠道状态详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.12 |
-| POST | `/api/channels/{name}/test` | 单渠道探活；**每次探活写一条探活记录**（`pbr_probe_logs`，见 §6.11），供渠道状态页的"探活历史"。响应形状不变 |
+| POST | `/api/channels/{name}/test` | 单渠道探活；**每次探活写一条探活记录**（`pbr_probe_logs`，见 §6.11），供渠道状态页的"探活历史"。响应形状不变，另新增 `penalty_cleared`（`{lanes, members}`）：探活成功时清除该成员在**所有车道**的冷却与熔断（routing-spec §5.4）。可选 `?model=` 指定探活模型，缺省取渠道声明清单的第一个 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；被移除模型仍被车道/成员组引用则 409，车道名在 `referenced_by`、成员组名在 `groups`。`?force=1` 只清理散成员（从命中车道移除本渠道的**被移除模型**成员，空车道删除）；**成员组引用一律阻断**。响应附带 `cleaned_lanes` / `deleted_lanes` / `groups` |
 
 ### 5.3.1 渠道批量运维
@@ -543,7 +550,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/logs` | 过滤：`lane` `channel` `key` `model` `success` `since` `until`，用量维度 `client`（客户端标识）与 `session`（接受 `session_key` 或完整 `session_id`），以及 `masked=true\|false`（有/无脱敏命中）与 `context=true\|false`（有/无上下文元数据）。**分页双模式**：传 `page`+`page_size` 走偏移分页（响应 `{items, total, page, page_size}`，供控制台跳页/总数）；传 `cursor`+`limit` 走游标分页（响应 `{items, next_cursor}`，向后兼容）。两种模式由"是否传 `page`"判定，`page_size` 上限 100。列表项是 §4.4 的 RequestLog（含 `client`/`session_*`/`context_*` 摘要，不含上下文分区明细）。 |
+| GET | `/api/logs` | 过滤：`lane` `channel` `key` `model` `success` `since` `until`，**`error_kind`（精确匹配 §4.4 的分类，用于检索"提交后流内拒绝""local_throttle"等 `success=true` 但带错误的记录）**，用量维度 `client`（客户端标识）与 `session`（接受 `session_key` 或完整 `session_id`），以及 `masked=true\|false`（有/无脱敏命中）与 `context=true\|false`（有/无上下文元数据）。`success` 只接受 `true`/`false`，其它值 → `400 validation_failed`。**分页双模式**：传 `page`+`page_size` 走偏移分页（响应 `{items, total, page, page_size}`，供控制台跳页/总数）；传 `cursor`+`limit` 走游标分页（响应 `{items, next_cursor}`，向后兼容）。两种模式由"是否传 `page`"判定，`page_size` 上限 100。列表项是 §4.4 的 RequestLog（含 `client`/`session_*`/`context_*` 摘要，不含上下文分区明细）。 |
 | GET | `/api/logs/{id}` | 单条（含 attempts 链与完整 `context` 分区明细；无上下文时 `context=null`，原因见 `context_status`） |
 | GET | `/api/logs/sessions` | **会话列表**（按 `session_key` 聚合）：`from`/`to`（RFC3339 或 Unix 秒，可选；默认最近 30 天）、`client`、`model`、`lane`、`q`（`session_id` 子串，≤128）、`sort ∈ last_ts\|first_ts\|requests\|tokens\|cost`（默认 `last_ts`）、`order ∈ asc\|desc`（默认 `desc`）、`page`+`page_size`（默认 1/50，上限 100）。响应 `{items,total,page,page_size,summary}`；`summary` 是同筛选条件下**整个窗口**的总量 `{sessions,requests,successes,errors,prompt_tokens,completion_tokens,estimated_cost}`（不是当前页），供控制台 KPI。空结果 `items=[]`。每项字段见 §4.6。只统计 `session_key` 非空的模型面请求；管理动作不计入。 |
 | GET | `/api/logs/sessions/{key}` | **会话详情**：`key` 是 32 位十六进制 `session_key`。返回会话摘要（§4.6 单对象）+ `request_items`（分页请求列表，每项是 §4.4 RequestLog + 紧凑 `context`：仅分区 token，不含物品）+ `context_series`（最多 500 个 `{ts,id,tokens,window}` 点，按时间升序；超出置 `context_series_truncated=true`）。`request_items` 支持 `page`/`page_size`（默认 1/50，上限 100）与 `order`（默认 `desc`）；摘要的 `requests` 仍是计数。会话不存在 → 404 `session_not_found`。 |
@@ -579,7 +586,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`model_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`，成员**恒带 `enabled`**，组引用元素原样导出）、**`member_groups`（含组内成员与组开关）**与 `system_options`。 |
+| GET | `/api/export` | 导出完整配置 JSON（不含密钥明文与哈希）。渠道对象**逐字段导出**（含 `models` / `param_override` / `proxy` / **`prices`** / **`rate_limits`** / **`model_mapping`** / **`status_code_mapping`** / `enabled`，密钥只有 `key_set`）；客户端密钥含 `key_prefix` 与全部策略字段（不含明文与哈希）；含 `lanes`（含成员与 `overrides`，成员**恒带 `enabled`**，组引用元素原样导出）、**`member_groups`（含组内成员与组开关）**与 `system_options`。 |
 | POST | `/api/import?dry_run=` | 导入并可选 dry-run，返回 diff。字段缺席 = 保持原值；显式空值（`{}` / `[]` / `""`） = 清空。**成员的 `enabled` 必须随导出/导入往返**（导出的关闭状态在导入后仍是关闭；导入文件里省略该字段按 §4.2 的三态规则处理：新建成员 = 启用、命中既有成员 = 保留原值），否则"导出→清空→导入"会把运维人工停用的成员静默放回选路。**成员组先于车道导入**（车道链上的组引用按组名解析；bundle 与库里都没有的组引用从链上跳过并计入 `warnings`）。**导出文件只用于同版本 PBR 实例间还原配置**（bundle 内声明的渠道在构造车道时即视为存在，成员按名字回填真实渠道 id）；只有"bundle 与库里都没有"的成员才被跳过，并在 `warnings` / `diff.skipped` 列出，成员清空的启用车道转为停用。**它不是旧系统迁移或数据恢复工具；密钥明文不在文件里** |
 | — | `diff` 形状（import 响应） | **组名与导出体刻意不同名，两组都是稳定契约**：`diff.channels` / `diff.lanes` / **`diff.keys`** 是 `{add, update, unchanged, remove, skipped}` 五数组；**`diff.options` 是 `{"changed": [...]}`**（不是五数组）。注意命名差异：导出体里叫 `client_keys`、`system_options`，diff 里叫 `keys`、`options`——按本节取键，不要按导出体字段名去取 `diff.client_keys`（会拿到 `undefined`，把"有变更"误判成"无变更"）。 |
 
@@ -587,7 +594,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count}`（`available_member_count` 只计"渠道存在且启用、**且未被人工停用**"的成员，供界面标注"含不可用"；口径见 routing-spec §7）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`（**定义不变**：成员总数 > 0 且当前可选数 == 0 时为 true）——"车道存在"不等于"现在可用"（routing-spec §7）。车道存在时（`source ∈ {explicit, disabled}`）另给 `disabled_member_count`：成员链里**被人工停用**（成员 `enabled=false`）的成员数，用来把"我自己关掉的"与"上游挂了的"分开——`degraded=true` 且 `disabled_member_count == member_count` 是"成员全被我关了"，`degraded=true` 且 `disabled_member_count == 0` 才是"上游全不可用"；`unconfigured` 没有成员链，故不返回该字段（§4.2）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
+| GET | `/api/models` | 全部路由键：`{model, source: explicit\|unconfigured\|disabled, routable: bool, member_count, available_member_count, channel_disabled_member_count, orphan_member_count}`。四个配置态计数**互斥且相加 = member_count**：`available_member_count`（渠道存在且启用、成员未被人工停用）、`disabled_member_count`（成员被人工停用）、`channel_disabled_member_count`（渠道存在但被停用、成员未停用）、`orphan_member_count`（渠道已不存在、成员未停用）。explicit 车道额外给出运行态：`healthy_member_count` / `health_member_count` / `degraded`——`healthy_member_count` 是**运行态可选**（未停用 ∧ 渠道启用 ∧ 不在冷却 ∧ 熔断非 open ∧ 探测槽不占用；限流减速不影响）；`degraded` = 成员总数 > 0 且运行态可选数 == 0（人工停用/渠道停用导致的全不可选同样成立，用三个停用计数区分；限流减速不会单独造成 `degraded`）。车道存在时（`source ∈ {explicit, disabled}`）另给 `disabled_member_count`；`unconfigured` 没有成员链，故不返回这些字段（§4.2）。`unconfigured` = 渠道声明了但没有车道；`disabled` = 有同名车道但被停用（成员数照常给出）——两者都**当前不可调用**，但仍要在管理面可见，否则"只有一条停用车道的模型"会从控制台消失 |
 | GET | `/api/routes/{model}` | 该模型的成员链：链元素两态（§4.2）——散成员含 `channel` / `channel_enabled`（该渠道是否启用，供界面标灰）/ **`model`（成员所选模型，写回时用它）/ `upstream_model`（由渠道映射推导的只读真名，供展示与排障，不接受写回）** / `priority` / **`enabled`（恒回，含 `false`，不省略）** / **`overrides`（恒回，成员级六键覆盖，无覆盖时为 `{}`）/ `member_id`（成员当前库 id，仅供排障与审计定位）**；**组引用元素含 `group` / `priority` / `enabled`（车道级引用开关）**（组内成员清单另由 `GET /api/member-groups/{name}` 提供，编排器展开子行用它）；设了成员别名时给出 `public_alias`；响应顶层含 `mode` / `config`（车道模式与六键）。**为什么 `enabled` / `overrides` / `member_id` 必须在本端点回传**：编排器的成员草稿**唯一来源就是本端点**（`GET /lanes/{name}` 不参与编辑回填），而成员写入是**整体替换**（先删光再重插，§5.2）——本端点少回传任何一个成员级字段，控制台"打开编辑再保存"就会把全部成员的该字段清空（`overrides` 与 `enabled` 是同一类路径的例。**`member_id` 不属于这条通则**——它是服务端自有的派生值，不靠回传维持）。无车道时返回**推荐成员**（声明或 `model_mapping` 映射了该键的渠道，按渠道 id 升序）并标 `source: unconfigured`、`routable: false`——推荐项只供界面排序/高亮，不代表已可调用，也**不是成员可选范围限制**（成员候选 = 任意启用渠道的任意已声明模型，见本节末与 [ADR 0006](adr/0006-lane-free-member-composition.md)）；推荐项没有落库成员身份，`member_id` 为 `0`、`enabled` 恒 `true`。已配车道时额外返回 `candidates`（同口径推荐项、不在成员链里）。停用车道返回 `source: disabled` 与**真实成员链**（供界面查看/编辑），`routable=false`；运行期路由仍视为不可调用（`ResolveRoute` 返回空链） |
 | PUT | `/api/lanes/{model}` | **把某模型的成员链固化为顺序**：车道名 = 模型名，成员按数组顺序即优先级。`mode` 为 `failover`（默认，按顺序逃逸）或 `manual`（只走 `active_member` 指定的成员：成员别名或 `channel/model` 标签）。**手动建车道**（含无任何渠道声明的自定义路由键）也走这里：控制台路由页「新建车道」即调用它。**成员可任选任意启用渠道的任意已声明模型**，不要求成员声明了该路由键，**同一渠道的不同模型可多次出现**（去重键 = `(渠道, 所选模型)`；同一模型重复提交 `422 duplicate_member`）；成员载荷为 `{channel, model, priority, public_alias, enabled, overrides}`——**上游真名由 `model_mapping[model] ?? model` 推导，不接受成员级真名**（[ADR 0008](adr/0008-member-stores-selected-model.md)）；成员可带 `enabled`（三态，省略 = 新建启用 / 既有保留原值）临时停用某个成员——`manual` 模式下 `active_member` 指向被关闭的成员时该模型按"无可用"处理，**不换人**（§4.2） |
 | GET | `/api/lane-summaries` | **全部车道的成员顺序摘要**（不分页）：`{items: [{name, enabled, mode, active_member, orphan_member_count, members: [{channel, model, upstream_model, public_alias, priority, channel_enabled, enabled, orphan?} | {group, group_enabled, group_member_count, priority, enabled}]}]}`——`members` 元素两态（§4.2）：散成员含渠道字段，**组引用含 `group`（组名）/ `group_enabled`（组全局开关，只读）/ `group_member_count`（组内成员数）/ `priority`（链上位置）/ `enabled`（车道级引用开关）**，供路由页卡片以单行组元素渲染。供路由页一次取全量顺序，避免 `GET /api/lanes` 的 cursor 上限（200）在大部署下让摘要列退化。**新增成员级 `enabled`**（恒回）供卡片把被人工停用的成员标灰（ui-spec §6.3）；`channel_enabled`（渠道是否启用）与 `public_alias` 本端点**已在返回**，只是控制台的前端类型未声明、未消费（`web/src/features/routes/api.ts` 的 `listPBRLaneSummaries`）——补的是**前端读取**，不是后端字段。本端点只读、不参与编辑回填。**注意 `items[].enabled` 是车道停用态、`items[].members[].enabled` 是成员停用态**，两个 subject 同名但层级不同（与 `GET /api/lanes/{name}` 同一命名规则，见 §4.2） |
@@ -658,8 +665,8 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 }
 ```
 
-- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（熔断恢复）、`cooldown`（进入冷却）、**`member_recovered`（成员恢复：冷却/失败留痕之后第一次成功服务，detail 形如 `from=cooldown`；与 `cooldown` 配对）**、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）、**`lane_unavailable`（车道不可用：某次请求因"全部成员不可选"按 503 收尾时发出一次，detail 形如 `source=explicit reason=cooldown`；与 `lane_recovered` 配对）**、**`lane_recovered`（车道恢复：不可用期后第一次成功服务；detail 形如 `down_ms=…`）**、`skip`（成员被选路跳过）、`channel_disabled`（渠道整体禁用）、`channel_enabled`（渠道整体启用）、`channel_deleted`（渠道删除）、`upstream_burst`（同一渠道 60 秒内 5xx 达到 5 次）。渠道事件的 `lane` 为空、`member` 为渠道 ID；`upstream_burst` 的 detail 含 `channel_id`、`count`、`threshold`、`window_seconds`、`status_code`。`ts` 为毫秒时间戳，路由成员 `member` 为 `channel/model`；`member` 为空时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。**配对语义**（消费方做 ⚠/✅ 配对通知的依据）：`cooldown` ↔ `member_recovered`、`circuit_open` ↔ `circuit_closed`、`lane_unavailable` ↔ `lane_recovered`——三个"开始"事件都有配对的"结束"事件；`reset` 是人工终止态（不配对）；`skip` / `upstream_burst` 是过程信号（不配对）。
-- **通知降噪（webhook 与 health/events 的差别）**：`cooldown` / `circuit_half_open` / `skip` 是**排障过程信号**，只进 `GET /api/lanes/{name}/health` 与 SSE，**不通过 webhook 推送**。`circuit_open` 按成员做**滞回**：同一成员首次打开通知一次；此后在 30 分钟窗口内再次打开不再重复通知（除非该成员已稳定恢复并保持 30 分钟）；`circuit_closed` 只在对应 open 曾被通知时发送。`lane_unavailable` / `lane_recovered` 是车道级信号，仍按配对发送。这样消除"每 60 秒重开一次就刷一条告警"的风暴，同时保留排障所需的完整过程数据。
+- `type`（外层）固定 `pbr`；`text` 为人类可读摘要；`event.type` 取值：`circuit_open`（熔断打开）、`circuit_half_open`（半开探测开始）、`circuit_closed`（熔断恢复）、`cooldown`（进入冷却）、**`member_paced`（限流减速：上游 429 后放慢该成员，detail 形如 `until=<ms> retry_after=<s>`；**与 `cooldown` 互斥**——429 不写冷却，routing-spec §4.1.1）**、**`member_recovered`（成员恢复：冷却/失败留痕之后第一次成功服务，detail 形如 `from=cooldown`；与 `cooldown` 配对）**、`reset`（车道熔断与冷却被手动清空；车道级事件，`member` 为空）、**`lane_unavailable`（车道不可用：某次请求因"全部成员不可选"按 503 收尾时发出一次，detail 形如 `source=explicit reason=cooldown`；与 `lane_recovered` 配对）**、**`lane_recovered`（车道恢复：不可用期后第一次成功服务；detail 形如 `down_ms=…`）**、`skip`（成员被选路跳过）、`channel_disabled`（渠道整体禁用）、`channel_enabled`（渠道整体启用）、`channel_deleted`（渠道删除）、`upstream_burst`（同一渠道 60 秒内 5xx 达到 5 次）。渠道事件的 `lane` 为空、`member` 为渠道 ID；`upstream_burst` 的 detail 含 `channel_id`、`count`、`threshold`、`window_seconds`、`status_code`。`ts` 为毫秒时间戳，路由成员 `member` 为 `channel/model`；`member` 为空时摘要退化为 `[PBR] {lane} {摘要}：{detail}`。**配对语义**（消费方做 ⚠/✅ 配对通知的依据）：`cooldown` ↔ `member_recovered`、`circuit_open` ↔ `circuit_closed`、`lane_unavailable` ↔ `lane_recovered`——三个"开始"事件都有配对的"结束"事件；`reset` 是人工终止态（不配对）；`skip` / `upstream_burst` / `member_paced` 是过程信号（不配对——减速到期自动消失，不是停摆）。
+- **通知降噪（webhook 与 health/events 的差别）**：`cooldown` / `circuit_half_open` / `skip` / `member_paced` 是**排障过程信号**，只进 `GET /api/lanes/{name}/health` 与 SSE，**不通过 webhook 推送**。`circuit_open` 按成员做**滞回**：同一成员首次打开通知一次；此后在 30 分钟窗口内再次打开不再重复通知（除非该成员已稳定恢复并保持 30 分钟）；`circuit_closed` 只在对应 open 曾被通知时发送。`lane_unavailable` / `lane_recovered` 是车道级信号，仍按配对发送。这样消除"每 60 秒重开一次就刷一条告警"的风暴，同时保留排障所需的完整过程数据。
 
 投递记录响应（cursor 分页，按 ts 倒序）：
 
@@ -894,8 +901,18 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
 
 `probed` 为本次实际探测的成员数；每个成员结果除 `status` / `duration_ms` / `error_kind` / `msg` 外，还保留早期实现的兼容字段 `ok`（是否成功）、`status_code`（上游 HTTP 状态，未拿到为 0）、`latency_ms`（耗时，与 `duration_ms` 同值）。
 
-- **探活覆盖全部成员，包括被人工停用的**（`probed` 等于成员链全长）。理由：探活不经选路、也**不写任何运行态**——它直接按成员链逐个对上游发最小真实请求，不读冷却/熔断表，不占用探测槽，不改熔断计数（§4.2 的"开关不污染运行态"因此天然成立）。"不参与选路"和"不许探测上游"是两件事：关掉一个成员恰恰常常是因为它可疑，此时"能不能先单独看一眼它通不通"正是运维需要的能力，跳过它等于把诊断入口一起关掉。
+- **判定按真实响应**（ADR 0013 第 5 条）：`200 + {"error":...}` 必须判失败（`error_kind=upstream_reject`）；2xx 但没有 completion choices 判 `bad_response`；失败分类与转发共用 `route.Classify`（401/403→`hard_auth`、402→`hard_quota`、429→`soft_rate_limit`、5xx→`soft_transient`、超时→`timeout`、连接失败→`network_error`）。原生协议渠道不支持 OpenAI Chat 探活形态时返回独立 `error_kind=unsupported`，不得伪装成 `network_error`。
+- **模型口径**：探活模型取 `?model=`（所选模型名），经渠道 `model_mapping` 换成上游真名；缺省取渠道声明清单第一个。两者都为空时返回 `error_kind=invalid_request`，**不再回落 `gpt-4o-mini`**（用未声明模型探活会把配置缺失伪装成上游结论）。Azure 渠道使用 `/openai/deployments/{deployment}/chat/completions?api-version=...`。
+
+- **探活覆盖全部成员，包括被人工停用的**（`probed` 等于成员链全长）。理由：探活不经选路——它直接按成员链逐个对上游发最小真实请求，不读冷却/熔断表、不占用探测槽；"不参与选路"和"不许探测上游"是两件事：关掉一个成员恰恰常常是因为它可疑，此时"能不能先单独看一眼它通不通"正是运维需要的能力，跳过它等于把诊断入口一起关掉。
 - 被停用成员的探活结果**照常如实返回**，不加"已停用所以忽略"之类的修饰；调用方靠成员链自身的 `enabled`（§5.7 / §6.5）判断该结果对应一个在用的还是一个停用的成员。
+- **探活成功会清除该成员的惩罚态**（routing-spec §5.4，2026-11-23 立）：删除冷却、熔断回到 `closed`、连续拒绝计数清零，并记 `member_recovered`（`detail=from=manual_probe`）。作用域是该成员在**所有车道**的运行态（同一渠道×模型可被多条车道共享）。响应新增 `penalty_cleared`：
+
+  ```json
+  { "lane": "lane-alpha", "probed": 2, "penalty_cleared": { "lanes": ["lane-alpha"], "members": 1 }, "results": [ ... ] }
+  ```
+
+  `lanes` 是实际被清理的车道名（去重、升序）；`members` 是成功清除惩罚态的成员数（探活成功但本来就没有惩罚态时为 0，`lanes` 为空数组）。探活失败**不动任何运行态**，也不累计熔断分。若该成员正占用半开探测槽，本次不清理并在 `penalty_cleared.probe_busy_lanes` 列出对应车道（保持单探测槽不变量，可等探测结束后重试）。
 
 ### 6.5 车道健康快照（冷却/熔断/亲和）
 
@@ -907,19 +924,31 @@ curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
   "lane": "lane-alpha",
   "members": [
     { "channel": "channel-a", "upstream_model": "model-x",
-      "circuit": "open", "cooldown_until": "2026-09-14T12:01:00Z", "enabled": true, "available": false,
-      "consecutive_failures": 3, "rolling_success_rate": 0.0, "last_error_kind": "timeout" },
+      "circuit": "open", "cooldown_until": "2026-09-14T12:01:00Z", "paced_until": null,
+      "circuit_open_until": "2026-09-14T12:03:00Z", "probe_pending": false,
+      "inflight": 0, "queued": 0, "adaptive_limit": null,
+      "enabled": true, "available": false,
+      "consecutive_failures": 3, "rolling_success_rate": 0.0, "rolling_samples": 12,
+      "last_error_kind": "timeout", "last_error_at": "2026-09-14T12:00:30Z" },
     { "channel": "channel-b", "upstream_model": "model-y",
-      "circuit": "closed", "cooldown_until": null, "enabled": false, "available": false,
-      "consecutive_failures": 0, "rolling_success_rate": 1.0 }
+      "circuit": "closed", "cooldown_until": null, "paced_until": "2026-09-14T12:00:03Z",
+      "circuit_open_until": null, "probe_pending": false,
+      "inflight": 2, "queued": 1, "adaptive_limit": 4,
+      "enabled": true, "available": true,
+      "consecutive_failures": 0, "rolling_success_rate": 0.95, "rolling_samples": 20,
+      "last_error_kind": "soft_rate_limit", "last_error_at": "2026-09-14T11:59:58Z" }
   ],
   "affinity": { "channel": "channel-a", "upstream_model": "model-x", "until": "2026-09-14T12:05:00Z" }
 }
 ```
 
 - 成员 `enabled`（恒回）= 该成员是否参与选路（配置态人工停用，§4.2）；被人工停用必然 `available=false`。
-- 成员 `last_error_kind` 取值域 = routing-spec §4.1 的失败分类（`soft_rate_limit` / `soft_transient` / `timeout` / `hard_auth` / `hard_quota` / `upstream_reject` / `client_error` / `bad_response` / `canceled`）；**`upstream_reject` 只说明"这个成员拒绝过请求"，不代表它故障**（不计冷却、不计熔断分，见 routing-spec §4.1）。
-- **`enabled=false` 与冷却/熔断是彼此独立的成因**，必须可分别判定：示例里两条成员都 `available=false`，但第一条是故障（`circuit=open` + `cooldown_until` 非空）、第二条是运维自己关的（`circuit=closed`、无冷却、`enabled=false`）。排障时先读 `enabled` 再谈"上游挂了"。
+- **`paced_until`（限流减速，routing-spec §4.1.1）与 `cooldown_until`（冷却）是两个字段、两套语义**：`paced_until` 非空表示"该成员刚收到上游 429，正在放慢，本轮排到后面"，但它**仍然 `available=true`**、`circuit` 不变、`consecutive_failures` 不增加——限流不是故障。示例第二条就是这种状态：`available=true` + `paced_until` 非空 + `last_error_kind=soft_rate_limit`。
+- **`available` 的精确口径**（routing-spec §7）：未人工停用、渠道存在且启用、不在冷却、熔断非 open、且（若已到期待探测）探测槽空闲。**限流减速不影响 `available`**（减速中的成员仍可选，只是本轮排到后面）；`probe_pending=true` 时 `available=false`，但其他运行态字段照常给出。
+- **`inflight` / `queued` / `adaptive_limit`** 是出站准入运行态（routing-spec §3.2）：`inflight` = 已发给上游未结束的请求数，`queued` = 正在排队的请求数，`adaptive_limit` = 自适应模式当前学到的上限（非自适应为 `null`）。未配置 `rate_limits` 时 `inflight/queued` 均为 0。
+- **`rolling_samples`** 是滚动窗口样本数：`rolling_success_rate=0` 且 `rolling_samples=0` 表示"无样本（冷启动）"，与"最近全失败"（样本数 > 0 且成功率为 0）必须可区分。
+- 成员 `last_error_kind` / `last_error_at` 是**历史留痕**（最近一次失败的分类与时间），不代表"当前有故障"；当前状态看 `circuit` / `cooldown_until` / `paced_until` / `available`。取值域 = routing-spec §4.1 的失败分类（`soft_rate_limit` / `soft_transient` / `timeout` / `hard_auth` / `hard_quota` / `upstream_reject` / `client_error` / `bad_response` / `canceled`）；**`upstream_reject` 只说明"这个成员拒绝过请求"，不代表它故障**（不计冷却、不计熔断分，见 routing-spec §4.1）；**`soft_rate_limit` 同理只影响 `paced_until`**。
+- **`enabled=false` 与冷却/熔断是彼此独立的成因**，必须可分别判定：示例里第一条是故障（`circuit=open` + `cooldown_until` 非空），人工停用的成员则是 `circuit=closed`、无冷却、`enabled=false`。排障时先读 `enabled` 再谈"上游挂了"。
 - 停用成员**不会**产生冷却条目、不会改变熔断计数或状态（`consecutive_failures` / `rolling_success_rate` / `cooldown_until` 保持停用前后的真实值，**不归零、不省略**——排障时要能同时看到"我把它关了"和"关之前它是什么状态"），也**不占用半开探测槽**；重新打开后按当时的运行态立即恢复参与选路，不因"关过"而额外受罚。唯一例外：若它原本是车道**当前成员/亲和目标**，关闭会让亲和立即失效并按顺序重选（routing-spec §2.2），重新打开不自动回粘、需由选路重新确立当前成员。口径单处规范见 routing-spec §7。
 - 本形状同时是 `GET /api/route-events`（SSE，§5.5）里每车道成员条目的形状——两者是**同一个结构体**（routing-spec §7），因此"人工关闭"在 SSE 与 30s 轮询两条路径上取到的是同一个字段，不需要新端点。
 
@@ -930,8 +959,25 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/circuits/reset \
   -H "Authorization: Bearer $ADMIN_KEY"
 ```
 ```json
-{ "lane": "lane-alpha", "reset": 2 }
+{
+  "lane": "lane-alpha",
+  "reset": 2,
+  "cleared": {
+    "circuits": 2,
+    "cooldowns": 1,
+    "paces": 1,
+    "probe": 1,
+    "affinity": 1,
+    "lane_down": true
+  }
+}
 ```
+
+- **`reset` 是兼容字段** = `circuits`（被清除的熔断器条目数，含 `closed` 条目）。
+- **`cleared` 是结构化明细**：该端点清的是**全部运行态**，不只是熔断——`circuits`（熔断器条目）、
+  `cooldowns`（冷却条目）、`paces`（限流减速条目）、`probe`（探测槽，0/1）、`affinity`（亲和窗口，0/1）、
+  `lane_down`（是否清除了车道停摆标记）。调用方按 `cleared` 判断影响面，不要只看 `reset`。
+- 审计记录的 `action=reset-circuits` 同时写入 `cleared` 计数，便于事后对账。
 
 ### 6.7 创建客户端密钥（明文持久化）
 
@@ -1002,7 +1048,7 @@ curl -s -X PUT $PBR/api/system/options \
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
 - `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
-- `probe_concurrency`（默认 4）限制 `POST /lanes/{name}/probe` 对上游的并发压力。
+- `probe_concurrency`（默认 4，取值 1–16）限制 `POST /lanes/{name}/probe` 与探活任务对上游的并发压力；超出上限的写配置返回 422，读取时钳制到上限。
 - **没有全局单价选项**：成本折算只用渠道级 `prices`（§4.1），渠道未配价即不折算（0）。
 
 ### 6.10 导出 / 导入（同版本配置快照）
@@ -1119,7 +1165,8 @@ curl -s "$PBR/api/channels/channel-a/status?window=24h" -H "Authorization: Beare
   窗口成功样本 < 5 时分位数为 `0`）——这三项**会被 `POST /logs/prune` 影响**，
   清理后回落为 `0`；聚合表不存耗时，这是刻意的（不引入第二份耗时常量表）。
 - `recent_failures` 取该渠道**最近 N 条失败**（N=20）的明细日志（含 `error_kind` 与摘要；
-  `route_source=test` 的探活记录不计入失败列表）。
+  `route_source=test` 的探活记录不计入失败列表，也**不计入小时聚合与 `window` 统计**——
+  渠道/模型测试是诊断流量，否则多跑几次测试就会让看板的成功率与请求量失真）。
 - `probe_history` 取该渠道**最近 N 条探活记录**（N=20）——每次
   `POST /api/channels/{name}/test` 落一条（表 `pbr_probe_logs`：`ts/channel/upstream_model/
   status/duration_ms/http_status/error_kind/msg`）。**每渠道只保留最近 200 条**（写入时滚动裁剪），

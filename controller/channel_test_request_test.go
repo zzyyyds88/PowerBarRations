@@ -93,10 +93,12 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 			require.True(t, ok)
 			encoded := convertChatCompatibilityRequest(t, request, tt.channelType, map[string]string{tt.model: tt.upstream})
 			want := map[string]any{
-				"model":      tt.upstream,
-				"messages":   []dto.Message{{Role: "user", Content: "hi"}},
-				"stream":     tt.stream,
-				tt.wantLimit: 16,
+				"model":    tt.upstream,
+				"messages": []dto.Message{{Role: "user", Content: "hi"}},
+				"stream":   tt.stream,
+				// buildTestRequest 给推理模型留推理+输出空间，统一 512
+				// （2026-11-21 渠道实测：16 会 502）。
+				tt.wantLimit: 512,
 			}
 			if tt.stream {
 				want["stream_options"] = map[string]any{"include_usage": true}

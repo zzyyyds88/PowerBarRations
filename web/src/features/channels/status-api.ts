@@ -76,6 +76,14 @@ export interface ChannelStatusMemberRuntime {
   circuit: string
   /** 冷却截止（RFC3339；null = 不在冷却）。 */
   cooldown_until: string | null
+  /** 限流减速截止（RFC3339；与冷却分开，不影响 available）。 */
+  paced_until?: string | null
+  /** 出站准入运行态（routing-spec §3.2）。 */
+  inflight?: number
+  queued?: number
+  rpm_used?: number
+  adaptive_limit?: number | null
+  ttft_baseline_ms?: number
   /** 熔断打开到期（RFC3339；circuit 非 open 时为 null）。 */
   circuit_open_until: string | null
   consecutive_failures: number

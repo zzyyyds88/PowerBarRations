@@ -439,9 +439,10 @@ func channelModelStats(channelName string, from, until int64) []gin.H {
 func recentChannelFailures(channelName string) []gin.H {
 	success := false
 	entries, err := model.ListPBRRequestLogs(model.PBRRequestLogFilter{
-		Channel: channelName,
-		Success: &success,
-		Limit:   channelStatusRecentLimit,
+		Channel:            channelName,
+		Success:            &success,
+		ExcludeRouteSource: model.PBRRouteSourceTest,
+		Limit:              channelStatusRecentLimit,
 	})
 	if err != nil {
 		return []gin.H{}

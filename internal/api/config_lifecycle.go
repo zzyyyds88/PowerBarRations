@@ -41,9 +41,13 @@ type ChannelConfig struct {
 	Proxy         *string  `json:"proxy,omitempty"`
 	// Prices 渠道级上游单价（成本折算）；空表导出为 []，与"缺席=保持原值"区分。
 	Prices []dto.ChannelModelPrice `json:"prices"`
+	// RateLimits 出站准入（ADR 0012）；空表导出为 []。
+	RateLimits []dto.ChannelRateLimit `json:"rate_limits"`
 	// ModelMapping 模型名 → 上游真名；空表导出为 {}（ADR 0005/0008）。
 	ModelMapping map[string]string `json:"model_mapping"`
-	KeySet       bool              `json:"key_set"`
+	// StatusCodeMapping 上游状态码 → 对外状态码；空表导出为 {}（ADR 0013）。
+	StatusCodeMapping map[string]string `json:"status_code_mapping"`
+	KeySet            bool              `json:"key_set"`
 }
 
 // LaneMemberConfig 车道成员的可导出形态（**两态**，api-spec §4.2）：散成员含
@@ -456,9 +460,17 @@ func channelPayloadFromConfig(config ChannelConfig) *channelPayload {
 		prices := config.Prices
 		payload.Prices = &prices
 	}
+	if config.RateLimits != nil {
+		limits := config.RateLimits
+		payload.RateLimits = &limits
+	}
 	if config.ModelMapping != nil {
 		mapping := config.ModelMapping
 		payload.ModelMapping = &mapping
+	}
+	if config.StatusCodeMapping != nil {
+		mapping := config.StatusCodeMapping
+		payload.StatusCodeMapping = &mapping
 	}
 	return payload
 }
@@ -1214,24 +1226,34 @@ func exportedChannelConfig(channel *model.Channel, models []string) ChannelConfi
 	if prices == nil {
 		prices = []dto.ChannelModelPrice{}
 	}
+	rateLimits := channel.GetSetting().PBRRateLimits
+	if rateLimits == nil {
+		rateLimits = []dto.ChannelRateLimit{}
+	}
 	mapping := channel.ModelMappingMap()
 	if mapping == nil {
 		mapping = map[string]string{}
+	}
+	statusMapping := channel.StatusCodeMappingMap()
+	if statusMapping == nil {
+		statusMapping = map[string]string{}
 	}
 	baseURL := channel.GetBaseURL()
 	enabled := channel.Status == common.ChannelStatusEnabled
 	proxy := channel.GetSetting().Proxy
 	return ChannelConfig{
-		Name:          channel.Name,
-		Type:          ChannelTypeSlug(channel.Type),
-		BaseURL:       &baseURL,
-		Models:        models,
-		ParamOverride: jsonObject(derefString(channel.ParamOverride)),
-		Enabled:       &enabled,
-		Proxy:         &proxy,
-		Prices:        prices,
-		ModelMapping:  mapping,
-		KeySet:        strings.TrimSpace(channel.Key) != "",
+		Name:              channel.Name,
+		Type:              ChannelTypeSlug(channel.Type),
+		BaseURL:           &baseURL,
+		Models:            models,
+		ParamOverride:     jsonObject(derefString(channel.ParamOverride)),
+		Enabled:           &enabled,
+		Proxy:             &proxy,
+		Prices:            prices,
+		RateLimits:        rateLimits,
+		ModelMapping:      mapping,
+		StatusCodeMapping: statusMapping,
+		KeySet:            strings.TrimSpace(channel.Key) != "",
 	}
 }
 

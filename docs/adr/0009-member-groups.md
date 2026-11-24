@@ -1,7 +1,12 @@
 # ADR 0009: 车道成员组（可复用的有序成员子链）
 
-- 状态：已接受（2026-10-25）
-- 关联：[ADR 0006](0006-lane-free-member-composition.md)、[ADR 0008](0008-member-stores-selected-model.md)、[routing-spec §1.4](../routing-spec-v1.md)、[api-spec §4.2/§5.2.1](../api-spec-v1.md)
+- 状态：已接受（2026-10-25）；2026-11-24 修订（见下）
+- 关联：[ADR 0006](0006-lane-free-member-composition.md)、[ADR 0008](0008-member-stores-selected-model.md)、[ADR 0013](0013-error-semantics-and-display-code.md)、[routing-spec §1.4](../routing-spec-v1.md)、[api-spec §4.2/§5.2.1](../api-spec-v1.md)
+- 修订（2026-11-24）：本 ADR §5 规定"组内成员与散成员允许重叠……各自是独立成员条目、各自有独立运行态"，
+  但实现当时的运行态键是 `channelId:upstreamModel`，两个重复条目共享冷却/熔断/尝试预算，与该决策相反。
+  现按 [ADR 0013](0013-error-semantics-and-display-code.md) 决策 7 修订：内部运行态键改为
+  `channelId:model:memberId`（组内成员使用 `member_group_items` 的 id），使"各自独立运行态"真正成立。
+  对外事件/日志的 `member` 标签仍保持 `channel/model`，不随内部键变化。
 
 ## 背景
 

@@ -38,9 +38,12 @@ const (
 	EventReset           = events.EventReset
 	EventSkip            = events.EventSkip
 	EventUpstreamBurst   = events.EventUpstreamBurst
-	EventMemberRecovered = events.EventMemberRecovered
-	EventLaneUnavailable = events.EventLaneUnavailable
-	EventLaneRecovered   = events.EventLaneRecovered
+	// EventAdaptiveLimitChanged AIMD 上限变化（routing-spec §3.2）。
+	EventAdaptiveLimitChanged = events.EventAdaptiveLimitChanged
+	EventMemberPaced          = events.EventMemberPaced
+	EventMemberRecovered      = events.EventMemberRecovered
+	EventLaneUnavailable      = events.EventLaneUnavailable
+	EventLaneRecovered        = events.EventLaneRecovered
 )
 
 // 故障权重：硬故障计数权重高、软故障（429）权重低，
@@ -69,6 +72,11 @@ const (
 	// softTransientMinCooldownSeconds 软瞬时故障分级冷却的下限：抖动时只歇这么久，
 	// 别把一个"刚打了个喷嚏"的成员当成"病了"。见 recordFailure 里分级那段。
 	softTransientMinCooldownSeconds = 5
+
+	// rateLimitPaceSeconds 上游 429 未给 Retry-After 时的默认减速时长（routing-spec §4.1.1）。
+	rateLimitPaceSeconds = 3
+	// rateLimitMaxPaceSeconds 减速时长上限；Retry-After 超过它时不等待，直接透传 429。
+	rateLimitMaxPaceSeconds = 60
 )
 
 // jitterSeconds 给冷却叠加 0–20% 的上偏抖动，用 key+now 做确定性散列。
@@ -145,6 +153,10 @@ const DefaultLogRetentionDays = 30
 
 // DefaultProbeConcurrency 探活默认并发上限（design-v1 §16.6）。
 const DefaultProbeConcurrency = 4
+
+// MaxProbeConcurrency 探活并发硬上限：探活是对上游的突发流量，配置再大也不允许
+// 无界并发（design-v1 §16.6）。超界值在读取时钳制，写入侧返回 400。
+const MaxProbeConcurrency = 16
 
 // DefaultCircuitSettings 默认值。累计阈值取 5：单次请求无论内部重试几次只记一次
 // 失败分（硬故障 1.0 / 软故障 0.6），因此两次硬故障不再立即熔断；429 权重 0.2，
@@ -227,7 +239,10 @@ type Circuit struct {
 	OpenUntil           int64     `json:"open_until"`
 	OpenedAt            int64     `json:"opened_at"`
 	LastErrorKind       ErrorKind `json:"last_error_kind,omitempty"`
-	LastTransitionAt    int64     `json:"last_transition_at"`
+	// LastErrorAt 最近一次失败的时间（Unix ms，0 = 从未失败）。
+	// 与 LastErrorKind 一起是"历史留痕"，不代表当前有故障（api-spec §6.5）。
+	LastErrorAt      int64 `json:"last_error_at,omitempty"`
+	LastTransitionAt int64 `json:"last_transition_at"`
 	// RecentOutcomes 定长环形缓冲的最近结果（true=成功），用于计算
 	// rolling_success_rate（routing-spec §7）。只保留最近 rollingWindowSize 次。
 	RecentOutcomes []bool `json:"-"`
@@ -280,6 +295,14 @@ func (c *Circuit) RollingSuccessRate() float64 {
 	return float64(ok) / float64(len(c.RecentOutcomes))
 }
 
+// RollingSamples 滚动窗口样本数（0 = 冷启动，成功率无意义）。
+func (c *Circuit) RollingSamples() int {
+	if c == nil {
+		return 0
+	}
+	return len(c.RecentOutcomes)
+}
+
 // RollingFailureRate 最近窗口内的失败率；无样本时返回 0。
 func (c *Circuit) RollingFailureRate() float64 {
 	if c == nil || len(c.RecentOutcomes) == 0 {
@@ -319,8 +342,11 @@ type Runtime struct {
 	AffinityArmed bool
 
 	Cooldowns map[string]int64
-	Circuits  map[string]*Circuit
-	Events    []Event
+	// PacedUntil 限流减速截止（Unix ms，routing-spec §4.1.1）：429 的"发太快"信号。
+	// 与 Cooldowns 分开：减速不改变成员可选性，只影响本轮是否立即发送。
+	PacedUntil map[string]int64
+	Circuits   map[string]*Circuit
+	Events     []Event
 
 	// laneDown 车道级停摆期标记：一次请求因"全部成员不可选"按 503 收尾时置位并
 	// 发出 lane_unavailable（同一停摆期只发一次），此后第一次成功服务发出
@@ -339,7 +365,12 @@ type Runtime struct {
 }
 
 func newRuntime() *Runtime {
-	return &Runtime{Cooldowns: map[string]int64{}, Circuits: map[string]*Circuit{}, Events: []Event{}}
+	return &Runtime{
+		Cooldowns:  map[string]int64{},
+		PacedUntil: map[string]int64{},
+		Circuits:   map[string]*Circuit{},
+		Events:     []Event{},
+	}
 }
 
 // Registry 进程内运行态注册表，按车道键（路由键）索引。
@@ -383,10 +414,42 @@ func (r *Runtime) circuitOpenUntil(key string) int64 {
 	return circuit.OpenUntil
 }
 
-// cooldownUntil 该成员冷却截止时间（Unix ms）；无冷却返回 0。
-// 供恐慌模式挑「最早到期」的那个用（见 route.go chooseFailoverLocked）。
+// cooldownUntil 该成员冷却截止时间（Unix ms）；无冷却或已到期返回 0。
+// 过期条目不再对外暴露（health 显示过去的时刻会与 available=true 自相矛盾）。
 func (r *Runtime) cooldownUntil(key string) int64 {
-	return r.Cooldowns[key]
+	until := r.Cooldowns[key]
+	if until != 0 && until <= nowMs() {
+		return 0
+	}
+	return until
+}
+
+// paceUntil 该成员限流减速截止时间（Unix ms）；无减速或已到期返回 0。
+func (r *Runtime) paceUntil(key string) int64 {
+	until := r.PacedUntil[key]
+	if until != 0 && until <= nowMs() {
+		return 0
+	}
+	return until
+}
+
+// paceRemaining 该成员限流减速的剩余时长；无减速或已到期返回 0。
+// 同为成员原地重试的等待下限（routing-spec §3.1）：上游说了 Retry-After 5s，
+// 内部重试间隔 3s，就必须等满 5s，而不是按 3s 继续打。
+func (r *Runtime) paceRemaining(key string) time.Duration {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	until := r.paceUntil(key)
+	if until == 0 {
+		return 0
+	}
+	// 必须用 nowMs()（可被测试替换的时钟），不能用 time.Until：后者读真实
+	// 墙钟，与假时钟/注入时钟不在同一时间轴上。
+	remainMs := until - nowMs()
+	if remainMs <= 0 {
+		return 0
+	}
+	return time.Duration(remainMs) * time.Millisecond
 }
 
 // settingsProvider 由外部注入熔断参数读取（接到 system/options）。
@@ -538,11 +601,26 @@ func (r *Registry) SnapshotMemberStates() []MemberRuntimeState {
 // nowMs 可被测试替换。
 var nowMs = func() int64 { return time.Now().UnixMilli() }
 
+// memberKeyOf 运行态键：channelId:upstreamModel#memberId。
+//
+// 加 memberId 是为了让同车道内"组内成员 + 散成员"重复同一 (渠道, 模型) 时
+// **各自独立**冷却/熔断/预算（ADR 0009 修订、ADR 0013 决策 7）。
+// 对外事件与人类标签不使用该键——事件 member 由 eventMember 去后缀，
+// attempts/日志用 memberLabel（channel/model）。
 func memberKeyOf(m *model.RouteMember) string {
 	if m == nil {
 		return ""
 	}
-	return strconv.Itoa(m.ChannelId) + ":" + m.UpstreamModel
+	return strconv.Itoa(m.ChannelId) + ":" + m.UpstreamModel + "#" + strconv.Itoa(m.MemberId)
+}
+
+// eventMember 把运行态键还原成对外事件/日志使用的 member 标识
+// （`channelId:upstreamModel`），去掉内部的 `#memberId` 后缀。
+func eventMember(key string) string {
+	if i := strings.LastIndexByte(key, '#'); i >= 0 {
+		return key[:i]
+	}
+	return key
 }
 
 // weightOf 按错误分类给出熔断计分权重。
@@ -570,6 +648,11 @@ const (
 
 func (r *Runtime) availabilityOf(key string, settings CircuitSettings) availability {
 	now := nowMs()
+	// §5.3：先判冷却——冷却未到期时**不得**占用探测槽（half_open/open 到期也一样）。
+	until := r.Cooldowns[key]
+	if until != 0 && now < until {
+		return availSkip
+	}
 	if circuit := r.Circuits[key]; circuit != nil {
 		switch circuit.State {
 		case CircuitOpen:
@@ -586,14 +669,11 @@ func (r *Runtime) availabilityOf(key string, settings CircuitSettings) availabil
 			return availProbeReady
 		}
 	}
-	until := r.Cooldowns[key]
-	if until == 0 {
-		return availOK
+	if until != 0 {
+		// 冷却已到期（探测槽语义由 takeProbe 决定）。
+		return availProbeReady
 	}
-	if now < until {
-		return availSkip
-	}
-	return availProbeReady
+	return availOK
 }
 
 // SkipReason 成员被跳过时的原因，用于 attempts[].status（routing-spec §9）：
@@ -648,22 +728,15 @@ func (r *Runtime) releaseProbe(key string) {
 // 而且残留冷却会在切回 failover 后继续误伤）。熔断计分与亲和收敛照常。
 func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSeconds int, retryAfterSeconds int, applyCooldown bool, settings CircuitSettings) {
 	now := nowMs()
-	// routing-spec §4.1：hard_auth / hard_quota 冷却取较长档。
-	memberCooldownSeconds = cooldownSecondsFor(kind, memberCooldownSeconds)
-	// 上游明确给了 Retry-After：冷却至少等到它要求的时间（封顶 1 小时，避免异常大值）。
-	if retryAfterSeconds > memberCooldownSeconds {
-		memberCooldownSeconds = retryAfterSeconds
+
+	// 429 = 减速，不是故障（routing-spec §4.1.1 / ADR 0013）：
+	// 只写 PacedUntil + member_paced，不写 Cooldowns、不计 Score/FailsByKind/
+	// 滚动窗口、不开熔断。与 manual 无关——减速是"放慢"，不是"回避"。
+	if kind == KindSoftRateLimit {
+		r.applyPaceLocked(key, retryAfterSeconds, now)
+		return
 	}
-	if memberCooldownSeconds > maxMemberCooldownSeconds {
-		memberCooldownSeconds = maxMemberCooldownSeconds
-	}
-	// 冷却加抖动：避免多个成员在同一秒同时恢复后再次同时打上游。
-	if memberCooldownSeconds > 0 {
-		memberCooldownSeconds = jitterSeconds(memberCooldownSeconds, key, now)
-	}
-	if memberCooldownSeconds > maxMemberCooldownSeconds {
-		memberCooldownSeconds = maxMemberCooldownSeconds
-	}
+
 	// §6：亲和期内**当前成员**失败 → 立即结束亲和（照搬线上语义）。
 	// 否则该成员会在剩余亲和窗口内继续被粘滞，形成"失败→仍粘着→再失败"。
 	// 独立探测失败不影响当前路由，故只在 key 就是当前成员时清除。
@@ -680,6 +753,7 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 		r.Circuits[key] = circuit
 	}
 	circuit.LastErrorKind = kind
+	circuit.LastErrorAt = now
 	circuit.Score += weightOf(kind)
 	circuit.ConsecutiveFailures++
 	if circuit.FailsByKind == nil {
@@ -688,60 +762,100 @@ func (r *Runtime) recordFailure(key string, kind ErrorKind, memberCooldownSecond
 	circuit.FailsByKind[kind]++
 	circuit.recordOutcome(false)
 
-	// 软瞬时故障（soft_transient：5xx / 未送达类瞬断；timeout：成员级超时，§4.1 拆出）
-	// 的冷却**分级**，而不是一次就锁满档。
-	//
-	// 理由（2026-10-23 实案）：原先任何一次软失败都会把这个成员锁掉整段
-	// member_cooldown_seconds（现网 60s，含抖动上偏最多 72s），期间选路完全跳过它 ——
-	// 全部流量被挤到下一个成员，反过来把下一个成员也打爆（Opencode1 的 500 把流量挤到
-	// 华为云，触发其 1M tokens/min 限流，两条一起进冷却 → 整条车道瞬时 503 →
-	// 上游 Hermes 判定降级）。一次抖动不该升级成整条车道不可用。
-	//
-	// 分级（连续软失败次数 n，任意一次成功即清零 —— recordSuccess 清 FailsByKind）：
-	//   n=1 → base/8（下限 5s）  n=2 → base/4   n=3 → base/2   n≥4 → base
-	// n≥4 时 allowed_fails[soft_transient]（默认 4）同时到期，熔断接管，
-	// 之后按 open_seconds × 2^k 指数退避，冷却时长已不是主导因素。
-	//
-	// 其余类型维持满档：soft_rate_limit（429，上游明确要求慢一点，且尊重 Retry-After）、
-	// hard_auth / hard_quota（凭据/欠费，秒级不会自愈）、bad_response（成员自身故障）。
-	if applyCooldown && memberCooldownSeconds > 0 {
-		if kind == KindSoftTransient || kind == KindTimeout {
-			base := memberCooldownSeconds
-			div := 1
-			switch circuit.FailsByKind[kind] {
-			case 0, 1:
-				div = 8
-			case 2:
-				div = 4
-			case 3:
-				div = 2
-			}
-			scaled := base / div
-			// 下限：软故障至少歇 softTransientMinCooldownSeconds；但**绝不把配置本身
-			// 就比它短的成员级冷却反过来加长**（否则配置里的 3s 会被"修"成 5s）。
-			lower := softTransientMinCooldownSeconds
-			if base < lower {
-				lower = base
-			}
-			if scaled < lower {
-				scaled = lower
-			}
-			memberCooldownSeconds = scaled
+	// 冷却时长（单处算术，顺序不可换）：
+	// 1) 先按分类取**本地 base**（hard_auth/hard_quota ×2）；
+	// 2) soft_transient/timeout 再按连续次数分级（n=1 /8、n=2 /4、n=3 /2、n≥4 满档，下限 5s）；
+	// 3) **最后**与 Retry-After 取较大值，再封顶 + 抖动。
+	// 先取 Retry-After 再做除法会把上游要求的 90s 缩成 11s（ADR 0013）。
+	local := cooldownSecondsFor(kind, memberCooldownSeconds)
+	if kind == KindSoftTransient || kind == KindTimeout {
+		div := 1
+		switch circuit.FailsByKind[kind] {
+		case 0, 1:
+			div = 8
+		case 2:
+			div = 4
+		case 3:
+			div = 2
 		}
-		until := now + int64(memberCooldownSeconds)*1000
+		scaled := local / div
+		// 下限：软故障至少歇 softTransientMinCooldownSeconds；但**绝不把配置本身
+		// 就比它短的成员级冷却反过来加长**（否则配置里的 3s 会被"修"成 5s）。
+		lower := softTransientMinCooldownSeconds
+		if local < lower {
+			lower = local
+		}
+		if scaled < lower {
+			scaled = lower
+		}
+		local = scaled
+	}
+	if retryAfterSeconds > local {
+		local = retryAfterSeconds
+	}
+	if local > maxMemberCooldownSeconds {
+		local = maxMemberCooldownSeconds
+	}
+	if local > 0 {
+		local = jitterSeconds(local, key, now)
+		if local > maxMemberCooldownSeconds {
+			local = maxMemberCooldownSeconds
+		}
+	}
+
+	if applyCooldown && local > 0 {
+		until := now + int64(local)*1000
 		r.Cooldowns[key] = until
 		r.appendEvent(EventCooldown, key, "cooldown_until="+strconv.FormatInt(until, 10))
 	}
 
-	// 开断证据取"或"：按错误类型的 allowed_fails、累计失败分达阈值、滚动窗口失败率达标。
+	// 开断证据取"或"：半开探测失败立即回 open（§5.2）；否则按 allowed_fails、
+	// 累计失败分阈值、滚动窗口失败率三条证据取或。
+	if circuit.State == CircuitHalfOpen {
+		circuit.HalfOpenSuccesses = 0
+		r.openCircuit(key, circuit, now, local, settings)
+		return
+	}
 	allowedReached := false
 	if allowed := settings.AllowedFails[kind]; allowed > 0 && circuit.FailsByKind[kind] >= allowed {
 		allowedReached = true
 	}
 	if circuit.State != CircuitOpen &&
 		(allowedReached || circuit.Score >= settings.FailureThreshold || circuit.rollingFailureTriggersOpen(settings)) {
-		r.openCircuit(key, circuit, now, memberCooldownSeconds, settings)
+		r.openCircuit(key, circuit, now, local, settings)
 	}
+}
+
+// applyPaceLocked 记录一次限流减速（429）：只写 PacedUntil 与历史留痕，
+// 不写冷却、不计熔断分、不计滚动窗口。调用方持 Runtime 锁。
+func (r *Runtime) applyPaceLocked(key string, retryAfterSeconds int, now int64) {
+	if r.HasCurrent && r.CurrentMember == key {
+		if r.AffinityUntil != 0 {
+			r.appendEvent("affinity_end", key, "ended_by_pace")
+		}
+		r.AffinityUntil = 0
+		r.AffinityArmed = true
+	}
+	pace := rateLimitPaceSeconds
+	if retryAfterSeconds > pace {
+		pace = retryAfterSeconds
+	}
+	if pace > rateLimitMaxPaceSeconds {
+		pace = rateLimitMaxPaceSeconds
+	}
+	until := now + int64(pace)*1000
+	r.PacedUntil[key] = until
+
+	circuit := r.Circuits[key]
+	if circuit == nil {
+		circuit = &Circuit{State: CircuitClosed}
+		r.Circuits[key] = circuit
+	}
+	circuit.LastErrorKind = KindSoftRateLimit
+	circuit.LastErrorAt = now
+
+	r.appendEvent(EventMemberPaced, key,
+		"until="+strconv.FormatInt(until, 10)+" retry_after="+strconv.Itoa(retryAfterSeconds))
 }
 
 // recordReject 记一次"成员级拒绝"（routing-spec §4.1）：只更新 last_error_kind
@@ -765,13 +879,23 @@ func (r *Runtime) recordReject(key string, kind ErrorKind, applyCooldown bool) {
 		r.Circuits[key] = circuit
 	}
 	circuit.LastErrorKind = kind
+	circuit.LastErrorAt = nowMs()
 	circuit.RejectStreak++
-	if applyCooldown && circuit.RejectStreak >= rejectStreakThreshold {
-		until := nowMs() + int64(rejectCooldownSeconds)*1000
-		r.Cooldowns[key] = until
-		r.appendEvent(EventCooldown, key,
-			"cooldown_until="+strconv.FormatInt(until, 10)+" reason=consecutive_rejects")
+	// 连续拒绝达到阈值：清零计数（无论是否写冷却——manual 车道不回避，但计数
+	// 必须按"连续"语义收敛，不能单调增长）。写冷却时走统一写法（抖动 + 封顶）。
+	if circuit.RejectStreak >= rejectStreakThreshold {
 		circuit.RejectStreak = 0
+		if applyCooldown {
+			now := nowMs()
+			secs := jitterSeconds(rejectCooldownSeconds, key, now)
+			if secs > maxMemberCooldownSeconds {
+				secs = maxMemberCooldownSeconds
+			}
+			until := now + int64(secs)*1000
+			r.Cooldowns[key] = until
+			r.appendEvent(EventCooldown, key,
+				"cooldown_until="+strconv.FormatInt(until, 10)+" reason=consecutive_rejects")
+		}
 	}
 }
 
@@ -835,6 +959,8 @@ func (r *Runtime) recordSuccess(key string, affinitySeconds int, settings Circui
 	now := nowMs()
 	_, hadCooldown := r.Cooldowns[key]
 	delete(r.Cooldowns, key)
+	// 成功即解除限流减速（routing-spec §4.1.1）。
+	delete(r.PacedUntil, key)
 	circuit := r.Circuits[key]
 	if circuit == nil {
 		// 全成功的成员此前没有熔断器条目；建一个，使滚动成功率也有样本
@@ -865,10 +991,14 @@ func (r *Runtime) recordSuccess(key string, affinitySeconds int, settings Circui
 			circuit.HalfOpenSuccesses = 0
 			circuit.LastTransitionAt = now
 			r.appendEvent(EventCircuitClosed, key, "recovered")
+			// 冷却与熔断可能由同一次失败同时开始（先写冷却，再开断）。两种"开始"
+			// 各自需要自己的"结束"：熔断由 circuit_closed 收口，冷却由
+			// member_recovered 收口；否则排障时那段冷却会永远悬空。
+			if hadCooldown {
+				r.appendEvent(EventMemberRecovered, key, "from=cooldown")
+			}
 		} else if hadCooldown {
 			// 只有冷却、没开过熔断的成员：由 member_recovered 收口（与 cooldown 配对）。
-			// 熔断打开过的成员由上一条 circuit_closed 收口，不再重复发本条——每个
-			// "开始"事件恰好一个"结束"事件（routing-spec §7 的配对语义）。
 			r.appendEvent(EventMemberRecovered, key, "from=cooldown")
 		}
 	}
@@ -897,7 +1027,7 @@ func SetEventSubscriber(fn func(Event)) {
 }
 
 func (r *Runtime) appendEvent(eventType, member, detail string) {
-	event := Event{Ts: nowMs(), Type: eventType, Lane: r.laneName, Member: member, Detail: detail}
+	event := Event{Ts: nowMs(), Type: eventType, Lane: r.laneName, Member: eventMember(member), Detail: detail}
 	r.Events = append(r.Events, event)
 	if len(r.Events) > 200 {
 		r.Events = r.Events[len(r.Events)-200:]
@@ -908,18 +1038,189 @@ func (r *Runtime) appendEvent(eventType, member, detail string) {
 
 // Reset 清空该车道的全部运行态（冷却/熔断/探测槽/亲和），返回被清除的
 // 熔断器条目数（api-spec §6.6 的响应体 `{"reset": <int>}`）。
-func (r *Runtime) Reset() int {
+// ResetResult 一次运行态重置清除的明细（api-spec §6.6 的 `cleared`）。
+type ResetResult struct {
+	Circuits  int  `json:"circuits"`
+	Cooldowns int  `json:"cooldowns"`
+	Paces     int  `json:"paces"`
+	Probe     int  `json:"probe"`
+	Affinity  int  `json:"affinity"`
+	LaneDown  bool `json:"lane_down"`
+}
+
+// Reset 清空该车道的全部运行态（冷却/减速/熔断/探测槽/亲和/停摆标记），
+// 返回清除明细。`reset` 兼容字段 = Circuits。
+func (r *Runtime) Reset() ResetResult {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cleared := len(r.Circuits)
+	result := ResetResult{
+		Circuits:  len(r.Circuits),
+		Cooldowns: len(r.Cooldowns),
+		Paces:     len(r.PacedUntil),
+		LaneDown:  r.laneDown,
+	}
+	if r.HasProbe {
+		result.Probe = 1
+	}
+	if r.AffinityUntil != 0 || r.AffinityArmed {
+		result.Affinity = 1
+	}
 	r.Cooldowns = map[string]int64{}
+	r.PacedUntil = map[string]int64{}
 	r.Circuits = map[string]*Circuit{}
 	r.HasProbe = false
 	r.ProbeMember = ""
 	r.AffinityArmed = false
 	r.AffinityUntil = 0
+	// 停摆标记与当前成员一并复位，避免 Reset 后残留 lane_unavailable 状态。
+	r.laneDown = false
+	r.laneDownSince = 0
+	r.HasCurrent = false
+	r.CurrentMember = ""
 	r.appendEvent(EventReset, "", "circuits cleared")
-	return cleared
+	return result
+}
+
+// Health 返回某车道的健康快照；运行态尚未建立时用一份临时空运行态计算
+// （成员全部按"无冷却/无熔断"处理），不写入注册表。
+func (reg *Registry) Health(key string, resolved *model.ResolvedRoute, settings CircuitSettings) HealthSnapshot {
+	if runtime := reg.Get(key); runtime != nil {
+		// 只读面也要先收敛成员键迁移：车道编辑会换 memberId，健康快照必须
+		// 看到迁移后的冷却/熔断，而不是冷启形状（routing-spec §1.3）。
+		valid := make(map[string]bool, len(resolved.Members))
+		for i := range resolved.Members {
+			valid[memberKeyOf(&resolved.Members[i])] = true
+		}
+		runtime.PruneStaleState(valid, resolved.LaneVersion)
+		return runtime.Health(resolved, settings)
+	}
+	empty := newRuntime()
+	empty.laneName = key
+	return empty.Health(resolved, settings)
+}
+
+// MemberPenaltyClearResult 探活成功后跨车道的惩罚态清理结果（routing-spec §5.4）。
+type MemberPenaltyClearResult struct {
+	// Lanes 实际被清理的车道名（去重、升序）。
+	Lanes []string
+	// Members 成功清除惩罚态的成员条目数（本来无惩罚态则不计）。
+	Members int
+	// ProbeBusyLanes 该成员正在占用探测槽、按单探测槽不变量跳过清理的车道。
+	ProbeBusyLanes []string
+}
+
+// ClearMemberPenalty 清除某成员在**所有车道**的运行态惩罚（routing-spec §5.4）。
+//
+// memberId > 0 时只清精确的 `channelId:model:memberId`（车道逐成员探活）；
+// memberId == 0 时清该 `channelId:model` 下的全部成员条目（渠道级探活没有
+// 成员 id，它证明的是这条上游通路本身可用）。
+//
+// 探测槽在途的成员不清理（保持单探测槽不变量），在 ProbeBusyLanes 里报出。
+func (reg *Registry) ClearMemberPenalty(channelId int, upstreamModel string, memberId int) MemberPenaltyClearResult {
+	result := MemberPenaltyClearResult{}
+	if channelId <= 0 || strings.TrimSpace(upstreamModel) == "" {
+		return result
+	}
+	prefix := strconv.Itoa(channelId) + ":" + upstreamModel
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	for laneName, runtime := range reg.lanes {
+		if runtime == nil {
+			continue
+		}
+		cleared, probeBusy := runtime.clearMemberPenalty(prefix, memberId)
+		if cleared > 0 {
+			result.Lanes = append(result.Lanes, laneName)
+			result.Members += cleared
+		}
+		if probeBusy {
+			result.ProbeBusyLanes = append(result.ProbeBusyLanes, laneName)
+		}
+	}
+	sort.Strings(result.Lanes)
+	sort.Strings(result.ProbeBusyLanes)
+	return result
+}
+
+// clearMemberPenalty 清除本车道上匹配 prefix（及 memberId）的成员惩罚态。
+// 返回 (清除条目数, 是否因探测槽在途而跳过)。
+func (r *Runtime) clearMemberPenalty(prefix string, memberId int) (int, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	suffix := ""
+	if memberId > 0 {
+		suffix = "#" + strconv.Itoa(memberId)
+	}
+	matches := func(key string) bool {
+		if !strings.HasPrefix(key, prefix) {
+			return false
+		}
+		if suffix == "" {
+			rest := key[len(prefix):]
+			return rest == "" || strings.HasPrefix(rest, "#")
+		}
+		return key == prefix+suffix
+	}
+	keys := map[string]struct{}{}
+	for key := range r.Cooldowns {
+		if matches(key) {
+			keys[key] = struct{}{}
+		}
+	}
+	for key := range r.PacedUntil {
+		if matches(key) {
+			keys[key] = struct{}{}
+		}
+	}
+	for key, circuit := range r.Circuits {
+		if matches(key) && (circuit.State != CircuitClosed || circuit.Score > 0 ||
+			circuit.ConsecutiveFailures > 0 || circuit.RejectStreak > 0) {
+			keys[key] = struct{}{}
+		}
+	}
+	cleared := 0
+	probeBusy := false
+	for key := range keys {
+		if r.HasProbe && r.ProbeMember == key {
+			probeBusy = true
+			continue
+		}
+		hadCooldown := false
+		if _, ok := r.Cooldowns[key]; ok {
+			hadCooldown = true
+		}
+		hadPace := false
+		if _, ok := r.PacedUntil[key]; ok {
+			hadPace = true
+		}
+		delete(r.Cooldowns, key)
+		delete(r.PacedUntil, key)
+		circuit := r.Circuits[key]
+		if circuit != nil {
+			wasOpen := circuit.State != CircuitClosed
+			hadFailure := wasOpen || circuit.LastErrorKind != "" || circuit.Score > 0 ||
+				circuit.ConsecutiveFailures > 0 || circuit.RejectStreak > 0
+			circuit.State = CircuitClosed
+			circuit.Score = 0
+			circuit.ConsecutiveFailures = 0
+			circuit.FailsByKind = nil
+			circuit.OpenUntil = 0
+			circuit.HalfOpenSuccesses = 0
+			circuit.OpenCount = 0
+			circuit.RejectStreak = 0
+			circuit.LastTransitionAt = nowMs()
+			if wasOpen {
+				r.appendEvent(EventCircuitClosed, key, "recovered_by_manual_probe")
+			}
+			if hadCooldown || hadPace || hadFailure {
+				r.appendEvent(EventMemberRecovered, key, "from=manual_probe")
+			}
+		} else if hadCooldown || hadPace {
+			r.appendEvent(EventMemberRecovered, key, "from=manual_probe")
+		}
+		cleared++
+	}
+	return cleared, probeBusy
 }
 
 // PruneStaleState 清理已不在成员链里的残留状态（routing-spec §1.3：
@@ -950,6 +1251,13 @@ func (r *Runtime) PruneStaleState(valid map[string]bool, laneVersion int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// 键迁移与"清理过期状态"分开：同版本/相同签名的并发编辑（两次 PUT 落在
+	// 同一秒）仍可能换了 memberId，健康快照必须看到迁移后的状态。只有不比
+	// 已知版本更旧的解析结果才允许迁移（避免旧快照把新状态搬回去）。
+	if laneVersion == 0 || r.prunedVersion == 0 || laneVersion >= r.prunedVersion {
+		r.migrateStaleMemberKeysLocked(valid)
+	}
+
 	if !r.prunedInit {
 		// 首次观测：只登记，未清理（此时没有可比对的旧状态）。
 		r.prunedInit = true
@@ -957,8 +1265,10 @@ func (r *Runtime) PruneStaleState(valid map[string]bool, laneVersion int64) {
 		r.prunedVersion = laneVersion
 		return
 	}
-	// 过期配置的并发请求：版本更旧 → 不得用旧成员集合裁剪新配置刚写入的状态。
-	if laneVersion != 0 && r.prunedVersion != 0 && laneVersion < r.prunedVersion {
+	// 过期/同版本的并发请求：不得用它的成员集合裁剪新配置刚写入的状态。
+	// 同版本也拒绝——成员组编辑推进的是组的 version，旧快照请求与它可能同为
+	// 某个中间版本；宁留残留（不在选路集合里，不影响选路），不删并发新状态。
+	if laneVersion != 0 && r.prunedVersion != 0 && laneVersion <= r.prunedVersion {
 		return
 	}
 	if sig == r.prunedSig {
@@ -988,9 +1298,15 @@ func memberSetSignature(valid map[string]bool) string {
 
 // pruneStaleLocked 真正执行残留清理。调用方持 r.mu。
 func (r *Runtime) pruneStaleLocked(valid map[string]bool) {
+	r.migrateStaleMemberKeysLocked(valid)
 	for key := range r.Cooldowns {
 		if !valid[key] {
 			delete(r.Cooldowns, key)
+		}
+	}
+	for key := range r.PacedUntil {
+		if !valid[key] {
+			delete(r.PacedUntil, key)
 		}
 	}
 	for key := range r.Circuits {
@@ -1010,21 +1326,95 @@ func (r *Runtime) pruneStaleLocked(valid map[string]bool) {
 	}
 }
 
+// migrateStaleMemberKeysLocked 把"车道编辑导致 memberId 变化"的旧运行态迁移到
+// 新键上。
+//
+// 写入是整链替换（先删光再重插），memberId 必然变化；运行态键含 memberId 时，
+// 一次"打开编辑再保存"就会让成员的冷却/熔断凭空消失（runbook 3d 的
+// "关→开往返运行态逐字段不变"）。这里在清理旧键前做一次**唯一映射**迁移：
+// 仅当同一 (channelId, upstreamModel) 在旧键与新键中都只有一条时迁移；
+// 重复成员（同名同模型多条）无法判定归属，宁可不猜（各自独立运行态优先）。
+func (r *Runtime) migrateStaleMemberKeysLocked(valid map[string]bool) {
+	if len(valid) == 0 {
+		return
+	}
+	validByPrefix := map[string][]string{}
+	for key := range valid {
+		prefix := eventMember(key)
+		validByPrefix[prefix] = append(validByPrefix[prefix], key)
+	}
+	staleByPrefix := map[string][]string{}
+	addStale := func(key string) {
+		if valid[key] {
+			return
+		}
+		prefix := eventMember(key)
+		staleByPrefix[prefix] = append(staleByPrefix[prefix], key)
+	}
+	for key := range r.Cooldowns {
+		addStale(key)
+	}
+	for key := range r.PacedUntil {
+		addStale(key)
+	}
+	for key := range r.Circuits {
+		addStale(key)
+	}
+	for prefix, staleKeys := range staleByPrefix {
+		targets := validByPrefix[prefix]
+		if len(targets) != 1 {
+			continue
+		}
+		target := targets[0]
+		for _, staleKey := range staleKeys {
+			if staleKey == target {
+				continue
+			}
+			if until, ok := r.Cooldowns[staleKey]; ok && r.Cooldowns[target] == 0 {
+				r.Cooldowns[target] = until
+			}
+			if until, ok := r.PacedUntil[staleKey]; ok && r.PacedUntil[target] == 0 {
+				r.PacedUntil[target] = until
+			}
+			if circuit, ok := r.Circuits[staleKey]; ok && r.Circuits[target] == nil {
+				r.Circuits[target] = circuit
+			}
+			if r.HasProbe && r.ProbeMember == staleKey {
+				r.ProbeMember = target
+			}
+			if r.HasCurrent && r.CurrentMember == staleKey {
+				r.CurrentMember = target
+			}
+		}
+	}
+}
+
 // MemberHealth 单个成员的运行态快照。
 //
 // 时间字段按 api-spec §2.6 输出 RFC3339 UTC 字符串；无冷却/无退避时为 null
 // （api-spec §6.5 示例 `"cooldown_until": null`）。
 type MemberHealth struct {
-	Member              string    `json:"member"`
-	Channel             string    `json:"channel"`
-	UpstreamModel       string    `json:"upstream_model"`
-	Circuit             string    `json:"circuit"`
-	ConsecutiveFailures int       `json:"consecutive_failures"`
-	FailureScore        float64   `json:"failure_score"`
-	RollingSuccessRate  float64   `json:"rolling_success_rate"`
-	CooldownUntil       *string   `json:"cooldown_until"`
-	CircuitOpenUntil    *string   `json:"circuit_open_until"`
-	LastErrorKind       ErrorKind `json:"last_error_kind,omitempty"`
+	Member              string  `json:"member"`
+	Channel             string  `json:"channel"`
+	UpstreamModel       string  `json:"upstream_model"`
+	Circuit             string  `json:"circuit"`
+	ConsecutiveFailures int     `json:"consecutive_failures"`
+	FailureScore        float64 `json:"failure_score"`
+	RollingSuccessRate  float64 `json:"rolling_success_rate"`
+	// RollingSamples 滚动窗口样本数：区分"冷启动无样本"与"最近全失败"（api-spec §6.5）。
+	RollingSamples   int       `json:"rolling_samples"`
+	CooldownUntil    *string   `json:"cooldown_until"`
+	PacedUntil       *string   `json:"paced_until"`
+	CircuitOpenUntil *string   `json:"circuit_open_until"`
+	LastErrorKind    ErrorKind `json:"last_error_kind,omitempty"`
+	LastErrorAt      *string   `json:"last_error_at"`
+	ProbePending     bool      `json:"probe_pending"`
+	Inflight         int       `json:"inflight"`
+	Queued           int       `json:"queued"`
+	RPMUsed          int       `json:"rpm_used"`
+	AdaptiveLimit    *int      `json:"adaptive_limit"`
+	// TTFTBaselineMs 自适应模式学到的 TTFT 基线（无样本为 0）。
+	TTFTBaselineMs float64 `json:"ttft_baseline_ms,omitempty"`
 	// RejectStreak 连续 upstream_reject 次数（routing-spec §4.1）。
 	//
 	// upstream_reject 按设计不计冷却、不计熔断分——成员本身没故障。但「同一成员
@@ -1107,7 +1497,7 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 		}
 		if affinity.Channel == "" {
 			// 当前成员已不在链里（并发编辑竞态）：退回从运行态键解析上游名。
-			if _, upstream, ok := strings.Cut(r.CurrentMember, ":"); ok {
+			if _, upstream, ok := strings.Cut(eventMember(r.CurrentMember), ":"); ok {
 				affinity.UpstreamModel = upstream
 			}
 		}
@@ -1130,20 +1520,43 @@ func (r *Runtime) Health(resolved *model.ResolvedRoute, settings CircuitSettings
 			item.ConsecutiveFailures = circuit.ConsecutiveFailures
 			item.FailureScore = circuit.Score
 			item.RollingSuccessRate = circuit.RollingSuccessRate()
+			item.RollingSamples = circuit.RollingSamples()
 			item.CircuitOpenUntil = msToRFC3339(r.circuitOpenUntil(key))
 			item.LastErrorKind = circuit.LastErrorKind
+			item.LastErrorAt = msToRFC3339(circuit.LastErrorAt)
 			item.RejectStreak = circuit.RejectStreak
 		}
+		item.PacedUntil = msToRFC3339(r.paceUntil(key))
+		// 出站准入运行态（routing-spec §3.2）：按 (channelId, 成员所选模型) 读。
+		stats := DefaultAdmission.Stats(AdmissionKey(member.ChannelId, member.Model))
+		item.Inflight = stats.Inflight
+		item.Queued = stats.Queued
+		item.RPMUsed = stats.RPMUsed
+		if stats.Adaptive {
+			limit := int(stats.AdaptiveLimit)
+			item.AdaptiveLimit = &limit
+			item.TTFTBaselineMs = stats.TTFTBaselineMs
+		}
+		// probe_pending 的语义是"该成员当前占用探测槽"（routing-spec §7），
+		// 不是"车道里有别的成员在探测"——后者会把开放熔断的成员误标成探测中。
+		item.ProbePending = r.HasProbe && r.ProbeMember == key
 		// 人工停用直接令 Available=false，但上面与下面的运行态字段仍照实计算——
 		// 排障时要能同时看到"我把它关了"和"关之前它是什么状态"（routing-spec §7）。
 		if manual {
 			// manual 只有被点名的那个成员可用；点名缺失/悬空时整条车道没有可用成员。
 			item.Available = i == manualActiveIndex &&
 				!member.Disabled &&
+				member.ChannelEnabled &&
 				!r.circuitBlocksManual(key)
 		} else {
-			item.CooldownUntil = msToRFC3339(r.Cooldowns[key])
-			item.Available = !member.Disabled && r.availabilityOf(key, settings) != availSkip
+			avail := r.availabilityOf(key, settings)
+			item.CooldownUntil = msToRFC3339(r.cooldownUntil(key))
+			// 精确口径（routing-spec §7）：未人工停用 + 渠道启用 + 冷却/熔断不拦 +
+			// 探测槽未被他处占用（减速不影响可选性）。
+			item.Available = !member.Disabled &&
+				member.ChannelEnabled &&
+				avail != availSkip &&
+				!(avail == availProbeReady && r.HasProbe)
 		}
 		snapshot.Members = append(snapshot.Members, item)
 	}

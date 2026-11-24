@@ -88,6 +88,16 @@ export interface ChannelModelPrice {
   cache_write?: number
 }
 
+// ChannelRateLimit 渠道级出站准入配置（ADR 0012，routing-spec §3.2）。
+// max_concurrency = -1 表示自适应 AIMD；0/省略 = 不限制。
+export interface ChannelRateLimit {
+  model: string
+  max_concurrency: number
+  max_rpm: number
+  queue_limit?: number
+  queue_wait_seconds?: number
+}
+
 export interface ChannelSettings {
   force_format?: boolean
   thinking_to_content?: boolean
@@ -98,6 +108,7 @@ export interface ChannelSettings {
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
   pbr_prices?: ChannelModelPrice[]
+  pbr_rate_limits?: ChannelRateLimit[]
 }
 
 export interface ChannelOtherSettings {

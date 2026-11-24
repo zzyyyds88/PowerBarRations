@@ -4,7 +4,27 @@
 
 ## [Unreleased]
 
+### 破坏性变更
+- **429 语义改为"减速"**（ADR 0013、routing-spec §4.1.1）：上游 429 不再写成员冷却、不计熔断分、
+  不发 `cooldown` 事件，只写 `paced_until` 并短暂减速；成员仍 `available=true`。
+  健康快照新增 `paced_until`、`last_error_at`、`rolling_samples`、`probe_pending`；
+  日志 `error_kind` 新增 `local_throttle`（本地准入排队超界）。`circuit_allowed_fails.soft_rate_limit`
+  键保留但不再生效。
+- **运行态键带 memberId**（ADR 0009 修订）：同车道内"组内成员 + 散成员"重复同一 `(渠道, 模型)` 时
+  各自独立冷却/熔断/预算；对外事件与日志的 `member` 标签仍是 `channel/model`。
+- **状态码映射只改对外状态码**（routing-spec §4.1.2）：`status_code_mapping` 不再影响错误分类与
+  重试/冷却；目标码限定 400–599，禁止 2xx 与 503，后端写入口强制校验。
+- **探活语义收紧**：200 + `{"error":...}` 判失败；`unsupported` 是独立错误类型；探活成功会清除
+  该成员在所有车道的冷却/熔断；`POST /channels/{name}/test` 与 `POST /lanes/{name}/probe`
+  声明为 `reject`，带 `?dry_run=true` 返回 400。
+- **自动禁用按分类白名单**：只有 `hard_auth` / `hard_quota` 可触发自动禁用；429/5xx 不再进入；
+  状态码范围与关键词写入时校验。
+
 ### Added
+- **出站准入控制**（ADR 0012、routing-spec §3.2）：渠道级 `rate_limits`（按模型）支持
+  `max_concurrency`（含 `-1` 自适应 AIMD）、`max_rpm`、`queue_limit`、`queue_wait_seconds`；
+  默认不限制，按渠道显式开启；准入排队超界时模型面返回 `429` + `Retry-After`，
+  健康快照暴露 `inflight` / `queued` / `adaptive_limit`。
 - **渠道退役编排**（design-v1 §7.9）：`POST /api/channels/{name}/retire` 把"停用 → 解除引用 → 删除 → 历史标记"做成一个显式编排——控制台"删除"入口改为两步确认（先预览引用/清理/历史改写清单，再输入渠道全名解锁），确认后系统替运维摘除散成员与成员组条目（成员清空的车道整条删除，**组本身保留**并把变空组单独列出），历史请求记录与 `channel`/`channel_model` 统计改写为 `原名（已退役 时间）`，避免同名新渠道与退役历史混在一起。API 的 `DELETE /api/channels/{name}` 严格语义不变（仍被引用即 409）。退役是**唯一允许变更车道/成员组的渠道动作**，必须预览 + 二次确认 + 逐项审计。
 - **脱敏推荐基线**：新增 `GET /api/privacy/recommended`（`privacy.Recommended()`），把「打开开关后应该长什么样」变成后端唯一真源——`kinds` 按 magpie 类别默认（六项高置信度默认勾选）、`actions` 空（全 `mask`）、`min_score=0.80`；**三个总开关恒为 false**，脱敏仍须手动开启。控制台脱敏页新增「应用推荐配置」，只重置检测口径、不动总开关，并在未启用时给出显式提示。
 - **Anthropic Files 网关侧存储**（ADR 0011）：`anthropic-beta: files-api-*` 的 `/v1/files*` 由网关暂存字节，不要求 `X-PBR-Lane`、不参与选路、不转发上游；`/v1/messages` 引用 `file_id` 时展开为内联 base64。单文件 64 MiB、总量 1 GiB、按 `expires_after` 过期，归属绑定客户端密钥，进 `pbr_files` 表 + `pbr-files` 目录，导出不含字节。与 ADR 0010 的 OpenAI Files 语义按 beta 头分流并存。

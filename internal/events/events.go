@@ -18,14 +18,22 @@ const (
 	EventCooldown        = "cooldown"
 	EventReset           = "reset"
 	EventSkip            = "skip"
+	// EventMemberPaced 限流减速开始（routing-spec §4.1.1）：429 只放慢该成员，
+	// 不是成员故障；减速到期自动消失，不发恢复事件（与 EventCooldown 互斥）。
+	EventMemberPaced = "member_paced"
 	// EventMemberRecovered 成员恢复：冷却/失败留痕之后第一次成功服务（与 EventCooldown 配对，
-	// routing-spec §7）。熔断打开过的成员由 EventCircuitClosed 收口，不重复发本条。
+	// routing-spec §7）。同一次失败也可能同时开了熔断：熔断由 EventCircuitClosed 收口，
+	// 冷却仍由本条收口，两类"开始"各自有配对的"结束"。
 	EventMemberRecovered = "member_recovered"
 	// EventLaneUnavailable 车道不可用：某次请求因"全部成员不可选"按 503 收尾时发出一次
 	// （同一停摆期不重复），与 EventLaneRecovered 配对。
 	EventLaneUnavailable = "lane_unavailable"
 	// EventLaneRecovered 车道恢复：不可用期后第一次成功服务。
 	EventLaneRecovered = "lane_recovered"
+	// EventMemberThrottled 出站准入未就绪（队列满/排队超时），routing-spec §3.2。
+	EventMemberThrottled = "member_throttled"
+	// EventAdaptiveLimitChanged AIMD 自适应上限变化，routing-spec §3.2。
+	EventAdaptiveLimitChanged = "adaptive_limit_changed"
 
 	// 渠道与上游健康事件。
 	EventChannelDisabled = "channel_disabled"
@@ -54,9 +62,12 @@ var supportedTypes = map[string]struct{}{
 	EventCooldown:        {},
 	EventReset:           {},
 	EventSkip:            {},
+	EventMemberPaced:     {},
 	EventMemberRecovered: {},
 	EventLaneUnavailable: {},
 	EventLaneRecovered:   {},
+	EventMemberThrottled: {},
+	EventAdaptiveLimitChanged: {},
 	EventChannelDisabled: {},
 	EventChannelEnabled:  {},
 	EventChannelDeleted:  {},

@@ -30,11 +30,13 @@ func ListModels(c *gin.Context) {
 	items := make([]gin.H, 0, len(summaries))
 	for _, s := range summaries {
 		item := gin.H{
-			"model":                  s.Model,
-			"source":                 s.Source,
-			"routable":               s.Routable,
-			"member_count":           s.MemberCount,
-			"available_member_count": s.AvailableMemberCount,
+			"model":                         s.Model,
+			"source":                        s.Source,
+			"routable":                      s.Routable,
+			"member_count":                  s.MemberCount,
+			"available_member_count":        s.AvailableMemberCount,
+			"channel_disabled_member_count": s.ChannelDisabledMemberCount,
+			"orphan_member_count":           s.OrphanMemberCount,
 		}
 		if s.Source == model.RouteSourceExplicit || s.Source == model.RouteSourceDisabled {
 			// 车道存在才给：unconfigured 没有成员链，字段缺席（api-spec §5.7）。
@@ -43,31 +45,48 @@ func ListModels(c *gin.Context) {
 			item["disabled_member_count"] = s.DisabledMemberCount
 		}
 		if s.Source == model.RouteSourceExplicit {
-			healthy, total := laneHealthCounts(s.Model)
-			item["healthy_member_count"] = healthy
-			item["health_member_count"] = total
-			item["degraded"] = total > 0 && healthy == 0
+			health := laneHealthCounts(s.Model)
+			item["healthy_member_count"] = health.Healthy
+			item["health_member_count"] = health.Total
+			// degraded = 运行态可选数为 0（api-spec §5.7 / test-spec §3.1）。
+			// 限流减速不影响 available，因此不会单独造成 degraded；人工停用/
+			// 渠道停用导致的"全不可选"由 disabled/channel_disabled/orphan 三个
+			// 计数区分，不改变 degraded 本身。
+			item["degraded"] = health.Total > 0 && health.Healthy == 0
 		}
 		items = append(items, item)
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "next_cursor": nil})
 }
 
+// laneHealthCount 是某车道运行态聚合的口径（api-spec §5.7）。
+type laneHealthCount struct {
+	// Healthy 运行态可选成员数（Health.Available）。
+	Healthy int
+	// Total 快照成员总数。
+	Total int
+}
+
 // laneHealthCounts 返回某车道"当前可选成员数 / 快照成员总数"。
-// 解析失败（车道刚被删等竞态）按 (0,0) 处理，不因此让整个列表失败。
-func laneHealthCounts(lane string) (healthy int, total int) {
+// 解析失败（车道刚被删等竞态）按零值处理，不因此让整个列表失败。
+// 运行态用 Registry.Get/Health 读取，**不**为从未请求过的车道创建 Runtime。
+func laneHealthCounts(lane string) laneHealthCount {
 	resolved, err := model.ResolveRoute(lane)
 	if err != nil || resolved == nil || len(resolved.Members) == 0 {
-		return 0, 0
+		return laneHealthCount{}
 	}
-	snapshot := route.Default.For(lane).Health(resolved, route.CurrentCircuitSettings())
-	total = len(snapshot.Members)
-	for _, m := range snapshot.Members {
-		if m.Available {
-			healthy++
+	out := laneHealthCount{Total: len(resolved.Members)}
+	key := resolved.RouteKey
+	if key == "" {
+		key = resolved.Model
+	}
+	snapshot := route.Default.Health(key, resolved, route.CurrentCircuitSettings())
+	for i := range snapshot.Members {
+		if snapshot.Members[i].Available {
+			out.Healthy++
 		}
 	}
-	return healthy, total
+	return out
 }
 
 // GetRoute GET /api/v1/routes/{model}

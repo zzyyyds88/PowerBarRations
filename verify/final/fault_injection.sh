@@ -102,7 +102,7 @@ echo "  HTTP $CODE"
 H1=$(health fi-model)
 echo "  health: $(echo "$H1" | python3 -c 'import sys,json;d=json.load(sys.stdin);print([(m["channel"],m["last_error_kind"],m["cooldown_until"] is not None) for m in d["members"]])')"
 check "超时后无可用成员（503 快抛）" "$CODE" "503"
-assert_json "超时归类为 soft_transient 且进入冷却" "$H1" "any(m['last_error_kind']=='soft_transient' and m['cooldown_until'] is not None for m in d['members'])"
+assert_json "超时归类为 timeout 且进入冷却（ADR 0013）" "$H1" "any(m['last_error_kind']=='timeout' and m['cooldown_until'] is not None for m in d['members'])"
 control '{"model":"fi-model","status":200}'
 
 echo

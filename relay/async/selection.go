@@ -88,7 +88,7 @@ func (h *Handler) chooseChannel(c *gin.Context, laneName string, log *asyncLog) 
 		if err != nil || channel == nil || channel.Status != common.ChannelStatusEnabled {
 			logger.LogWarn(c, fmt.Sprintf(
 				"pbr async: skip unavailable member channel_id=%d lane=%s", member.ChannelId, laneName))
-			state.ReportMemberUnavailable(member, "channel disabled or missing")
+			state.ReportMemberConfigSkip(member, "channel disabled or missing")
 			state.ReleaseProbe()
 			continue
 		}
@@ -96,7 +96,7 @@ func (h *Handler) chooseChannel(c *gin.Context, laneName string, log *asyncLog) 
 			logger.LogWarn(c, fmt.Sprintf(
 				"pbr async: skip member with invalid base URL channel_id=%d lane=%s: %s",
 				member.ChannelId, laneName, err.Error()))
-			state.ReportMemberUnavailable(member, "invalid channel base URL")
+			state.ReportMemberConfigSkip(member, "invalid channel base URL")
 			state.ReleaseProbe()
 			continue
 		}
@@ -104,7 +104,7 @@ func (h *Handler) chooseChannel(c *gin.Context, laneName string, log *asyncLog) 
 		if keyErr != nil || !usableChannelKey(key) {
 			logger.LogWarn(c, fmt.Sprintf(
 				"pbr async: skip member without key channel_id=%d lane=%s", member.ChannelId, laneName))
-			state.ReportMemberUnavailable(member, "no available channel key")
+			state.ReportMemberConfigSkip(member, "no available channel key")
 			state.ReleaseProbe()
 			continue
 		}

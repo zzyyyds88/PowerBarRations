@@ -85,12 +85,15 @@ func HandleStreamResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 			return helper.NewUpstreamStreamRejectError(msg)
 		}
 		// 提交后：内容已交付，原样透传并如实留痕（§4.3）。Claude 客户端的
-		// 事件形态与上游完全一致（event 名取帧内 type），逐字透传即可。
+		// 事件形态与上游完全一致（event 名取帧内 type），逐字透传即可；
+		// 其它入站格式无法把 Anthropic error 事件转换成自己的流协议，
+		// 只记 MarkStreamReject 后收流，绝不把该帧再当普通错误返回 500
+		// （那会变成"已提交却尝试二次写"）。
 		helper.MarkStreamReject(c, msg)
 		if info == nil || info.RelayFormat == types.RelayFormatClaude {
 			helper.ClaudeChunkData(c, claudeResponse, data)
-			return nil
 		}
+		return nil
 	}
 	if claudeError := claudeResponse.GetClaudeError(); claudeError != nil && claudeError.Type != "" {
 		return types.WithClaudeError(*claudeError, http.StatusInternalServerError)
@@ -306,9 +309,9 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		return nil, err
 	}
 
-	// 上游建流后零有效帧 = 空响应，按成员级失败处理（routing-spec §4.1）。
-	if helper.StreamFailedWithoutFrames(c, info) {
-		return nil, helper.EmptyStreamError()
+	// 非正常结束与零内容帧空流按真实原因分类（ADR 0013 第 4 条）。
+	if streamErr := helper.StreamOutcomeError(c, info); streamErr != nil {
+		return nil, streamErr
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo)

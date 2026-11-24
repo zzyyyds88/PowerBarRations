@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
@@ -190,6 +191,39 @@ func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.
 	require.Equal(t, 2209, usage.CompletionTokens)
 	require.Equal(t, 20689, usage.TotalTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
+}
+
+// Gemini 非流式空候选必须返回错误，不能自写响应后返回 nil（ADR 0013 第 8 条）：
+// 否则 controller 会记 success=true、触发 OnSuccess，把失败从运行态抹掉。
+func TestGeminiChatHandlerEmptyCandidatesReturnsError(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	info := &relaycommon.RelayInfo{
+		RelayFormat:     types.RelayFormatGemini,
+		OriginModelName: "gemini-3-flash-preview",
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "gemini-3-flash-preview",
+		},
+	}
+
+	body, err := common.Marshal(dto.GeminiChatResponse{
+		Candidates:    nil,
+		UsageMetadata: dto.GeminiUsageMetadata{PromptTokenCount: 3, TotalTokenCount: 3},
+	})
+	require.NoError(t, err)
+	resp := &http.Response{Body: io.NopCloser(bytes.NewReader(body))}
+
+	usage, newAPIError := GeminiChatHandler(c, info, resp)
+	require.NotNil(t, newAPIError, "空候选必须作为失败交回 controller")
+	assert.Nil(t, usage)
+	assert.Equal(t, types.ErrorCodeEmptyResponse, newAPIError.GetErrorCode())
+	assert.Equal(t, http.StatusInternalServerError, newAPIError.StatusCode)
+	assert.Zero(t, recorder.Body.Len(), "handler 不得自写错误响应（由 controller 统一写）")
 }
 
 func TestGeminiStreamHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {

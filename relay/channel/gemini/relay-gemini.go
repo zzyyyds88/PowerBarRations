@@ -256,8 +256,10 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	if streamErr != nil {
 		return usage, types.NewOpenAIError(streamErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	if info.StreamStatus != nil && !info.StreamStatus.IsNormalEnd() {
-		logger.LogWarn(c, fmt.Sprintf("Gemini stream ended unexpectedly: %s", info.StreamStatus.Summary()))
+	// 非正常结束（超时/取消/读流失败）与零内容帧空流必须分类（ADR 0013 第 4 条）：
+	// 此前这里只写一条 warn 后返回 nil，超时会被记成成功。
+	if outcomeErr := helper.StreamOutcomeError(c, info); outcomeErr != nil {
+		return usage, outcomeErr
 	}
 
 	return usage, nil
@@ -393,8 +395,6 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	markGeminiGoogleSearchCall(c, &geminiResponse)
 	countGeminiBillableFunctionCalls(info, &geminiResponse)
 	if len(geminiResponse.Candidates) == 0 {
-		usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)
-
 		var newAPIError *types.NewAPIError
 		if geminiResponse.PromptFeedback != nil && geminiResponse.PromptFeedback.BlockReason != nil {
 			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
@@ -414,18 +414,10 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 
 		service.ResetStatusCode(newAPIError, c.GetString("status_code_mapping"))
 
-		switch info.RelayFormat {
-		case types.RelayFormatClaude:
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"type":  "error",
-				"error": newAPIError.ToClaudeError(),
-			})
-		default:
-			c.JSON(newAPIError.StatusCode, gin.H{
-				"error": newAPIError.ToOpenAIError(),
-			})
-		}
-		return &usage, nil
+		// 不再自写错误响应后返回 nil：那会让 controller 记 success=true、触发
+		// OnSuccess 并把这次失败从运行态抹掉（ADR 0013 第 8 条）。交回错误，
+		// 由 controller 统一写响应并按原始状态码分类/换成员。
+		return nil, newAPIError
 	}
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName

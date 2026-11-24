@@ -350,6 +350,11 @@ type ModelSummary struct {
 	// 它的唯一用途是把 degraded=true 拆成两种排障结论："成员全被我关了"
 	// （== MemberCount）与"上游全不可用"（== 0）。degraded 的定义不变。
 	DisabledMemberCount int `json:"disabled_member_count"`
+	// ChannelDisabledMemberCount 是"渠道存在但被停用"导致不参与选路的成员数
+	// （成员本身未被人工停用）。与 Disabled/Orphan 互斥。
+	ChannelDisabledMemberCount int `json:"channel_disabled_member_count"`
+	// OrphanMemberCount 是"渠道已不存在"的悬空成员数（成员本身未被人工停用）。
+	OrphanMemberCount int `json:"orphan_member_count"`
 }
 
 // ---------- 车道 CRUD ----------
@@ -790,6 +795,14 @@ func expandLaneChain(lane *Lane) ([]RouteMember, error) {
 
 // expandLaneChainWithDB 是 expandLaneChain 的 db 参数版本；事务内必须传 tx。
 func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
+	members, _, err := expandLaneChainWithVersion(db, lane)
+	return members, err
+}
+
+// expandLaneChainWithVersion 与 expandLaneChainWithDB 相同，额外返回所引成员组的
+// 最大 UpdatedAt（无组引用时为 0）。ResolveRoute 用它把组编辑纳入 LaneVersion，
+// 使 PruneStaleState 的"过期配置不剪枝"守卫对组成员变更同样生效（routing-spec §1.3）。
+func expandLaneChainWithVersion(db *gorm.DB, lane *Lane) ([]RouteMember, int64, error) {
 	groupIds := make([]int, 0, 4)
 	for _, m := range lane.Members {
 		if m.GroupId != 0 {
@@ -797,12 +810,18 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 		}
 	}
 	groups := map[int]*MemberGroup{}
+	var groupVersion int64
 	if len(groupIds) > 0 {
 		loaded, err := loadMemberGroupsByIDsWithDB(db, groupIds)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		groups = loaded
+		for _, g := range groups {
+			if g != nil && g.UpdatedAt > groupVersion {
+				groupVersion = g.UpdatedAt
+			}
+		}
 	}
 	members := make([]RouteMember, 0, len(lane.Members))
 	for i := range lane.Members {
@@ -810,7 +829,7 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 		if m.GroupId == 0 {
 			rm, err := routeMemberFromLaneMemberWithDB(db, m)
 			if err != nil {
-				return nil, err
+				return nil, 0, err
 			}
 			members = append(members, rm)
 			continue
@@ -823,7 +842,7 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 			item := &group.Members[j]
 			ch, chErr := channelOrNilWithDB(db, item.ChannelId)
 			if chErr != nil {
-				return nil, chErr
+				return nil, 0, chErr
 			}
 			name := ""
 			if ch != nil {
@@ -844,7 +863,7 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 			})
 		}
 	}
-	return members, nil
+	return members, groupVersion, nil
 }
 
 // ValidateLaneActiveMember 校验 manual 车道的点名成员：非空 active_member
@@ -1048,9 +1067,14 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	if pinned != nil {
 		route.PinnedMemberId = pinned.Id
 	}
-	members, err := expandLaneChain(lane)
+	members, groupVersion, err := expandLaneChainWithVersion(DB, lane)
 	if err != nil {
 		return nil, err
+	}
+	if groupVersion > route.LaneVersion {
+		// 只改成员组（不改车道）时也让 LaneVersion 前进，PruneStaleState 的
+		// "过期配置不剪枝"守卫才能拒绝旧快照（routing-spec §1.3 / ADR 0013）。
+		route.LaneVersion = groupVersion
 	}
 	route.Members = members
 	sort.SliceStable(route.Members, func(i, j int) bool {
@@ -1189,12 +1213,18 @@ func ListModelSummaries() ([]ModelSummary, error) {
 
 	// 只有"渠道存在且启用"的成员才真正可路由：用它算 available_member_count。
 	enabledChannelIDs := map[int]bool{}
-	allChannels, err := listEnabledChannels()
-	if err != nil {
+	allChannelIDs := map[int]bool{}
+	var allChannels []*Channel
+	if err := DB.Find(&allChannels).Error; err != nil {
 		return nil, err
 	}
+	enabledChannels := make([]*Channel, 0, len(allChannels))
 	for _, ch := range allChannels {
-		enabledChannelIDs[ch.Id] = true
+		allChannelIDs[ch.Id] = true
+		if ch.Status == common.ChannelStatusEnabled {
+			enabledChannelIDs[ch.Id] = true
+			enabledChannels = append(enabledChannels, ch)
+		}
 	}
 
 	lanes, err := ListLanes()
@@ -1210,16 +1240,20 @@ func ListModelSummaries() ([]ModelSummary, error) {
 			return nil, expandErr
 		}
 		available := countLaneAvailableMembers(lane, expanded, enabledChannelIDs)
+		disabledCount := countDisabledMembers(expanded)
+		channelDisabledCount, orphanCount := countUnselectableByChannel(expanded, allChannelIDs, enabledChannelIDs)
 		if !lane.Enabled {
 			// 停用车道不可调用，但仍要在管理面可见（source=disabled）。
 			if _, ok := seen[lane.Name]; !ok {
 				seen[lane.Name] = &ModelSummary{
-					Model:                lane.Name,
-					Source:               RouteSourceDisabled,
-					Routable:             false,
-					MemberCount:          len(expanded),
-					AvailableMemberCount: available,
-					DisabledMemberCount:  countDisabledMembers(expanded),
+					Model:                      lane.Name,
+					Source:                     RouteSourceDisabled,
+					Routable:                   false,
+					MemberCount:                len(expanded),
+					AvailableMemberCount:       available,
+					DisabledMemberCount:        disabledCount,
+					ChannelDisabledMemberCount: channelDisabledCount,
+					OrphanMemberCount:          orphanCount,
 				}
 			}
 			continue
@@ -1231,10 +1265,12 @@ func ListModelSummaries() ([]ModelSummary, error) {
 		}
 		s.MemberCount = len(expanded)
 		s.AvailableMemberCount = available
-		s.DisabledMemberCount = countDisabledMembers(expanded)
+		s.DisabledMemberCount = disabledCount
+		s.ChannelDisabledMemberCount = channelDisabledCount
+		s.OrphanMemberCount = orphanCount
 	}
 
-	for _, ch := range allChannels {
+	for _, ch := range enabledChannels {
 		for _, m := range ch.GetModels() {
 			m = strings.TrimSpace(m)
 			if m == "" {
@@ -1304,6 +1340,25 @@ func countDisabledMembers(members []RouteMember) int {
 		}
 	}
 	return n
+}
+
+// countUnselectableByChannel 把"成员未人工停用、但渠道侧不可用"的成员分成两类：
+// channel_disabled（渠道存在但被停用）与 orphan（渠道不存在）。两类与
+// available/disabled 合起来是 member_count 的互斥分解。
+func countUnselectableByChannel(members []RouteMember, allChannelIDs, enabledChannelIDs map[int]bool) (channelDisabled int, orphan int) {
+	for _, m := range members {
+		if m.Disabled {
+			continue
+		}
+		if !allChannelIDs[m.ChannelId] {
+			orphan++
+			continue
+		}
+		if !enabledChannelIDs[m.ChannelId] {
+			channelDisabled++
+		}
+	}
+	return channelDisabled, orphan
 }
 
 func listEnabledChannels() ([]*Channel, error) {

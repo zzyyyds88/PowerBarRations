@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 
 import { ChannelPricesEditor } from '../channel-prices-editor'
+import { ChannelRateLimitsEditor } from '../channel-rate-limits-editor'
 import { useChannelMutateContext } from './channel-mutate-context'
 
 export function ChannelProxyFields() {
@@ -87,6 +88,36 @@ export function ChannelPricesFields() {
   )
 
   return pbrPricesFields
+}
+
+export function ChannelRateLimitsFields() {
+  const { currentModelsArray, form, sensitiveLocked, t } =
+    useChannelMutateContext()
+  return (
+    <FormField
+      control={form.control}
+      name='pbr_rate_limits'
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{t('Outbound admission control')}</FormLabel>
+          <FormControl>
+            <ChannelRateLimitsEditor
+              value={field.value ?? []}
+              models={currentModelsArray}
+              onChange={field.onChange}
+              disabled={sensitiveLocked}
+            />
+          </FormControl>
+          <FormDescription>
+            {t(
+              'Per-model concurrency and RPM limits enforced before sending upstream.'
+            )}
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  )
 }
 
 export function ChannelSystemPromptFields() {

@@ -31,6 +31,6 @@ func TestTimeoutCooldownScalesLikeSoftTransient(t *testing.T) {
 		require.NotZero(t, cooldownUntil)
 		scaled := cooldownUntil - nowMs()
 		assert.GreaterOrEqual(t, scaled, int64(5_000), "分级下限 5s")
-		assert.LessOrEqual(t, scaled, int64(7_600), "n=1 → 60/8=7.5s（允许少量抖动）")
+		assert.LessOrEqual(t, scaled, int64(8_400), "n=1 → 60/8=7s，加 0–20% 抖动上限 8.4s")
 	})
 }

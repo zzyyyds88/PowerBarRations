@@ -454,6 +454,13 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if err := channel.ValidateSettings(); err != nil {
 		return fmt.Errorf("渠道额外设置[channel setting] 格式错误：%s", err.Error())
 	}
+	// 状态码映射只改客户端可见状态码（ADR 0013）：目标是 400–599，禁 2xx 与 503。
+	// 写在入口而不是只在转发时兜底，避免把非法映射存进库后长期静默失效。
+	if channel.StatusCodeMapping != nil {
+		if err := service.ValidateStatusCodeMapping(*channel.StatusCodeMapping); err != nil {
+			return err
+		}
+	}
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
 		return fmt.Errorf("New API channel base URL cannot be empty")
 	}

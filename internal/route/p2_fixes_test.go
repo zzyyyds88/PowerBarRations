@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
@@ -139,8 +138,10 @@ func TestMemberRecoveredPairsCooldown(t *testing.T) {
 
 	assert.Equal(t, []string{EventCooldown, EventMemberRecovered}, eventTypes(state.Runtime))
 	if assert.Len(t, state.Runtime.Events, 2) {
-		assert.Equal(t, key, state.Runtime.Events[0].Member)
-		assert.Equal(t, key, state.Runtime.Events[1].Member, "member_recovered 必须指向同一成员，消费方才能配对")
+		// 对外事件 member 标签是 channel/model（routing-spec §7），
+		// 运行态内部的 `#memberId` 后缀不得泄漏到事件流。
+		assert.Equal(t, eventMember(key), state.Runtime.Events[0].Member)
+		assert.Equal(t, eventMember(key), state.Runtime.Events[1].Member, "member_recovered 必须指向同一成员，消费方才能配对")
 	}
 }
 
@@ -214,27 +215,26 @@ func TestAffinityBypassRecordsSkippedForHigherPriority(t *testing.T) {
 
 // 累计 Score 未达阈值，但近期窗口失败率达标时也必须开断（design-v1 §7.5）。
 func TestRollingWindowFailureRateOpensCircuit(t *testing.T) {
-	clock := withFakeClock(t)
-	resolved := testRoute("lane-p2-rolling-open", 1, 1)
-	resolved.Config.MemberCooldownSeconds = 1
-	runtime := Default.For(resolved.Model)
-
-	soft := apiError(http.StatusTooManyRequests, "", false) // 429 权重 0.2
-
-	for i := 0; i < rollingMinSamples; i++ {
-		state := NewState(resolved)
-		_, _, ok := state.Next(nil)
-		require.True(t, ok, "第 %d 次应拿到成员", i+1)
-		state.Next(soft)
-		clock.advance(1100 * time.Millisecond)
-	}
+	withFakeClock(t)
+	runtime := Default.For("lane-p2-rolling-open")
+	key := "11:model-rolling-open"
+	settings := DefaultCircuitSettings()
+	// 分数与 allowed_fails 两条证据都设为不可达，确保开断只能来自滚动窗口。
+	settings.FailureThreshold = 1000
+	settings.AllowedFails = map[ErrorKind]int{}
+	settings.RollingMinSamples = rollingMinSamples
+	settings.RollingFailureRate = 0.8
+	settings.OpenSeconds = 1
 
 	runtime.withLock(func() {
-		circuit := runtime.Circuits[memberKeyOf(&resolved.Members[0])]
+		for i := 0; i < rollingMinSamples; i++ {
+			runtime.recordFailure(key, KindSoftTransient, 1, 0, false, settings)
+		}
+		circuit := runtime.Circuits[key]
 		require.NotNil(t, circuit)
 		assert.Equal(t, CircuitOpen, circuit.State,
 			"滚动窗口失败率达标也必须开断（design-v1 §7.5）")
-		assert.Less(t, circuit.Score, DefaultCircuitSettings().FailureThreshold,
+		assert.Less(t, circuit.Score, settings.FailureThreshold,
 			"守卫：本例累计 Score 未达阈值，开断只能来自窗口失败率证据")
 		assert.GreaterOrEqual(t, len(circuit.RecentOutcomes), rollingMinSamples)
 	})
@@ -242,21 +242,20 @@ func TestRollingWindowFailureRateOpensCircuit(t *testing.T) {
 
 // 样本数不足时不得仅凭窗口失败率开断（保守性守卫）。
 func TestRollingFailureRateNeedsMinimumSamples(t *testing.T) {
-	clock := withFakeClock(t)
-	resolved := testRoute("lane-p2-rolling-min", 1, 1)
-	resolved.Config.MemberCooldownSeconds = 1
-	runtime := Default.For(resolved.Model)
-	soft := apiError(http.StatusTooManyRequests, "", false)
+	withFakeClock(t)
+	runtime := Default.For("lane-p2-rolling-min")
+	key := "12:model-rolling-min"
+	settings := DefaultCircuitSettings()
+	settings.FailureThreshold = 1000
+	settings.AllowedFails = map[ErrorKind]int{}
+	settings.RollingMinSamples = rollingMinSamples
+	settings.RollingFailureRate = 0.8
 
-	for i := 0; i < rollingMinSamples-1; i++ {
-		state := NewState(resolved)
-		_, _, ok := state.Next(nil)
-		require.True(t, ok)
-		state.Next(soft)
-		clock.advance(1100 * time.Millisecond)
-	}
 	runtime.withLock(func() {
-		circuit := runtime.Circuits[memberKeyOf(&resolved.Members[0])]
+		for i := 0; i < rollingMinSamples-1; i++ {
+			runtime.recordFailure(key, KindSoftTransient, 1, 0, false, settings)
+		}
+		circuit := runtime.Circuits[key]
 		require.NotNil(t, circuit)
 		assert.NotEqual(t, CircuitOpen, circuit.State,
 			"样本数不足 rollingMinSamples 时不得仅凭窗口失败率开断")
