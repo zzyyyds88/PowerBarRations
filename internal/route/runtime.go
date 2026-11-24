@@ -1079,6 +1079,17 @@ func (r *Runtime) Reset() ResetResult {
 	return result
 }
 
+// Health 返回某车道的健康快照；运行态尚未建立时用一份临时空运行态计算
+// （成员全部按"无冷却/无熔断"处理），不写入注册表。
+func (reg *Registry) Health(key string, resolved *model.ResolvedRoute, settings CircuitSettings) HealthSnapshot {
+	if runtime := reg.Get(key); runtime != nil {
+		return runtime.Health(resolved, settings)
+	}
+	empty := newRuntime()
+	empty.laneName = key
+	return empty.Health(resolved, settings)
+}
+
 // MemberPenaltyClearResult 探活成功后跨车道的惩罚态清理结果（routing-spec §5.4）。
 type MemberPenaltyClearResult struct {
 	// Lanes 实际被清理的车道名（去重、升序）。

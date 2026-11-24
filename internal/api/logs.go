@@ -27,16 +27,26 @@ func parseLogFilter(c *gin.Context) (model.PBRRequestLogFilter, error) {
 	filter.Model = strings.TrimSpace(c.Query("model"))
 	filter.Client = strings.TrimSpace(c.Query("client"))
 	filter.Session = strings.TrimSpace(c.Query("session"))
+	filter.ErrorKind = strings.TrimSpace(c.Query("error_kind"))
 	if raw := strings.TrimSpace(c.Query("success")); raw != "" {
-		value := raw == "1" || strings.EqualFold(raw, "true")
+		value, ok := parseStrictBool(raw)
+		if !ok {
+			return filter, &apiError{code: apierr.CodeValidationFailed, message: "success must be true or false"}
+		}
 		filter.Success = &value
 	}
 	if raw := strings.TrimSpace(c.Query("masked")); raw != "" {
-		value := raw == "1" || strings.EqualFold(raw, "true")
+		value, ok := parseStrictBool(raw)
+		if !ok {
+			return filter, &apiError{code: apierr.CodeValidationFailed, message: "masked must be true or false"}
+		}
 		filter.Masked = &value
 	}
 	if raw := strings.TrimSpace(c.Query("context")); raw != "" {
-		value := raw == "1" || strings.EqualFold(raw, "true")
+		value, ok := parseStrictBool(raw)
+		if !ok {
+			return filter, &apiError{code: apierr.CodeValidationFailed, message: "context must be true or false"}
+		}
 		filter.Context = &value
 	}
 	since, err := parseTimeQuery(c.Query("since"))
@@ -49,6 +59,20 @@ func parseLogFilter(c *gin.Context) (model.PBRRequestLogFilter, error) {
 	}
 	filter.Since, filter.Until = since, until
 	return filter, nil
+}
+
+// parseStrictBool 只接受 true/false（大小写不敏感）与 1/0。
+// 以前 "success=maybe" 会被静默当成 false，客户端以为过滤生效、实际查的是
+// 失败集合——过滤参数非法必须报 400（api-spec §5.5）。
+func parseStrictBool(raw string) (bool, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "true", "1":
+		return true, true
+	case "false", "0":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 // ListLogs GET /api/v1/logs

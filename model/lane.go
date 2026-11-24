@@ -350,6 +350,11 @@ type ModelSummary struct {
 	// 它的唯一用途是把 degraded=true 拆成两种排障结论："成员全被我关了"
 	// （== MemberCount）与"上游全不可用"（== 0）。degraded 的定义不变。
 	DisabledMemberCount int `json:"disabled_member_count"`
+	// ChannelDisabledMemberCount 是"渠道存在但被停用"导致不参与选路的成员数
+	// （成员本身未被人工停用）。与 Disabled/Orphan 互斥。
+	ChannelDisabledMemberCount int `json:"channel_disabled_member_count"`
+	// OrphanMemberCount 是"渠道已不存在"的悬空成员数（成员本身未被人工停用）。
+	OrphanMemberCount int `json:"orphan_member_count"`
 }
 
 // ---------- 车道 CRUD ----------
@@ -1208,12 +1213,18 @@ func ListModelSummaries() ([]ModelSummary, error) {
 
 	// 只有"渠道存在且启用"的成员才真正可路由：用它算 available_member_count。
 	enabledChannelIDs := map[int]bool{}
-	allChannels, err := listEnabledChannels()
-	if err != nil {
+	allChannelIDs := map[int]bool{}
+	var allChannels []*Channel
+	if err := DB.Find(&allChannels).Error; err != nil {
 		return nil, err
 	}
+	enabledChannels := make([]*Channel, 0, len(allChannels))
 	for _, ch := range allChannels {
-		enabledChannelIDs[ch.Id] = true
+		allChannelIDs[ch.Id] = true
+		if ch.Status == common.ChannelStatusEnabled {
+			enabledChannelIDs[ch.Id] = true
+			enabledChannels = append(enabledChannels, ch)
+		}
 	}
 
 	lanes, err := ListLanes()
@@ -1229,16 +1240,20 @@ func ListModelSummaries() ([]ModelSummary, error) {
 			return nil, expandErr
 		}
 		available := countLaneAvailableMembers(lane, expanded, enabledChannelIDs)
+		disabledCount := countDisabledMembers(expanded)
+		channelDisabledCount, orphanCount := countUnselectableByChannel(expanded, allChannelIDs, enabledChannelIDs)
 		if !lane.Enabled {
 			// 停用车道不可调用，但仍要在管理面可见（source=disabled）。
 			if _, ok := seen[lane.Name]; !ok {
 				seen[lane.Name] = &ModelSummary{
-					Model:                lane.Name,
-					Source:               RouteSourceDisabled,
-					Routable:             false,
-					MemberCount:          len(expanded),
-					AvailableMemberCount: available,
-					DisabledMemberCount:  countDisabledMembers(expanded),
+					Model:                      lane.Name,
+					Source:                     RouteSourceDisabled,
+					Routable:                   false,
+					MemberCount:                len(expanded),
+					AvailableMemberCount:       available,
+					DisabledMemberCount:        disabledCount,
+					ChannelDisabledMemberCount: channelDisabledCount,
+					OrphanMemberCount:          orphanCount,
 				}
 			}
 			continue
@@ -1250,10 +1265,12 @@ func ListModelSummaries() ([]ModelSummary, error) {
 		}
 		s.MemberCount = len(expanded)
 		s.AvailableMemberCount = available
-		s.DisabledMemberCount = countDisabledMembers(expanded)
+		s.DisabledMemberCount = disabledCount
+		s.ChannelDisabledMemberCount = channelDisabledCount
+		s.OrphanMemberCount = orphanCount
 	}
 
-	for _, ch := range allChannels {
+	for _, ch := range enabledChannels {
 		for _, m := range ch.GetModels() {
 			m = strings.TrimSpace(m)
 			if m == "" {
@@ -1323,6 +1340,25 @@ func countDisabledMembers(members []RouteMember) int {
 		}
 	}
 	return n
+}
+
+// countUnselectableByChannel 把"成员未人工停用、但渠道侧不可用"的成员分成两类：
+// channel_disabled（渠道存在但被停用）与 orphan（渠道不存在）。两类与
+// available/disabled 合起来是 member_count 的互斥分解。
+func countUnselectableByChannel(members []RouteMember, allChannelIDs, enabledChannelIDs map[int]bool) (channelDisabled int, orphan int) {
+	for _, m := range members {
+		if m.Disabled {
+			continue
+		}
+		if !allChannelIDs[m.ChannelId] {
+			orphan++
+			continue
+		}
+		if !enabledChannelIDs[m.ChannelId] {
+			channelDisabled++
+		}
+	}
+	return channelDisabled, orphan
 }
 
 func listEnabledChannels() ([]*Channel, error) {

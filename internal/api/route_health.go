@@ -68,7 +68,7 @@ func GetLaneHealth(c *gin.Context) {
 		apierr.NotFound(c, apierr.CodeLaneNotFound, "lane '"+c.Param("name")+"' not found", "GET /api/v1/lanes")
 		return
 	}
-	snapshot := route.Default.For(key).Health(resolved, route.CurrentCircuitSettings())
+	snapshot := route.Default.Health(key, resolved, route.CurrentCircuitSettings())
 	c.JSON(http.StatusOK, snapshot)
 }
 
@@ -87,9 +87,17 @@ func ResetLaneCircuits(c *gin.Context) {
 		dryRunResult(c, "lanes", "update", key+"#circuits")
 		return
 	}
-	cleared := route.Default.For(key).Reset()
-	writeAudit(c, "reset-circuits", "lane", key)
-	c.JSON(http.StatusOK, gin.H{"reset": cleared, "lane": key})
+	var cleared route.ResetResult
+	if runtime := route.Default.Get(key); runtime != nil {
+		cleared = runtime.Reset()
+	}
+	writeAudit(c, "reset-circuits", "lane", key, cleared)
+	c.JSON(http.StatusOK, gin.H{
+		"lane": key,
+		// reset 是兼容字段 = circuits；cleared 是结构化明细（api-spec §6.6）。
+		"reset":   cleared.Circuits,
+		"cleared": cleared,
+	})
 }
 
 // ProbeMember 单成员探活结果。

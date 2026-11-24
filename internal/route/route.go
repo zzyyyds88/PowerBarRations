@@ -110,6 +110,10 @@ const (
 	KindClientError    ErrorKind = "client_error"
 	KindBadResponse    ErrorKind = "bad_response"
 	KindCanceled       ErrorKind = "canceled"
+	// KindLocalThrottle 本地出站准入排队超界/队列满（routing-spec §3.2）。
+	// **只用于请求日志**：不是成员失败分类，不写冷却、不计熔断，成员
+	// last_error_kind 不出现该值。
+	KindLocalThrottle ErrorKind = "local_throttle"
 )
 
 // quotaKeywordMatcher 由外部注入的"欠费/额度"关键词判定（deployment 私有条目）。

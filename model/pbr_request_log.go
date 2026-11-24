@@ -373,6 +373,11 @@ func normalizedInputTokens(prompt, cacheRead, cacheWrite int, semantic string) i
 }
 
 func upsertPBRHourlyStat(entry *PBRRequestLog) {
+	if entry.RouteSource == PBRRouteSourceTest {
+		// 渠道/模型测试是诊断流量：写明细供排障，但不得污染小时聚合
+		// （否则看板会出现"测试跑多了成功率变好/变差"的假信号）。
+		return
+	}
 	bucket := (entry.Ts / 3600) * 3600
 	successes := int64(0)
 	if entry.Success {
@@ -477,13 +482,23 @@ type PBRRequestLogFilter struct {
 	MaskKind   string
 	MaskBy     string
 	MaskAction string
-	Since      int64
-	Until      int64
-	BeforeId   int
-	Limit      int
-	Page       int
-	PageSize   int
+	// ErrorKind 精确过滤 error_kind（/api/logs?error_kind=…，空 = 不过滤）。
+	ErrorKind string
+	// RouteSource / ExcludeRouteSource 精确匹配/排除 route_source。
+	// 渠道测试（route_source=test）是诊断流量，必须能被排除出
+	// "最近失败"与小时聚合（api-spec §6.12）。
+	RouteSource        string
+	ExcludeRouteSource string
+	Since              int64
+	Until              int64
+	BeforeId           int
+	Limit              int
+	Page               int
+	PageSize           int
 }
+
+// PBRRouteSourceTest 渠道/模型测试产生的诊断请求（不进小时聚合与"最近失败"）。
+const PBRRouteSourceTest = "test"
 
 // applyPBRLogFilter 把过滤条件收口到一处，列表与计数共用，避免口径分叉。
 // BeforeId 是游标分页专属条件，不在此处（Count 不应带它）。
@@ -531,6 +546,15 @@ func applyPBRLogFilter(query *gorm.DB, filter PBRRequestLogFilter) *gorm.DB {
 	}
 	if filter.MaskAction != "" {
 		query = query.Where("mask_hits LIKE ?", "%\"action\":\""+filter.MaskAction+"\"%")
+	}
+	if filter.ErrorKind != "" {
+		query = query.Where("error_kind = ?", filter.ErrorKind)
+	}
+	if filter.RouteSource != "" {
+		query = query.Where("route_source = ?", filter.RouteSource)
+	}
+	if filter.ExcludeRouteSource != "" {
+		query = query.Where("route_source <> ?", filter.ExcludeRouteSource)
 	}
 	if filter.Since > 0 {
 		query = query.Where("ts >= ?", filter.Since)

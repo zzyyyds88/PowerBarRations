@@ -56,6 +56,30 @@ func TestStatsSurviveDetailPrune(t *testing.T) {
 	assert.Empty(t, detail, "明细已清空，这正是读明细会丢历史的原因")
 }
 
+// 渠道/模型测试（route_source=test）是诊断流量：写明细，但不进小时聚合。
+func TestHourlyStatsExcludeRouteSourceTest(t *testing.T) {
+	truncateTables(t)
+	require.NoError(t, DB.Exec("DELETE FROM pbr_stats_hourly").Error)
+
+	baseTs := int64(1_700_000_000)
+	upsertPBRHourlyStat(&PBRRequestLog{
+		Ts: baseTs, LaneName: "lane-test-agg", RequestModel: "m",
+		MemberChannelName: "ch", UpstreamModel: "m", RouteSource: PBRRouteSourceTest, Success: true,
+	})
+	rows, err := AggregatePBRStatsFromHourly(0, 0, "hour", "lane")
+	require.NoError(t, err)
+	assert.Empty(t, rows, "test 诊断流量不得进入小时聚合")
+
+	upsertPBRHourlyStat(&PBRRequestLog{
+		Ts: baseTs, LaneName: "lane-test-agg", RequestModel: "m",
+		MemberChannelName: "ch", UpstreamModel: "m", RouteSource: RouteSourceExplicit, Success: true,
+	})
+	rows, err = AggregatePBRStatsFromHourly(0, 0, "hour", "lane")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.EqualValues(t, 1, rows[0].Requests)
+}
+
 // day 粒度由小时桶上卷，且时间过滤按桶起点；不同维度互不串味。
 func TestAggregateStatsFromHourlyRollsUpAndFilters(t *testing.T) {
 	truncateTables(t)

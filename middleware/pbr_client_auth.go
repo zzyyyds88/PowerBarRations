@@ -11,6 +11,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	pbrroute "github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/logger"
 	"github.com/zzyyyds88/PowerBarRations/model"
 
@@ -59,6 +60,8 @@ func PBRTokenAuth() gin.HandlerFunc {
 			limiter := limiterFor(key.Id)
 			if wait, ok := limiter.acquire(key.RateLimitRPM, key.MaxConcurrency); !ok {
 				c.Header("Retry-After", strconv.Itoa(wait))
+				writeModelFaceRejectionLog(c, http.StatusTooManyRequests,
+					"client key exceeded its rate limit or concurrency cap", string(pbrroute.KindLocalThrottle))
 				apierr.Write(c, http.StatusTooManyRequests, "rate_limited",
 					"client key exceeded its rate limit or concurrency cap", "")
 				return
@@ -228,7 +231,25 @@ func modelFaceCredential(c *gin.Context) string {
 
 func abortPBRModelFace(c *gin.Context, status int, code, message string) {
 	logger.LogWarn(c, "pbr client auth rejected: "+message)
+	// 鉴权失败也要留日志行：否则"谁在拿错 key 撞模型面"在管理面完全不可见
+	// （此前只有进程日志，request_logs 查不到）。
+	writeModelFaceRejectionLog(c, status, message, string(pbrroute.KindClientError))
 	apierr.Write(c, status, code, message, "GET /api/v1/keys")
+}
+
+// writeModelFaceRejectionLog 为在中间件阶段就被拒绝的模型面请求补一条日志。
+// 此时没有选路/上游信息，只记录可达字段（IP、已识别的密钥、状态与原因）。
+func writeModelFaceRejectionLog(c *gin.Context, status int, message, errorKind string) {
+	carrier := model.EnsurePBRLogCarrier(c)
+	if carrier == nil {
+		return
+	}
+	carrier.Success = false
+	carrier.HTTPStatus = status
+	carrier.ErrorKind = errorKind
+	carrier.ErrorSummary = message
+	carrier.Ip = c.ClientIP()
+	model.WritePBRLog(c)
 }
 
 // ipAllowed 空名单 = 不限制（局域网部署通常留空）。

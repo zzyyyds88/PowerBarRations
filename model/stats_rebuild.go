@@ -107,6 +107,11 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 					band int
 				}{e.Id, newCost, newBand})
 			}
+			// 诊断流量（渠道/模型测试）只重算成本，不进小时聚合——与
+			// upsertPBRHourlyStat 同口径（api-spec §6.12）。
+			if e.RouteSource == PBRRouteSourceTest {
+				continue
+			}
 			// 聚合（按重折算后的成本；与 upsertPBRHourlyStat 同维度口径）。
 			bucket := (e.Ts / 3600) * 3600
 			successes := int64(0)
