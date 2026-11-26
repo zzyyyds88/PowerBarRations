@@ -20,6 +20,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/controller"
 	"github.com/zzyyyds88/PowerBarRations/i18n"
 	"github.com/zzyyyds88/PowerBarRations/internal/authutil"
+	"github.com/zzyyyds88/PowerBarRations/internal/backupcli"
 	"github.com/zzyyyds88/PowerBarRations/internal/webhook"
 	"github.com/zzyyyds88/PowerBarRations/logger"
 	"github.com/zzyyyds88/PowerBarRations/middleware"
@@ -47,6 +48,9 @@ var indexPage []byte
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "auth" {
 		os.Exit(authutil.RunCLI(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		os.Exit(backupcli.RunCLI(os.Args[2:]))
 	}
 	startTime := time.Now()
 	kitutil.SetLogging(common.SysLog, func(message string) {

@@ -360,4 +360,8 @@ func TestParseLaneRelayConfigRejectsExcessiveMemberMaxAttempts(t *testing.T) {
 	cfg, err := ParseLaneRelayConfigE(`{"member_max_attempts":10}`)
 	require.Nil(t, err)
 	assert.Equal(t, 10, cfg.MemberMaxAttempts)
+
+	_, durationErr := ParseLaneRelayConfigE(`{"member_cooldown_seconds":604801}`)
+	require.NotNil(t, durationErr)
+	assert.Equal(t, "member_cooldown_seconds", durationErr.Path)
 }

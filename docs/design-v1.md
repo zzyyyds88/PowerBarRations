@@ -640,6 +640,8 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 - 开发阶段只保证当前 PBR schema 在新建 SQLite 数据库上初始化成功；破坏性 schema 变化允许重建开发库。
 - 不提供旧 `new-api`/`octopus` 数据库导入、历史数据回填、双写、旧字段兼容或数据恢复兜底。
 - 同版本 `/api/export` 与 `/api/import` 只处理 PBR 配置快照；它们不是数据库迁移工具。
+- **SQLite 运行纪律**：`SQLITE_PATH` 只写文件路径即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 由 `common.SQLiteDSN` 强制补齐并覆盖冲突值；`LOG_SQL_DSN` 指向同一文件时启动失败。SQLite 主库连接生命周期默认 0（不周期性重建连接），连接池为单连接。
+- **备份/恢复**：生产用镜像内 `pbr backup`（SQLite 在线快照 + `quick_check`；本机开发可用同命令或 `scripts/backup_pbr_db.sh`），不得热 tar `pbr.db`/`-wal`/`-shm`；恢复必须先停服务、替换主库并删除旧 WAL/SHM。`pbr auth reset` 同样要求先停服务（检测到 WAL/SHM 默认拒绝，崩溃残留可 `--force`）。
 
 ### 16.5 日志保留
 

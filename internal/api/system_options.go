@@ -75,6 +75,12 @@ func validateLaneDefaults(cfg *model.LaneRelayConfig) error {
 		return errors.New("lane_defaults.member_max_attempts must be > 0")
 	case cfg.MemberMaxAttempts > model.MaxLaneMemberAttempts:
 		return errors.New("lane_defaults.member_max_attempts must be <= 10")
+	case cfg.MemberRetryIntervalSeconds > model.MaxLaneDurationSeconds,
+		cfg.MemberNonStreamResponseTimeoutSeconds > model.MaxLaneDurationSeconds,
+		cfg.MemberStreamFirstEventTimeoutSeconds > model.MaxLaneDurationSeconds,
+		cfg.MemberCooldownSeconds > model.MaxLaneDurationSeconds,
+		cfg.MemberAffinitySeconds > model.MaxLaneDurationSeconds:
+		return errors.New("lane_defaults duration/interval must be <= 604800 seconds")
 	case cfg.MemberRetryIntervalSeconds < 0:
 		return errors.New("lane_defaults.member_retry_interval_seconds must be >= 0")
 	case cfg.MemberNonStreamResponseTimeoutSeconds <= 0:

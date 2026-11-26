@@ -115,18 +115,21 @@ cp deploy/test.env.example deploy/test.env
 
 ## 6. 数据备份
 
-```bash
-# 备份
-docker run --rm -v /srv/docker/data/pbr:/data -v /srv/docker/backup:/backup alpine \
-  tar czf /backup/pbr-data-$(date +%F).tgz -C /data .
+生产机没有源码，备份入口是镜像内的 `pbr backup`（SQLite 在线快照 + `quick_check`）：
 
-# 恢复（先停容器）
+```bash
+# 在线备份：容器内执行，产物先落在 /data/backups，再拷到宿主机备份目录。
+docker exec pbr /app/pbr backup --out /data/backups/pbr-$(date -u +%Y%m%dT%H%M%SZ).db
+docker cp pbr:/data/backups/pbr-<时间>.db /srv/docker/backup/
+
+# 恢复（必须先停容器；不要热 tar，也不要把运行中的 -wal/-shm 当备份）
 docker stop pbr
-docker run --rm -v /srv/docker/data/pbr:/data -v /srv/docker/backup:/backup alpine \
-  sh -c 'rm -rf /data/* && tar xzf /backup/pbr-data-<日期>.tgz -C /data'
+install -m 600 /srv/docker/backup/pbr-<时间>.db /srv/docker/data/pbr/pbr.db
+rm -f /srv/docker/data/pbr/pbr.db-wal /srv/docker/data/pbr/pbr.db-shm
 docker start pbr
 ```
 
+恢复后确认 `/api/health` 为 `ok`、`db_last_write_error` 为空、日志能继续写入。
 配置级备份：`GET /api/v1/export`；导入先 `POST /api/v1/import?dry_run=true`。
 
 ## 7. 安全纪律

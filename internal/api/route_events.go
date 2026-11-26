@@ -125,7 +125,13 @@ func buildRouteStateSnapshot() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, route.Default.For(lane).Health(resolved, route.CurrentCircuitSettings()))
+		// 只读快照：Get 不创建运行态。For 会把已删除/重命名车道重新复活一份
+		// 空 Runtime，SSE 每帧都读的话会积累幽灵条目。
+		runtime := route.Default.Get(lane)
+		if runtime == nil {
+			continue
+		}
+		items = append(items, runtime.Health(resolved, route.CurrentCircuitSettings()))
 	}
 	payload, err := json.Marshal(gin.H{"ts": time.Now().UTC().Format(time.RFC3339), "lanes": items})
 	if err != nil {

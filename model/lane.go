@@ -54,6 +54,10 @@ type LaneRelayConfig struct {
 // 被配置放大成数十分钟的串行重试（而请求已经超时）。10 次对单节点网关足够。
 const MaxLaneMemberAttempts = 10
 
+// MaxLaneDurationSeconds 六键中时长/间隔的硬上限（7 天）。
+// int 秒直接乘 time.Second 在接近上限时会溢出成负 Duration，必须提前拒绝。
+const MaxLaneDurationSeconds = 7 * 24 * 3600
+
 // LaneRelayOverrides 成员级六键覆盖；nil 字段表示继承车道。
 type LaneRelayOverrides struct {
 	MemberMaxAttempts                     *int `json:"member_max_attempts,omitempty"`
@@ -207,6 +211,13 @@ func validateLaneRelayConfigValues(raw string) *LaneConfigError {
 		}
 		if key == "member_max_attempts" && number > MaxLaneMemberAttempts {
 			return &LaneConfigError{Code: "invalid_lane_config", Message: "member_max_attempts 不能超过 10", Path: key}
+		}
+		switch key {
+		case "member_retry_interval_seconds", "member_non_stream_response_timeout_seconds",
+			"member_stream_first_event_timeout_seconds", "member_cooldown_seconds", "member_affinity_seconds":
+			if number > MaxLaneDurationSeconds {
+				return &LaneConfigError{Code: "invalid_lane_config", Message: "时长/间隔不能超过 604800 秒", Path: key}
+			}
 		}
 	}
 	return nil
