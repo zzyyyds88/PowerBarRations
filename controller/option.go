@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
+	"github.com/zzyyyds88/PowerBarRations/internal/webhook"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/setting"
 	"github.com/zzyyyds88/PowerBarRations/setting/model_setting"
@@ -67,6 +70,12 @@ func buildCompletionRatioMetaValue(optionValues map[string]string) string {
 // （`/api/option/model_pricing*`、`/api/option/rest_model_ratio` 等），不是 /api/option 本身。
 // 渠道余额查询能力与其"余额<=0 自动禁用渠道"的逻辑已整体删除：PBR 无计费/余额语义。
 func GetOptions(c *gin.Context) {
+	// webhook secret 只能经专用 /api/webhooks 管理；基座列表面最多回显掩码值。
+	// 先在锁外读取（CurrentTargets 会拿 OptionMap 读锁，不能与下面的写锁重入）。
+	maskedWebhook, err := json.Marshal(webhook.MaskedTargets(webhook.CurrentTargets()))
+	if err != nil {
+		maskedWebhook = []byte("[]")
+	}
 	var options []*model.Option
 	optionValues := make(map[string]string)
 	common.OptionMapRWMutex.Lock()
@@ -75,6 +84,10 @@ func GetOptions(c *gin.Context) {
 			continue
 		}
 		value := common.Interface2String(v)
+		if k == webhook.OptionKey {
+			// secret 已掩码；PUT 侧拒绝写入该键，避免掩码值覆盖真实配置。
+			value = string(maskedWebhook)
+		}
 		isSensitiveKey := strings.HasSuffix(k, "Token") ||
 			strings.HasSuffix(k, "Secret") ||
 			strings.HasSuffix(k, "Key") ||
@@ -129,6 +142,11 @@ func UpdateOption(c *gin.Context) {
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
 	switch option.Key {
+	case webhook.OptionKey:
+		// 该键是 webhook.Target 数组，必须经 /api/webhooks 做 URL/事件白名单校验；
+		// 基座通用写入会绕过校验，且 GET 只回显掩码值，回写会毁掉真实 secret。
+		apierr.Validation(c, "PBRWebhookTargets can only be updated via PUT /api/webhooks")
+		return
 	case "theme.frontend":
 		if option.Value != "default" {
 			c.JSON(http.StatusOK, gin.H{

@@ -252,7 +252,8 @@ func InitDB() (err error) {
 }
 
 func InitLogDB() (err error) {
-	if os.Getenv("LOG_SQL_DSN") == "" {
+	logDSN := strings.TrimSpace(os.Getenv("LOG_SQL_DSN"))
+	if logDSN == "" {
 		LOG_DB = DB
 		common.SetLogDatabaseType(common.MainDatabaseType())
 		initCol()
@@ -260,6 +261,13 @@ func InitLogDB() (err error) {
 			return MigrateAuditLogs()
 		}
 		return
+	}
+	// `local` 是基座遗留别名，chooseDB 会把它解析成主库 SQLite 路径；若放行，
+	// 就会对同一个 pbr.db 再开一套连接，破坏单连接/WAL 写入纪律。
+	// 设计口径（design-v1 §16.4）：日志库指向同一文件必须启动失败。
+	if common.MainDatabaseType() == common.DatabaseTypeSQLite &&
+		strings.HasPrefix(strings.ToLower(logDSN), "local") {
+		return fmt.Errorf("LOG_SQL_DSN=%s resolves to the main SQLite database (%s); unset LOG_SQL_DSN to share LOG_DB with the main database, or point it at a separate database", logDSN, common.SQLitePath)
 	}
 	db, dbType, err := chooseDB("LOG_SQL_DSN", true)
 	if err == nil {

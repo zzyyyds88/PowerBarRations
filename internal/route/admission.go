@@ -750,7 +750,7 @@ func (a *AdmissionRegistry) emitOnceLocked(m *admissionMember, eventType string,
 		return
 	}
 	m.lastEvent[eventType] = now
-	events.Publish(Event{
+	events.PublishAsync(Event{
 		Ts: now.UnixMilli(), Type: eventType, Lane: m.laneName,
 		Member: m.memberLabel(), Detail: detail,
 	})

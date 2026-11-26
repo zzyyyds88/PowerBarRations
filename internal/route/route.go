@@ -69,7 +69,7 @@ func observeUpstreamBurst(resolved *model.ResolvedRoute, member *model.RouteMemb
 	if !result.Triggered {
 		return
 	}
-	events.Publish(events.Event{
+	events.PublishAsync(events.Event{
 		Ts:     time.Now().UnixMilli(),
 		Type:   events.EventUpstreamBurst,
 		Lane:   laneKeyOf(resolved),
@@ -326,6 +326,9 @@ type Attempt struct {
 	Msg        string    `json:"msg,omitempty"`
 	// WaitMs 出站准入实际排队时长（routing-spec §3.2；0 = 未排队）。
 	WaitMs int64 `json:"wait_ms,omitempty"`
+	// memberKey 仅内部使用：同一车道可有两个标签相同的重复成员（组内成员 +
+	// 散成员），清理/回填 throttled 记录时必须按运行态身份而不是展示标签匹配。
+	memberKey MemberKey `json:"-"`
 }
 
 // State 一次请求内的选路运行态。请求作用域，随 gin.Context 生命周期结束。
@@ -344,6 +347,10 @@ type State struct {
 	// （routing-spec §9 / api-spec §4.4）。此前该字段声明了却从不赋值，
 	// 带 omitempty 导致响应里根本不出现，排障时无法定位"哪个成员慢"。
 	attemptStartedAt time.Time
+	// currentWaitMs 本轮尝试在出站准入队列里的实际等待毫秒数
+	// （routing-spec §3.2）。成功/失败 attempts 都带它；排队失败的 throttled
+	// 记录由 ExhaustThrottled 回填，避免"排队了多久"只存在于部分路径。
+	currentWaitMs int64
 	// probe 本次请求真正持有的探测租约（nil = 未占）。
 	//
 	// 探测槽是**车道级单槽**，但只有占槽者可以归还它：一个从未探测的并发请求
@@ -611,7 +618,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			// 这仍是一次真实尝试，照记耗时（否则最后一次尝试的 duration_ms 缺失）。
 			attemptedKey := memberKeyOf(s.currentMemberLocked())
 			s.history = append(s.history,
-				failedAttemptWithDuration(len(s.history)+1, memberLabel(s.currentMemberLocked()), kind, lastErr, s.elapsedMs()))
+				failedAttemptWithDuration(len(s.history)+1, memberLabel(s.currentMemberLocked()), kind, lastErr, s.elapsedMs(), s.currentWaitMs))
 			s.markAttemptedLocked(attemptedKey)
 			s.Runtime.withLock(func() { s.releaseOwnedProbeLocked(attemptedKey) })
 			return nil, 0, false
@@ -620,7 +627,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 		key := memberKeyOf(member)
 		budgetLeft := s.attempts[s.current] < s.budgetFor(s.current)
 		s.history = append(s.history,
-			failedAttemptWithDuration(len(s.history)+1, memberLabel(member), kind, lastErr, s.elapsedMs()))
+			failedAttemptWithDuration(len(s.history)+1, memberLabel(member), kind, lastErr, s.elapsedMs(), s.currentWaitMs))
 		s.markAttemptedLocked(key)
 
 		memberCfg := s.configFor(s.current)
@@ -648,6 +655,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 				// Retry-After 5s、本地间隔 3s，就必须等满 5s 再打（§3.1）。
 				s.attempts[s.current]++
 				s.attemptStartedAt = time.Now()
+				s.currentWaitMs = 0
 				wait := time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second
 				if remain := s.Runtime.paceRemaining(key); remain > wait {
 					wait = remain
@@ -673,6 +681,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			// 这仍是一轮新尝试：计数后下一轮 Next 前重读配置。
 			s.attempts[s.current]++
 			s.attemptStartedAt = time.Now()
+			s.currentWaitMs = 0
 			return member, time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second, true
 		} else if kind != KindSoftRateLimit {
 			// 尝试预算耗尽或硬故障：写入冷却与熔断计分后换人。
@@ -702,6 +711,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 		return nil, 0, false
 	}
 	s.attemptStartedAt = time.Now()
+	s.currentWaitMs = 0
 	return member, 0, true
 }
 
@@ -765,10 +775,32 @@ func (s *State) recordSkipWithStatusLocked(key MemberKey, member, status string)
 		AttemptNum: len(s.history) + 1,
 		Member:     member,
 		Status:     status,
+		memberKey:  key,
 	})
 }
 
-func failedAttemptWithDuration(num int, member string, kind ErrorKind, err *types.NewAPIError, durationMs int64) Attempt {
+// removeThrottledSkipLocked 删除某成员"准入未就绪"的跳过记录：它一旦真的
+// 被选中执行，throttled 的语义（未被使用）就不再成立。按 MemberKey 精确匹配，
+// 避免同一车道两个同名成员的记录串写。
+func (s *State) removeThrottledSkipLocked(idx int) {
+	if idx < 0 || idx >= len(s.Route.Members) {
+		return
+	}
+	key := memberKeyOf(&s.Route.Members[idx])
+	for i := len(s.history) - 1; i >= 0; i-- {
+		if s.history[i].Status != "throttled" || s.history[i].memberKey != key {
+			continue
+		}
+		s.history = append(s.history[:i], s.history[i+1:]...)
+		for j := range s.history {
+			s.history[j].AttemptNum = j + 1
+		}
+		delete(s.skipRecorded, key)
+		return
+	}
+}
+
+func failedAttemptWithDuration(num int, member string, kind ErrorKind, err *types.NewAPIError, durationMs, waitMs int64) Attempt {
 	return Attempt{
 		AttemptNum: num,
 		Member:     member,
@@ -776,6 +808,7 @@ func failedAttemptWithDuration(num int, member string, kind ErrorKind, err *type
 		DurationMs: durationMs,
 		ErrorKind:  kind,
 		Msg:        truncate(err, 512),
+		WaitMs:     waitMs,
 	}
 }
 
@@ -1046,6 +1079,9 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 
 // markCurrentLocked 记录当前成员；发生故障切换时武装亲和（§6：切换后首次成功才启动）。
 func (s *State) markCurrentLocked(idx int) {
+	// 真正选中即执行，之前"准入未就绪"的 throttled 记录不再成立；无论
+	// 走普通选路还是 CommitThrottled，都由这一个入口保证不变量。
+	s.removeThrottledSkipLocked(idx)
 	key := memberKeyOf(&s.Route.Members[idx])
 	s.Runtime.withLock(func() {
 		if s.Runtime.generation != s.runtimeGeneration {
@@ -1112,6 +1148,7 @@ func (s *State) SuccessAttempt(member string) Attempt {
 		Member:     member,
 		Status:     "success",
 		DurationMs: s.elapsedMs(),
+		WaitMs:     s.currentWaitMs,
 	}
 }
 
@@ -1243,7 +1280,7 @@ func (s *State) ThrottledMember() *model.RouteMember {
 // 已计入本次请求；再按"是否就绪"复核会把自己刚占的槽判成已满，使排队成功的请求
 // 必然回落为本地 429（2026-11-24 测试环境复现）。槽位归属由 AdmissionTicket 保证，
 // 只需复核成员运行态仍可发（排队期间可能被同车道其它请求打进冷却/熔断）。
-func (s *State) CommitThrottled() (*model.RouteMember, bool) {
+func (s *State) CommitThrottled(waitMs int64) (*model.RouteMember, bool) {
 	if s == nil {
 		return nil, false
 	}
@@ -1298,6 +1335,7 @@ func (s *State) CommitThrottled() (*model.RouteMember, bool) {
 	}
 	s.attempts[idx]++
 	s.attemptStartedAt = time.Now()
+	s.currentWaitMs = waitMs
 	s.markCurrentLocked(idx)
 	s.throttledIdx = -1
 	return &s.Route.Members[idx], true
@@ -1317,9 +1355,23 @@ func (s *State) ExhaustThrottled(waitMs int64) {
 		return
 	}
 	key := memberKeyOf(&s.Route.Members[idx])
-	s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "throttled")
-	if n := len(s.history); n > 0 {
-		s.history[n-1].WaitMs = waitMs
+	// 常规选路已为该成员记过一条 throttled 跳过记录；此处按 MemberKey 精确
+	// 回填实际排队时长。只有 panic 分支会绕过 recordSkip 直接设置
+	// throttledIdx，此时才需要补记录。
+	found := false
+	for i := len(s.history) - 1; i >= 0; i-- {
+		if s.history[i].Status == "throttled" && s.history[i].memberKey == key {
+			s.history[i].WaitMs = waitMs
+			found = true
+			break
+		}
+	}
+	if !found {
+		before := len(s.history)
+		s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "throttled")
+		if len(s.history) > before {
+			s.history[len(s.history)-1].WaitMs = waitMs
+		}
 	}
 	s.attempts[idx] = s.budgetFor(idx)
 	s.throttledIdx = -1

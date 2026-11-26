@@ -31,7 +31,10 @@ const (
 // PBRStatsOutbox 待聚合的请求快照。Payload 只含聚合需要的字段，不存
 // attempts/error_summary 等明细内容，避免 outbox 表随请求体积膨胀。
 type PBRStatsOutbox struct {
-	Id            int64  `json:"id" gorm:"primaryKey"`
+	Id int64 `json:"id" gorm:"primaryKey"`
+	// LogID 对应 pbr_request_logs.id：rebuild 只清水位以内的 outbox，
+	// 避免把重建期间新请求的待办一起删掉。历史行默认 0（归入水位以内）。
+	LogID         int64  `json:"log_id" gorm:"not null;default:0;index"`
 	Payload       string `json:"payload" gorm:"type:text;not null"`
 	CreatedAt     int64  `json:"created_at" gorm:"bigint;not null;index"`
 	Attempts      int    `json:"attempts" gorm:"not null;default:0;index"`
@@ -114,6 +117,7 @@ func enqueuePBRStatsOutboxTx(tx *gorm.DB, entry *PBRRequestLog) error {
 		return err
 	}
 	return tx.Create(&PBRStatsOutbox{
+		LogID:     int64(entry.Id),
 		Payload:   string(payload),
 		CreatedAt: time.Now().Unix(),
 	}).Error
@@ -173,8 +177,9 @@ func runPBRStatsOutboxWorker(ctx context.Context) {
 	}
 }
 
-// FlushPBRStatsOutbox 同步 drain 全部待处理行（stats rebuild 前调用）。
-// 仍有待处理或死信行时返回错误，避免 rebuild 在聚合缺口上继续。
+// FlushPBRStatsOutbox 同步 drain 全部待处理行（测试/诊断用）。
+// stats rebuild 不再依赖它：rebuild 以明细为真源，成功后只清空水位以内的
+// outbox；水位之后的新请求仍由 worker 增量补算。
 func FlushPBRStatsOutbox(ctx context.Context) error {
 	pbrStatsOutboxMu.Lock()
 	defer pbrStatsOutboxMu.Unlock()
@@ -188,7 +193,9 @@ func drainPBRStatsOutbox(ctx context.Context) (processed int, err error) {
 		n, batchErr := processPBRStatsOutboxBatchLocked(ctx)
 		processed += n
 		if batchErr != nil {
-			err = batchErr
+			// 失败记账本身写不进去（典型：磁盘满）时立即停手，避免同一批
+			// attempts 未递增的行被无 sleep 地反复重选、把日志刷爆。
+			return processed, batchErr
 		}
 		if n < pbrStatsOutboxBatchSize || ctx.Err() != nil {
 			break
@@ -238,7 +245,9 @@ func processPBRStatsOutboxBatchLocked(ctx context.Context) (int, error) {
 			return i, err
 		}
 		if err := applyPBRStatsOutboxRow(ctx, &rows[i]); err != nil {
-			recordPBRStatsOutboxFailure(&rows[i], err)
+			if recordErr := recordPBRStatsOutboxFailure(&rows[i], err); recordErr != nil {
+				return i + 1, recordErr
+			}
 			continue
 		}
 	}
@@ -260,7 +269,7 @@ func applyPBRStatsOutboxRow(ctx context.Context, row *PBRStatsOutbox) error {
 	})
 }
 
-func recordPBRStatsOutboxFailure(row *PBRStatsOutbox, cause error) {
+func recordPBRStatsOutboxFailure(row *PBRStatsOutbox, cause error) error {
 	attempts := row.Attempts + 1
 	next := int64(0)
 	if attempts < pbrStatsOutboxMaxAttempts {
@@ -277,13 +286,15 @@ func recordPBRStatsOutboxFailure(row *PBRStatsOutbox, cause error) {
 			"next_attempt_at": next,
 			"last_error":      lastErr,
 		}).Error; err != nil {
+		RecordDBWriteError("stats_outbox", err)
 		common.SysError("pbr: update stats outbox failure failed: " + err.Error())
-		return
+		return err
 	}
 	metrics.ObserveLogWriteFailure("stats_outbox")
 	if attempts >= pbrStatsOutboxMaxAttempts {
 		common.SysError(fmt.Sprintf("pbr: stats outbox row=%d dead after %d attempts: %s", row.Id, attempts, lastErr))
 	}
+	return nil
 }
 
 func updatePBRStatsOutboxMetrics() {
@@ -314,7 +325,7 @@ func PBRStatsOutboxBacklog() (pending int64, dead int64, err error) {
 	return pending, dead, nil
 }
 
-// PBRStatsOutboxStatus 是 CLI 运维视图：积压量、最早时间与最近死信错误。
+// PBRStatsOutboxStatus 是 CLI 运维视图：积压量、最早时间与最近一次错误。
 type PBRStatsOutboxStatus struct {
 	Pending         int64  `json:"pending"`
 	Dead            int64  `json:"dead"`
@@ -350,7 +361,7 @@ func LoadPBRStatsOutboxStatus(db *gorm.DB) (PBRStatsOutboxStatus, error) {
 	}
 	status.OldestPendingAt, status.OldestDeadAt = oldest.Pending, oldest.Dead
 	var last PBRStatsOutbox
-	if err := db.Where("attempts >= ? AND last_error <> ''", pbrStatsOutboxMaxAttempts).
+	if err := db.Where("last_error <> ''").
 		Order("id desc").First(&last).Error; err == nil {
 		status.LastError = last.LastError
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {

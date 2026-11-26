@@ -18,16 +18,24 @@ const LocalLogContentLimit = 2048
 
 // TruncateUTF8 按字节上限截断，并回退到最后一个完整 UTF-8 字符边界。
 // 直接 s[:n] 可能把多字节字符切成半个，写进 JSON/日志会变成替换字符。
+//
+// 输入本身含非法 UTF-8 时先用 U+FFFD 替换，而不是从尾部逐字节回退：
+// 后者遇到中间一个坏字节会把后面所有合法内容一起丢掉（上游响应体可能含
+// 任意二进制片段）。
 func TruncateUTF8(s string, maxBytes int) string {
 	if maxBytes <= 0 {
 		return ""
+	}
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, "\uFFFD")
 	}
 	if len(s) <= maxBytes {
 		return s
 	}
 	s = s[:maxBytes]
-	for !utf8.ValidString(s) {
-		s = s[:len(s)-1]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		_, size := utf8.DecodeLastRuneInString(s)
+		s = s[:len(s)-size]
 	}
 	return s
 }
@@ -39,6 +47,12 @@ func LocalLogPreview(content string) string {
 	}
 	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]",
 		TruncateUTF8(content, LocalLogContentLimit), len(content), LocalLogContentLimit)
+}
+
+// MaskedLogPreview 是错误日志的统一出口：先脱敏，再做日志预览截断。
+// 上游 transport 错误（*url.Error）会带完整请求 URL 与 query key，不能原样落日志。
+func MaskedLogPreview(content string) string {
+	return LocalLogPreview(MaskSensitiveInfo(content))
 }
 
 func GetStringIfEmpty(str string, defaultValue string) string {

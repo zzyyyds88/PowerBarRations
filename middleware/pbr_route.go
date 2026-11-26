@@ -372,7 +372,7 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 				state.ExhaustThrottled(wait.Milliseconds())
 				continue
 			}
-			committed, committedOK := state.CommitThrottled()
+			committed, committedOK := state.CommitThrottled(wait.Milliseconds())
 			if !committedOK {
 				ticket.Release(route.AdmissionNeutral, "", 0)
 				state.ReleaseProbe()

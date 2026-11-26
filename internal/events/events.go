@@ -159,6 +159,7 @@ func asyncDispatchLoop() {
 			defer func() {
 				if r := recover(); r != nil {
 					asyncPanics.Add(1)
+					metrics.ObserveRouteEventPanic()
 					log.Printf("pbr events: subscriber panic recovered: %v", r)
 				}
 			}()

@@ -1,14 +1,71 @@
 package controller
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"testing"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// 自动健康检查的失败/禁用判定：慢响应/本地构造失败只计失败；凭据/额度
+// 故障即使同时带 localErr（testChannel 的真实失败形状）也必须禁用。
+func TestEvaluateChannelTestSeparatesSlowAndLocalFailuresFromDisable(t *testing.T) {
+	previous := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = previous })
+
+	t.Run("localErr only counts as failure", func(t *testing.T) {
+		err, ban := evaluateChannelTest(testResult{localErr: errors.New("unsupported channel type")}, 10, 1000)
+		assert.Nil(t, err)
+		assert.False(t, ban)
+	})
+
+	t.Run("slow success is a failure but not a ban", func(t *testing.T) {
+		err, ban := evaluateChannelTest(testResult{}, 5000, 1000)
+		require.NotNil(t, err)
+		assert.Equal(t, types.ErrorCodeChannelResponseTimeExceeded, err.GetErrorCode())
+		assert.False(t, ban)
+	})
+
+	t.Run("timeout is not a ban", func(t *testing.T) {
+		timeoutErr := types.NewOpenAIError(
+			errors.New("upstream timeout: "+context.DeadlineExceeded.Error()),
+			types.ErrorCode(""), http.StatusGatewayTimeout,
+		)
+		_, ban := evaluateChannelTest(testResult{newAPIError: timeoutErr}, 10, 1000)
+		assert.False(t, ban)
+	})
+
+	t.Run("credential failure still bans", func(t *testing.T) {
+		authErr := types.NewOpenAIError(errors.New("invalid api key"), types.ErrorCode(""), http.StatusUnauthorized)
+		_, ban := evaluateChannelTest(testResult{newAPIError: authErr}, 10, 1000)
+		assert.True(t, ban)
+	})
+
+	// testChannel 的真实失败路径同时设置 localErr 与 newAPIError（尤其
+	// SetupContext 取不到 key）；凭据故障不能因 localErr 非空而漏掉禁用。
+	t.Run("credential failure with localErr still bans", func(t *testing.T) {
+		authErr := types.NewOpenAIError(errors.New("no available key"), types.ErrorCodeChannelNoAvailableKey, http.StatusInternalServerError)
+		_, ban := evaluateChannelTest(testResult{localErr: authErr, newAPIError: authErr}, 10, 1000)
+		assert.True(t, ban)
+	})
+
+	// 本地构造失败（不支持的类型/无效 api type）是 5xx，不属于禁用白名单。
+	t.Run("local construction failure does not ban", func(t *testing.T) {
+		localErr := errors.New("unsupported channel type")
+		apiErr := types.NewError(localErr, types.ErrorCodeInvalidApiType)
+		_, ban := evaluateChannelTest(testResult{localErr: localErr, newAPIError: apiErr}, 10, 1000)
+		assert.False(t, ban)
+	})
+}
 
 // 模型测试的 max_tokens 必须给推理模型留出推理 + 输出空间：
 // DeepSeek V4.1 flash 这类带 reasoning_content 的模型在 16 个 token 内无法完成

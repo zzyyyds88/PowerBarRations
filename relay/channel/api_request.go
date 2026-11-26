@@ -551,7 +551,8 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		// Do() 直接返回，错误链里是 context.Canceled，与"客户端断开"同形。
 		// 必须在这里也翻译成超时，否则挂起型上游不会换人、不冷却（routing-spec §8）。
 		err = attemptTimeout.wrap(err)
-		logger.LogError(c, "do request failed: "+err.Error())
+		// *url.Error 会带完整请求 URL（部分厂商 key 在 query 里），日志必须脱敏。
+		logger.LogError(c, "do request failed: "+common2.MaskedLogPreview(err.Error()))
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	if resp == nil {

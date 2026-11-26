@@ -153,6 +153,10 @@ func (p *ProbeMember) finish() {
 	if p.ErrorKind == "" {
 		p.ErrorKind = classifyProbeError(p.StatusCode, p.Msg)
 	}
+	// 探活错误会回显给管理面并落 pbr_probe_logs：上游错误体/transport URL 可能
+	// 回显 key，必须在离开 probeChannel 前统一脱敏（分类已在上一步完成）。
+	p.Error = common.TruncateUTF8(common.MaskSensitiveInfo(p.Error), 2048)
+	p.Msg = common.TruncateUTF8(common.MaskSensitiveInfo(p.Msg), 2048)
 }
 
 // classifyProbeError 把探活失败归入路由错误分类（共享 route.Classify，

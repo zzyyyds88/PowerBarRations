@@ -2,6 +2,7 @@ package route
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -395,9 +396,15 @@ func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 
 	// Wait 取得槽位后 inflight 已计入本次请求，就绪回调此刻必然返回 false；
 	// 槽位归属由 ticket 保证，CommitThrottled 不得再按 admissionReady 复核。
-	committed, ok := blocked.CommitThrottled()
+	committed, ok := blocked.CommitThrottled(120)
 	require.True(t, ok)
 	assert.Equal(t, "channel-a", committed.Channel)
+	assert.Equal(t, int64(120), blocked.SuccessAttempt("channel-a/model").WaitMs,
+		"成功尝试必须带实际排队时长")
+	for _, attempt := range blocked.LogAttempts() {
+		assert.NotEqual(t, memberLabel(candidate), attempt.Member,
+			"排队成功的成员不得再留 throttled 跳过记录：它实际被使用了")
+	}
 
 	// 排队期间该成员被同车道其它请求打进冷却：即使已取得准入槽位也不得提交。
 	cooling := NewState(testRoute("lane-admission-select", 2, 1))
@@ -408,6 +415,76 @@ func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 	require.NotNil(t, coolingCandidate)
 	coolingKey := memberKeyOf(coolingCandidate)
 	cooling.Runtime.withLock(func() { cooling.Runtime.Cooldowns[coolingKey] = nowMs() + 60_000 })
-	_, ok = cooling.CommitThrottled()
+	_, ok = cooling.CommitThrottled(120)
 	assert.False(t, ok, "排队期间进入冷却的成员不得提交")
+}
+
+// 准入等待失败：throttled attempt 必须带回实际 wait_ms（api-spec §4.4），
+// 且不能覆盖其他成员的跳过记录。
+func TestExhaustThrottledRecordsWait(t *testing.T) {
+	state := NewState(testRoute("lane-admission-exhaust-wait", 2, 1))
+	state.SetAdmissionReady(func(*model.RouteMember) bool { return false })
+	_, _, ok := state.Next(nil)
+	require.False(t, ok)
+	require.NotNil(t, state.ThrottledMember())
+
+	state.ExhaustThrottled(250)
+
+	attempts := state.LogAttempts()
+	throttled := 0
+	for _, attempt := range attempts {
+		if attempt.Status != "throttled" {
+			continue
+		}
+		throttled++
+		if attempt.WaitMs == 250 {
+			return
+		}
+	}
+	t.Fatalf("throttled attempt 未记录 wait_ms=250: %+v", attempts)
+}
+
+// 先被 throttled 跳过的成员在后续轮次真正被选中/执行时，跳过记录必须消失
+// （throttled 只表示"未被使用"）；不能只在 CommitThrottled 一个入口清理。
+func TestThrottledSkipRemovedWhenMemberSelectedLater(t *testing.T) {
+	state := NewState(testRoute("lane-admission-late-select", 2, 1))
+	aReady := false
+	state.SetAdmissionReady(func(member *model.RouteMember) bool {
+		return member.Channel == "channel-b" || aReady
+	})
+
+	member, _, ok := state.Next(nil)
+	require.True(t, ok)
+	require.Equal(t, "channel-b", member.Channel)
+
+	// 下一轮 A 已就绪：B 失败后应直接选中 A，并清掉早先的 throttled(A)。
+	aReady = true
+	_, _, ok = state.Next(types.NewOpenAIError(errors.New("boom"), types.ErrorCode(""), 502))
+	require.True(t, ok)
+
+	for _, attempt := range state.LogAttempts() {
+		assert.NotEqual(t, "throttled", attempt.Status,
+			"实际被执行的成员不应保留 throttled 跳过记录: %+v", state.LogAttempts())
+	}
+}
+
+// 排队成功的请求随后在上游失败时，failed attempt 也必须保留排队时长；
+// 否则 wait_ms 只在"排队失败"时出现，成功拿到槽位的等待完全丢失。
+func TestFailedAttemptKeepsQueuedWait(t *testing.T) {
+	state := NewState(testRoute("lane-admission-wait", 1, 1))
+	state.SetAdmissionReady(func(*model.RouteMember) bool { return false })
+	_, _, ok := state.Next(nil)
+	require.False(t, ok)
+	require.NotNil(t, state.ThrottledMember())
+
+	_, ok = state.CommitThrottled(250)
+	require.True(t, ok)
+
+	state.Next(types.NewOpenAIError(errors.New("boom"), types.ErrorCode(""), 500))
+
+	attempts := state.LogAttempts()
+	require.NotEmpty(t, attempts)
+	failed := attempts[len(attempts)-1]
+	assert.Equal(t, "failed", failed.Status)
+	assert.Equal(t, int64(250), failed.WaitMs)
 }

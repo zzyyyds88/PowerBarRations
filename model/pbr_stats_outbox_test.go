@@ -65,6 +65,31 @@ func TestWritePBRLogWritesDetailContextAndOutboxAtomically(t *testing.T) {
 	assert.Empty(t, outbox, "worker 处理成功后必须删除 outbox 行")
 }
 
+// 重建期间的新请求（id 高于水位）必须保留其 outbox，由 worker 增量补算。
+func TestRebuildStatsKeepsOutboxAboveWatermark(t *testing.T) {
+	truncateTables(t)
+	detail := &PBRRequestLog{
+		Ts: 1_700_000_000, LaneName: "lane-watermark", MemberChannelName: "ch",
+		UpstreamModel: "m", Success: true,
+	}
+	require.NoError(t, DB.Create(detail).Error)
+	require.NoError(t, DB.Create(&PBRStatsOutbox{
+		LogID: int64(detail.Id), Payload: "covered", CreatedAt: 1,
+	}).Error)
+	require.NoError(t, DB.Create(&PBRStatsOutbox{
+		LogID: int64(detail.Id) + 1000, Payload: "newer", CreatedAt: 2,
+	}).Error)
+
+	_, err := RebuildStatsFromLogs(false)
+	require.NoError(t, err)
+
+	var rows []PBRStatsOutbox
+	require.NoError(t, DB.Order("id").Find(&rows).Error)
+	require.Len(t, rows, 1, "水位以内的 outbox 被重建覆盖，水位以上的必须保留")
+	assert.Greater(t, rows[0].LogID, int64(detail.Id))
+	assert.Equal(t, "newer", rows[0].Payload)
+}
+
 // rebuild 以明细为唯一真源：死信不得阻断重建，成功后 outbox（含死信）清空。
 func TestRebuildStatsIgnoresDeadOutboxAndClearsIt(t *testing.T) {
 	truncateTables(t)
