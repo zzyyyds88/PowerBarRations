@@ -243,9 +243,10 @@ log_id, version, status, tokens, estimated_tokens, window, counted, held, turns,
 parts_json, body_bytes, truncated, created_at
 ```
 
-`parts_json` 是 §5.1 的分区数组（分区 → 物品）。明细日志被 `POST /api/logs/prune` 清理时，
-同批删除对应上下文行；聚合表不受影响。上下文不进入日志导出（CSV/NDJSON 都不含），避免把
-文件路径等明细带进导出文件；需要时经 `GET /api/logs/{id}` 读取。
+`parts_json` 是 §5.1 的分区数组（分区 → 物品）。明细日志被 `POST /api/logs/prune` 或内置每日
+`log_cleanup` 任务清理时，按 `log_id` 同批删除对应上下文行；聚合表不受影响。明细与上下文必须
+在**同一事务**内写入，避免"日志存在但上下文缺失"的静默缺口。上下文不进入日志导出
+（CSV/NDJSON 都不含），避免把文件路径等明细带进导出文件；需要时经 `GET /api/logs/{id}` 读取。
 
 ### 6.3 聚合表扩展
 
@@ -265,6 +266,11 @@ parts_json, body_bytes, truncated, created_at
 `script`，`client_name` 给已知 agent 的显示名——两者都是展示字段，不改变存储键。存量聚合行
 的新列为 0；
 `POST /api/stats/rebuild` 从明细重算后补齐。
+
+**写入与重建**：明细事务只写 `pbr_stats_outbox`，常驻 worker 逐行在独立事务内 upsert 全部维度
+并删除 outbox 行（崩溃安全、不重复计数）；`/api/stats` 因此最多滞后约 2s + 处理时间。
+`POST /api/stats/rebuild` 先 drain outbox，再只重算仍有明细覆盖的小时桶；prune 边界及更早的
+桶整桶保留（响应 `preserved_buckets`），不会因为明细被清理而抹掉历史聚合。
 
 **缓存命中率**（只在 UI 计算，API 只给原始和）：
 

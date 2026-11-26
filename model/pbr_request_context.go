@@ -31,11 +31,13 @@ type PBRRequestContext struct {
 
 func (PBRRequestContext) TableName() string { return "pbr_request_contexts" }
 
-// SavePBRRequestContext writes the detail row after the log has an id. It is
-// best effort: the caller logs the error but the request and its summary row
-// are already durable. createdAt is the log's ts, so pruning by either clock
-// removes the same rows.
+// SavePBRRequestContext writes the detail row after the log has an id.
+// createdAt is the log's ts, so pruning by either clock removes the same rows.
 func SavePBRRequestContext(logID int, context *usage.Context, bodyBytes int, createdAt int64) error {
+	return savePBRRequestContextWithDB(DB, logID, context, bodyBytes, createdAt)
+}
+
+func savePBRRequestContextWithDB(db *gorm.DB, logID int, context *usage.Context, bodyBytes int, createdAt int64) error {
 	if logID <= 0 || context == nil {
 		return nil
 	}
@@ -43,7 +45,7 @@ func SavePBRRequestContext(logID int, context *usage.Context, bodyBytes int, cre
 	if err != nil {
 		return err
 	}
-	return DB.Create(&PBRRequestContext{
+	return db.Create(&PBRRequestContext{
 		LogId:           logID,
 		Version:         context.Version,
 		Status:          context.Status,

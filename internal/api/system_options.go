@@ -175,17 +175,7 @@ func currentUpstreamBurstWindowSeconds() int {
 
 // CurrentLogRetentionDays 明细日志保留天数（design-v1 §16.5，默认 30）。
 func CurrentLogRetentionDays() int {
-	common.OptionMapRWMutex.RLock()
-	raw, ok := common.OptionMap[route.OptionLogRetentionDays]
-	common.OptionMapRWMutex.RUnlock()
-	if !ok {
-		return route.DefaultLogRetentionDays
-	}
-	parsed, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil || parsed <= 0 {
-		return route.DefaultLogRetentionDays
-	}
-	return parsed
+	return route.CurrentLogRetentionDays()
 }
 
 // applySystemOptions 全量写入选项（导入用）。

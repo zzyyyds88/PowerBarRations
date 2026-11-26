@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/logger"
 	"github.com/zzyyyds88/PowerBarRations/model"
 
@@ -73,14 +74,34 @@ func registeredSystemTaskHandlers() []SystemTaskHandler {
 	return handlers
 }
 
-// logCleanupHandler wraps the existing on-demand log cleanup task as a
-// registered (non-scheduled) handler. It is created via StartLogCleanupTask.
+// logCleanupHandler 清理 PBR 明细日志（pbr_request_logs + pbr_request_contexts）。
+// 既是手动任务，也作为每日周期任务注册；保留天数由 system/options 的
+// log_retention_days 控制，小时聚合长期保留（design-v1 §16.5）。
 type logCleanupHandler struct{}
 
 func (logCleanupHandler) Type() string { return model.SystemTaskTypeLogCleanup }
 
 func (logCleanupHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
 	runLogCleanupTask(ctx, task, runnerID)
+}
+
+func (logCleanupHandler) Enabled() bool { return currentLogRetentionDays() > 0 }
+
+func (logCleanupHandler) Interval() time.Duration { return 24 * time.Hour }
+
+func (logCleanupHandler) NewPayload() any {
+	days := currentLogRetentionDays()
+	if days <= 0 {
+		days = route.DefaultLogRetentionDays
+	}
+	return LogCleanupPayload{
+		TargetTimestamp: time.Now().AddDate(0, 0, -days).Unix(),
+		BatchSize:       logCleanupBatchSize,
+	}
+}
+
+func currentLogRetentionDays() int {
+	return route.CurrentLogRetentionDays()
 }
 
 func init() {
@@ -356,7 +377,7 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 	}
 
 	for {
-		remaining, err := model.CountOldLog(ctx, payload.TargetTimestamp)
+		remaining, err := model.CountPBRRequestLogsBefore(payload.TargetTimestamp)
 		if err != nil {
 			failSystemTask(task, runnerID, err)
 			return
@@ -376,7 +397,7 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		// rows cannot be removed and we fail instead of busy-looping.
 		progressed := false
 		for state.Remaining > 0 {
-			rowsAffected, err := model.DeleteOldLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
+			rowsAffected, err := model.DeletePBRRequestLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
 			if err != nil {
 				failSystemTask(task, runnerID, err)
 				return

@@ -49,6 +49,7 @@ func TestMain(m *testing.M) {
 		&PBRRequestLog{},
 		&PBRRequestContext{},
 		&PBRStatsHourly{},
+		&PBRStatsOutbox{},
 		&PBRProbeLog{},
 		&Option{},
 		&Model{},
@@ -78,6 +79,7 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM pbr_request_contexts")
 		DB.Exec("DELETE FROM pbr_request_logs")
 		DB.Exec("DELETE FROM pbr_stats_hourly")
+		DB.Exec("DELETE FROM pbr_stats_outbox")
 		DB.Exec("DELETE FROM pbr_probe_logs")
 		DB.Exec("DELETE FROM models")
 	})

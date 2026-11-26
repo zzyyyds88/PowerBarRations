@@ -495,6 +495,8 @@ attempts(JSON), total_attempts, estimated_cost(仅折算), price_band(命中时�
 
 **隐私脱敏**：开启后，入站 JSON body 在协议解析前把密钥/个人数据/用户词替换为占位符，回复在最终写出前恢复；`mask_hits` 只存 kind/by/placeholder/head/len/n/action，**不存原值与正文**。默认关闭；规则引擎与本地模型语义、失败策略、API 与页面见 [`privacy-spec-v1.md`](privacy-spec-v1.md)。脱敏后的正文才进入上下文解析与上游发送，因此上下文统计看到的是占位符而不是原值。
 
+**写入协议（2026-11-26 收口）**：明细、上下文与聚合 outbox 必须在**同一 SQLite 事务**内落库；任一失败整条回滚，`carrier.Written` 只在提交成功后置位。`pbr_stats_outbox` 只存聚合所需字段，由常驻 worker 逐行在独立事务内 upsert 全部维度并删除 outbox 行——崩溃后要么整条未生效（重试），要么整条已生效（不重复计数）。SQLite `BUSY/LOCKED` 做有限重试；磁盘满/损坏立即暴露为写入失败并计入 `pbr_log_write_failures_total{stage}`。因此 `/api/stats` 的聚合在请求结束后**短期滞后**（worker 轮询 ≤2s），明细/日志视图仍即时一致。
+
 **聚合口径**：`pbr_stats_hourly` 新增 `client` 维度，并记录归一输入总量、缓存读写、推理 token 与首字耗时之和（usage-spec §6.3）。**缓存命中率 = `cache_read_tokens / input_tokens`**，其中 `input_tokens` 已按 `usage_semantic` 归一：Anthropic 的 input 不含缓存，需加上 `cache_read + cache_write`；OpenAI/Gemini 的 prompt 已包含 `cache_read`。
 
 > 路由为模型名键控：配了车道时 `lane_name` 等于车道名（通常等于 `request_model`）；日志另记 `route_source ∈ explicit|unconfigured`，用于区分"已固化可调用"与"渠道声明但没建车道"。
@@ -641,10 +643,12 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 ### 16.5 日志保留
 
-- 不引入 cron。保留策略由 `system/options.log_retention_days` 配置（默认 30），并提供 `POST /api/logs/prune?before=<ts>&dry_run=` 由外部按需触发。
-- 聚合表（`pbr_stats_hourly`）长期保留（体积小）；明细表按上述策略清理。
-- 上下文明细表（`pbr_request_contexts`）按 `log_id` 与明细日志**同批清理**，不单独保留；会话与上下文曲线因此只覆盖保留期内的明细。聚合表不受影响。
+- 保留策略由 `system/options.log_retention_days` 配置（默认 30）。**内置每日分批清理**：系统任务调度器每 24h 创建一个 `log_cleanup` 任务，按 `ts < now - retention_days` 分批删除明细与上下文；保留期内的明细不会被提前删除。`POST /api/logs/prune?before=<ts>&dry_run=` 仍保留为手动入口。
+- 清理只动明细，聚合表（`pbr_stats_hourly`）**长期保留**（体积小）；一次 prune 不得改变 `/api/stats` 的历史数值。
+- 上下文明细表（`pbr_request_contexts`）按 `log_id` 与明细日志**同批清理**（同一事务、按批有界），不单独保留；会话与上下文曲线因此只覆盖保留期内的明细。
 - **`GET /api/stats` 必须读聚合表**（hour 直读、day 由小时桶上卷），不得读明细表——否则一次 prune 就把历史统计抹掉，与"聚合长期保留"自相矛盾。
+- `POST /api/stats/rebuild` 先 drain `pbr_stats_outbox`；重建时保留**已无明细来源**的小时桶（prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。仍有待处理/死信 outbox 行时 rebuild 失败，避免在聚合缺口上继续。
+- `/api/health` 暴露 `stats_outbox.pending/dead` 与最近一次 `db_last_write_error`；`dead > 0` 或 outbox 不可读时整体 `degraded`。
 
 ### 16.6 并发与超时
 

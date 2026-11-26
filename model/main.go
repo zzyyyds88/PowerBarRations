@@ -367,6 +367,7 @@ func migrateDB() error {
 		&PBRRequestLog{},
 		&PBRRequestContext{},
 		&PBRStatsHourly{},
+		&PBRStatsOutbox{},
 		&PBRProbeLog{},
 		&WebhookDelivery{},
 		&User{},

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 )
@@ -158,6 +159,22 @@ const (
 
 // DefaultLogRetentionDays 明细日志默认保留天数（design-v1 §16.5）。
 const DefaultLogRetentionDays = 30
+
+// CurrentLogRetentionDays 当前生效的明细保留天数；非法/缺失回落到默认值。
+// 读取 common.OptionMap 而不是 system/options 的 HTTP 层，供后台清理任务复用。
+func CurrentLogRetentionDays() int {
+	common.OptionMapRWMutex.RLock()
+	raw, ok := common.OptionMap[OptionLogRetentionDays]
+	common.OptionMapRWMutex.RUnlock()
+	if !ok {
+		return DefaultLogRetentionDays
+	}
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days <= 0 {
+		return DefaultLogRetentionDays
+	}
+	return days
+}
 
 // DefaultProbeConcurrency 探活默认并发上限（design-v1 §16.6）。
 const DefaultProbeConcurrency = 4

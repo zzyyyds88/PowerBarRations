@@ -561,11 +561,11 @@
 | GET | `/api/logs/{id}` | 单条（含 attempts 链与完整 `context` 分区明细；无上下文时 `context=null`，原因见 `context_status`） |
 | GET | `/api/logs/sessions` | **会话列表**（按 `session_key` 聚合）：`from`/`to`（RFC3339 或 Unix 秒，可选；默认最近 30 天）、`client`、`model`、`lane`、`q`（`session_id` 子串，≤128）、`sort ∈ last_ts\|first_ts\|requests\|tokens\|cost`（默认 `last_ts`）、`order ∈ asc\|desc`（默认 `desc`）、`page`+`page_size`（默认 1/50，上限 100）。响应 `{items,total,page,page_size,summary}`；`summary` 是同筛选条件下**整个窗口**的总量 `{sessions,requests,successes,errors,prompt_tokens,completion_tokens,estimated_cost}`（不是当前页），供控制台 KPI。空结果 `items=[]`。每项字段见 §4.6。只统计 `session_key` 非空的模型面请求；管理动作不计入。 |
 | GET | `/api/logs/sessions/{key}` | **会话详情**：`key` 是 32 位十六进制 `session_key`。返回会话摘要（§4.6 单对象）+ `request_items`（分页请求列表，每项是 §4.4 RequestLog + 紧凑 `context`：仅分区 token，不含物品）+ `context_series`（最多 500 个 `{ts,id,tokens,window}` 点，按时间升序；超出置 `context_series_truncated=true`）。`request_items` 支持 `page`/`page_size`（默认 1/50，上限 100）与 `order`（默认 `desc`）；摘要的 `requests` 仍是计数。会话不存在 → 404 `session_not_found`。 |
-| POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天），并**同批删除对应的 `pbr_request_contexts` 行**；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变**（会话与上下文曲线只覆盖保留期内的明细，见 usage-spec §6.2） |
-| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model\|key_model\|client`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。**`model` 与 `channel_model`/`key_model` 的"模型"一律是 `upstream_model`（渠道映射后的真实上游模型名）**——车道名维度由 `lane` 单独承担，两个口径不混用（2026-10-25 变更：旧口径把 `request_model`（车道名）当"模型"聚合，池化车道下看不到真实模型分布）。`channel_model`/`key_model` 的 `group` 形如 `渠道␟模型` / `令牌␟模型`。`client` 维度的 `group` 是 `AgentOf` 的原始值；桶另带 `client_group`（库/other → `script`）与 `client_name`（已知 agent 的显示名），供控制台分组与展示。桶字段新增 `input_tokens`（按 `usage_semantic` 归一的输入总量）、`cache_read_tokens`、`cache_write_tokens`、`reasoning_tokens`、`ttft_ms_sum`、`ttft_samples`；缓存命中率由调用方按 `cache_read_tokens / input_tokens` 计算（`input_tokens=0` 时无意义，不得显示 0%）。 |
+| POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天），并**同批删除对应的 `pbr_request_contexts` 行**（同一事务、按批有界）；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变**（会话与上下文曲线只覆盖保留期内的明细，见 usage-spec §6.2）。另有内置每日 `log_cleanup` 系统任务按同一保留天数自动执行 |
+| GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model\|key_model\|client`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。**聚合异步补齐（outbox worker，最长约 2s + 处理时间）**：刚结束的请求可能尚未出现在聚合里，明细/日志视图不受影响。**`model` 与 `channel_model`/`key_model` 的"模型"一律是 `upstream_model`（渠道映射后的真实上游模型名）**——车道名维度由 `lane` 单独承担，两个口径不混用（2026-10-25 变更：旧口径把 `request_model`（车道名）当"模型"聚合，池化车道下看不到真实模型分布）。`channel_model`/`key_model` 的 `group` 形如 `渠道␟模型` / `令牌␟模型`。`client` 维度的 `group` 是 `AgentOf` 的原始值；桶另带 `client_group`（库/other → `script`）与 `client_name`（已知 agent 的显示名），供控制台分组与展示。桶字段新增 `input_tokens`（按 `usage_semantic` 归一的输入总量）、`cache_read_tokens`、`cache_write_tokens`、`reasoning_tokens`、`ttft_ms_sum`、`ttft_samples`；缓存命中率由调用方按 `cache_read_tokens / input_tokens` 计算（`input_tokens=0` 时无意义，不得显示 0%）。 |
 | GET | `/api/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
 | GET | `/api/audit` | 变更审计 |
-| POST | `/api/stats/rebuild?dry_run=` | **按当前口径重建小时聚合表**：从 `request_logs` 明细重算全部 `lane`/`channel`/`key`/`model`/`channel_model`/`key_model`/`client` 维度（`model` 相关按 `upstream_model`），并按**当前**渠道单价表重折算全部明细的 `estimated_cost` 后重算 `cost_sum`；同时按明细重算 `input_tokens`/`cache_read_tokens`/`cache_write_tokens`/`reasoning_tokens`/`ttft_ms_sum`/`ttft_samples`。峰谷价格按每条日志 `ts` 在价格行 `timezone` 下重新匹配 band（`price_band` 一并重写）。`dry_run=true` 只返回将写入的行数与成本合计差异，不落库。用于统计口径变更后的历史回填（幂等：重复执行结果一致）。**它重写派生数据，不触碰明细日志与 `pbr_request_contexts` 本身** |
+| POST | `/api/stats/rebuild?dry_run=` | **按当前口径重建小时聚合表**：先同步 drain `pbr_stats_outbox`（仍有待处理/死信行时返回错误，避免在聚合缺口上继续），再从 `request_logs` 明细重算全部 `lane`/`channel`/`key`/`model`/`channel_model`/`key_model`/`client` 维度（`model` 相关按 `upstream_model`），并按**当前**渠道单价表重折算全部明细的 `estimated_cost` 后重算 `cost_sum`；同时按明细重算 `input_tokens`/`cache_read_tokens`/`cache_write_tokens`/`reasoning_tokens`/`ttft_ms_sum`/`ttft_samples`。峰谷价格按每条日志 `ts` 在价格行 `timezone` 下重新匹配 band（`price_band` 一并重写）。**已无明细来源的小时桶（prune 边界及更早）整桶保留，响应新增 `preserved_buckets`**；边界小时桶若既有聚合请求数大于剩余明细数（含已 prune 行）也保留，否则可安全重算。`dry_run=true` 只返回将写入的行数、保留桶数与成本合计差异，不落库。用于统计口径变更后的历史回填（幂等：重复执行结果一致）。**它重写派生数据，不触碰明细日志与 `pbr_request_contexts` 本身** |
 | GET | `/api/logs/export` | 导出请求日志：`format=csv\|ndjson`，过滤同 `/api/logs`（含 `client`/`session`）；必须给 `from`/`to`（≤31 天），行数上限 100,000，流式返回；CSV 不含 `attempts`/`error_summary`，NDJSON 含完整行。**上下文分区明细不进入导出**（§5.5.1）。详见 §5.5.1 |
 
 #### 5.5.1 日志导出契约（`GET /api/logs/export`）
@@ -753,7 +753,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 | POST | `/api/member-groups` | `diff.member_groups.add` |
 | PUT | `/api/member-groups/{name}` | `diff.member_groups.update` |
 | DELETE | `/api/member-groups/{name}` | `diff.member_groups.remove` + `diff.lanes.{update,remove}`（级联清理组引用） |
-| POST | `/api/stats/rebuild` | 将重建的聚合行数与成本合计差异（before/after） |
+| POST | `/api/stats/rebuild` | 将重建的聚合行数、保留桶数（`preserved_buckets`）与成本合计差异（before/after）；不落库 |
 | DELETE | `/api/system/log-files` | `diff.log_files.remove`（将删的文件名） |
 | POST | `/api/system-tasks/log-cleanup` | `diff.system_tasks.add`（将建的任务） |
 | PUT | `/api/privacy/settings` | `{dry_run,settings,diff}`；归一化后的设置与字段级 diff，不落库、不下载模型 |
@@ -823,8 +823,19 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 curl -s $PBR/api/health
 ```
 ```json
-{ "status": "ok", "version": "0.1.0", "uptime_s": 12345, "db": "ok" }
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "uptime_s": 12345,
+  "db": "ok",
+  "db_last_write_error": null,
+  "stats_outbox": { "pending": 0, "dead": 0, "available": true }
+}
 ```
+
+- `db`：`ok|error`（连通性）；`error` 时整体 `degraded`。
+- `db_last_write_error`：最近一次明细/聚合写库失败的结构化快照 `{stage,message,at}`，从未失败为 `null`。成功写入不会自动清除它，排障时结合 `at` 判断是否为近期故障。
+- `stats_outbox`：`pending` 待聚合行数、`dead` 超过最大重试次数的死信行数、`available=false` 表示 outbox 表不可读（迁移未完成/库故障）。`dead > 0` 或不可读时整体 `degraded`；`pending > 0` 是正常异步滞后，不代表故障。
 
 ```bash
 curl -s $PBR/api/capabilities -H "Authorization: Bearer $ADMIN_KEY"
@@ -1071,7 +1082,7 @@ curl -s -X PUT $PBR/api/system/options \
   （选项键 `PBRLaneDefaults`，数值默认值单处规范见 routing-spec §1.2）：作用于新建车道，
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
-- `log_retention_days`（默认 30）只作配置；实际清理由 `POST /api/logs/prune` 触发。
+- `log_retention_days`（默认 30）同时驱动内置每日 `log_cleanup` 系统任务与 `POST /api/logs/prune` 的默认 before；只清理明细与上下文，聚合长期保留。
 - `probe_concurrency`（默认 4，取值 1–16）限制 `POST /lanes/{name}/probe` 与探活任务对上游的并发压力；超出上限的写配置返回 422，读取时钳制到上限。
 - **没有全局单价选项**：成本折算只用渠道级 `prices`（§4.1），渠道未配价即不折算（0）。
 
