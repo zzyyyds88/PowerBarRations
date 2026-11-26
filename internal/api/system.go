@@ -24,6 +24,10 @@ func Health(c *gin.Context) {
 		dbStatus = "error"
 	}
 	lastWriteError := model.LastDBWriteError()
+	// 连通但最近 5 分钟内写失败，按 degraded 报：ping 正常不代表能写。
+	if dbStatus == "ok" && lastWriteError != nil && time.Now().Unix()-lastWriteError.At < 300 {
+		dbStatus = "degraded"
+	}
 	outbox := gin.H{"pending": int64(0), "dead": int64(0), "available": true}
 	pending, dead, outboxErr := model.PBRStatsOutboxBacklog()
 	if outboxErr != nil {

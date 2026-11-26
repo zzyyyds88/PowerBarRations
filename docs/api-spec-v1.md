@@ -833,7 +833,7 @@ curl -s $PBR/api/health
 }
 ```
 
-- `db`：`ok|error`（连通性）；`error` 时整体 `degraded`。
+- `db`：`ok|degraded|error`（连通性 + 最近 5 分钟写失败）；`degraded`/`error` 时整体 `degraded`。
 - `db_last_write_error`：最近一次明细/聚合写库失败的结构化快照 `{stage,message,at}`，从未失败为 `null`。成功写入不会自动清除它，排障时结合 `at` 判断是否为近期故障。
 - `stats_outbox`：`pending` 待聚合行数、`dead` 超过最大重试次数的死信行数、`available=false` 表示 outbox 表不可读（迁移未完成/库故障）。`dead > 0` 或不可读时整体 `degraded`；`pending > 0` 是正常异步滞后，不代表故障。
 

@@ -41,8 +41,8 @@ func TestHealthReportsStatsOutboxAndDBWriteError(t *testing.T) {
 		} `json:"stats_outbox"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body))
-	assert.Equal(t, "degraded", body.Status, "死信必须让整体状态降级")
-	assert.Equal(t, "ok", body.DB, "连通性本身仍为 ok")
+	assert.Equal(t, "degraded", body.Status, "死信/近期写失败必须让整体状态降级")
+	assert.Equal(t, "degraded", body.DB, "连通但近期写失败按 degraded 报")
 	assert.Equal(t, int64(1), body.StatsOutbox.Dead)
 	assert.True(t, body.StatsOutbox.Available)
 	require.NotNil(t, body.DBLastWriteError)
