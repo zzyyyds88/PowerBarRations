@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -94,6 +95,9 @@ type metricsSet struct {
 	upstreamErrors  *prometheus.CounterVec
 	circuitState    *prometheus.GaugeVec
 	channelUp       *prometheus.GaugeVec
+
+	channelMu     sync.Mutex
+	channelStates map[string]struct{}
 }
 
 // defaultMetrics 是进程级默认指标集合；所有包级入口都转发到它。
@@ -103,7 +107,8 @@ var defaultMetrics = newMetrics()
 func newMetrics() *metricsSet {
 	registry := prometheus.NewRegistry()
 	m := &metricsSet{
-		registry: registry,
+		registry:      registry,
+		channelStates: map[string]struct{}{},
 		requestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "pbr",
 			Name:      "requests_total",
@@ -241,10 +246,32 @@ func (m *metricsSet) setChannelState(channel, circuitState string, up bool) {
 	if channel == "" {
 		return
 	}
+	m.channelMu.Lock()
+	m.channelStates[channel] = struct{}{}
+	m.channelMu.Unlock()
 	if value, ok := circuitStateValue(circuitState); ok {
 		m.circuitState.WithLabelValues(channel).Set(value)
 	}
 	m.channelUp.WithLabelValues(channel).Set(boolValue(up))
+}
+
+// PruneChannelStates 删除本轮路由快照中已缺席的渠道 gauge 标签，防止渠道
+// 删除后 pbr_channel_up 继续显示陈旧状态，或标签序列随渠道增删无界增长。
+func PruneChannelStates(keep map[string]struct{}) {
+	defaultMetrics.pruneChannelStates(keep)
+}
+
+func (m *metricsSet) pruneChannelStates(keep map[string]struct{}) {
+	m.channelMu.Lock()
+	defer m.channelMu.Unlock()
+	for channel := range m.channelStates {
+		if _, ok := keep[channel]; ok {
+			continue
+		}
+		m.circuitState.DeleteLabelValues(channel)
+		m.channelUp.DeleteLabelValues(channel)
+		delete(m.channelStates, channel)
+	}
 }
 
 // circuitStateValue 把熔断状态名映射为 gauge 数值。

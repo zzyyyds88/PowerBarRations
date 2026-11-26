@@ -640,9 +640,9 @@ func (t *pbrAttemptTimeout) wrap(err error) error {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return err
 	}
-	// 双 %w：既让上层按超时分类（Classify 优先判 DeadlineExceeded），
+	// 双 %w：既让上层按超时分类（Classify 识别 LocalAttemptTimeout marker），
 	// 又保留底层原因供日志/attempts 链排障。
-	return fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, err)
+	return &types.LocalAttemptTimeout{Err: fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, err)}
 }
 
 // releaseFirstEventTimer 解除流式首事件计时（幂等）。仅当已解析出首个**有效**

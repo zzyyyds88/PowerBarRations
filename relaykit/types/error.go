@@ -93,6 +93,32 @@ const (
 	ErrorCodePreConsumeTokenQuotaFailed ErrorCode = "pre_consume_token_quota_failed"
 )
 
+// LocalAttemptTimeout 标记由 PBR 每成员计时器触发的超时。客户端 context
+// deadline 也会表现为 context.DeadlineExceeded，但不得据此冷却健康成员；
+// 只有携带此 marker 的错误才归类为成员 timeout。
+type LocalAttemptTimeout struct {
+	Err error
+}
+
+func (e *LocalAttemptTimeout) Error() string {
+	if e == nil || e.Err == nil {
+		return "local attempt timeout"
+	}
+	return e.Err.Error()
+}
+
+func (e *LocalAttemptTimeout) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func IsLocalAttemptTimeout(err error) bool {
+	var target *LocalAttemptTimeout
+	return errors.As(err, &target)
+}
+
 type NewAPIError struct {
 	Err        error
 	RelayError any

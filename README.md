@@ -330,7 +330,10 @@ GET  /api/v1/openapi.json               # 完整契约
   依赖旧 429 冷却语义的告警规则需要调整；
   ② 同车道重复 `(渠道, 模型)` 的运行态按成员条目独立（运行态键带 `memberId`）；
   ③ `status_code_mapping` 只改客户端可见状态码，不再影响重试/冷却分类；
-  ④ 探活成功会清除该成员的冷却/熔断，探活端点带 `?dry_run=true` 会返回 400。升级前请先备份 `pbr.db`。
+  ④ 探活成功会清除该成员的冷却/熔断，探活端点带 `?dry_run=true` 会返回 400。
+  ⑤ 请求生命周期按 ADR 0014 收口：探测改用 `ProbeLease`，Reset 会推进 generation；健康快照新增
+  `probe_since` / `probe_lease_until` / `config_error`，坏配置不再被静默清空而是 fail-closed；
+  一次请求的 policy、选路与转发共用不可变快照。升级前请先备份 `pbr.db`。
 - **敏感词拦截：默认关闭**（自用网关，默认不对请求做词表拦截）。需要时经系统选项打开并自带词表：
   `PUT /api/system/options/all` `{"key":"CheckSensitiveEnabled","value":"true"}`（词表用同一个端点的
   `SensitiveWords`，一行一词；**仓库不预置任何词**——词表属部署方自己的数据）。

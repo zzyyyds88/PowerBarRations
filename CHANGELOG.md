@@ -5,9 +5,14 @@
 ## [Unreleased]
 
 ### 破坏性变更
+- **请求生命周期与资源所有权重构**（ADR 0014）：成员/准入运行态改用类型化 `MemberKey`/`AdmissionKey`；恢复探测改为含 owner、generation、expiry 的 `ProbeLease`，`recordSuccess`/`recordFailure` 不再隐式释放，请求 State 统一幂等收口。迁移不转移 live lease，Prune 不清 live lease，Reset 递增 generation；Health/SSE 只读并新增 `probe_since`、`probe_lease_until`、`config_error`，Reset 响应新增 generation 与失效 lease 数。
+- **请求使用不可变路由快照**：`PBRServe` 单次 `ResolveRoute`，客户端密钥 policy、选路与转发共用同一份渠道/准入快照；配置解析变为纯函数，坏配置不再被 getter 静默清空，而是在请求路径 fail-closed。出站准入新增 `success/failure/neutral/canceled` outcome，waiter 可被取消、准入 deadline 或 generation 驱逐；流式心跳/写失败与客户端取消统一终止并释放资源。
+- **超时与取消严格区分**：本地成员计时器使用 `LocalAttemptTimeout` marker；裸 `context.DeadlineExceeded` 视为客户端取消，不再误冷却健康成员。准入绝对 deadline 只在请求入口计算一次，重试不重置预算。
+- **车道/成员六键 fail-closed**：非法 JSON 或负值在管理写入时拒绝，存量坏配置在请求入口返回 503；成员覆盖解析失败的成员按 `member_config_error` 跳过。
+- **流式监督闭合**：数据帧写失败会立即 stop/cancel/join 且不标记已提交；客户端取消优先级高于 ping/scanner/timeout；ping 不再隐含 30 分钟流总超时。
 - **429 语义改为"减速"**（ADR 0013、routing-spec §4.1.1）：上游 429 不再写成员冷却、不计熔断分、
   不发 `cooldown` 事件，只写 `paced_until` 并短暂减速；成员仍 `available=true`。
-  健康快照新增 `paced_until`、`last_error_at`、`rolling_samples`、`probe_pending`；
+  健康快照新增 `paced_until`、`last_error_at`、`rolling_samples`；
   日志 `error_kind` 新增 `local_throttle`（本地准入排队超界）。`circuit_allowed_fails.soft_rate_limit`
   键保留但不再生效。
 - **运行态键带 memberId**（ADR 0009 修订）：同车道内"组内成员 + 散成员"重复同一 `(渠道, 模型)` 时
@@ -88,6 +93,9 @@
 - **表格与移动端可读性**：Keys/Audit 表格取消逐字换行、固定关键列宽；概览 KPI 手机两列；日志筛选栏单行化；系统任务移动端改卡片。
 
 ### Fixed
+- **请求生命周期收口**：修复重试重新解析路由、准入 deadline 重置、客户端 deadline 误判成员超时、坏六键静默回落、SSE 写失败不终止、ping 30 分钟总超时、成功日志后台闭包捕获完整 `RelayInfo` 等问题；补齐数据帧写失败、取消优先级、不可变快照、准入 epoch、配置 fail-closed 回归测试。
+- **缓存与并发一致性**：多 key 管理操作不再持 polling 锁刷新缓存；取 key 前在内存缓存开启时重读权威状态；渠道 PUT 不再覆盖并发 `status/channel_info`；带别名组成员导入在 SQLite 单连接下不再自锁；探活按各车道 generation 快照清理。
+- **后台任务与指标**：client-key touch 与性能采样 worker 支持停机及最终 flush；自动禁用后台任务不再持有请求 context/明文 key，队列饱和不在请求线程发通知；性能桶连续 flush 失败有重试上界；`/metrics` 删除已消失渠道的陈旧 gauge 序列。
 - **Anthropic 入站首字恒为空**：`/v1/messages` 的流式主出口 `ClaudeData` 写出 `data:` 帧却没打提交标记，导致首字耗时（`ttft_ms`）永远为 0、控制台显示"不适用"；同一缺陷还让提交后收到的流内 error 帧被误判成"提交前"。补齐该出口与 zhipu/xunfei/cohere/palm 四个 legacy 适配器的提交标记。
 - **流式空响应被记成成功**：上游建流后零有效帧（首事件超时、立即 EOF、只有 `[DONE]`）时，各 handler 把末帧解析失败只写日志就吞掉，最终落库 `success=true` + `completion=0`，客户端拿到 200 空流。现按 `bad_response`/`empty_response` 判成员级失败，覆盖 6 个流式 handler。
 - 修复 `web/.gitignore` 的 `logs` 规则吞掉 `src/routes/_authenticated/logs/`，导致日志工作区路由从未入库、源码重建后整块消失的问题（已补 routeTree import 守卫）。

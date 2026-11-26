@@ -19,6 +19,7 @@ const (
 	StreamEndReasonEOF         StreamEndReason = "eof"
 	StreamEndReasonPanic       StreamEndReason = "panic"
 	StreamEndReasonPingFail    StreamEndReason = "ping_fail"
+	StreamEndReasonWriteFail   StreamEndReason = "write_fail"
 )
 
 const maxStreamErrorEntries = 20
@@ -31,7 +32,6 @@ type StreamErrorEntry struct {
 type StreamStatus struct {
 	EndReason StreamEndReason
 	EndError  error
-	endOnce   sync.Once
 
 	mu         sync.Mutex
 	Errors     []StreamErrorEntry
@@ -42,14 +42,44 @@ func NewStreamStatus() *StreamStatus {
 	return &StreamStatus{}
 }
 
+// streamEndReasonPriority 让客户端取消覆盖同时就绪的 scanner/ping/timeout
+// 等较低优先级终态。取消是请求所有权终止，不能被偶发的读/写错误改写。
+func streamEndReasonPriority(reason StreamEndReason) int {
+	switch reason {
+	case StreamEndReasonClientGone:
+		return 100
+	case StreamEndReasonPanic:
+		return 90
+	case StreamEndReasonTimeout:
+		return 80
+	case StreamEndReasonWriteFail:
+		return 70
+	case StreamEndReasonScannerErr:
+		return 60
+	case StreamEndReasonPingFail:
+		return 50
+	case StreamEndReasonHandlerStop:
+		return 40
+	case StreamEndReasonDone:
+		return 30
+	case StreamEndReasonEOF:
+		return 20
+	default:
+		return 0
+	}
+}
+
 func (s *StreamStatus) SetEndReason(reason StreamEndReason, err error) {
 	if s == nil {
 		return
 	}
-	s.endOnce.Do(func() {
-		s.EndReason = reason
-		s.EndError = err
-	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.EndReason != StreamEndReasonNone && streamEndReasonPriority(reason) < streamEndReasonPriority(s.EndReason) {
+		return
+	}
+	s.EndReason = reason
+	s.EndError = err
 }
 
 func (s *StreamStatus) RecordError(msg string) {
@@ -89,6 +119,8 @@ func (s *StreamStatus) IsNormalEnd() bool {
 	if s == nil {
 		return true
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.EndReason == StreamEndReasonDone ||
 		s.EndReason == StreamEndReasonEOF ||
 		s.EndReason == StreamEndReasonHandlerStop
@@ -98,15 +130,15 @@ func (s *StreamStatus) Summary() string {
 	if s == nil {
 		return "StreamStatus<nil>"
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "reason=%s", s.EndReason)
 	if s.EndError != nil {
 		fmt.Fprintf(b, " end_error=%q", s.EndError.Error())
 	}
-	s.mu.Lock()
 	if s.ErrorCount > 0 {
 		fmt.Fprintf(b, " soft_errors=%d", s.ErrorCount)
 	}
-	s.mu.Unlock()
 	return b.String()
 }

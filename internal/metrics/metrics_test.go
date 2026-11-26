@@ -14,6 +14,27 @@ import (
 	"github.com/prometheus/common/expfmt"
 )
 
+func TestPruneChannelStatesRemovesStaleGaugeSeries(t *testing.T) {
+	m := newMetrics()
+	m.setChannelState("42", circuitStateClosed, true)
+	m.pruneChannelStates(map[string]struct{}{})
+
+	families, err := m.registry.Gather()
+	if err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+	for _, family := range families {
+		if family.GetName() != "pbr_channel_up" && family.GetName() != "pbr_circuit_state" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			if hasLabels(metric, map[string]string{"channel": "42"}) {
+				t.Fatalf("stale channel series remains in %s: %s", family.GetName(), describeFamily(family))
+			}
+		}
+	}
+}
+
 // scrape 通过 http.Handler 抓取一次指标文本。
 func scrape(t *testing.T, handler http.Handler) (contentType, body string) {
 	t.Helper()

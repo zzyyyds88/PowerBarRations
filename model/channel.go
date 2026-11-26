@@ -61,6 +61,13 @@ type Channel struct {
 
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
+
+	// settingsSnapshot 是请求级渠道快照的纯解析结果。只在 SnapshotChannel 系列调用中
+	// 写入；普通数据库对象保持未初始化，getter 仍可无副作用地即时解析。
+	settingsSnapshot      dto.ChannelSettings
+	otherSettingsSnapshot dto.ChannelOtherSettings
+	settingsSnapshotReady bool
+	settingsSnapshotErr   *ChannelConfigError
 }
 
 type ChannelInfo struct {
@@ -206,23 +213,34 @@ func (channel *Channel) GetKeys() []string {
 }
 
 func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
-	// If not in multi-key mode, return the original key string directly.
-	if !channel.ChannelInfo.IsMultiKey {
-		return channel.Key, 0, nil
-	}
-
-	// Obtain all keys (split by \n)
-	keys := channel.GetKeys()
-	if len(keys) == 0 {
-		// No keys available, return error, should disable the channel
-		return "", 0, types.NewError(errors.New("no keys available"), types.ErrorCodeChannelNoAvailableKey)
-	}
-
 	lock := GetChannelPollingLock(channel.Id)
 	lock.Lock()
 	defer lock.Unlock()
 
-	statusList := channel.ChannelInfo.MultiKeyStatusList
+	// channel 可能是加锁前的请求快照。内存缓存开启时重新读取权威状态，
+	// 避免旧 ChannelInfo 全量写回复活刚被禁用的 key；关闭缓存时调用方刚
+	// 从库/快照取得 channel，保持原有零额外查询语义。
+	current := channel
+	if common.MemoryCacheEnabled {
+		loaded, err := CacheGetChannel(channel.Id)
+		if err != nil {
+			return "", 0, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		if loaded == nil {
+			return "", 0, types.NewError(errors.New("channel not found"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		current = loaded
+	}
+	if !current.ChannelInfo.IsMultiKey {
+		return current.Key, 0, nil
+	}
+
+	keys := current.GetKeys()
+	if len(keys) == 0 {
+		return "", 0, types.NewError(errors.New("no keys available"), types.ErrorCodeChannelNoAvailableKey)
+	}
+
+	statusList := current.ChannelInfo.MultiKeyStatusList
 	// helper to get key status, default to enabled when missing
 	getStatus := func(idx int) int {
 		if statusList == nil {
@@ -241,52 +259,38 @@ func (channel *Channel) GetNextEnabledKey() (string, int, *types.NewAPIError) {
 			enabledIdx = append(enabledIdx, i)
 		}
 	}
-	// If no specific status list or none enabled, return an explicit error so caller can
-	// properly handle a channel with no available keys (e.g. mark channel disabled).
-	// Returning the first key here caused requests to keep using an already-disabled key.
 	if len(enabledIdx) == 0 {
 		return "", 0, types.NewError(errors.New("no enabled keys"), types.ErrorCodeChannelNoAvailableKey)
 	}
 
-	switch channel.ChannelInfo.MultiKeyMode {
+	switch current.ChannelInfo.MultiKeyMode {
 	case constant.MultiKeyModeRandom:
-		// Randomly pick one enabled key
 		selectedIdx := enabledIdx[rand.Intn(len(enabledIdx))]
 		return keys[selectedIdx], selectedIdx, nil
 	case constant.MultiKeyModePolling:
-		// Use channel-specific lock to ensure thread-safe polling
-
-		channelInfo, err := CacheGetChannelInfo(channel.Id)
-		if err != nil {
-			return "", 0, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
-		}
 		defer func() {
 			if common.DebugEnabled {
-				logger.LogDebug(nil, "channel %d polling index: %d", channel.Id, channel.ChannelInfo.MultiKeyPollingIndex)
+				logger.LogDebug(nil, "channel %d polling index: %d", current.Id, current.ChannelInfo.MultiKeyPollingIndex)
 			}
 			if !common.MemoryCacheEnabled {
-				_ = channel.SaveChannelInfo()
+				_ = current.SaveChannelInfo()
 			} else {
-				// CacheUpdateChannel(channel)
+				CacheUpdateChannelInfo(current.Id, current.ChannelInfo)
 			}
 		}()
-		// Start from the saved polling index and look for the next enabled key
-		start := channelInfo.MultiKeyPollingIndex
+		start := current.ChannelInfo.MultiKeyPollingIndex
 		if start < 0 || start >= len(keys) {
 			start = 0
 		}
 		for i := range keys {
 			idx := (start + i) % len(keys)
 			if getStatus(idx) == common.ChannelStatusEnabled {
-				// update polling index for next call (point to the next position)
-				channel.ChannelInfo.MultiKeyPollingIndex = (idx + 1) % len(keys)
+				current.ChannelInfo.MultiKeyPollingIndex = (idx + 1) % len(keys)
 				return keys[idx], idx, nil
 			}
 		}
-		// Fallback – should not happen, but return first enabled key
 		return keys[enabledIdx[0]], enabledIdx[0], nil
 	default:
-		// Unknown mode, default to first enabled key (or original key string)
 		return keys[enabledIdx[0]], enabledIdx[0], nil
 	}
 }
@@ -1066,89 +1070,85 @@ func (channel *Channel) DeleteIfUnreferenced() (*ChannelReference, error) {
 
 var channelStatusLock sync.Mutex
 
-// channelPollingLocks stores locks for each channel.id to ensure thread-safe polling
-var channelPollingLocks sync.Map
+// 固定条带锁替代按 channelId 动态创建/删除的锁表。动态删除会让仍在
+// 执行的请求继续持有旧锁、而新请求拿到新锁，形成同渠道双锁竞态；固定
+// 条带则有界、无清理窗口，并保持 polling lock -> channelSyncLock 的锁序。
+const channelPollingLockStripes = 256
 
-// GetChannelPollingLock returns or creates a mutex for the given channel ID
+var channelPollingLocks [channelPollingLockStripes]sync.Mutex
+
+// GetChannelPollingLock returns the fixed striped mutex for the given channel ID.
 func GetChannelPollingLock(channelId int) *sync.Mutex {
-	if lock, exists := channelPollingLocks.Load(channelId); exists {
-		return lock.(*sync.Mutex)
+	if channelId < 0 {
+		channelId = -channelId
 	}
-	// Create new lock for this channel
-	newLock := &sync.Mutex{}
-	actual, _ := channelPollingLocks.LoadOrStore(channelId, newLock)
-	return actual.(*sync.Mutex)
+	return &channelPollingLocks[channelId%channelPollingLockStripes]
 }
 
-// CleanupChannelPollingLocks removes locks for channels that no longer exist
-// This is optional and can be called periodically to prevent memory leaks
-func CleanupChannelPollingLocks() {
-	var activeChannelIds []int
-	DB.Model(&Channel{}).Pluck("id", &activeChannelIds)
-
-	activeChannelSet := make(map[int]bool)
-	for _, id := range activeChannelIds {
-		activeChannelSet[id] = true
-	}
-
-	channelPollingLocks.Range(func(key, value any) bool {
-		channelId := key.(int)
-		if !activeChannelSet[channelId] {
-			channelPollingLocks.Delete(channelId)
-		}
-		return true
-	})
-}
+// CleanupChannelPollingLocks is retained for callers but intentionally does
+// nothing: striped locks are bounded and must never be detached from waiters.
+func CleanupChannelPollingLocks() {}
 
 func handlerMultiKeyUpdate(channel *Channel, usingKey string, status int, reason string) {
+	if channel == nil {
+		return
+	}
 	keys := channel.GetKeys()
 	if len(keys) == 0 {
 		channel.Status = status
-	} else {
-		keyIndex := -1
-		for i, key := range keys {
-			if key == usingKey {
-				keyIndex = i
-				break
-			}
+		return
+	}
+	keyIndex := -1
+	for i, key := range keys {
+		if key == usingKey {
+			keyIndex = i
+			break
 		}
-		if keyIndex < 0 {
-			if usingKey != "" {
-				common.SysLog(fmt.Sprintf("failed to update multi-key status: channel_id=%d, using key not found", channel.Id))
-				return
-			}
-			channel.Status = status
-			info := channel.GetOtherInfo()
-			info["status_reason"] = reason
-			info["status_time"] = common.GetTimestamp()
-			channel.SetOtherInfo(info)
+	}
+	if keyIndex < 0 {
+		if usingKey != "" {
+			common.SysLog(fmt.Sprintf("failed to update multi-key status: channel_id=%d, using key not found", channel.Id))
 			return
 		}
-		if channel.ChannelInfo.MultiKeyStatusList == nil {
-			channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
+		channel.Status = status
+		info := channel.GetOtherInfo()
+		info["status_reason"] = reason
+		info["status_time"] = common.GetTimestamp()
+		channel.SetOtherInfo(info)
+		return
+	}
+	handlerMultiKeyUpdateAtIndex(channel, keyIndex, status, reason)
+}
+
+func handlerMultiKeyUpdateAtIndex(channel *Channel, keyIndex int, status int, reason string) {
+	keys := channel.GetKeys()
+	if keyIndex < 0 || keyIndex >= len(keys) {
+		return
+	}
+	if channel.ChannelInfo.MultiKeyStatusList == nil {
+		channel.ChannelInfo.MultiKeyStatusList = make(map[int]int)
+	}
+	if status == common.ChannelStatusEnabled {
+		delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
+	} else {
+		channel.ChannelInfo.MultiKeyStatusList[keyIndex] = status
+		if channel.ChannelInfo.MultiKeyDisabledReason == nil {
+			channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
 		}
-		if status == common.ChannelStatusEnabled {
-			delete(channel.ChannelInfo.MultiKeyStatusList, keyIndex)
-		} else {
-			channel.ChannelInfo.MultiKeyStatusList[keyIndex] = status
-			if channel.ChannelInfo.MultiKeyDisabledReason == nil {
-				channel.ChannelInfo.MultiKeyDisabledReason = make(map[int]string)
-			}
-			if channel.ChannelInfo.MultiKeyDisabledTime == nil {
-				channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
-			}
-			channel.ChannelInfo.MultiKeyDisabledReason[keyIndex] = reason
-			channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = common.GetTimestamp()
+		if channel.ChannelInfo.MultiKeyDisabledTime == nil {
+			channel.ChannelInfo.MultiKeyDisabledTime = make(map[int]int64)
 		}
-		if !hasEnabledMultiKey(keys, channel.ChannelInfo.MultiKeyStatusList) {
-			channel.Status = common.ChannelStatusAutoDisabled
-			info := channel.GetOtherInfo()
-			info["status_reason"] = "All keys are disabled"
-			info["status_time"] = common.GetTimestamp()
-			channel.SetOtherInfo(info)
-		} else if status == common.ChannelStatusEnabled {
-			channel.Status = common.ChannelStatusEnabled
-		}
+		channel.ChannelInfo.MultiKeyDisabledReason[keyIndex] = reason
+		channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = common.GetTimestamp()
+	}
+	if !hasEnabledMultiKey(keys, channel.ChannelInfo.MultiKeyStatusList) {
+		channel.Status = common.ChannelStatusAutoDisabled
+		info := channel.GetOtherInfo()
+		info["status_reason"] = "All keys are disabled"
+		info["status_time"] = common.GetTimestamp()
+		channel.SetOtherInfo(info)
+	} else if status == common.ChannelStatusEnabled {
+		channel.Status = common.ChannelStatusEnabled
 	}
 }
 
@@ -1166,14 +1166,21 @@ func hasEnabledMultiKey(keys []string, statusList map[int]int) bool {
 }
 
 func UpdateChannelStatus(channelId int, usingKey string, status int, reason string) bool {
+	return updateChannelStatus(channelId, usingKey, -1, status, reason)
+}
+
+// UpdateChannelStatusAtKeyIndex 更新多 key 渠道中指定索引的状态，避免后台
+// 闭包携带明文 key。非多 key 渠道退化为整渠道状态更新。
+func UpdateChannelStatusAtKeyIndex(channelId int, keyIndex int, status int, reason string) bool {
+	return updateChannelStatus(channelId, "", keyIndex, status, reason)
+}
+
+func updateChannelStatus(channelId int, usingKey string, keyIndex int, status int, reason string) bool {
 	if common.MemoryCacheEnabled {
 		channelStatusLock.Lock()
 		defer channelStatusLock.Unlock()
 	}
 
-	// ChannelInfo stores both multi-key status and the polling cursor. Hold the
-	// same per-channel lock from the first read through persistence so neither
-	// writer can save a stale JSON snapshot over the other.
 	pollingLock := GetChannelPollingLock(channelId)
 	pollingLock.Lock()
 	defer pollingLock.Unlock()
@@ -1185,15 +1192,16 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 		}
 		if channelCache.ChannelInfo.IsMultiKey {
 			beforeStatus := channelCache.Status
-			// 如果是多Key模式，更新缓存中的状态
-			handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
+			if keyIndex >= 0 {
+				handlerMultiKeyUpdateAtIndex(channelCache, keyIndex, status, reason)
+			} else {
+				handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
+			}
+			CacheUpdateChannelInfo(channelId, channelCache.ChannelInfo)
 			if beforeStatus != channelCache.Status {
 				CacheUpdateChannelStatus(channelId, channelCache.Status)
 			}
-			//CacheUpdateChannel(channelCache)
-			//return true
 		} else {
-			// 如果缓存渠道存在，且状态已是目标状态，直接返回
 			if channelCache.Status == status {
 				return false
 			}
@@ -1204,28 +1212,30 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	channel, err := GetChannelById(channelId, true)
 	if err != nil {
 		return false
-	} else {
-		if channel.Status == status {
-			return false
-		}
-		beforeStatus := channel.Status
-
-		if channel.ChannelInfo.IsMultiKey {
-			handlerMultiKeyUpdate(channel, usingKey, status, reason)
-		} else {
-			info := channel.GetOtherInfo()
-			info["status_reason"] = reason
-			info["status_time"] = common.GetTimestamp()
-			channel.SetOtherInfo(info)
-			channel.Status = status
-		}
-		err = channel.saveStatusState()
-		if err != nil {
-			common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
-			return false
-		}
-		publishChannelStatusEvent(channel, beforeStatus, channel.Status, reason)
 	}
+	if channel.Status == status {
+		return false
+	}
+	beforeStatus := channel.Status
+	if channel.ChannelInfo.IsMultiKey {
+		if keyIndex >= 0 {
+			handlerMultiKeyUpdateAtIndex(channel, keyIndex, status, reason)
+		} else {
+			handlerMultiKeyUpdate(channel, usingKey, status, reason)
+		}
+	} else {
+		info := channel.GetOtherInfo()
+		info["status_reason"] = reason
+		info["status_time"] = common.GetTimestamp()
+		channel.SetOtherInfo(info)
+		channel.Status = status
+	}
+	if err = channel.saveStatusState(); err != nil {
+		common.SysLog(fmt.Sprintf("failed to update channel status: channel_id=%d, status=%d, error=%v", channel.Id, status, err))
+		return false
+	}
+	publishChannelStatusEvent(channel, beforeStatus, channel.Status, reason)
+	notifyChannelRuntimeMutation("channel_status", channel)
 	return true
 }
 
@@ -1251,11 +1261,36 @@ func publishChannelStatusEvent(channel *Channel, beforeStatus, afterStatus int, 
 	})
 }
 
+var (
+	channelRuntimeMutationHookMu sync.RWMutex
+	channelRuntimeMutationHook   func(operation string, channels []*Channel)
+)
+
+// SetChannelRuntimeMutationHook 由装配层注入配置写后的运行态维护入口。model 层不能
+// 反向 import internal/route，因此通过一次性 hook 保持依赖方向。
+func SetChannelRuntimeMutationHook(hook func(operation string, channels []*Channel)) {
+	channelRuntimeMutationHookMu.Lock()
+	channelRuntimeMutationHook = hook
+	channelRuntimeMutationHookMu.Unlock()
+}
+
+func notifyChannelRuntimeMutation(operation string, channels ...*Channel) {
+	channelRuntimeMutationHookMu.RLock()
+	hook := channelRuntimeMutationHook
+	channelRuntimeMutationHookMu.RUnlock()
+	if hook != nil {
+		hook(operation, append([]*Channel(nil), channels...))
+	}
+}
+
 // NotifyChannelStatusChanged is for complete channel writes that also change
 // status (for example the management upsert path). UpdateChannelStatus uses
 // the same helper after its atomic status write.
 func NotifyChannelStatusChanged(channel *Channel, beforeStatus, afterStatus int, reason string) {
 	publishChannelStatusEvent(channel, beforeStatus, afterStatus, reason)
+	if channel != nil {
+		notifyChannelRuntimeMutation("channel_status", channel)
+	}
 }
 
 // NotifyChannelDeleted publishes after the row has been deleted. Secrets are
@@ -1270,6 +1305,7 @@ func NotifyChannelDeleted(channel *Channel) {
 		Member: strconv.Itoa(channel.Id),
 		Detail: fmt.Sprintf("channel_id=%d name=%q status=%d", channel.Id, channel.Name, channel.Status),
 	})
+	notifyChannelRuntimeMutation("channel_deleted", channel)
 }
 
 func EnableChannelByTag(tag string) error {
@@ -1283,6 +1319,11 @@ func EnableChannelByTag(tag string) error {
 	for i := range channels {
 		publishChannelStatusEvent(&channels[i], channels[i].Status, common.ChannelStatusEnabled, "tag operation")
 	}
+	changed := make([]*Channel, 0, len(channels))
+	for i := range channels {
+		changed = append(changed, &channels[i])
+	}
+	notifyChannelRuntimeMutation("channel_status", changed...)
 	return nil
 }
 
@@ -1297,6 +1338,11 @@ func DisableChannelByTag(tag string) error {
 	for i := range channels {
 		publishChannelStatusEvent(&channels[i], channels[i].Status, common.ChannelStatusManuallyDisabled, "tag operation")
 	}
+	changed := make([]*Channel, 0, len(channels))
+	for i := range channels {
+		changed = append(changed, &channels[i])
+	}
+	notifyChannelRuntimeMutation("channel_status", changed...)
 	return nil
 }
 
@@ -1358,7 +1404,11 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		updateData.HeaderOverride = headerOverride
 	}
 
-	return DB.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error
+	if err := DB.Model(&Channel{}).Where("tag = ?", tag).Updates(updateData).Error; err != nil {
+		return err
+	}
+	notifyChannelRuntimeMutation("channel_config")
+	return nil
 }
 
 func DeleteDisabledChannel() (int64, error) {
@@ -1507,16 +1557,140 @@ func (channel *Channel) ValidateSettings() error {
 	return nil
 }
 
-func (channel *Channel) GetSetting() dto.ChannelSettings {
+// ChannelConfigError 是渠道配置的只读、脱敏错误投影。Path 使用 JSON Pointer。
+// 该结构不保留原始配置值，避免密钥、URL、请求头等敏感片段进入管理面或健康快照。
+type ChannelConfigError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Path    string `json:"path"`
+}
+
+const (
+	channelConfigErrorInvalidJSON  = "invalid_json"
+	channelConfigErrorInvalidValue = "invalid_value"
+)
+
+// ParseChannelSettings 纯解析渠道 setting JSON。空串按空配置处理；不会修改渠道、
+// 缓存或数据库。管理面写入仍由 ValidateSettings 做完整语义校验。
+func ParseChannelSettings(raw string) (dto.ChannelSettings, error) {
+	var setting dto.ChannelSettings
+	if strings.TrimSpace(raw) == "" {
+		return setting, nil
+	}
+	if err := common.Unmarshal([]byte(raw), &setting); err != nil {
+		return dto.ChannelSettings{}, err
+	}
+	return setting, nil
+}
+
+// ParseChannelOtherSettings 纯解析渠道 settings JSON（azure 版本等附属配置）。
+func ParseChannelOtherSettings(raw string) (dto.ChannelOtherSettings, error) {
+	var setting dto.ChannelOtherSettings
+	if strings.TrimSpace(raw) == "" {
+		return setting, nil
+	}
+	if err := common.UnmarshalJsonStr(raw, &setting); err != nil {
+		return dto.ChannelOtherSettings{}, err
+	}
+	return setting, nil
+}
+
+// SnapshotChannelSettings 在请求快照创建时解析一次渠道配置，并把结果与脱敏错误
+// 投影保存在该渠道副本上。后续 getter 直接消费快照，不再重复解析。
+func (channel *Channel) SnapshotChannelSettings() {
+	if channel == nil || channel.settingsSnapshotReady {
+		return
+	}
 	setting := dto.ChannelSettings{}
-	if channel.Setting != nil && *channel.Setting != "" {
-		err := common.Unmarshal([]byte(*channel.Setting), &setting)
+	other := dto.ChannelOtherSettings{}
+	var configErr *ChannelConfigError
+	if channel.Setting != nil {
+		parsed, err := ParseChannelSettings(*channel.Setting)
 		if err != nil {
-			common.SysLog(fmt.Sprintf("failed to unmarshal setting: channel_id=%d, error=%v", channel.Id, err))
-			channel.Setting = nil // 清空设置以避免后续错误
-			_ = channel.Save()    // 保存修改
+			configErr = channelConfigErrorFrom(err, "/setting")
+		} else {
+			setting = parsed
 		}
 	}
+	if configErr == nil && channel.OtherSettings != "" {
+		parsed, err := ParseChannelOtherSettings(channel.OtherSettings)
+		if err != nil {
+			configErr = channelConfigErrorFrom(err, "/settings")
+		} else {
+			other = parsed
+		}
+	}
+	channel.settingsSnapshot = setting
+	channel.otherSettingsSnapshot = other
+	channel.settingsSnapshotErr = configErr
+	channel.settingsSnapshotReady = true
+}
+
+// SettingsSnapshot 返回请求级纯解析结果。未调用 SnapshotChannelSettings 的普通渠道
+// 对象会即时纯解析，不会写库或清空原始配置。
+func (channel *Channel) SettingsSnapshot() (dto.ChannelSettings, dto.ChannelOtherSettings, *ChannelConfigError) {
+	if channel == nil {
+		return dto.ChannelSettings{}, dto.ChannelOtherSettings{}, nil
+	}
+	if channel.settingsSnapshotReady {
+		return channel.settingsSnapshot, channel.otherSettingsSnapshot, channel.settingsSnapshotErr
+	}
+	setting := dto.ChannelSettings{}
+	other := dto.ChannelOtherSettings{}
+	var configErr *ChannelConfigError
+	if channel.Setting != nil {
+		parsed, err := ParseChannelSettings(*channel.Setting)
+		if err != nil {
+			configErr = channelConfigErrorFrom(err, "/setting")
+		} else {
+			setting = parsed
+		}
+	}
+	if configErr == nil && channel.OtherSettings != "" {
+		parsed, err := ParseChannelOtherSettings(channel.OtherSettings)
+		if err != nil {
+			configErr = channelConfigErrorFrom(err, "/settings")
+		} else {
+			other = parsed
+		}
+	}
+	return setting, other, configErr
+}
+
+// ConfigError 返回渠道配置的脱敏错误投影；无错误时返回 nil。
+func (channel *Channel) ConfigError() *ChannelConfigError {
+	if channel == nil {
+		return nil
+	}
+	if channel.settingsSnapshotReady {
+		return channel.settingsSnapshotErr
+	}
+	_, _, configErr := channel.SettingsSnapshot()
+	return configErr
+}
+
+func channelConfigErrorFrom(err error, path string) *ChannelConfigError {
+	if err == nil {
+		return nil
+	}
+	code := channelConfigErrorInvalidValue
+	message := "channel configuration contains an invalid value"
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) {
+		code = channelConfigErrorInvalidJSON
+		message = "channel configuration is not valid JSON"
+	} else if errors.As(err, &typeErr) {
+		if field := strings.TrimSpace(typeErr.Field); field != "" {
+			path += "/" + strings.ReplaceAll(strings.ReplaceAll(field, ".", "/"), "[", "/")
+			path = strings.ReplaceAll(path, "]", "")
+		}
+	}
+	return &ChannelConfigError{Code: code, Message: message, Path: path}
+}
+
+func (channel *Channel) GetSetting() dto.ChannelSettings {
+	setting, _, _ := channel.SettingsSnapshot()
 	return setting
 }
 
@@ -1530,15 +1704,7 @@ func (channel *Channel) SetSetting(setting dto.ChannelSettings) {
 }
 
 func (channel *Channel) GetOtherSettings() dto.ChannelOtherSettings {
-	setting := dto.ChannelOtherSettings{}
-	if channel.OtherSettings != "" {
-		err := common.UnmarshalJsonStr(channel.OtherSettings, &setting)
-		if err != nil {
-			common.SysLog(fmt.Sprintf("failed to unmarshal setting: channel_id=%d, error=%v", channel.Id, err))
-			channel.OtherSettings = "{}" // 清空设置以避免后续错误
-			_ = channel.Save()           // 保存修改
-		}
-	}
+	_, setting, _ := channel.SettingsSnapshot()
 	return setting
 }
 

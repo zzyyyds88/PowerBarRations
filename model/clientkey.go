@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
@@ -112,7 +113,19 @@ func ListClientKeys() ([]ClientKey, error) {
 }
 
 func DeleteClientKeyByName(name string) error {
-	return DB.Where("name = ?", name).Delete(&ClientKey{}).Error
+	var key ClientKey
+	err := DB.Select("id").Where("name = ?", name).First(&key).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := DB.Where("name = ?", name).Delete(&ClientKey{}).Error; err != nil {
+		return err
+	}
+	DropClientKeyTouchState(key.Id)
+	return nil
 }
 
 // UpsertClientKey 全量写：KeyHash 非空表示调用方提供了新密钥，同时更新明文。
@@ -170,31 +183,147 @@ func UpsertClientKeyTx(tx *gorm.DB, key *ClientKey) error {
 
 // TouchClientKey 记录最近使用时间（只读统计，不反哺准入）。
 //
-// 节流：这是纯展示字段，不值得每请求写一次库——在高并发下"每请求一次 UPDATE"
-// 会成为写放大主力（实测把 SQLite 连接池与 OS 线程顶到上限）。同一把密钥
-// 在 clientKeyTouchInterval 内只写一次。
-const clientKeyTouchInterval = 30 * time.Second
+// 请求路径只做有界 map 合并与非阻塞通知；唯一后台 worker 按固定间隔批量落库，
+// 避免高并发下“每请求一次 UPDATE”的写放大。map 同时受条目数与 TTL 约束。
+const (
+	clientKeyTouchInterval  = 30 * time.Second
+	clientKeyTouchStateTTL  = 10 * time.Minute
+	clientKeyTouchMaxKeys   = 4096
+	clientKeyTouchQueueSize = 1
+)
 
 var (
-	clientKeyTouchMu   sync.Mutex
-	clientKeyLastTouch = map[int]int64{}
+	clientKeyTouchMu         sync.Mutex
+	clientKeyLastTouch       = map[int]int64{}
+	clientKeyTouchPending    = map[int]struct{}{}
+	clientKeyTouchSignal     = make(chan struct{}, clientKeyTouchQueueSize)
+	clientKeyTouchWorkerOnce sync.Once
+	clientKeyTouchCloseOnce  sync.Once
+	clientKeyTouchStop       = make(chan struct{})
+	clientKeyTouchDone       = make(chan struct{})
+	clientKeyTouchClosed     atomic.Bool
+	clientKeyTouchLifecycle  sync.RWMutex
 )
 
 func TouchClientKey(id int) {
 	if id <= 0 {
 		return
 	}
+	clientKeyTouchLifecycle.RLock()
+	defer clientKeyTouchLifecycle.RUnlock()
+	if clientKeyTouchClosed.Load() {
+		return
+	}
 	now := common.GetTimestamp()
 	clientKeyTouchMu.Lock()
+	pruneClientKeyTouchStateLocked(now)
 	if last, ok := clientKeyLastTouch[id]; ok && now-last < int64(clientKeyTouchInterval.Seconds()) {
 		clientKeyTouchMu.Unlock()
 		return
 	}
+	if _, exists := clientKeyLastTouch[id]; !exists && len(clientKeyLastTouch) >= clientKeyTouchMaxKeys {
+		// last_used_at 是纯展示字段；容量满时丢弃新 key 的 touch，绝不能把 map
+		// 变成无界增长。
+		clientKeyTouchMu.Unlock()
+		return
+	}
 	clientKeyLastTouch[id] = now
+	clientKeyTouchPending[id] = struct{}{}
 	clientKeyTouchMu.Unlock()
 
-	if err := DB.Model(&ClientKey{}).Where("id = ?", id).Update("last_used_at", now).Error; err != nil {
+	clientKeyTouchWorkerOnce.Do(func() {
+		go clientKeyTouchWorker()
+	})
+	select {
+	case clientKeyTouchSignal <- struct{}{}:
+	default:
+	}
+}
+
+func clientKeyTouchWorker() {
+	defer close(clientKeyTouchDone)
+	select {
+	case <-clientKeyTouchSignal:
+	case <-clientKeyTouchStop:
+		return
+	}
+	ticker := time.NewTicker(clientKeyTouchInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-clientKeyTouchSignal:
+			// 请求已合并进 pending map；固定 ticker 负责写节奏。
+		case <-ticker.C:
+			flushClientKeyTouches(common.GetTimestamp())
+		case <-clientKeyTouchStop:
+			flushClientKeyTouches(common.GetTimestamp())
+			return
+		}
+	}
+}
+
+// CloseClientKeyTouchWorker 停止 touch worker 并最终 flush。进程优雅停机时调用。
+func CloseClientKeyTouchWorker() {
+	clientKeyTouchCloseOnce.Do(func() {
+		clientKeyTouchLifecycle.Lock()
+		clientKeyTouchClosed.Store(true)
+		clientKeyTouchWorkerOnce.Do(func() {
+			go clientKeyTouchWorker()
+		})
+		close(clientKeyTouchStop)
+		clientKeyTouchLifecycle.Unlock()
+		<-clientKeyTouchDone
+	})
+}
+
+func flushClientKeyTouches(now int64) {
+	clientKeyTouchMu.Lock()
+	if len(clientKeyTouchPending) == 0 {
+		clientKeyTouchMu.Unlock()
+		return
+	}
+	ids := make([]int, 0, len(clientKeyTouchPending))
+	for id := range clientKeyTouchPending {
+		ids = append(ids, id)
+	}
+	clear(clientKeyTouchPending)
+	clientKeyTouchMu.Unlock()
+
+	if err := DB.Model(&ClientKey{}).Where("id IN ?", ids).Update("last_used_at", now).Error; err != nil {
 		common.SysError("pbr: touch client key failed: " + err.Error())
+		clientKeyTouchMu.Lock()
+		for _, id := range ids {
+			if _, exists := clientKeyLastTouch[id]; !exists {
+				continue
+			}
+			if len(clientKeyTouchPending) >= clientKeyTouchMaxKeys {
+				break
+			}
+			clientKeyTouchPending[id] = struct{}{}
+		}
+		clientKeyTouchMu.Unlock()
+	}
+}
+
+// DropClientKeyTouchState removes all pending/throttling state for a key. It is
+// called on deletion so the bounded maps do not retain dead identities.
+func DropClientKeyTouchState(id int) {
+	if id <= 0 {
+		return
+	}
+	clientKeyTouchMu.Lock()
+	delete(clientKeyLastTouch, id)
+	delete(clientKeyTouchPending, id)
+	clientKeyTouchMu.Unlock()
+}
+
+func pruneClientKeyTouchStateLocked(now int64) {
+	ttlSeconds := int64(clientKeyTouchStateTTL.Seconds())
+	for id, last := range clientKeyLastTouch {
+		if now-last >= ttlSeconds {
+			delete(clientKeyLastTouch, id)
+			delete(clientKeyTouchPending, id)
+		}
 	}
 }
 

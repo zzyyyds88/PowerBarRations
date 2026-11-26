@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -27,7 +28,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/service"
 	"github.com/zzyyyds88/PowerBarRations/setting"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -75,6 +75,11 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 }
 
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
+	// 请求资源清理必须是 Relay 注册的第一个 defer：WebSocket 升级、隐私准备、
+	// 日志/指标 panic 等任何早期出口都不能绕过 probe、admission、State 与
+	// client-key lease 的统一收口。正常尝试仍按真实 outcome 提前释放 ticket，
+	// 这里只兜底剩余资源（neutral）。
+	defer middleware.ReleasePBRRequestResources(c)
 
 	requestId := c.GetString(common.RequestIdKey)
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
@@ -99,6 +104,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		var err error
 		ws, err = upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
+			// 资源由 Relay 入口注册的统一 defer 释放；这里只负责协议错误响应。
 			helper.WssError(c, ws, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry()).ToOpenAIError())
 			return
 		}
@@ -109,12 +115,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// 此时结果、尝试链、响应状态都已确定（design-v1 §8）。
 	pbrLogStarted := time.Now()
 	defer func() {
+		// 日志/统计可能是慢 DB 操作；请求槽位、探活租约与客户端密钥租约
+		// 不应被同步日志额外持有。入口 defer 仍保留作 panic/早期出口兜底。
+		middleware.ReleasePBRRequestResources(c)
 		carrier := model.GetPBRLogCarrier(c)
 		if carrier == nil {
 			return
 		}
-		// 兜底释放：任何未走正常出口的路径（panic/提前 return）都不能漏槽。
-		releaseAdmissionTicket(c, newAPIError)
 		carrier.Success = newAPIError == nil
 		carrier.HTTPStatus = http.StatusOK
 		if newAPIError != nil {
@@ -122,6 +129,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// 错误状态；日志仍记本次失败与分类（ADR 0013 / routing-spec §4.3）。
 			if helper.StreamCommitted(c) {
 				carrier.HTTPStatus = http.StatusOK
+			} else if pbrroute.Classify(newAPIError) == pbrroute.KindCanceled {
+				carrier.HTTPStatus = 499
 			} else {
 				carrier.HTTPStatus = newAPIError.StatusCode
 			}
@@ -171,11 +180,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if carrier.TTFTMs == 0 {
 			carrier.TTFTMs = int64(common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs))
 		}
-		// 无论以哪条路径结束都归还探测槽：client_error/canceled 不换人，
-		// 不会再有下一轮 getChannel，槽必须在收尾时释放（routing-spec §3.1）。
-		if pbrState := pbrroute.From(c); pbrState != nil {
-			pbrState.ReleaseProbe()
-		}
 		// 指标与日志同点同源（design-v1 §8、api-spec §5.1）：只读同一份载体，
 		// 不重新推导，保证 pbr_requests_total 与 request_logs 的口径一致。
 		observeRequestMetrics(carrier)
@@ -205,6 +209,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// 客户端看到的是展示映射后的状态码（status_code_mapping，ADR 0013）；
 			// 分类与运行态判定始终使用原始 StatusCode。
 			clientStatus := newAPIError.ClientStatusCode()
+			if pbrroute.Classify(newAPIError) == pbrroute.KindCanceled {
+				clientStatus = 499
+			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
@@ -364,8 +371,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
 		if !shouldRetry(c, newAPIError) {
-			// 不换人（client_error/canceled）时不会有下一轮，先把探测槽还掉
-			pbrState.ReleaseProbe()
+			// 不换人（client_error/canceled）时不会有下一轮；probe 与剩余
+			// admission 资源由入口统一 defer 收口。
 			break
 		}
 	}
@@ -376,9 +383,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		logger.LogInfo(c, retryLogStr)
 	}
 	if newAPIError != nil {
-		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, false, 0)
-		})
+		sample := perfmetrics.SnapshotRelaySample(relayInfo)
+		sample.Success = false
+		perfmetrics.RecordRelaySampleAsync(sample)
 	}
 }
 
@@ -555,14 +562,21 @@ func releaseAdmissionTicket(c *gin.Context, err *types.NewAPIError) {
 		return
 	}
 	kind := pbrroute.ErrorKind("")
-	if err != nil {
+	outcome := pbrroute.AdmissionNeutral
+	switch {
+	case err == nil:
+		outcome = pbrroute.AdmissionSuccess
+	case pbrroute.Classify(err) == pbrroute.KindCanceled:
+		outcome = pbrroute.AdmissionCanceled
+	default:
+		outcome = pbrroute.AdmissionFailure
 		kind = pbrroute.Classify(err)
 	}
 	var ttftMs int64
 	if common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs) > 0 {
 		ttftMs = int64(common.GetContextKeyInt(c, constant.ContextKeyPBRTTFTMs))
 	}
-	ticket.Release(kind, ttftMs)
+	ticket.Release(outcome, kind, ttftMs)
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError) bool {
@@ -575,13 +589,26 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError) bool {
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
+	if pbrroute.Classify(err) == pbrroute.KindCanceled {
+		return
+	}
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
-	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
-	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
+	// 不要使用 context 获取渠道信息，异步处理时可能会出现渠道信息不一致的情况。
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
-		gopool.Go(func() {
-			service.DisableChannel(channelError, err.ErrorWithStatusCode())
+		channelID := channelError.ChannelId
+		channelName := channelError.ChannelName
+		reason := err.ErrorWithStatusCode()
+		keyIndex := -1
+		if relayInfo != nil && relayInfo.ChannelMeta != nil && channelError.IsMultiKey {
+			keyIndex = relayInfo.ChannelMeta.ChannelMultiKeyIndex
+		}
+		submitted := common.RelayCtxGo(context.Background(), func() {
+			service.DisableChannelAtKeyIndex(channelID, keyIndex, channelName, reason, true)
 		})
+		if !submitted {
+			// 队列饱和时只同步落库，不在请求线程发送邮件/webhook。
+			service.DisableChannelAtKeyIndex(channelID, keyIndex, channelName, reason, false)
+		}
 	}
 
 	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {

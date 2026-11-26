@@ -10,9 +10,16 @@ import (
 )
 
 func flushLoop() {
+	defer perfMetricsWG.Done()
 	for {
 		interval := perf_metrics_setting.GetFlushIntervalMinutes()
-		time.Sleep(time.Duration(interval) * time.Minute)
+		timer := time.NewTimer(time.Duration(interval) * time.Minute)
+		select {
+		case <-perfMetricsStop:
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 		setting := perf_metrics_setting.GetSetting()
 		if !setting.Enabled {
 			continue
@@ -50,10 +57,19 @@ func flushCompletedBuckets() {
 			GenerationMs:   drained.generationMs,
 		})
 		if err != nil {
+			// 持续 DB 失败时不能无限保留失败桶：超过重试上界即丢弃并计数，
+			//避免 hotBuckets 随模型/分组 cardinality 无界增长。
+			if bucket.flushFailures.Add(1) >= 5 {
+				hotBuckets.Delete(key)
+				relayFlushDropped.Add(uint64(drained.requestCount))
+				common.SysError(fmt.Sprintf("dropping perf metric bucket after repeated flush failures model=%s group=%s bucket=%d requests=%d", k.model, k.group, k.bucketTs, drained.requestCount))
+				return true
+			}
 			bucket.addCounters(drained)
 			common.SysError(fmt.Sprintf("failed to flush perf metric bucket model=%s group=%s bucket=%d: %s", k.model, k.group, k.bucketTs, err.Error()))
 			return true
 		}
+		bucket.flushFailures.Store(0)
 
 		deleteOldEmptyBucket(k, key)
 		return true

@@ -32,6 +32,29 @@ func callPutChannel(t *testing.T, name, body, query string) *httptest.ResponseRe
 	return recorder
 }
 
+func TestPutChannelWithoutEnabledPreservesRuntimeStatusAndKeyState(t *testing.T) {
+	db := setupAPITestDB(t)
+	ch := &model.Channel{
+		Name: "preserve-state", Type: 1, Key: "sk-preserve", Status: common.ChannelStatusManuallyDisabled,
+		Group: "default", Models: "m",
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey:             true,
+			MultiKeyStatusList:     map[int]int{0: common.ChannelStatusAutoDisabled},
+			MultiKeyDisabledReason: map[int]string{0: "upstream auth failed"},
+		},
+	}
+	require.NoError(t, db.Create(ch).Error)
+
+	recorder := callPutChannel(t, "preserve-state", `{"models":["m","m2"]}`, "")
+	require.Equal(t, http.StatusOK, recorder.Code)
+
+	updated, err := model.GetChannelById(ch.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, updated.Status)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, updated.ChannelInfo.MultiKeyStatusList[0])
+	assert.Equal(t, "upstream auth failed", updated.ChannelInfo.MultiKeyDisabledReason[0])
+}
+
 // 从渠道移除仍被车道引用的模型：默认 409 且不动车道；force=1 覆盖并清理（空车道删除）。
 func TestPutChannelBlocksModelRemovalReferencedByLane(t *testing.T) {
 	db := setupAPITestDB(t)

@@ -79,9 +79,24 @@ func TestChannelResponseReportsRealUpdatedAt(t *testing.T) {
 
 	resp := channelResponse(ch)
 	assert.NotEqual(t, resp["created_at"], resp["updated_at"],
-		"updated_at 不得等于 created_at（改渠道后时间戳必须前进）")
+		"updated_at 不得等于 created_at（改渠道时时间戳必须前进）")
 	assert.Equal(t, rfc3339(updated), resp["updated_at"])
 	assert.Equal(t, rfc3339(created), resp["created_at"])
+}
+
+func TestChannelResponseProjectsSanitizedConfigError(t *testing.T) {
+	raw := `{"proxy":"https://secret.example/?token=should-not-leak"`
+	ch := &model.Channel{Name: "bad-config", Setting: &raw}
+	resp := channelResponse(ch)
+	configErr, ok := resp["config_error"].(*model.ChannelConfigError)
+	require.True(t, ok)
+	assert.Equal(t, "invalid_json", configErr.Code)
+	assert.NotEmpty(t, configErr.Path)
+	assert.NotContains(t, configErr.Message, "secret.example")
+	assert.NotContains(t, configErr.Message, "should-not-leak")
+
+	ch = &model.Channel{Name: "good-config"}
+	assert.Nil(t, channelResponse(ch)["config_error"])
 }
 
 // 审计时间必须是对外统一的 RFC3339（api-spec §2.5），不能是 Unix 秒。

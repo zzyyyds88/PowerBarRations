@@ -1,9 +1,9 @@
 package route
 
 import (
-	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/model"
 
@@ -11,62 +11,53 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// routing-spec §3 第 4 步：尝试循环"每轮重新读取车道配置，支持热更新"。
-// 运行中给车道加成员/改六键，下一轮尝试即应看到新快照。
-
-// 第二轮开始前重读配置：新加入的成员可被选中。
-func TestNextReloadsLaneConfigBetweenRounds(t *testing.T) {
+// ADR 0014：一次请求只消费 PBRServe 入口生成的不可变路由快照，重试不得
+// 重新解析车道或替换成员链。
+func TestNextKeepsImmutableSnapshotBetweenRounds(t *testing.T) {
 	withFakeClock(t)
 
-	// 旧快照：只有 channel-a。
-	resolved := testRoute("lane-hot-reload", 2, 2)
+	resolved := testRoute("lane-immutable-snapshot", 2, 2)
 	old := *resolved
 	old.Members = resolved.Members[:1]
-
-	// 重读返回"新增 channel-b"的新快照（成员键不同，签名必变）。
-	updated := *resolved
-	reloadCalls := 0
-	original := resolveRouteForReload
-	resolveRouteForReload = func(name string) (*model.ResolvedRoute, error) {
-		reloadCalls++
-		assert.Equal(t, "lane-hot-reload", name, "重读应使用当前路由键")
-		return &updated, nil
-	}
-	t.Cleanup(func() { resolveRouteForReload = original })
+	old.Config.MemberMaxAttempts = 1
 
 	state := NewState(&old)
 	member, _, ok := state.Next(nil)
 	require.True(t, ok)
 	require.Equal(t, "channel-a", memberName(member))
-	assert.Zero(t, reloadCalls, "首轮不重读：NewState 的解析就是本轮读取")
 
-	// 硬鉴权故障不原地重试 → 进入下一轮前重读配置。
+	// 硬鉴权故障不原地重试；旧快照只有 channel-a，因此没有新成员可选。
 	member, _, ok = state.Next(apiError(http.StatusUnauthorized, "", false))
-	require.True(t, ok)
-	assert.Equal(t, 1, reloadCalls, "新一轮开始前必须重读一次")
-	assert.Equal(t, "channel-b", memberName(member), "重读后新成员应可被选中")
+	assert.False(t, ok)
+	assert.Nil(t, member)
+	assert.Same(t, &old, state.Route)
+	assert.Len(t, state.Route.Members, 1)
 }
 
-// 重读失败（DB 抖动）保留旧快照，不得让瞬时故障改变路由。
-func TestNextReloadFailureKeepsPreviousSnapshot(t *testing.T) {
+func TestStateAdmissionDeadlineSetOnce(t *testing.T) {
+	state := NewState(testRoute("lane-admission-deadline", 1, 1))
+	first := time.Unix(100, 0)
+	second := time.Unix(200, 0)
+	state.SetAdmissionDeadline(first)
+	state.SetAdmissionDeadline(second)
+	assert.Equal(t, first, state.AdmissionDeadline())
+}
+
+func TestNextDoesNotReplaceRuntimeOrGeneration(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-hot-reload-err", 2, 1)
-
-	original := resolveRouteForReload
-	resolveRouteForReload = func(string) (*model.ResolvedRoute, error) {
-		return nil, errors.New("db down")
-	}
-	t.Cleanup(func() { resolveRouteForReload = original })
-
+	resolved := testRoute("lane-immutable-runtime", 2, 1)
 	state := NewState(resolved)
-	member, _, ok := state.Next(nil)
-	require.True(t, ok)
-	require.Equal(t, "channel-a", memberName(member))
+	runtime := state.Runtime
+	generation := state.runtimeGeneration
 
-	// 重读失败 → 仍按旧快照换到 channel-b（而不是变成"无可用"）。
-	member, _, ok = state.Next(apiError(http.StatusUnauthorized, "", false))
+	_, _, ok := state.Next(nil)
 	require.True(t, ok)
-	assert.Equal(t, "channel-b", memberName(member), "重读失败必须保留旧快照继续尝试")
+	_, _, ok = state.Next(apiError(http.StatusUnauthorized, "", false))
+	require.True(t, ok)
+
+	assert.Same(t, runtime, state.Runtime)
+	assert.Equal(t, generation, state.runtimeGeneration)
+	assert.Same(t, resolved, state.Route)
 }
 
 // §2.1 manual 车道失败不得写冷却（否则唯一成员被自己的冷却挡住，冷却期满前全部 503）；

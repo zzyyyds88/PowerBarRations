@@ -155,15 +155,18 @@ func Classify(err *types.NewAPIError) ErrorKind {
 	if err == nil {
 		return ""
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		// 顺序很重要：我方每成员超时是把 context.Canceled 翻译成 DeadlineExceeded
-		// 的错误链（两种都 errors.Is 命中）。必须先判 DeadlineExceeded，否则自己的
-		// 超时会被当成"客户端断开"——不重试、不换人、不冷却（routing-spec §8）。
-		if errors.Is(err, context.DeadlineExceeded) {
-			// 超时是我们自己设的 deadline（含等待响应头阶段的翻译），属真实失败。
-			// 2026-11-21 拆出独立类别：已送达但无响应的上游不同成员原地重试（§4.1）。
+	if types.IsLocalAttemptTimeout(err) {
+		return KindTimeout
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		// 流式空闲/首事件超时由 helper 显式使用该错误码；其它裸
+		// DeadlineExceeded 来自客户端 context，按取消处理，不能冷却健康成员。
+		if err.GetErrorCode() == types.ErrorCodeChannelResponseTimeExceeded {
 			return KindTimeout
 		}
+		return KindCanceled
+	}
+	if errors.Is(err, context.Canceled) {
 		return KindCanceled
 	}
 	// 关键词优先于状态码（欠费类以 400 到达）。
@@ -200,8 +203,8 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		// 200 但响应体不合法/无法解析（routing-spec §4.1 的 bad_response）。
 		return KindBadResponse
 	case types.ErrorCodeDoRequestFailed:
-		// 传输层失败：连接失败、超时、EOF 归软故障。真正的我方 deadline 已在
-		// 函数开头由 errors.Is(DeadlineExceeded) 归 timeout（错误链保留后可达）。
+		// 传输层失败：连接失败、EOF 归软故障。我方成员超时已由
+		// LocalAttemptTimeout marker 在函数开头归类；裸 deadline 按客户端取消。
 		return KindSoftTransient
 	case types.ErrorCodeChannelResponseTimeExceeded:
 		// 渠道响应超时同样是我方 deadline 判定，归 timeout（§4.1）。
@@ -304,31 +307,29 @@ type State struct {
 	// （routing-spec §9 / api-spec §4.4）。此前该字段声明了却从不赋值，
 	// 带 omitempty 导致响应里根本不出现，排障时无法定位"哪个成员慢"。
 	attemptStartedAt time.Time
-	// claimedProbe 本次请求真正占用的探测槽所属成员键（空 = 未占）。
+	// probe 本次请求真正持有的探测租约（nil = 未占）。
 	//
 	// 探测槽是**车道级单槽**，但只有占槽者可以归还它：一个从未探测的并发请求
 	// 若也去清 ProbeMember，就会把别人的槽释放掉，"单探测"在并发下失效
 	// （routing-spec §2.2/§6）。因此归属必须记在请求态上。
-	claimedProbe string
+	probe             *ProbeLease
+	runtimeGeneration uint64
+	cleanups          []func()
+	closed            bool
 	// skipRecorded 已记过"被跳过"的成员键，避免同一请求多轮重试时
 	// 把同一个冷却中的成员重复写进尝试链。
-	skipRecorded map[string]bool
+	skipRecorded map[MemberKey]bool
 	// memberCfg 每个成员生效的六键（车道默认叠加成员级覆盖）。
 	memberCfg []model.LaneRelayConfig
-	// rounds 已经通过 Next 选出的尝试轮数；reloads 已经做过配置重读的轮数。
-	// 二者不等说明新一轮已经开始 → 下一轮选路前重读车道配置（routing-spec §3
-	// 第 4 步"每轮重新读取车道配置，支持热更新"）。首轮不重读：NewState 入口的
-	// 解析就是本轮的读取，避免每请求多打一次 DB。
-	rounds  int
-	reloads int
-	// snapshotSig 当前 Route 快照的内容签名（applyRouteLocked 时刷新），
-	// 用于重读时判定"配置是否真的变了"。
-	snapshotSig string
 	// admissionReady 出站准成就绪回调（nil = 不做准入）；由 middleware 注入
 	// （routing-spec §3.2）。回调必须无阻塞、不查库。
 	admissionReady func(*model.RouteMember) bool
 	// throttledIdx 本轮因准入未就绪被跳过的首成员（用于排队/本地 429）。
 	throttledIdx int
+	// admissionDeadline 请求级绝对准入预算，只由 PBRServe 入口计算一次；
+	// 所有成员与重试共享，不能每次 PBRNextChannel 重新计时。
+	admissionDeadline    time.Time
+	admissionDeadlineSet bool
 }
 
 func laneKeyOf(resolved *model.ResolvedRoute) string {
@@ -337,10 +338,6 @@ func laneKeyOf(resolved *model.ResolvedRoute) string {
 	}
 	return resolved.Model
 }
-
-// resolveRouteForReload 尝试循环每轮重读车道配置的注入点（routing-spec §3 第 4 步
-// "每轮重新读取车道配置，支持热更新"）。生产走 model.ResolveRoute；测试可替换。
-var resolveRouteForReload = model.ResolveRoute
 
 // budgetFor 该成员在本请求内的尝试预算（成员级覆盖优先）。
 func (s *State) budgetFor(idx int) int {
@@ -365,8 +362,8 @@ func (s *State) configFor(idx int) model.LaneRelayConfig {
 // 一次 DB 查询（routing-spec §1.3）。空链请求不会选中成员，给一个不登记的
 // 临时运行态即可，既避免 nil 解引用又不污染注册表。
 //
-// 入口解析只是**首轮**的配置读取；此后每轮尝试开始前由 Next 重读车道配置
-// （routing-spec §3 第 4 步"每轮重新读取车道配置，支持热更新"，见 reloadLocked）。
+// resolved 是 PBRServe 在请求入口生成的不可变快照；State 生命周期内不再
+// 重读车道、渠道或成员配置（ADR 0014）。
 func NewState(resolved *model.ResolvedRoute) *State {
 	routeKey := laneKeyOf(resolved)
 	var runtime *Runtime
@@ -376,27 +373,24 @@ func NewState(resolved *model.ResolvedRoute) *State {
 		runtime = newRuntime()
 		runtime.laneName = routeKey
 	}
+	runtime.mu.Lock()
+	generation := runtime.generation
+	runtime.mu.Unlock()
 	s := &State{
-		Runtime:  runtime,
-		current:  -1,
-		attempts: map[int]int{},
+		Runtime:           runtime,
+		runtimeGeneration: generation,
+		current:           -1,
+		attempts:          map[int]int{},
 	}
 	s.applyRouteLocked(resolved)
 	return s
 }
 
-// applyRouteLocked 换用新的解析快照并重建请求内的派生态（成员顺序、六键、预算
-// 计数）。NewState 首轮与每轮重读（reloadLocked）共用这一条路径。
-//
-// 热更新语义：
-//   - 尝试计数按**成员键（channelId:upstreamModel）**迁移，同一成员在新旧快照间
-//     的预算消耗不因重读而清零；新加成员从 0 计。
-//   - 当前成员按键重定位；已从成员链消失的成员置为"未选中"。其失败归属发生在
-//     重读**之前**（Next 先按旧快照记 lastErr 再重读），不会丢失。
-//   - Runtime 登记门与首轮一致：重读期间车道从无到有时切换到登记运行态。
+// applyRouteLocked 固化请求级快照并重建请求内的派生态（成员顺序、六键、预算
+// 计数）。只在 NewState 入口调用一次；重试不得替换 Route、Runtime 或 generation。
 func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
-	currentKey := ""
-	oldAttempts := make(map[string]int, len(s.attempts))
+	currentKey := MemberKey{}
+	oldAttempts := make(map[MemberKey]int, len(s.attempts))
 	if s.Route != nil {
 		if s.current >= 0 && s.current < len(s.Route.Members) {
 			currentKey = memberKeyOf(&s.Route.Members[s.current])
@@ -414,6 +408,9 @@ func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
 		s.Runtime = Default.For(laneKeyOf(resolved))
 	}
 	s.Runtime.withLock(func() {
+		if s.Runtime.generation != s.runtimeGeneration {
+			return
+		}
 		if s.Runtime.routeSignature != "" && s.Runtime.routeSignature != signature {
 			// A lane edit is an explicit operator decision. Do not let an old
 			// affinity window hide a newly promoted member.
@@ -424,7 +421,6 @@ func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
 	})
 	s.Route = resolved
 	s.cooldownSeconds = cfg.MemberCooldownSeconds
-	s.snapshotSig = signature
 
 	order := make([]int, 0, len(resolved.Members))
 	if resolved.PinnedMemberId != 0 {
@@ -445,7 +441,8 @@ func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
 
 	s.memberCfg = make([]model.LaneRelayConfig, len(resolved.Members))
 	for i := range resolved.Members {
-		s.memberCfg[i] = resolved.EffectiveConfig(&resolved.Members[i])
+		cfg, _ := resolved.EffectiveConfigE(&resolved.Members[i])
+		s.memberCfg[i] = cfg
 	}
 
 	s.attempts = make(map[int]int, len(resolved.Members))
@@ -454,41 +451,19 @@ func (s *State) applyRouteLocked(resolved *model.ResolvedRoute) {
 	}
 	s.current = -1
 	s.throttledIdx = -1
-	if currentKey != "" {
+	if currentKey != (MemberKey{}) {
 		s.current = s.indexOfKey(currentKey)
 	}
 
-	// 清理已不在成员链里的残留运行态（routing-spec §1.3）：成员删除后重新
-	// 加回同一 (channel_id, upstream_model) 会复用同一个键，不清就会继承
-	// 旧的冷却/熔断状态。
-	valid := make(map[string]bool, len(resolved.Members))
-	for i := range resolved.Members {
-		valid[memberKeyOf(&resolved.Members[i])] = true
+	// 路由解析是运行态维护的安全点：配置写入口负责及时收敛，请求解析再兜底一次。
+	// Reset 后旧快照不得用旧成员集合裁剪新一代运行态。
+	if s.runtimeGenerationCurrent() {
+		valid := make(map[MemberKey]bool, len(resolved.Members))
+		for i := range resolved.Members {
+			valid[memberKeyOf(&resolved.Members[i])] = true
+		}
+		s.Runtime.PruneStaleState(valid, resolved.LaneVersion)
 	}
-	// 传入车道版本：只有"比上次处理过的版本更新、且成员集合确实变化"时才清理一次，
-	// 避免旧配置的并发请求用旧成员集合删掉新配置刚写入的成员运行态（routing-spec §1.3）。
-	s.Runtime.PruneStaleState(valid, resolved.LaneVersion)
-}
-
-// reloadLocked 在新一轮尝试开始前重读车道配置（调用方持 s.mu）。
-//
-// 同一轮内一致性：重读只发生在两轮之间（上一轮的错误已按**旧快照**归属完），
-// 从选中成员到本轮结束，快照不再变动——成员标签、六键、超时都出自同一份解析结果。
-// 重读失败（DB 抖动、车道解析错误）保留旧快照继续尝试，不让瞬时故障改变路由。
-func (s *State) reloadLocked() {
-	if s.rounds == 0 || s.reloads >= s.rounds || s.Route == nil {
-		return
-	}
-	s.reloads = s.rounds
-	resolved, err := resolveRouteForReload(s.Route.Model)
-	if err != nil || resolved == nil {
-		return
-	}
-	if routeSnapshotSignature(resolved) == s.snapshotSig {
-		// 内容未变：不重建，避免每轮无谓地重排下标与裁剪运行态。
-		return
-	}
-	s.applyRouteLocked(resolved)
 }
 
 // routeSnapshotSignature 解析快照的内容签名：成员链（含改名/别名/优先级/成员级
@@ -510,6 +485,9 @@ func routeSnapshotSignature(resolved *model.ResolvedRoute) string {
 	b.WriteByte('|')
 	b.WriteString(strconv.FormatInt(resolved.LaneVersion, 10))
 	b.WriteByte('|')
+	if resolved.ConfigError != nil {
+		fmt.Fprintf(&b, "lane_err:%s:%s:%s|", resolved.ConfigError.Code, resolved.ConfigError.Message, resolved.ConfigError.Path)
+	}
 	for _, v := range [6]int{
 		cfg.MemberMaxAttempts, cfg.MemberRetryIntervalSeconds,
 		cfg.MemberNonStreamResponseTimeoutSeconds, cfg.MemberStreamFirstEventTimeoutSeconds,
@@ -529,9 +507,21 @@ func routeSnapshotSignature(resolved *model.ResolvedRoute) string {
 		// 已被本签名捕获，Group 显式入签名使"换引用的组"也必然触发重建。
 		// 不要指望 LaneVersion（秒级）或 MemberId（整体重插必然变）的副作用来驱动重建
 		// ——同秒内的两次保存即失效，且渠道级/组级改动根本不经过成员重插。
-		fmt.Fprintf(&b, "|%s:%d:%s:%s:%s:%d:%d:%t:%s",
+		fmt.Fprintf(&b, "|%s:%d:%s:%s:%s:%d:%d:%t:%s:%t:%d",
 			m.Group, m.ChannelId, m.Model, m.UpstreamModel, m.PublicAlias,
-			m.Priority, m.MemberId, m.Disabled, strings.TrimSpace(m.Overrides))
+			m.Priority, m.MemberId, m.Disabled, strings.TrimSpace(m.Overrides),
+			m.ChannelEnabled, m.ChannelVersion)
+		if m.RateLimit != nil {
+			fmt.Fprintf(&b, ":rl:%s:%d:%d:%d:%d", m.RateLimit.Model,
+				m.RateLimit.MaxConcurrency, m.RateLimit.MaxRPM,
+				m.RateLimit.QueueLimit, m.RateLimit.QueueWaitSeconds)
+		}
+		if m.ConfigError != nil {
+			fmt.Fprintf(&b, ":ce:%s:%s:%s", m.ConfigError.Code, m.ConfigError.Message, m.ConfigError.Path)
+		}
+		if m.OverrideError != nil {
+			fmt.Fprintf(&b, ":oe:%s:%s:%s", m.OverrideError.Code, m.OverrideError.Message, m.OverrideError.Path)
+		}
 	}
 	return b.String()
 }
@@ -556,9 +546,8 @@ func (s *State) currentMemberLocked() *model.RouteMember {
 // 返回 ok=false 表示"没有可用成员/不该继续尝试"，调用方应按 §4.2 快抛 503
 // （客户端的错则原样返回，见 §4.1 的 client_error / canceled 两行）。
 //
-// 热更新（routing-spec §3 第 4 步"每轮重新读取车道配置"）：上一轮的错误先按
-// **旧快照**归属（尝试计数/冷却/熔断都记在实际打过的那份配置上），随后、选新成员
-// 之前重读车道配置——运行中改成员链或六键，下一轮即生效。同一轮内使用同一快照。
+// 请求级快照不可变：上一轮错误按实际尝试的同一份快照归属，随后只在该
+// 快照内推进成员/重试预算，不重读车道、渠道或成员配置（ADR 0014）。
 func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Duration, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -575,6 +564,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			s.history = append(s.history,
 				failedAttemptWithDuration(len(s.history)+1, memberLabel(s.currentMemberLocked()), kind, lastErr, s.elapsedMs()))
 			s.markAttemptedLocked(attemptedKey)
+			s.Runtime.withLock(func() { s.releaseOwnedProbeLocked(attemptedKey) })
 			return nil, 0, false
 		}
 		member := s.currentMemberLocked()
@@ -590,17 +580,18 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			// 运行态必须立刻反映，不能等预算耗尽才记（routing-spec §4.1.1）。
 			// recordFailure 对 429 只写 PacedUntil，重复调用只是把截止时间往后推。
 			s.Runtime.withLock(func() {
+				if s.Runtime.generation != s.runtimeGeneration {
+					return
+				}
 				s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, lastErr.RetryAfterSeconds, false, CurrentCircuitSettings())
-				s.Runtime.releaseProbe(key)
-				if s.claimedProbe == key {
-					s.claimedProbe = ""
+				if !budgetLeft || !ShouldRetrySameMember(kind) {
+					s.releaseOwnedProbeLocked(key)
 				}
 			})
 			if budgetLeft && ShouldRetrySameMember(kind) {
 				// 原地重试的等待取 max(retry_interval, 剩余减速)：上游说了
 				// Retry-After 5s、本地间隔 3s，就必须等满 5s 再打（§3.1）。
 				s.attempts[s.current]++
-				s.rounds++
 				s.attemptStartedAt = time.Now()
 				wait := time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second
 				if remain := s.Runtime.paceRemaining(key); remain > wait {
@@ -616,17 +607,16 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 				s.attempts[s.current] = s.budgetFor(s.current)
 			}
 			s.Runtime.withLock(func() {
-				s.Runtime.recordReject(key, kind, s.Route.Mode != model.LaneModeManual)
-				s.Runtime.releaseProbe(key)
-				if s.claimedProbe == key {
-					s.claimedProbe = ""
+				if s.Runtime.generation != s.runtimeGeneration {
+					return
 				}
+				s.Runtime.recordReject(key, kind, s.Route.Mode != model.LaneModeManual)
+				s.releaseOwnedProbeLocked(key)
 			})
 		} else if budgetLeft && ShouldRetrySameMember(kind) {
 			// 同成员原地重试：按 retry_interval 间隔后再打一次（§3.1）。
 			// 这仍是一轮新尝试：计数后下一轮 Next 前重读配置。
 			s.attempts[s.current]++
-			s.rounds++
 			s.attemptStartedAt = time.Now()
 			return member, time.Duration(memberCfg.MemberRetryIntervalSeconds) * time.Second, true
 		} else if kind != KindSoftRateLimit {
@@ -636,26 +626,28 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			// 429 已在上面写过减速，落到这里只继续换人，不能重复判罚。
 			manual := s.Route.Mode == model.LaneModeManual
 			s.Runtime.withLock(func() {
-				s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, lastErr.RetryAfterSeconds, !manual, CurrentCircuitSettings())
-				s.Runtime.releaseProbe(key)
-				if s.claimedProbe == key {
-					s.claimedProbe = ""
+				if s.Runtime.generation != s.runtimeGeneration {
+					return
 				}
+				s.Runtime.recordFailure(key, kind, memberCfg.MemberCooldownSeconds, lastErr.RetryAfterSeconds, !manual, CurrentCircuitSettings())
+				s.releaseOwnedProbeLocked(key)
 			})
 		}
 	}
 
-	// 新一轮选路开始：先重读车道配置（成员链/六键），保证运行中改配置本轮生效。
-	s.reloadLocked()
-
+	// 请求级快照不可变：新一轮仍消费 PBRServe 入口生成的同一份 Route。
 	member, ok := s.pickLocked()
 	if !ok {
 		return nil, 0, false
 	}
-	s.rounds++
-	// 新一轮尝试开始计时（duration_ms = 从选中到出结果）。
 	s.attemptStartedAt = time.Now()
 	return member, 0, true
+}
+
+func (s *State) runtimeGenerationCurrent() bool {
+	s.Runtime.mu.Lock()
+	defer s.Runtime.mu.Unlock()
+	return s.Runtime.generation == s.runtimeGeneration
 }
 
 // elapsedMs 本轮尝试已耗时（毫秒）。未开始计时时返回 0。
@@ -672,9 +664,9 @@ func (s *State) elapsedMs() int64 {
 // 它为什么没被继续用，前面那条失败记录已经解释清楚了。不记的话，一个成员
 // 失败进冷却后，紧接着的下一轮选路又会为它写一条 cooldown，链上出现
 // [failed(成员A), cooldown(成员A)] 这种自相重复。调用方持 s.mu。
-func (s *State) markAttemptedLocked(key string) {
+func (s *State) markAttemptedLocked(key MemberKey) {
 	if s.skipRecorded == nil {
-		s.skipRecorded = map[string]bool{}
+		s.skipRecorded = map[MemberKey]bool{}
 	}
 	s.skipRecorded[key] = true
 }
@@ -686,7 +678,7 @@ func (s *State) markAttemptedLocked(key string) {
 //
 // 同一成员在同一请求内只记一次：多轮重试会反复跳过同一个冷却中的成员，
 // 重复写会把尝试链撑成噪声。
-func (s *State) recordSkipLocked(key, member string) {
+func (s *State) recordSkipLocked(key MemberKey, member string) {
 	status := "skipped"
 	if s.Runtime != nil {
 		status = s.Runtime.SkipReason(key)
@@ -700,9 +692,9 @@ func (s *State) recordSkipLocked(key, member string) {
 // 而 Runtime.SkipReason 只能看见熔断表与冷却表两张运行态表，拿不到车道配置
 // （routing-spec §5.3/§9）。把开关下沉进运行态推断会让 Runtime 反向依赖车道配置，
 // 还会把"运维自己关的"误报成一种故障。所以谁判定出停用，谁在这里交出原因。
-func (s *State) recordSkipWithStatusLocked(key, member, status string) {
+func (s *State) recordSkipWithStatusLocked(key MemberKey, member, status string) {
 	if s.skipRecorded == nil {
-		s.skipRecorded = map[string]bool{}
+		s.skipRecorded = map[MemberKey]bool{}
 	}
 	if s.skipRecorded[key] {
 		return
@@ -750,6 +742,9 @@ func (s *State) pickFailoverLocked() (*model.RouteMember, bool) {
 // chooseFailoverLocked 选出本轮成员并处理探测槽。调用方持 s.mu；
 // Runtime.mu 由内部获取。返回 -1 表示无可选成员。
 func (s *State) chooseFailoverLocked() int {
+	if !s.runtimeGenerationCurrent() {
+		return -1
+	}
 	chosen := -1
 	s.throttledIdx = -1
 	s.Runtime.withLock(func() {
@@ -758,6 +753,7 @@ func (s *State) chooseFailoverLocked() int {
 			if idx := s.indexOfKey(s.Runtime.CurrentMember); idx >= 0 {
 				key := memberKeyOf(&s.Route.Members[idx])
 				if !s.Route.Members[idx].Disabled &&
+					s.Route.Members[idx].OverrideError == nil &&
 					s.attempts[idx] < s.budgetFor(idx) &&
 					s.admissionAllowsLocked(&s.Route.Members[idx]) &&
 					s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availSkip {
@@ -777,8 +773,23 @@ func (s *State) chooseFailoverLocked() int {
 			// 人工停用排在冷却/熔断判定**之前**，且必须在 takeProbe 之前：探测槽只服务
 			// "运行态暂时不可选、可能自己恢复"的成员，一个关着的成员若占了它，
 			// 会把整条链每轮唯一的恢复探测机会吃掉（routing-spec §2.2）。
+			if s.Route.Members[idx].ConfigError != nil {
+				s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "channel_config_error")
+				continue
+			}
+			if s.Route.Members[idx].OverrideError != nil {
+				s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "member_config_error")
+				continue
+			}
 			if s.Route.Members[idx].Disabled {
 				s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
+				continue
+			}
+			// 先过滤配置态与运行态不可用（冷却/熔断），再判准入：已经确定
+			// 本轮不可发的成员不应进入 FIFO，排队结束后才被拒绝。
+			availability := s.Runtime.availabilityOf(key, CurrentCircuitSettings())
+			if availability == availSkip {
+				s.recordSkipLocked(key, memberLabel(&s.Route.Members[idx]))
 				continue
 			}
 			// 出站准入：未就绪的成员本轮让位给低优先级但就绪的成员
@@ -791,18 +802,14 @@ func (s *State) chooseFailoverLocked() int {
 				}
 				continue
 			}
-			switch s.Runtime.availabilityOf(key, CurrentCircuitSettings()) {
-			case availSkip:
-				// 记录"为什么没用这个成员"（routing-spec §9）：cooldown / circuit_break。
-				s.recordSkipLocked(key, memberLabel(&s.Route.Members[idx]))
-				continue
+			switch availability {
 			case availProbeReady:
-				if !s.Runtime.takeProbe(key) {
-					// 探测槽已被占用：本轮跳过，同样留痕。
+				lease, acquired := s.Runtime.acquireProbeLocked(key, DefaultProbeLeaseTTL)
+				if !acquired {
 					s.recordSkipLocked(key, memberLabel(&s.Route.Members[idx]))
 					continue
 				}
-				s.claimedProbe = key
+				s.probe = lease
 				s.Runtime.recordProbeStart(key, s.Runtime.circuitOpen(key))
 				chosen = idx
 				return
@@ -825,11 +832,16 @@ func (s *State) chooseFailoverLocked() int {
 		if chosen < 0 {
 			best, bestUntil := -1, int64(0)
 			for _, idx := range s.order {
-				if s.attempts[idx] >= s.budgetFor(idx) || s.Route.Members[idx].Disabled {
+				if s.attempts[idx] >= s.budgetFor(idx) ||
+					s.Route.Members[idx].Disabled || s.Route.Members[idx].OverrideError != nil {
 					continue
 				}
 				key := memberKeyOf(&s.Route.Members[idx])
 				if s.Runtime.circuitOpen(key) {
+					continue
+				}
+				until := s.Runtime.cooldownUntil(key)
+				if until == 0 || nowMs() >= until {
 					continue
 				}
 				// 准入未就绪的成员不能借恐慌模式绕过闸门。
@@ -837,12 +849,6 @@ func (s *State) chooseFailoverLocked() int {
 					if s.throttledIdx < 0 {
 						s.throttledIdx = idx
 					}
-					continue
-				}
-				until := s.Runtime.cooldownUntil(key)
-				// 只有「冷却未到期」这一种不可选才允许恐慌放行。冷却已到期但探测槽被占
-				// （availProbeReady）的情形必须保持单探测槽语义，否则半开成员会被并发涌入。
-				if until == 0 || nowMs() >= until {
 					continue
 				}
 				if best < 0 || until < bestUntil {
@@ -873,6 +879,14 @@ func (s *State) recordAffinitySkipsLocked(affinityIdx int) {
 		// 人工停用是配置态结论，与运行态冷却/熔断无关；必须在 SkipReason 之前
 		// 交出 `disabled`，否则一条被关掉的成员会被解释成"在冷却"
 		// （routing-spec §5.3/§9）。
+		if s.Route.Members[idx].ConfigError != nil {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "channel_config_error")
+			return
+		}
+		if s.Route.Members[idx].OverrideError != nil {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "member_config_error")
+			return
+		}
 		if s.Route.Members[idx].Disabled {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
 			continue
@@ -883,6 +897,9 @@ func (s *State) recordAffinitySkipsLocked(affinityIdx int) {
 
 // pickManualLocked 只用手工指定的成员；不可用即"无可用"，不静默换人（routing-spec §2.1）。
 func (s *State) pickManualLocked() (*model.RouteMember, bool) {
+	if !s.runtimeGenerationCurrent() {
+		return nil, false
+	}
 	s.throttledIdx = -1
 	idx := s.activeMemberIndex()
 	if idx < 0 || s.attempts[idx] >= s.budgetFor(idx) {
@@ -898,6 +915,16 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
 			return
 		}
+		if s.Route.Members[idx].OverrideError != nil {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "member_config_error")
+			return
+		}
+		// manual 忽略冷却，但仍先判熔断；已经确定本轮不可发的成员不应进入
+		// 准入队列。半开探测仍需独占槽位。
+		circuitState := s.Runtime.circuitState(key)
+		if circuitState == CircuitOpen && nowMs() < s.Runtime.circuitOpenUntil(key) {
+			return
+		}
 		// 出站准入不改变 manual 的"只走点名成员"语义：未就绪时排队/本地 429，
 		// 绝不换人（routing-spec §2.1/§3.2）。
 		if !s.admissionAllowsLocked(&s.Route.Members[idx]) {
@@ -905,24 +932,14 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 			s.throttledIdx = idx
 			return
 		}
-		// §2.1：manual **不参与冷却**（人工指定的成员就是唯一选择，冷却在此
-		// 没有可换的替代者，只会把请求变成 503），但仍过熔断。
-		// 此前直接用 availabilityOf，把冷却也一并判了，导致指定成员一次失败后
-		// 冷却期内所有请求都 503——而它其实是好的。
-		//
-		// 半开状态必须走单探测槽：否则第一次探测把熔断翻成 half_open 后，
-		// 并发请求会绕过探测槽直接选中，形成"半开涌入"（routing-spec §2.1/§5.2）。
-		switch {
-		case s.Runtime.circuitState(key) == CircuitOpen && nowMs() < s.Runtime.circuitOpenUntil(key):
-			return // 熔断打开且退避未到 → 无可用
-		case s.Runtime.circuitState(key) == CircuitOpen,
-			s.Runtime.circuitState(key) == CircuitHalfOpen:
-			// 退避期到或半开在途：只放行唯一探测者，槽被占则本轮无可用。
-			if !s.Runtime.takeProbe(key) {
+		// 退避期到或半开在途：只放行唯一探测者，槽被占则本轮无可用。
+		if circuitState == CircuitOpen || circuitState == CircuitHalfOpen {
+			lease, acquired := s.Runtime.acquireProbeLocked(key, DefaultProbeLeaseTTL)
+			if !acquired {
 				return
 			}
-			s.claimedProbe = key
-			s.Runtime.recordProbeStart(key, s.Runtime.circuitState(key) == CircuitOpen)
+			s.probe = lease
+			s.Runtime.recordProbeStart(key, circuitState == CircuitOpen)
 		}
 		ok = true
 	})
@@ -938,6 +955,9 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 func (s *State) markCurrentLocked(idx int) {
 	key := memberKeyOf(&s.Route.Members[idx])
 	s.Runtime.withLock(func() {
+		if s.Runtime.generation != s.runtimeGeneration {
+			return
+		}
 		if s.Runtime.HasCurrent && s.Runtime.CurrentMember != key {
 			s.Runtime.AffinityArmed = true
 		}
@@ -947,7 +967,7 @@ func (s *State) markCurrentLocked(idx int) {
 	})
 }
 
-func (s *State) indexOfKey(key string) int {
+func (s *State) indexOfKey(key MemberKey) int {
 	for i := range s.Route.Members {
 		if memberKeyOf(&s.Route.Members[i]) == key {
 			return i
@@ -976,10 +996,11 @@ func (s *State) OnSuccess() {
 	key := memberKeyOf(&s.Route.Members[s.current])
 	affinitySeconds := s.configFor(s.current).MemberAffinitySeconds
 	s.Runtime.withLock(func() {
-		s.Runtime.recordSuccess(key, affinitySeconds, CurrentCircuitSettings())
-		if s.claimedProbe == key {
-			s.claimedProbe = ""
+		if s.Runtime.generation != s.runtimeGeneration {
+			return
 		}
+		s.Runtime.recordSuccess(key, affinitySeconds, CurrentCircuitSettings())
+		s.releaseOwnedProbeLocked(key)
 	})
 }
 
@@ -1021,15 +1042,20 @@ func (s *State) ReportMemberUnavailable(member *model.RouteMember, reason string
 	key := memberKeyOf(member)
 	// §2.1：manual 车道不参与冷却（与 Next 的失败归属路径一致），熔断计分照常。
 	manual := s.Route.Mode == model.LaneModeManual
+	// 请求尝试链是请求级日志，即使 Reset 推进代次也必须保留；运行态写入另行校验。
+	s.history = append(s.history, Attempt{
+		AttemptNum: len(s.history) + 1,
+		Member:     memberLabel(member),
+		Status:     "failed",
+		ErrorKind:  KindSoftTransient,
+		Msg:        "member unavailable: " + reason,
+	})
 	s.Runtime.withLock(func() {
-		s.history = append(s.history, Attempt{
-			AttemptNum: len(s.history) + 1,
-			Member:     memberLabel(member),
-			Status:     "failed",
-			ErrorKind:  KindSoftTransient,
-			Msg:        "member unavailable: " + reason,
-		})
+		if s.Runtime.generation != s.runtimeGeneration {
+			return
+		}
 		s.Runtime.recordFailure(key, KindSoftTransient, s.cooldownSeconds, 0, !manual, CurrentCircuitSettings())
+		s.releaseOwnedProbeLocked(key)
 	})
 	s.markAttemptedLocked(key)
 }
@@ -1052,12 +1078,40 @@ func (s *State) ReportMemberConfigSkip(member *model.RouteMember, reason string)
 		}
 	}
 	s.recordSkipWithStatusLocked(key, memberLabel(member), "channel_disabled")
-	if reason != "" {
-		// 只留排查线索，不进运行态：这是配置问题，不是上游故障。
-		s.Runtime.withLock(func() {
+	// 配置态跳过也必须归还本请求可能持有的探测租约；reason 只影响事件详情。
+	s.Runtime.withLock(func() {
+		if s.Runtime.generation != s.runtimeGeneration {
+			return
+		}
+		s.releaseOwnedProbeLocked(key)
+		if reason != "" {
 			s.Runtime.appendEvent(events.EventSkip, key, "channel_disabled reason="+reason)
-		})
+		}
+	})
+}
+
+// SetAdmissionDeadline 设置请求级绝对准入预算。重复设置忽略，确保重试不会
+// 重新获得完整 queue_wait_seconds。
+func (s *State) SetAdmissionDeadline(deadline time.Time) {
+	if s == nil {
+		return
 	}
+	s.mu.Lock()
+	if !s.admissionDeadlineSet {
+		s.admissionDeadline = deadline
+		s.admissionDeadlineSet = true
+	}
+	s.mu.Unlock()
+}
+
+// AdmissionDeadline 返回请求级绝对准入预算；未设置时返回零时间。
+func (s *State) AdmissionDeadline() time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.admissionDeadline
 }
 
 // SetAdmissionReady 注入出站准成就绪回调（routing-spec §3.2）。
@@ -1112,14 +1166,43 @@ func (s *State) CommitThrottled() (*model.RouteMember, bool) {
 		key := memberKeyOf(&s.Route.Members[idx])
 		unavailable := false
 		s.Runtime.withLock(func() {
-			unavailable = s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availOK
+			if s.Route.Mode == model.LaneModeManual {
+				state := s.Runtime.circuitState(key)
+				if state == CircuitOpen && nowMs() < s.Runtime.circuitOpenUntil(key) {
+					unavailable = true
+					return
+				}
+				if state == CircuitOpen || state == CircuitHalfOpen {
+					lease, acquired := s.Runtime.acquireProbeLocked(key, DefaultProbeLeaseTTL)
+					if !acquired {
+						unavailable = true
+						return
+					}
+					s.probe = lease
+					s.Runtime.recordProbeStart(key, state == CircuitOpen)
+				}
+				return
+			}
+			switch s.Runtime.availabilityOf(key, CurrentCircuitSettings()) {
+			case availOK:
+				return
+			case availProbeReady:
+				lease, acquired := s.Runtime.acquireProbeLocked(key, DefaultProbeLeaseTTL)
+				if !acquired {
+					unavailable = true
+					return
+				}
+				s.probe = lease
+				s.Runtime.recordProbeStart(key, s.Runtime.circuitOpen(key))
+			default:
+				unavailable = true
+			}
 		})
 		if unavailable {
 			return nil, false
 		}
 	}
 	s.attempts[idx]++
-	s.rounds++
 	s.attemptStartedAt = time.Now()
 	s.markCurrentLocked(idx)
 	s.throttledIdx = -1
@@ -1148,28 +1231,81 @@ func (s *State) ExhaustThrottled(waitMs int64) {
 	s.throttledIdx = -1
 }
 
-// ReleaseProbe 归还本请求占用的探测槽（幂等）。//
-// 调用方必须在这些路径上调用，否则探测槽会被永久占住、该成员此后永远取不到探测机会：
-// 候选成员自身不可用被跳过、错误不换人（client_error/canceled）、请求收尾。
-//
-// **只归还自己占的那个**（s.claimedProbe）：调用方可能是从未探测过的并发请求
-// （收尾 defer 对每个 PBR 请求都会走一遍），若无条件清 ProbeMember，就会把别的
-// 在途探测者的槽释放掉，使"每车道同时只放行一个探测"在并发下失效
-// （routing-spec §2.2/§6）。
+// releaseOwnedProbeLocked 只释放本 State 持有且 key 匹配的租约；调用方持 Runtime 锁。
+func (s *State) releaseOwnedProbeLocked(key MemberKey) {
+	if s.probe == nil || s.probe.key != key || s.Runtime.probe != s.probe || s.probe.generation != s.Runtime.generation {
+		return
+	}
+	s.Runtime.probe = nil
+	s.probe = nil
+}
+
+// ReleaseProbe 归还本请求持有的探测租约（幂等）。
 func (s *State) ReleaseProbe() {
 	if s == nil || s.Runtime == nil {
 		return
 	}
 	s.mu.Lock()
-	key := s.claimedProbe
-	s.claimedProbe = ""
+	lease := s.probe
+	s.probe = nil
 	s.mu.Unlock()
-	if key == "" {
+	s.Runtime.ReleaseProbe(lease)
+}
+
+// AddCleanup 注册请求级资源清理；已 Close 的 State 立即执行清理。
+func (s *State) AddCleanup(cleanup func()) {
+	if s == nil || cleanup == nil {
 		return
 	}
-	s.Runtime.withLock(func() {
-		s.Runtime.releaseProbe(key)
-	})
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		cleanup()
+		return
+	}
+	s.cleanups = append(s.cleanups, cleanup)
+	s.mu.Unlock()
+}
+
+// Close 幂等收口请求资源，探测租约始终最先释放。
+func (s *State) Close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	lease := s.probe
+	s.probe = nil
+	cleanups := s.cleanups
+	s.cleanups = nil
+	s.mu.Unlock()
+	if s.Runtime != nil {
+		s.Runtime.ReleaseProbe(lease)
+	}
+	for _, cleanup := range cleanups {
+		cleanup()
+	}
+}
+
+// WaitRetry 等待同成员重试间隔。等待期间客户端取消时，必须归还本请求
+// 可能持有的唯一探测槽，否则该车道后续所有半开探测都会永久阻塞。
+func (s *State) WaitRetry(ctx context.Context, delay time.Duration) bool {
+	if s == nil || delay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		s.ReleaseProbe()
+		return false
+	}
 }
 
 // NoteLaneUnavailable 请求因"全部成员不可选"按 §4.2 收尾时调用：登记一次车道级
@@ -1185,6 +1321,9 @@ func (s *State) NoteLaneUnavailable() {
 		return
 	}
 	s.Runtime.withLock(func() {
+		if s.Runtime.generation != s.runtimeGeneration {
+			return
+		}
 		s.Runtime.noteLaneUnavailable()
 	})
 }

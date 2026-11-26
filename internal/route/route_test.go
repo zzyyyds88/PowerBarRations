@@ -349,7 +349,7 @@ func TestCooldownSkipsThenAllowsSingleProbe(t *testing.T) {
 	assert.Equal(t, "channel-a", memberName(member), "到期后应重新尝试高优先级成员")
 	runtime := Default.For(resolved.Model)
 	runtime.withLock(func() {
-		assert.True(t, runtime.HasProbe, "探测槽应被占用")
+		assert.True(t, runtime.probe != nil, "探测槽应被占用")
 	})
 
 	// 探测槽未释放前，第二个并发请求不得再打同一成员。
@@ -489,7 +489,7 @@ func TestDefaultAffinityDoesNotStick(t *testing.T) {
 
 	// 亲和为 0 → 下一个请求应重新回到高优先级成员（其冷却已过）。
 	runtime := Default.For(resolved.Model)
-	runtime.withLock(func() { runtime.Cooldowns = map[string]int64{} })
+	runtime.withLock(func() { runtime.Cooldowns = map[MemberKey]int64{} })
 	next := NewState(resolved)
 	member, _, ok = next.Next(nil)
 	require.True(t, ok)
@@ -513,7 +513,7 @@ func TestConfiguredAffinitySticksWithinWindow(t *testing.T) {
 	runtime := Default.For(resolved.Model)
 	runtime.withLock(func() {
 		assert.True(t, runtime.AffinityUntil > nowMs(), "成功后应启动亲和")
-		runtime.Cooldowns = map[string]int64{}
+		runtime.Cooldowns = map[MemberKey]int64{}
 	})
 	clock.advance(10 * time.Second)
 	next := NewState(resolved)
@@ -595,7 +595,7 @@ func TestReleaseProbeReturnsSlot(t *testing.T) {
 	require.True(t, ok, "归还后应能再次放行探测")
 	assert.Equal(t, "channel-a", memberName(member))
 	runtime.withLock(func() {
-		assert.True(t, runtime.HasProbe, "这次确实占用了探测槽")
+		assert.True(t, runtime.probe != nil, "这次确实占用了探测槽")
 	})
 }
 

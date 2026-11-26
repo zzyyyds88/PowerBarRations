@@ -209,6 +209,8 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		common.SysError(fmt.Sprintf("server forced to shutdown: %v", err))
 	}
+	model.CloseClientKeyTouchWorker()
+	perfmetrics.Close()
 	// W7（design-v1 §10.2.1）：额度看板缓存随计费面删除，退出时无需落库。
 	common.SysLog("server exited")
 }

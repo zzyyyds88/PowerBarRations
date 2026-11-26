@@ -30,21 +30,21 @@ func TestReleaseProbeOnlyReleasesOwnSlot(t *testing.T) {
 	require.Equal(t, "channel-a", memberName(member))
 	probeKey := memberKeyOf(&resolved.Members[0])
 	runtime.withLock(func() {
-		require.True(t, runtime.HasProbe)
-		require.Equal(t, probeKey, runtime.ProbeMember)
+		require.True(t, runtime.probe != nil)
+		require.Equal(t, probeKey, runtime.probe.key)
 	})
-	require.Equal(t, probeKey, prober.claimedProbe)
+	require.Equal(t, probeKey, prober.probe.key)
 
 	// 另一个请求只是普通选路（没有占槽），收尾时归还探测槽必须无效。
 	other := NewState(resolved)
 	member, _, ok = other.Next(nil)
 	require.True(t, ok)
 	require.Equal(t, "channel-b", memberName(member), "槽被占，其他请求落到下一成员")
-	require.Empty(t, other.claimedProbe)
+	require.Empty(t, other.probe)
 	other.ReleaseProbe()
 	runtime.withLock(func() {
-		assert.True(t, runtime.HasProbe, "非持有者归还后，槽必须仍被探测者占着")
-		assert.Equal(t, probeKey, runtime.ProbeMember)
+		assert.True(t, runtime.probe != nil, "非持有者归还后，槽必须仍被探测者占着")
+		assert.Equal(t, probeKey, runtime.probe.key)
 	})
 
 	// 第三个请求仍不得拿到探测位。
@@ -56,13 +56,13 @@ func TestReleaseProbeOnlyReleasesOwnSlot(t *testing.T) {
 	// 持有者收尾才真正归还。
 	prober.ReleaseProbe()
 	runtime.withLock(func() {
-		assert.False(t, runtime.HasProbe)
+		assert.False(t, runtime.probe != nil)
 	})
 	fourth := NewState(resolved)
 	member, _, ok = fourth.Next(nil)
 	require.True(t, ok)
 	assert.Equal(t, "channel-a", memberName(member), "归还后应能再次放行探测")
-	assert.Equal(t, probeKey, fourth.claimedProbe)
+	assert.Equal(t, probeKey, fourth.probe.key)
 }
 
 // 失败换人后，本请求对旧成员的探测占用必须一并释放并清空归属。
@@ -79,15 +79,15 @@ func TestProbeOwnershipClearedAfterFailover(t *testing.T) {
 	member, _, ok := state.Next(nil)
 	require.True(t, ok)
 	require.Equal(t, "channel-a", memberName(member))
-	require.NotEmpty(t, state.claimedProbe)
+	require.NotEmpty(t, state.probe)
 
 	soft := apiError(http.StatusInternalServerError, "", false)
 	member, _, ok = state.Next(soft)
 	require.True(t, ok)
 	assert.Equal(t, "channel-b", memberName(member), "探测失败后换到下一成员")
-	assert.Empty(t, state.claimedProbe, "换人后归属必须清空")
+	assert.Empty(t, state.probe, "换人后归属必须清空")
 	runtime.withLock(func() {
-		assert.False(t, runtime.HasProbe, "换人时探测槽必须已归还")
+		assert.False(t, runtime.probe != nil, "换人时探测槽必须已归还")
 	})
 }
 
@@ -103,12 +103,12 @@ func TestProbeOwnershipClearedOnSuccess(t *testing.T) {
 	state := NewState(resolved)
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
-	require.NotEmpty(t, state.claimedProbe)
+	require.NotEmpty(t, state.probe)
 
 	state.OnSuccess()
-	assert.Empty(t, state.claimedProbe)
+	assert.Empty(t, state.probe)
 	runtime.withLock(func() {
-		assert.False(t, runtime.HasProbe)
+		assert.False(t, runtime.probe != nil)
 	})
 }
 
@@ -117,7 +117,7 @@ func TestProbeOwnershipClearedOnSuccess(t *testing.T) {
 // 2026-11-21 起 timeout 拆出自 soft_transient（routing-spec §4.1）：
 // 已送达但无响应的上游不再同成员原地重试，立即换人。
 func TestClassifyPrefersDeadlineOverCanceled(t *testing.T) {
-	wrapped := fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, context.Canceled)
+	wrapped := &types.LocalAttemptTimeout{Err: fmt.Errorf("%w: pbr attempt timeout: %w", context.DeadlineExceeded, context.Canceled)}
 	assert.True(t, errors.Is(wrapped, context.DeadlineExceeded))
 	assert.True(t, errors.Is(wrapped, context.Canceled))
 
@@ -140,4 +140,9 @@ func TestClassifyPrefersDeadlineOverCanceled(t *testing.T) {
 	pureCancel := types.NewError(fmt.Errorf("read: %w", context.Canceled), types.ErrorCodeDoRequestFailed)
 	assert.Equal(t, KindCanceled, Classify(pureCancel))
 	assert.False(t, ShouldSwitchMember(Classify(pureCancel)))
+
+	// 客户端 context deadline 与本地成员超时同形，但没有 marker，按取消处理。
+	clientDeadline := types.NewError(fmt.Errorf("client deadline: %w", context.DeadlineExceeded), types.ErrorCodeDoRequestFailed)
+	assert.Equal(t, KindCanceled, Classify(clientDeadline))
+	assert.False(t, ShouldSwitchMember(Classify(clientDeadline)))
 }

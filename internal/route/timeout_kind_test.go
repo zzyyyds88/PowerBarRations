@@ -23,7 +23,7 @@ func TestTimeoutSharesSoftCooldownTier(t *testing.T) {
 func TestTimeoutCooldownScalesLikeSoftTransient(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-timeout-cooldown")
-	key := "9:model-timeout"
+	key := testMemberKey("9:model-timeout")
 
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindTimeout, 60, 0, true, DefaultCircuitSettings())

@@ -21,9 +21,39 @@ import (
 const pbrSystemUsername = "pbr-system"
 
 var (
-	pbrSystemUserMu sync.Mutex
-	pbrSystemUserID atomic.Int64
+	pbrSystemUserMu   sync.Mutex
+	pbrSystemUserID   atomic.Int64
+	pbrSystemUserBase atomic.Pointer[UserBase]
 )
+
+func cachePBRSystemUser(user *User) {
+	if user == nil || user.Id <= 0 {
+		return
+	}
+	pbrSystemUserID.Store(int64(user.Id))
+	pbrSystemUserBase.Store(user.ToBaseUser())
+}
+
+// PBRSystemUserBase 返回进程内缓存的系统用户基类。首次调用最多读取一次数据库；
+// 后续请求不访问用户表。错误原样返回，由调用方决定降级方式。
+func PBRSystemUserBase() (*UserBase, error) {
+	userID, err := EnsurePBRSystemUser()
+	if err != nil {
+		return nil, err
+	}
+	if cached := pbrSystemUserBase.Load(); cached != nil && cached.Id == userID {
+		copy := *cached
+		return &copy, nil
+	}
+	user, err := GetUserById(userID, false)
+	if err != nil {
+		return nil, err
+	}
+	base := user.ToBaseUser()
+	pbrSystemUserBase.Store(base)
+	copy := *base
+	return &copy, nil
+}
 
 // EnsurePBRSystemUser 返回系统用户 id，不存在则创建。
 //
@@ -43,7 +73,7 @@ func EnsurePBRSystemUser() (int, error) {
 	var user User
 	err := DB.Where("role = ?", common.RoleRootUser).First(&user).Error
 	if err == nil {
-		pbrSystemUserID.Store(int64(user.Id))
+		cachePBRSystemUser(&user)
 		return user.Id, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -71,11 +101,11 @@ func EnsurePBRSystemUser() (int, error) {
 		// 可能是并发下已被创建：回读一次再决定成败
 		var existing User
 		if readErr := DB.Where("role = ?", common.RoleRootUser).First(&existing).Error; readErr == nil {
-			pbrSystemUserID.Store(int64(existing.Id))
+			cachePBRSystemUser(&existing)
 			return existing.Id, nil
 		}
 		return 0, err
 	}
-	pbrSystemUserID.Store(int64(user.Id))
+	cachePBRSystemUser(&user)
 	return user.Id, nil
 }

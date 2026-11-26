@@ -2,9 +2,11 @@ package route
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zzyyyds88/PowerBarRations/model"
 )
 
 // routing-spec §1.3：成员被删除时清理其残留状态（参照线上 groupRouteLocked）。
@@ -14,6 +16,7 @@ import (
 func TestStaleStatePrunedWhenMemberRemoved(t *testing.T) {
 	resolved := testRoute("stale-prune", 2, 1)
 	state := NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
 	state.Runtime.withLock(func() {
@@ -23,7 +26,7 @@ func TestStaleStatePrunedWhenMemberRemoved(t *testing.T) {
 
 	// 该成员从车道移除后重新解析
 	resolved.Members = resolved.Members[1:]
-	NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 
 	state.Runtime.withLock(func() {
 		_, hasCooldown := state.Runtime.Cooldowns[key]
@@ -33,21 +36,23 @@ func TestStaleStatePrunedWhenMemberRemoved(t *testing.T) {
 	})
 }
 
-// 探测槽被占用时成员被删除：槽必须归还，否则整条车道再也无法放行探测。
+// live 探测租约不随 memberId 迁移或清理。
 func TestProbeSlotReleasedWhenOwningMemberRemoved(t *testing.T) {
 	resolved := testRoute("stale-probe", 2, 1)
 	state := NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
-	state.Runtime.withLock(func() { state.Runtime.takeProbe(key) })
-	require.True(t, state.Runtime.HasProbe, "前提：探测槽已被占用")
+	lease, ok := state.Runtime.AcquireProbe(key, time.Minute)
+	require.True(t, ok)
+	_ = lease
+	require.True(t, state.Runtime.probe != nil, "前提：探测槽已被占用")
 
 	resolved.Members = resolved.Members[1:]
-	NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 
 	state.Runtime.withLock(func() {
-		assert.False(t, state.Runtime.HasProbe,
-			"成员被删除后探测槽必须归还（否则该车道永久无法探测）")
+		assert.True(t, state.Runtime.probe != nil, "live 租约必须保留且不迁移")
 	})
 }
 
@@ -56,6 +61,7 @@ func TestProbeSlotReleasedWhenOwningMemberRemoved(t *testing.T) {
 func TestStaleStateKeptWhenNoMembersResolved(t *testing.T) {
 	resolved := testRoute("stale-keep", 1, 1)
 	state := NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
 	state.Runtime.withLock(func() {
@@ -63,7 +69,7 @@ func TestStaleStateKeptWhenNoMembersResolved(t *testing.T) {
 	})
 
 	empty := testRoute("stale-keep", 0, 1)
-	NewState(empty)
+	maintainResolvedForTest(t, state.Runtime, empty)
 
 	state.Runtime.withLock(func() {
 		_, stillThere := state.Runtime.Cooldowns[key]
@@ -76,15 +82,25 @@ func TestStaleStateKeptWhenNoMembersResolved(t *testing.T) {
 func TestStaleStateKeepsActiveMembers(t *testing.T) {
 	resolved := testRoute("stale-active", 2, 1)
 	state := NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
 	state.Runtime.withLock(func() {
 		state.Runtime.Cooldowns[key] = nowMs() + 3_600_000
 	})
-	NewState(resolved)
+	maintainResolvedForTest(t, state.Runtime, resolved)
 
 	state.Runtime.withLock(func() {
 		_, stillThere := state.Runtime.Cooldowns[key]
 		assert.True(t, stillThere, "仍在成员链里的冷却状态不得被清理")
 	})
+}
+
+func maintainResolvedForTest(t *testing.T, runtime *Runtime, resolved *model.ResolvedRoute) {
+	t.Helper()
+	valid := map[MemberKey]bool{}
+	for i := range resolved.Members {
+		valid[MemberKeyOf(&resolved.Members[i])] = true
+	}
+	runtime.PruneStaleState(valid, resolved.LaneVersion)
 }

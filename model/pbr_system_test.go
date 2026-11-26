@@ -37,6 +37,7 @@ func usePBRSystemTestDB(t *testing.T) *gorm.DB {
 	previousDB := DB
 	previousType := common.MainDatabaseType()
 	cached := pbrSystemUserID.Swap(0)
+	cachedBase := pbrSystemUserBase.Swap(nil)
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	// 纯 Go sqlite 的 :memory: 库每连接独立，不钉 MaxOpenConns(1) 时建表与查询
@@ -49,6 +50,7 @@ func usePBRSystemTestDB(t *testing.T) *gorm.DB {
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	t.Cleanup(func() {
 		pbrSystemUserID.Store(cached)
+		pbrSystemUserBase.Store(cachedBase)
 		DB = previousDB
 		common.SetMainDatabaseType(previousType)
 	})
@@ -80,6 +82,7 @@ func TestEnsurePBRSystemUserIsIdempotentAcrossCacheResets(t *testing.T) {
 	require.NoError(t, err)
 	// 模拟进程内缓存被清（如另一路径冷启动）：应回读到同一用户，而非再建。
 	pbrSystemUserID.Store(0)
+	pbrSystemUserBase.Store(nil)
 	secondID, err := EnsurePBRSystemUser()
 	require.NoError(t, err)
 
@@ -108,4 +111,26 @@ func TestEnsurePBRSystemUserReusesExistingRootUser(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&User{}).Count(&count).Error)
 	assert.Equal(t, int64(1), count, "已存在 root 用户时不得再建系统用户")
+}
+
+func TestPBRSystemUserBaseCachesDatabaseRead(t *testing.T) {
+	usePBRSystemTestDB(t)
+
+	first, err := PBRSystemUserBase()
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Equal(t, pbrSystemUsername, first.Username)
+
+	// 第二次调用即使数据库已不可用，也必须命中进程内缓存。
+	previousDB := DB
+	unavailable, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	DB = unavailable
+	t.Cleanup(func() { DB = previousDB })
+
+	second, err := PBRSystemUserBase()
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	assert.Equal(t, first.Id, second.Id)
+	assert.Equal(t, first.Username, second.Username)
 }

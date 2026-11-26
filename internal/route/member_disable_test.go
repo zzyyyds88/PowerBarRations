@@ -100,7 +100,7 @@ func TestDisabledMemberNeverClaimsProbeSlot(t *testing.T) {
 	require.Equal(t, "channel-b", memberName(member))
 
 	state.Runtime.withLock(func() {
-		assert.Equal(t, key2, state.Runtime.ProbeMember, "探测槽必须落在启用的成员上")
+		assert.Equal(t, key2, state.Runtime.probe.key, "探测槽必须落在启用的成员上")
 	})
 }
 

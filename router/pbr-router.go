@@ -2,7 +2,7 @@ package router
 
 import (
 	"net/http"
-	"strings"
+	"strconv"
 
 	"github.com/zzyyyds88/PowerBarRations/internal/api"
 	"github.com/zzyyyds88/PowerBarRations/internal/apiresp"
@@ -61,8 +61,8 @@ func syncChannelGauges() {
 	}
 	byChannel := map[string]*channelState{}
 	for _, member := range route.Default.SnapshotMemberStates() {
-		channelID, _, ok := strings.Cut(member.MemberKey, ":")
-		if !ok || channelID == "" {
+		channelID := strconv.Itoa(member.MemberKey.ChannelID)
+		if channelID == "" {
 			continue
 		}
 		entry := byChannel[channelID]
@@ -83,6 +83,11 @@ func syncChannelGauges() {
 	for channelID, entry := range byChannel {
 		metrics.SetChannelState(channelID, entry.state, entry.up)
 	}
+	keep := make(map[string]struct{}, len(byChannel))
+	for channelID := range byChannel {
+		keep[channelID] = struct{}{}
+	}
+	metrics.PruneChannelStates(keep)
 }
 
 func registerPBRAPIRoutes(group *gin.RouterGroup) {

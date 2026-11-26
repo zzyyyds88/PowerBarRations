@@ -96,7 +96,10 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 		fmt.Sprintf("event: %s\n", resp.Type), "data: "+data)
 }
 
-func StringData(c *gin.Context, str string) error {
+func StringData(c *gin.Context, str string) (err error) {
+	defer func() {
+		recordStreamWriteError(c, err)
+	}()
 	if c == nil || c.Writer == nil {
 		return errors.New("context or writer is nil")
 	}
@@ -111,7 +114,9 @@ func StringData(c *gin.Context, str string) error {
 	if err := common.FlushHeldStreamFrames(c); err != nil {
 		return err
 	}
-	c.Render(-1, common.CustomEvent{Data: "data: " + str})
+	if err := (common.CustomEvent{Data: "data: " + str}).Render(c.Writer); err != nil {
+		return err
+	}
 	MarkStreamCommitted(c)
 	return FlushWriter(c)
 }

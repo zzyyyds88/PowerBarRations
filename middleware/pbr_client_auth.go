@@ -58,7 +58,8 @@ func PBRTokenAuth() gin.HandlerFunc {
 		// 限流与并发上限（token-spec §3.4 第 6 步）：超限 429 + Retry-After。
 		if key.RateLimitRPM > 0 || key.MaxConcurrency > 0 {
 			limiter := limiterFor(key.Id)
-			if wait, ok := limiter.acquire(key.RateLimitRPM, key.MaxConcurrency); !ok {
+			lease, wait, ok := limiter.acquire(key.RateLimitRPM, key.MaxConcurrency)
+			if !ok {
 				c.Header("Retry-After", strconv.Itoa(wait))
 				writeModelFaceRejectionLog(c, http.StatusTooManyRequests,
 					"client key exceeded its rate limit or concurrency cap", string(pbrroute.KindLocalThrottle))
@@ -66,8 +67,10 @@ func PBRTokenAuth() gin.HandlerFunc {
 					"client key exceeded its rate limit or concurrency cap", "")
 				return
 			}
-			// c.Next() 返回后再释放并发计数，覆盖整个下游链路
-			defer limiter.release()
+			c.Set(contextKeyPBRClientLease, lease)
+			// 中间件出口兜底；PBRServe 创建 State 后会把同一个幂等 lease.Release
+			// 注册为 State cleanup，两者重复调用不会重复归还并发槽。
+			defer lease.Release()
 		}
 		c.Next()
 	}
@@ -78,6 +81,24 @@ type keyLimiter struct {
 	mu       sync.Mutex
 	recent   []int64 // 最近一分钟内的请求时间（Unix 秒），用于 RPM 滑动窗口
 	inflight int
+}
+
+// KeyLease 是一次 acquire 对应的不可重复释放凭证。Release 幂等，且只能释放
+// 创建它的 limiter；重复释放不会影响同一 key 的另一个在飞请求。
+type KeyLease struct {
+	limiter *keyLimiter
+	once    sync.Once
+}
+
+func (l *KeyLease) Release() {
+	if l == nil {
+		return
+	}
+	l.once.Do(func() {
+		if l.limiter != nil {
+			l.limiter.release(l)
+		}
+	})
 }
 
 var (
@@ -103,17 +124,16 @@ func limiterFor(id int) *keyLimiter {
 // 语义——键没了，限流窗口没有保留意义。
 func DropPBRKeyLimiter(id int) {
 	pbrLimitersMu.Lock()
-	defer pbrLimitersMu.Unlock()
 	delete(pbrLimiters, id)
+	pbrLimitersMu.Unlock()
+	model.DropClientKeyTouchState(id)
 }
 
 // acquire 取一个令牌；失败返回建议的 Retry-After 秒数。
 //
 // 两个上限相互独立（token-spec §3.1：0 = 不限），所以**先判定、后记账**：
-// 只有确实被放行的请求才写入 RPM 窗口与并发计数。此前先记 RPM 再查并发，
-// 会让"仅因并发超限被拒"的请求白白吃掉 RPM 配额（recent 多记一条），
-// 且该路径提前 return 不释放 inflight，导致并发槽被持续占用。
-func (l *keyLimiter) acquire(rpm int, maxConcurrency int) (int, bool) {
+// 只有确实被放行的请求才写入 RPM 窗口与并发计数。
+func (l *keyLimiter) acquire(rpm int, maxConcurrency int) (*KeyLease, int, bool) {
 	now := time.Now().Unix()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -126,27 +146,30 @@ func (l *keyLimiter) acquire(rpm int, maxConcurrency int) (int, bool) {
 			}
 		}
 		l.recent = kept
-		// 窗口内已满：最早那条滑出窗口时才有名额，剩余等待秒数据此估算。
 		if len(l.recent) >= rpm {
-			wait := 60 - (now - l.recent[0])
+			// 动态降低 RPM 后，recent[0] 可能早已超出新上限；必须等待第
+			// len-rpm 条滑出，窗口内才会重新低于 rpm。
+			wait := 60 - (now - l.recent[len(l.recent)-rpm])
 			if wait < 1 {
 				wait = 1
 			}
-			return int(wait), false
+			return nil, int(wait), false
 		}
 	}
 	if maxConcurrency > 0 && l.inflight >= maxConcurrency {
-		// 并发槽释放时机不确定，给 1 秒让调用方退避重试。
-		return 1, false
+		return nil, 1, false
 	}
 	if rpm > 0 {
 		l.recent = append(l.recent, now)
 	}
 	l.inflight++
-	return 0, true
+	return &KeyLease{limiter: l}, 0, true
 }
 
-func (l *keyLimiter) release() {
+func (l *keyLimiter) release(lease *KeyLease) {
+	if l == nil || lease == nil || lease.limiter != l {
+		return
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.inflight > 0 {
@@ -159,7 +182,10 @@ func (l *keyLimiter) release() {
 // 同时把迁移期的记账锚点（系统用户）挂上，使基座转发管道里的记账代码仍能工作
 // （design-v1 §10.2 的逻辑停用阶段：锚点用户无余额语义——quota 列已按 §3.4 删除，
 // 准入不查余额）。
-const contextKeyPBRClient = "pbr_client_key"
+const (
+	contextKeyPBRClient      = "pbr_client_key"
+	contextKeyPBRClientLease = "pbr_client_key_lease"
+)
 
 // PBRClientKeyFrom 取当前请求的 PBR 客户端密钥（未走 PBR 鉴权时为 nil）。
 func PBRClientKeyFrom(c *gin.Context) *model.ClientKey {
@@ -174,15 +200,32 @@ func PBRClientKeyFrom(c *gin.Context) *model.ClientKey {
 	return nil
 }
 
+// PBRClientKeyLeaseFrom 取当前请求持有的一次性客户端密钥 lease。PBRServe
+// 创建 State 后应通过 State.AddCleanup(lease.Release) 注册同一凭证。
+func PBRClientKeyLeaseFrom(c *gin.Context) *KeyLease {
+	if c == nil {
+		return nil
+	}
+	if value, ok := c.Get(contextKeyPBRClientLease); ok {
+		if lease, ok := value.(*KeyLease); ok {
+			return lease
+		}
+	}
+	return nil
+}
+
 func SetupContextForPBRClientKey(c *gin.Context, key *model.ClientKey) {
 	c.Set(contextKeyPBRClient, key)
-	systemUserID, err := model.EnsurePBRSystemUser()
-	if err == nil && systemUserID > 0 {
-		if userCache, cacheErr := model.GetUserCache(systemUserID); cacheErr == nil {
-			userCache.WriteContext(c)
+	if base, err := model.PBRSystemUserBase(); err == nil && base != nil {
+		base.WriteContext(c)
+		c.Set("id", base.Id)
+		common.SetContextKey(c, constant.ContextKeyUserId, base.Id)
+	} else {
+		if err != nil {
+			common.SysError("pbr: system user base unavailable: " + err.Error())
+		} else {
+			common.SysError("pbr: system user base unavailable")
 		}
-		c.Set("id", systemUserID)
-		common.SetContextKey(c, constant.ContextKeyUserId, systemUserID)
 	}
 	common.SetContextKey(c, constant.ContextKeyTokenUnlimited, true)
 	c.Set("token_name", key.Name)
@@ -198,10 +241,8 @@ func SetupContextForPBRClientKey(c *gin.Context, key *model.ClientKey) {
 	carrier.KeyId = key.Id
 	carrier.KeyName = key.Name
 
-	go func(id int) {
-		defer func() { _ = recover() }()
-		model.TouchClientKey(id)
-	}(key.Id)
+	// TouchClientKey 只做有界 map 合并与非阻塞通知，不在请求路径起 goroutine。
+	model.TouchClientKey(key.Id)
 }
 
 // PBRClientKeyName 当前请求所用 PBR 客户端密钥名（未走 PBR 时为空）。
