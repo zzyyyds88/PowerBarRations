@@ -99,6 +99,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		var err error
 		ws, err = upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
+			// PBRServe 已在 Distribute 阶段可能取得探测槽；WebSocket 升级失败
+			// 会绕过下方注册的请求收尾 defer，必须在这里显式归还。
+			if pbrState := pbrroute.From(c); pbrState != nil {
+				pbrState.ReleaseProbe()
+			}
 			helper.WssError(c, ws, types.NewError(err, types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry()).ToOpenAIError())
 			return
 		}

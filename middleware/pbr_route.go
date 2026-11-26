@@ -82,6 +82,9 @@ func PBRServe(c *gin.Context) bool {
 
 	state := route.NewState(resolved)
 	if _, throttleErr, ok := PBRNextChannel(c, state, modelName, nil); !ok {
+		// PBRNextChannel 在首次选路阶段可能已取得探测槽；任何失败出口都必须归还，
+		// 否则该车道后续所有半开探测都会被一个已取消的请求永久阻塞。
+		state.ReleaseProbe()
 		if throttleErr != nil {
 			// 本地准入拒绝（不是车道不可用）：429 + Retry-After，不登记 lane_unavailable。
 			writeLocalThrottle(c, state, throttleErr)
@@ -270,6 +273,7 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 			committed, committedOK := state.CommitThrottled()
 			if !committedOK {
 				ticket.Release("", 0)
+				state.ReleaseProbe()
 				state.ExhaustThrottled(wait.Milliseconds())
 				continue
 			}
@@ -278,9 +282,7 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 		}
 		if delay > 0 {
 			// 同成员原地重试的间隔（routing-spec §3.1 / member_retry_interval_seconds）。
-			select {
-			case <-time.After(delay):
-			case <-c.Request.Context().Done():
+			if !state.WaitRetry(c.Request.Context(), delay) {
 				return nil, nil, false
 			}
 		}
@@ -320,6 +322,8 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 				ticket, acquireErr := route.DefaultAdmission.Acquire(key, cfg)
 				if acquireErr != nil {
 					// 竞态：选路时还就绪，取槽时已被同车道并发请求占满。
+					// 选路阶段可能已取得探测槽；放弃该候选时必须归还。
+					state.ReleaseProbe()
 					throttledAny = true
 					if estimate := route.DefaultAdmission.Estimate(key, cfg); estimate > 0 &&
 						(retryWait == 0 || estimate < retryWait) {

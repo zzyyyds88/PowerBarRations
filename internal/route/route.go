@@ -1172,6 +1172,23 @@ func (s *State) ReleaseProbe() {
 	})
 }
 
+// WaitRetry 等待同成员重试间隔。等待期间客户端取消时，必须归还本请求
+// 可能持有的唯一探测槽，否则该车道后续所有半开探测都会永久阻塞。
+func (s *State) WaitRetry(ctx context.Context, delay time.Duration) bool {
+	if s == nil || delay <= 0 {
+		return true
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		s.ReleaseProbe()
+		return false
+	}
+}
+
 // NoteLaneUnavailable 请求因"全部成员不可选"按 §4.2 收尾时调用：登记一次车道级
 // 不可用事件（同一停摆期只发一次，恢复由 recordSuccess 收口，routing-spec §7）。
 //
