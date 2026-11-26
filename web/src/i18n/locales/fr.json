@@ -3568,6 +3568,7 @@
     "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = illimité. max_concurrency -1 active l'AIMD adaptatif ; queue_limit 0 utilise 32 ; queue_wait_seconds 0 désactive la file d'attente.",
     "Rate limited": "Limité",
     "Queued": "En file d'attente",
-    "Remove model": "Supprimer le modèle"
+    "Remove model": "Supprimer le modèle",
+    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Supprimer les journaux détaillés et les lignes de contexte créés avant l'horodatage sélectionné. Les agrégats horaires sont conservés."
   }
 }
