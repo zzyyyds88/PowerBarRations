@@ -3214,7 +3214,7 @@
     "By tokens": "按 Token",
     "No clean samples": "無乾淨樣本",
     "No output tokens": "無輸出 Token",
-    "Rejected · needs fixing": "連續被拒 · 需修復配置",
+    "Upstream rejected · {{count}} in a row": "上游連續拒絕 {{count}} 次",
     "Quick setup: pick a provider": "快速設定：選擇服務商",
     "Choose a provider (optional)": "選擇服務商（可選）",
     "Provider presets": "服務商預設",

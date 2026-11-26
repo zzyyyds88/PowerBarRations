@@ -39,7 +39,13 @@ export type MemberLiveKind =
   | 'cooldown'
   | 'probing'
   | 'half-open'
-  /** 连续被上游拒绝（upstream_reject）达阈值，进入短期回避冷却。 */
+  /**
+   * 连续被上游拒绝（upstream_reject）且仍可被选路。
+   *
+   * 这是事实陈述，不是配置结论：拒绝可能是内容审查/参数不支持（只针对这一份
+   * 请求），也可能是网关没转发上游必需的头（配置问题）。界面只显示「上游拒绝
+   * N 次」，是否要改配置由运维结合上游报文判断。
+   */
   | 'rejected'
   | 'current'
   | 'ready'
@@ -54,6 +60,8 @@ export interface MemberLiveState {
   secondsLeft: number | null
   /** 需要脉冲提示（探活占用中）。 */
   pulse: boolean
+  /** 连续上游拒绝次数（仅 `rejected` 状态有值；后端恒回）。 */
+  streak?: number
 }
 
 /** 成员实时状态的输入：与 `LaneMemberHealth` 同形，另加车道/渠道开关。 */
@@ -126,14 +134,15 @@ export function resolveMemberLiveState(
     return { ...base, kind: 'rate-limited', secondsLeft: pacedLeft }
   }
 
-  // 连续被拒是配置态结论，不是运行故障：upstream_reject 不计熔断、不写冷却，
-  // 所以它「就绪」却每次都被拒。把它单独标出来，否则界面会骗人说这条腿没问题。
-  // 冷却中的连续拒绝已经由上面的 cooldown 分支表达，不重复。
+  // 连续被上游拒绝：upstream_reject 不计熔断、不写冷却，所以成员仍「就绪」，
+  // 但每次请求都会先白打它一次。这里只陈述事实（连续 N 次被拒），不推断配置
+  // 过错——内容审查/参数不支持同样会以 400 到达。冷却中的拒绝由上面的 cooldown
+  // 分支表达，不重复。
   if (
     (input.rejectStreak ?? 0) > 0 &&
     input.lastErrorKind === 'upstream_reject'
   ) {
-    return { ...base, kind: 'rejected' }
+    return { ...base, kind: 'rejected', streak: input.rejectStreak }
   }
 
   if (input.probing) return { ...base, kind: 'probing', pulse: true }

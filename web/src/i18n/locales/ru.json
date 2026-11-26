@@ -3214,7 +3214,7 @@
     "By tokens": "По токенам",
     "No clean samples": "Нет чистых образцов",
     "No output tokens": "Нет выходных токенов",
-    "Rejected · needs fixing": "Отклоняется · нужна настройка",
+    "Upstream rejected · {{count}} in a row": "Отклонено вышестоящим сервисом · {{count}} подряд",
     "Quick setup: pick a provider": "Быстрая настройка: выберите провайдера",
     "Choose a provider (optional)": "Выберите провайдера (необязательно)",
     "Provider presets": "Пресеты провайдеров",

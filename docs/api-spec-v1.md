@@ -939,7 +939,8 @@ curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
       "inflight": 0, "queued": 0, "adaptive_limit": null,
       "enabled": true, "available": false,
       "consecutive_failures": 3, "rolling_success_rate": 0.0, "rolling_samples": 12,
-      "last_error_kind": "timeout", "last_error_at": "2026-09-14T12:00:30Z" },
+      "last_error_kind": "timeout", "last_error_at": "2026-09-14T12:00:30Z",
+      "reject_streak": 0 },
     { "channel": "channel-b", "upstream_model": "model-y",
       "circuit": "closed", "cooldown_until": null, "paced_until": "2026-09-14T12:00:03Z",
       "circuit_open_until": null,
@@ -947,7 +948,8 @@ curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
       "inflight": 2, "queued": 1, "adaptive_limit": 4,
       "enabled": true, "available": true,
       "consecutive_failures": 0, "rolling_success_rate": 0.95, "rolling_samples": 20,
-      "last_error_kind": "soft_rate_limit", "last_error_at": "2026-09-14T11:59:58Z" }
+      "last_error_kind": "soft_rate_limit", "last_error_at": "2026-09-14T11:59:58Z",
+      "reject_streak": 0 }
   ],
   "affinity": { "channel": "channel-a", "upstream_model": "model-x", "until": "2026-09-14T12:05:00Z" }
 }
@@ -960,6 +962,7 @@ curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
 - **`inflight` / `queued` / `adaptive_limit`** 是出站准入运行态（routing-spec §3.2）：`inflight` = 已发给上游未结束的请求数，`queued` = 正在排队的请求数，`adaptive_limit` = 自适应模式当前学到的上限（非自适应为 `null`）。未配置 `rate_limits` 时 `inflight/queued` 均为 0。
 - **`rolling_samples`** 是滚动窗口样本数：`rolling_success_rate=0` 且 `rolling_samples=0` 表示"无样本（冷启动）"，与"最近全失败"（样本数 > 0 且成功率为 0）必须可区分。
 - 成员 `last_error_kind` / `last_error_at` 是**历史留痕**（最近一次失败的分类与时间），不代表"当前有故障"；当前状态看 `circuit` / `cooldown_until` / `paced_until` / `available`。取值域 = routing-spec §4.1 的失败分类（`soft_rate_limit` / `soft_transient` / `timeout` / `hard_auth` / `hard_quota` / `upstream_reject` / `client_error` / `bad_response` / `canceled`）；**`upstream_reject` 只说明"这个成员拒绝过请求"，不代表它故障**（不计冷却、不计熔断分，见 routing-spec §4.1）；**`soft_rate_limit` 同理只影响 `paced_until`**。
+- **`reject_streak`（连续上游拒绝次数，恒回）**：该成员自上一次**非 `upstream_reject` 结果**以来连续被上游拒绝的次数；成功、其他失败分类与 429 减速都会清零。达到 routing-spec §4.1 的阈值时写入短期冷却并把计数清零。它**只陈述"上游连续拒绝过 N 次"**，不是配置错误或成员故障的结论——内容审查、参数不支持等请求级 400 同样计入；控制台据此显示「上游连续拒绝 N 次」而不是「需修复配置」。
 - **`enabled=false` 与冷却/熔断是彼此独立的成因**，必须可分别判定：示例里第一条是故障（`circuit=open` + `cooldown_until` 非空），人工停用的成员则是 `circuit=closed`、无冷却、`enabled=false`。排障时先读 `enabled` 再谈"上游挂了"。
 - 停用成员**不会**产生冷却条目、不会改变熔断计数或状态（`consecutive_failures` / `rolling_success_rate` / `cooldown_until` 保持停用前后的真实值，**不归零、不省略**——排障时要能同时看到"我把它关了"和"关之前它是什么状态"），也**不占用半开探测槽**；重新打开后按当时的运行态立即恢复参与选路，不因"关过"而额外受罚。唯一例外：若它原本是车道**当前成员/亲和目标**，关闭会让亲和立即失效并按顺序重选（routing-spec §2.2），重新打开不自动回粘、需由选路重新确立当前成员。口径单处规范见 routing-spec §7。
 - 本形状同时是 `GET /api/route-events`（SSE，§5.5）里每车道成员条目的形状——两者是**同一个结构体**（routing-spec §7），因此"人工关闭"在 SSE 与 30s 轮询两条路径上取到的是同一个字段，不需要新端点。

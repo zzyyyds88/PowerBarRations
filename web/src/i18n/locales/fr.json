@@ -3214,7 +3214,7 @@
     "By tokens": "Par tokens",
     "No clean samples": "Aucun échantillon propre",
     "No output tokens": "Aucun token de sortie",
-    "Rejected · needs fixing": "Rejeté · configuration à corriger",
+    "Upstream rejected · {{count}} in a row": "Refusé par l'amont · {{count}} d'affilée",
     "Quick setup: pick a provider": "Configuration rapide : choisissez un fournisseur",
     "Choose a provider (optional)": "Choisir un fournisseur (facultatif)",
     "Provider presets": "Préréglages de fournisseur",

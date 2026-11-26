@@ -105,7 +105,9 @@ export function MemberRows(props: MemberRowsProps) {
       case 'half-open':
         return t('Half-open · waiting for recovery')
       case 'rejected':
-        return t('Rejected · needs fixing')
+        return t('Upstream rejected · {{count}} in a row', {
+          count: state.streak ?? 0,
+        })
       case 'current':
         return t('Current member')
       case 'ready':
@@ -178,6 +180,11 @@ export function MemberRows(props: MemberRowsProps) {
                   'shrink-0 text-right text-xs whitespace-nowrap',
                   statusTone(row.state.kind)
                 )}
+                title={
+                  row.state.kind === 'rejected'
+                    ? t('Upstream rejected the request (not a channel fault).')
+                    : undefined
+                }
               >
                 {statusText(row)}
               </span>

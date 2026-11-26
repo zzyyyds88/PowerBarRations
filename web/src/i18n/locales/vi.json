@@ -3214,7 +3214,7 @@
     "By tokens": "Theo token",
     "No clean samples": "Không có mẫu sạch",
     "No output tokens": "Không có token đầu ra",
-    "Rejected · needs fixing": "Bị từ chối · cần sửa cấu hình",
+    "Upstream rejected · {{count}} in a row": "Bị thượng nguồn từ chối · {{count}} lần liên tiếp",
     "Quick setup: pick a provider": "Thiết lập nhanh: chọn nhà cung cấp",
     "Choose a provider (optional)": "Chọn nhà cung cấp (tùy chọn)",
     "Provider presets": "Cấu hình sẵn nhà cung cấp",

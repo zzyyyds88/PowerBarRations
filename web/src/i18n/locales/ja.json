@@ -3214,7 +3214,7 @@
     "By tokens": "トークン順",
     "No clean samples": "クリーンサンプルなし",
     "No output tokens": "出力トークンなし",
-    "Rejected · needs fixing": "拒否され続けています · 設定の修正が必要",
+    "Upstream rejected · {{count}} in a row": "上流に拒否 · 連続 {{count}} 回",
     "Quick setup: pick a provider": "クイック設定：プロバイダーを選択",
     "Choose a provider (optional)": "プロバイダーを選択（任意）",
     "Provider presets": "プロバイダープリセット",
