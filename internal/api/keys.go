@@ -345,9 +345,9 @@ func RotateKey(c *gin.Context) {
 }
 
 // unknownRouteKeys 返回既没有同名车道、也没有任何启用渠道声明的路由键（去重、保序）。
-// 校验失败不阻断 DB 故障：查询出错时按"未知"处理并上抛由调用方决定；这里只在
-// 明确查得候选集合后判定，避免把临时故障误判成非法输入。
-func unknownRouteKeys(keys []string) []string {
+// 查询失败必须上抛：把 DB 故障当成"键不存在"会返回 422 误导用户去改一个正确的
+// 配置，而真正的故障应让写请求以 5xx 失败并可重试。
+func unknownRouteKeys(keys []string) ([]string, error) {
 	unique := make([]string, 0, len(keys))
 	seen := map[string]bool{}
 	for _, k := range keys {
@@ -359,18 +359,22 @@ func unknownRouteKeys(keys []string) []string {
 		unique = append(unique, k)
 	}
 	if len(unique) == 0 {
-		return nil
+		return nil, nil
 	}
 	known := map[string]bool{}
-	if lanes, err := model.ListLanes(); err == nil {
-		for _, lane := range lanes {
-			known[lane.Name] = true
-		}
+	lanes, err := model.ListLanes()
+	if err != nil {
+		return nil, err
 	}
-	if summaries, err := model.ListModelSummaries(); err == nil {
-		for _, s := range summaries {
-			known[s.Model] = true
-		}
+	for _, lane := range lanes {
+		known[lane.Name] = true
+	}
+	summaries, err := model.ListModelSummaries()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range summaries {
+		known[s.Model] = true
 	}
 	unknown := make([]string, 0)
 	for _, k := range unique {
@@ -378,7 +382,7 @@ func unknownRouteKeys(keys []string) []string {
 			unknown = append(unknown, k)
 		}
 	}
-	return unknown
+	return unknown, nil
 }
 
 func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *apiError {
@@ -400,7 +404,12 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 		// 权限判定的对象是"路由键"（token-spec §3.2）：allow_lanes 里写不存在的键会被
 		// 静默接受，用户以为"允许了模型 X"，实际是死键（请求得到 503 而非 403，分不清
 		// 权限还是没配车道）。这里显式拒绝并列出未知键（api-spec §5.4：422）。
-		if unknown := unknownRouteKeys(payload.LanePolicy.AllowLanes); len(unknown) > 0 {
+		unknown, err := unknownRouteKeys(payload.LanePolicy.AllowLanes)
+		if err != nil {
+			common.SysError("pbr: validate lane_policy.allow_lanes failed: " + err.Error())
+			return &apiError{status: http.StatusInternalServerError, code: apierr.CodeInternalError, message: "failed to validate lane_policy.allow_lanes"}
+		}
+		if len(unknown) > 0 {
 			return &apiError{
 				status:  http.StatusUnprocessableEntity,
 				code:    apierr.CodeValidationFailed,
@@ -409,7 +418,12 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 		}
 		// deny_lanes 与 allow_lanes 对称校验：否则用户以为"拒绝了模型 X"，实际是拼错的
 		// 死键，等于没有拒绝——同样属于静默放宽权限（api-spec §5.4：422）。
-		if unknown := unknownRouteKeys(payload.LanePolicy.DenyLanes); len(unknown) > 0 {
+		unknown, err = unknownRouteKeys(payload.LanePolicy.DenyLanes)
+		if err != nil {
+			common.SysError("pbr: validate lane_policy.deny_lanes failed: " + err.Error())
+			return &apiError{status: http.StatusInternalServerError, code: apierr.CodeInternalError, message: "failed to validate lane_policy.deny_lanes"}
+		}
+		if len(unknown) > 0 {
 			return &apiError{
 				status:  http.StatusUnprocessableEntity,
 				code:    apierr.CodeValidationFailed,

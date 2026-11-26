@@ -100,6 +100,7 @@ type metricsSet struct {
 	statsOutboxBacklog prometheus.Gauge
 	statsOutboxDead    prometheus.Gauge
 	routeEventDrops    prometheus.Counter
+	routeEventPanics   prometheus.Counter
 
 	channelMu     sync.Mutex
 	channelStates map[string]struct{}
@@ -176,6 +177,11 @@ func newMetrics() *metricsSet {
 			Name:      "route_event_drops_total",
 			Help:      "运行态事件异步队列满导致丢弃的累计数量。",
 		}),
+		routeEventPanics: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "pbr",
+			Name:      "route_event_panics_total",
+			Help:      "运行态事件订阅者 panic 被恢复的累计次数。",
+		}),
 	}
 
 	// 注册的 collector 全部是编译期常量构造，重复注册只可能是改错指标名，
@@ -195,6 +201,7 @@ func newMetrics() *metricsSet {
 		m.statsOutboxBacklog,
 		m.statsOutboxDead,
 		m.routeEventDrops,
+		m.routeEventPanics,
 	)
 	return m
 }
@@ -234,6 +241,11 @@ func SetStatsOutboxBacklog(pending, dead int64) {
 // ObserveRouteEventDrop 记录一次异步事件队列满丢弃。
 func ObserveRouteEventDrop() {
 	defaultMetrics.routeEventDrops.Inc()
+}
+
+// ObserveRouteEventPanic 记录一次订阅者 panic 被恢复。
+func ObserveRouteEventPanic() {
+	defaultMetrics.routeEventPanics.Inc()
 }
 
 // observeRequest 记录一次模型面请求的终态。

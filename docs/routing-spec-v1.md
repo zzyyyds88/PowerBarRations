@@ -499,7 +499,7 @@ type LaneRuntime struct {
 
 - **这是对线上的明确偏离**：线上在无可选成员时是"等待并轮询重试"，会造成请求悬挂至客户端超时。PBR 采用快抛，因为下游 harness 的 fallback 分类依赖这个 503 体，且悬挂会让上游故障表现为本地卡死。
 - 快抛前必须已把本次所有尝试写入日志（含 `cooldown` / `circuit_break` 状态），便于事后定位。
-- **唯一例外（`upstream_reject` 收尾）**：若本次请求的**最后一次尝试**分类为 `upstream_reject`（§4.1），说明不是"网关无路可走"，而是"每条试过的腿都拒绝了这份请求"——此时把**该次上游错误原样返回客户端**（保留上游状态码与报文，如 400 + 内容审查报文），**不合成 503**。理由：① 语义如实（是请求被上游拒绝，不是车道故障）；② 下游对 400 按"不可重试"处理，避免为必然失败的请求反复重打整个成员链；③ 内容审查/参数不支持这类拒绝，503 会让排障误判成"上游全挂"。
+- **唯一例外（`upstream_reject` 收尾）**：若本次请求的**最后一次尝试**分类为 `upstream_reject`（§4.1），说明不是"网关无路可走"，而是"每条试过的腿都拒绝了这份请求"——此时把**该次上游错误原样返回客户端**（保留上游状态码与报文，如 400 + 内容审查报文），**不合成 503**，**也不登记 `lane_unavailable`**（车道没有停摆，只是这份请求被每条腿拒绝）。理由：① 语义如实（是请求被上游拒绝，不是车道故障）；② 下游对 400 按"不可重试"处理，避免为必然失败的请求反复重打整个成员链；③ 内容审查/参数不支持这类拒绝，503 会让排障误判成"上游全挂"。
 - **新增例外（本地准入，§3.2 / ADR 0012）**：全部候选的并发槽位都满、且排队超界或队列满时，返回
   **429** + `Retry-After`，**不合成 503**：
 
@@ -695,7 +695,7 @@ type LaneRuntime struct {
   "error_kind": "soft_rate_limit", "duration_ms": 800, "msg": "429 too many requests" }
 ```
 
-`status ∈ success | failed | cooldown | circuit_break | skipped | disabled`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）。
+`status ∈ success | failed | cooldown | circuit_break | skipped | disabled | throttled`；`skipped` 用于被选择算法跳过的成员（便于解释"为什么没用 P1"）；`throttled` 只用于**准入等待失败/未使用**的成员（§3.2），排队成功后实际执行的尝试记 `success`/`failed` 并带 `wait_ms`。
 
 - **`upstream_reject` 的留痕**：被拒绝成员照常落一条 `failed`，`error_kind=upstream_reject`、`msg` 为上游报文（流内错误帧则从帧内提取），后续选路跳过它**不**再补 `skipped` 记录（该成员的"为什么没继续用"已由这条失败解释，§ markAttempted 去重口径）。
 

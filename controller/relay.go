@@ -178,6 +178,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 					Member:     success.Member,
 					Status:     success.Status,
 					DurationMs: success.DurationMs,
+					WaitMs:     success.WaitMs,
 				})
 			}
 			carrier.Attempts = attempts
@@ -209,7 +210,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if helper.StreamCommitted(c) {
 				// 已提交：响应头与内容帧都已写出，不能再追加错误 JSON（会把正常
 				// 的 200 流截成坏流）。只记真实失败，状态码保持 200（ADR 0013）。
-				logger.LogError(c, fmt.Sprintf("relay error after response committed: %s", common.LocalLogPreview(newAPIError.Error())))
+				logger.LogError(c, fmt.Sprintf("relay error after response committed: %s", common.MaskedLogPreview(newAPIError.Error())))
 				return
 			}
 			if pbrroute.IsNoAvailable(newAPIError) {
@@ -218,7 +219,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				pbrroute.WriteNoAvailableChannel(c, common.GetContextKeyString(c, constant.ContextKeyOriginalModel))
 				return
 			}
-			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			logger.LogError(c, fmt.Sprintf("relay error: %s", common.MaskedLogPreview(newAPIError.Error())))
 			// 客户端可见文案必须脱敏：上游错误体/URL 可能回显凭据（design-v1 §8）。
 			// 这里用 MaskSensitiveError（优先 displayMessage），而不是原始 Error()。
 			newAPIError.SetMessage(maskedClientMessage(newAPIError, requestId))
@@ -248,7 +249,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// 注册在错误写出 defer 之后 → 先于它执行，能把 panic 变成一条结构化失败。
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			logger.LogError(c, fmt.Sprintf("relay panic: %v\n%s", recovered, debug.Stack()))
+			logger.LogError(c, fmt.Sprintf("relay panic: %s\n%s", common.MaskedLogPreview(fmt.Sprint(recovered)), debug.Stack()))
 			newAPIError = types.NewError(
 				fmt.Errorf("relay panic: %v", recovered),
 				types.ErrorCodeBadResponse,
@@ -333,7 +334,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		relayInfo.RetryIndex = attempt
 		channel, channelErr := getChannel(c, relayInfo, pbrState)
 		if channelErr != nil {
-			logger.LogError(c, channelErr.Error())
+			logger.LogError(c, common.MaskedLogPreview(channelErr.Error()))
 			newAPIError = channelErr
 			break
 		}
@@ -540,17 +541,26 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, pbrState *pbrroute.
 		return nil, admissionErr
 	}
 	if !ok {
-		// 车道不可用：登记一次车道级事件（同一停摆期只发一次，routing-spec §7）。
-		pbrState.NoteLaneUnavailable()
-		// routing-spec §4.2 例外：最后一次尝试是 upstream_reject（每条试过的腿都拒绝了
-		// 这份请求）时，把该上游错误**原样返回客户端**，不合成 503——语义如实，
-		// 且下游按"不可重试"立刻降级，不会为必然失败的请求反复重打整条成员链。
-		if info.LastError != nil && pbrroute.Classify(info.LastError) == pbrroute.KindUpstreamReject {
-			return nil, info.LastError
-		}
-		return nil, pbrroute.NoAvailableError(info.OriginModelName)
+		return nil, noChannelError(info, pbrState)
 	}
 	return channel, nil
+}
+
+// noChannelError 决定成员链耗尽后的收尾错误：最后一次是 upstream_reject 时
+// 原样透传（车道没有停摆，不登记 lane_unavailable）；否则按 §4.2 合成 503
+// 并登记车道级停摆事件。
+func noChannelError(info *relaycommon.RelayInfo, state *pbrroute.State) *types.NewAPIError {
+	// routing-spec §4.2 例外：最后一次尝试是 upstream_reject（每条试过的腿都拒绝了
+	// 这份请求）时，把该上游错误**原样返回客户端**，不合成 503——语义如实，
+	// 且下游按"不可重试"立刻降级，不会为必然失败的请求反复重打整条成员链。
+	if info.LastError != nil && pbrroute.Classify(info.LastError) == pbrroute.KindUpstreamReject {
+		return info.LastError
+	}
+	// 真正的车道不可用：登记一次车道级事件（同一停摆期只发一次，routing-spec §7）。
+	if state != nil {
+		state.NoteLaneUnavailable()
+	}
+	return pbrroute.NoAvailableError(info.OriginModelName)
 }
 
 // channelFromSelectedContext 用 Distribute 注入的上下文重建渠道对象。
@@ -567,6 +577,11 @@ func channelFromSelectedContext(c *gin.Context) *model.Channel {
 		Type:    c.GetInt("channel_type"),
 		Name:    c.GetString("channel_name"),
 		AutoBan: &autoBanInt,
+		// 多 key 渠道的首次尝试也必须保留 IsMultiKey：失败时
+		// processChannelError 依赖它把禁用收敛到具体 key index，而不是整个渠道。
+		ChannelInfo: model.ChannelInfo{
+			IsMultiKey: common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey),
+		},
 	}
 }
 
@@ -608,12 +623,13 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	if pbrroute.Classify(err) == pbrroute.KindCanceled {
 		return
 	}
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.MaskedLogPreview(err.Error())))
 	// 不要使用 context 获取渠道信息，异步处理时可能会出现渠道信息不一致的情况。
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
 		channelID := channelError.ChannelId
 		channelName := channelError.ChannelName
-		reason := err.ErrorWithStatusCode()
+		// 禁用原因会落库并经管理面回显，必须先脱敏（上游错误体可能回显 key）。
+		reason := maskedErrorSummary(err.ErrorWithStatusCode())
 		keyIndex := -1
 		if relayInfo != nil && relayInfo.ChannelMeta != nil && channelError.IsMultiKey {
 			keyIndex = relayInfo.ChannelMeta.ChannelMultiKeyIndex

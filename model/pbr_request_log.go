@@ -355,6 +355,9 @@ func writePBRLogTx(entry *PBRRequestLog, carrier *PBRLogCarrier) error {
 	const maxAttempts = 3
 	var lastErr error
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		// 失败事务可能已由 GORM 回填 entry.Id；重试前归零，否则会带着旧主键
+		// 再次 INSERT，撞上已被其他请求占用的 id（UNIQUE constraint failed）。
+		entry.Id = 0
 		lastErr = DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Create(entry).Error; err != nil {
 				return err

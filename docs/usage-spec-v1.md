@@ -270,8 +270,10 @@ parts_json, body_bytes, truncated, created_at
 
 **写入与重建**：明细事务只写 `pbr_stats_outbox`，常驻 worker 逐行在独立事务内 upsert 全部维度
 并删除 outbox 行（崩溃安全、不重复计数）；`/api/stats` 因此最多滞后约 2s + 处理时间。
-`POST /api/stats/rebuild` 先 drain outbox，再只重算仍有明细覆盖的小时桶；对历史上已删除明细的桶
-（旧版 prune 边界及更早）整桶保留（响应 `preserved_buckets`），不会因为历史缺口抹掉聚合。
+`POST /api/stats/rebuild` 以明细为唯一真源：不要求 outbox 清空、死信不阻断；以开始时的明细 id
+水位为界，成功后在同一事务清空水位以内的 outbox，水位之后的新请求保留给 worker 补算；只重算
+仍有明细覆盖的小时桶，对历史上已删除明细的桶（旧版 prune 边界及更早）整桶保留（响应
+`preserved_buckets`），不会因为历史缺口抹掉聚合。
 
 **缓存命中率**（只在 UI 计算，API 只给原始和）：
 

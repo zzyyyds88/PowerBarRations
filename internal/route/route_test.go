@@ -72,8 +72,10 @@ func TestStateNextPublishesUpstreamBurstOnce(t *testing.T) {
 		SetUpstreamBurstDetector(events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{}))
 		events.SetSubscriber(nil)
 	})
-	var received []events.Event
-	events.SetSubscriber(func(event events.Event) { received = append(received, event) })
+	// 事件已改为全局异步分发：订阅者只负责把事件投进 channel，测试等待
+	// 目标事件出现，不能假设 Publish 返回时订阅者已执行（否则有数据竞态）。
+	eventCh := make(chan events.Event, 8)
+	events.SetSubscriber(func(event events.Event) { eventCh <- event })
 	state := NewState(resolved)
 	member, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -82,15 +84,22 @@ func TestStateNextPublishesUpstreamBurstOnce(t *testing.T) {
 		require.True(t, ok)
 		require.NotNil(t, member)
 	}
-	var bursts []events.Event
-	for _, event := range received {
-		if event.Type == events.EventUpstreamBurst {
-			bursts = append(bursts, event)
+	burst := waitRouteEvent(t, eventCh, func(ev events.Event) bool {
+		return ev.Type == events.EventUpstreamBurst
+	})
+	assert.Equal(t, "burst-event", burst.Lane)
+	assert.Contains(t, burst.Detail, "count=3")
+
+	// 同一窗口只发一次：再等 100ms，不能再出现第二条 burst 事件。
+	deadline := time.After(100 * time.Millisecond)
+	for {
+		select {
+		case ev := <-eventCh:
+			require.NotEqual(t, events.EventUpstreamBurst, ev.Type, "burst 事件只能发一次")
+		case <-deadline:
+			return
 		}
 	}
-	require.Len(t, bursts, 1)
-	assert.Equal(t, "burst-event", bursts[0].Lane)
-	assert.Contains(t, bursts[0].Detail, "count=3")
 }
 
 func TestPriorityChangeClearsExistingAffinity(t *testing.T) {

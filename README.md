@@ -323,7 +323,7 @@ GET  /api/v1/openapi.json               # 完整契约
 
 - **备份**：容器内 `docker exec pbr /app/pbr backup --out /data/backups/pbr-<时间>.db`（SQLite 在线快照 + `quick_check`，不停服），再 `docker cp` 到宿主机；本机直跑可用 `pbr backup` 或 `scripts/backup_pbr_db.sh`。**不要**在运行中直接 tar `pbr.db`/`-wal`/`-shm`。恢复必须先停服务、替换主库并删除旧 `-wal`/`-shm`。也可用 `/export` 导出配置。
 - **日志**：只存元数据（车道、成员、尝试链、token 数、耗时、折算金额），
-  不存请求/响应正文，不存密钥明文，不存余额。
+  不存请求/响应正文，不存密钥明文，不存余额。超过 `log_retention_days` 只清上下文/attempts/错误摘要等排障细节，**汇总行永久保留**。
 - **升级**：`docker compose up -d --build`；数据库结构由启动时的迁移自动补齐。
   **本次升级有破坏性语义变更**（详见 `CHANGELOG.md` 的「破坏性变更」）：
   ① 上游 429 改为"减速"而非成员故障——健康快照会出现 `paced_until`，`cooldown_until` 不再因 429 出现，
@@ -384,7 +384,7 @@ server {
 
 - `auth reset` 的 `--db` 缺省取 `$SQLITE_PATH`；也可用 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 临时覆盖口令派生。检测到 `-wal`/`-shm` 默认拒绝，确认无服务时可加 `--force`。
 - `backup` 的 `--out` 缺省 `./backups/pbr-<UTC>.db`；已存在文件拒绝覆盖，副本权限 0600。
-- `outbox` 的 `--db` 同样缺省取 `$SQLITE_PATH`；死信不阻断 `stats rebuild`，重建成功会清空 outbox。
+- `outbox` 的 `--db` 同样缺省取 `$SQLITE_PATH`；死信不阻断 `stats rebuild`，重建成功只清空水位以内的 outbox（水位之后的新请求保留给 worker 增量补算）。
 
 ---
 
@@ -408,7 +408,7 @@ server {
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `5700` | 监听端口 |
-| `SQLITE_PATH` | `/data/pbr.db?...` | SQLite 路径；只写文件名即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 会强制补齐（自定义值会被规范值覆盖）。`LOG_SQL_DSN` 不得指向同一 SQLite 文件 |
+| `SQLITE_PATH` | `/data/pbr.db?...` | SQLite 路径；只写文件名即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 会强制补齐（自定义值会被规范值覆盖）。`LOG_SQL_DSN` 不得指向同一 SQLite 文件（`local` 别名同样按同文件拒绝启动）；不设置即与主库共用 `LOG_DB` |
 | `SESSION_SECRET` / `CRYPTO_SECRET` | 必填 | 同 Compose 中的 `PBR_*` 两项 |
 | `PBR_BIND` | `0.0.0.0` | 监听地址 |
 | `SESSION_COOKIE_SECURE` | `false` | 走 HTTPS 反代时设为 `true`（单开关，会话 Cookie 带 `Secure`） |

@@ -32,19 +32,17 @@ func ListWebhooks(c *gin.Context) {
 }
 
 // maskedTargets 输出回读形状：secret 掩码；events 保持数组（空 = 全部）。
+// 掩码规则由 webhook.MaskedTargets 单点拥有，避免多个回显端点各写一份。
 func maskedTargets(targets []webhook.Target) []gin.H {
-	out := make([]gin.H, 0, len(targets))
-	for _, t := range targets {
-		events := t.Events
-		if events == nil {
-			events = []string{}
-		}
+	masked := webhook.MaskedTargets(targets)
+	out := make([]gin.H, 0, len(masked))
+	for _, t := range masked {
 		out = append(out, gin.H{
 			"name":    t.Name,
 			"url":     t.URL,
-			"secret":  webhook.MaskSecret(t.Secret),
+			"secret":  t.Secret,
 			"enabled": t.Enabled,
-			"events":  events,
+			"events":  t.Events,
 		})
 	}
 	return out

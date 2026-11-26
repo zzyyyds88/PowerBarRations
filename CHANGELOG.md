@@ -49,7 +49,8 @@
 - 成本视图：按渠道 x 模型的请求数、token、成功率与上游折算花费（元）。
 - **车道成员自由编排**（ADR 0006）：成员可任选任意启用渠道的任意已声明模型，可跨渠道跨模型、无需同名、同一渠道可多次出现；`/routes` 以卡片网格展示车道、运行态与成员顺序。
 - **模型调用分析**：按模型的调用次数 / 成功率 / Token / 上游花费汇总，默认按调用次数倒序；成本统计按上游花费倒序。
-- CLI：`pbr auth reset`。
+- CLI：`pbr auth reset`、`pbr outbox status/retry/discard`（聚合死信查看/重试/丢弃）、`pbr backup`（SQLite 在线快照 + `quick_check`）。
+- **日志保留与异步聚合**：明细 + 上下文同事务写入，小时聚合经持久化 outbox 异步补算；超过 `log_retention_days` 只压缩上下文、`attempts`、`error_summary`、`mask_hits` 等排障细节，**汇总行永久保留**，历史统计不受影响。
 
 ### Changed
 - **流式提交点收敛到内容帧口径**（routing-spec §3 第 6 步 / §4.1.1）：角色帧、空增量等开场帧改为网关内存有界暂存（64 KiB 上界），第一个携带载荷的帧（文本 / 工具调用 / 推理增量）到达时按原顺序 flush 并提交。内容帧到达前出现流内错误帧或 EOF ⇒ **未提交**：按成员失败进冷却 + 故障转移，客户端不再收到"HTTP 200 + 空流 + 流内报错"的垃圾响应；无可用成员时返回干净 502/504。配套：`free-limit` / 配额耗尽类报文内置归 `hard_quota`（长冷却）；TTFT 口径从首帧收敛为首内容帧。
@@ -93,6 +94,10 @@
 - **表格与移动端可读性**：Keys/Audit 表格取消逐字换行、固定关键列宽；概览 KPI 手机两列；日志筛选栏单行化；系统任务移动端改卡片。
 
 ### Fixed
+- **自动健康检查假禁用/假成功**：测试本身没跑起来（`localErr`）计失败但不再被当成渠道健康样本；慢响应只计失败，不再虚增 `disabled` 或覆盖渠道响应时间；多 key 渠道首次尝试保留 key 索引，自动禁用收敛到具体 key。
+- **attempts 真值**：排队成功后不再留下假的 `throttled` 跳过记录，成功/失败尝试都带 `wait_ms`；`upstream_reject` 耗尽时不再伪造 `lane_unavailable` 事件。
+- **统计重建与 outbox**：`stats rebuild` 以明细 id 水位为界，只清水位以内的 outbox，重建期间的新请求由 worker 增量补算；outbox 失败记账写不进去时立即停止本轮，避免空转刷日志。
+- **数据库故障不再误报输入错误**：客户端密钥的 `allow_lanes`/`deny_lanes` 校验在查询失败时返回 5xx，而不是把正确键误报为未知键（422）。
 - **请求生命周期收口**：修复重试重新解析路由、准入 deadline 重置、客户端 deadline 误判成员超时、坏六键静默回落、SSE 写失败不终止、ping 30 分钟总超时、成功日志后台闭包捕获完整 `RelayInfo` 等问题；补齐数据帧写失败、取消优先级、不可变快照、准入 epoch、配置 fail-closed 回归测试。
 - **缓存与并发一致性**：多 key 管理操作不再持 polling 锁刷新缓存；取 key 前在内存缓存开启时重读权威状态；渠道 PUT 不再覆盖并发 `status/channel_info`；带别名组成员导入在 SQLite 单连接下不再自锁；探活按各车道 generation 快照清理。
 - **后台任务与指标**：client-key touch 与性能采样 worker 支持停机及最终 flush；自动禁用后台任务不再持有请求 context/明文 key，队列饱和不在请求线程发通知；性能桶连续 flush 失败有重试上界；`/metrics` 删除已消失渠道的陈旧 gauge 序列。
@@ -135,6 +140,8 @@
 - 控制台探测入口去重：移除与「探测上游模型」重复的「获取模型列表」入口（其在已保存渠道上会发无密钥草稿探测而必然 401）。
 
 ### Security
+- **webhook secret 不再有第二出口**：基座 `GET /api/option/` 对 `PBRWebhookTargets` 只回显掩码，`PUT /api/option/` 拒绝写入；唯一写入口仍是带 URL/事件白名单校验的 `PUT /api/webhooks`。
+- **错误脱敏覆盖完整链路**：上游 transport 错误（URL 可能带 key）、流内拒绝、attempts 报文、渠道测试响应、探针错误与 webhook 投递错误统一先脱敏再落库/回显；`LOG_SQL_DSN=local` 按主库同文件拒绝启动。
 - 客户端密钥由服务端随机生成并明文入库，管理 API 可随时回读复制；鉴权仍走 `sha256` 哈希索引。管理密钥由登录口令派生、服务端只存其哈希、不落明文。
 - 请求日志只存元数据，不存请求/响应正文与密钥明文。
 - 管理面（`/api`、`/api/v1`）统一请求体上限（默认 2MB，`ANONYMOUS_REQUEST_BODY_LIMIT_KB`）；模型面仍为 128MB。

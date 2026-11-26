@@ -640,7 +640,7 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 - 开发阶段只保证当前 PBR schema 在新建 SQLite 数据库上初始化成功；破坏性 schema 变化允许重建开发库。
 - 不提供旧 `new-api`/`octopus` 数据库导入、历史数据回填、双写、旧字段兼容或数据恢复兜底。
 - 同版本 `/api/export` 与 `/api/import` 只处理 PBR 配置快照；它们不是数据库迁移工具。
-- **SQLite 运行纪律**：`SQLITE_PATH` 只写文件路径即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 由 `common.SQLiteDSN` 强制补齐并覆盖冲突值；`LOG_SQL_DSN` 指向同一文件时启动失败。SQLite 主库连接生命周期默认 0（不周期性重建连接），连接池为单连接。
+- **SQLite 运行纪律**：`SQLITE_PATH` 只写文件路径即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 由 `common.SQLiteDSN` 强制补齐并覆盖冲突值；`LOG_SQL_DSN` 指向同一文件时启动失败（`local` 别名会解析到主库 SQLite，同样拒绝）。SQLite 主库连接生命周期默认 0（不周期性重建连接），连接池为单连接。
 - **备份/恢复**：生产用镜像内 `pbr backup`（SQLite 在线快照 + `quick_check`；本机开发可用同命令或 `scripts/backup_pbr_db.sh`），不得热 tar `pbr.db`/`-wal`/`-shm`；恢复必须先停服务、替换主库并删除旧 WAL/SHM。`pbr auth reset` 同样要求先停服务（检测到 WAL/SHM 默认拒绝，崩溃残留可 `--force`）。
 
 ### 16.5 日志保留
@@ -649,7 +649,7 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 - 压缩只动排障细节，聚合表（`pbr_stats_hourly`）**长期保留**（体积小）；一次压缩不得改变 `/api/stats` 的历史数值，也不得让历史明细行从日志列表/会话页消失。
 - 上下文明细表（`pbr_request_contexts`）按 `created_at`/`log_id` 分批删除，不单独保留；会话与上下文曲线因此只覆盖保留期内的上下文细节，但会话汇总仍可由保留的日志行重算。
 - **`GET /api/stats` 必须读聚合表**（hour 直读、day 由小时桶上卷），不得读明细表——否则一次 prune 就把历史统计抹掉，与"聚合长期保留"自相矛盾。
-- `POST /api/stats/rebuild` **以明细为唯一真源**：不要求 outbox 清空，死信不阻断重建；成功后在同一事务清空全部 outbox 行（含死信）。重建时保留**已无明细来源**的小时桶（历史 prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。`dry_run` 不写库、不处理 outbox。
+- `POST /api/stats/rebuild` **以明细为唯一真源**：不要求 outbox 清空，死信不阻断重建；重建以开始时的明细 id 水位为界，成功后在同一事务清空水位以内的 outbox（含死信），水位之后的新请求保留给 worker 增量补算。重建时保留**已无明细来源**的小时桶（历史 prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。`dry_run` 不写库、不处理 outbox。
 - outbox 死信可用 `pbr outbox status/retry/discard` 定向处理（生产镜像内执行）；`retry` 适合磁盘/数据库临时故障，`discard` 需 `--yes`，丢弃后可 rebuild 从明细补聚合。
 - `/api/health` 暴露 `stats_outbox.pending/dead` 与最近一次 `db_last_write_error`；`dead > 0` 或 outbox 不可读时整体 `degraded`。
 

@@ -221,6 +221,21 @@ func TestTestChannelAppliesMappingAndClearsPenalty(t *testing.T) {
 	assert.Equal(t, before, hits.Load(), "dry_run 不得触发真实上游请求")
 }
 
+// 探活错误会回显给管理面并落探活历史：transport URL/上游错误体可能带 key，
+// finish 必须统一脱敏（分类在脱敏前完成）。
+func TestProbeFinishMasksUpstreamSecrets(t *testing.T) {
+	result := ProbeMember{
+		Error: `Post "https://vendor.example.test/v1/chat?key=sk-secret123456": dial tcp: connection refused`,
+	}
+	result.finish()
+
+	assert.NotContains(t, result.Error, "sk-secret123456")
+	assert.NotContains(t, result.Msg, "sk-secret123456")
+	assert.NotContains(t, result.Error, "vendor.example.test")
+	assert.NotContains(t, result.Msg, "vendor.example.test")
+	assert.Equal(t, "network_error", result.ErrorKind)
+}
+
 // 探活失败不得洗掉既有惩罚态（routing-spec §5.4）。
 func TestTestChannelFailureKeepsPenalty(t *testing.T) {
 	setupAPITestDB(t)

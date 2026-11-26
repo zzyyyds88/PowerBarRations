@@ -508,7 +508,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		Group:            info.UsingGroup,
 	})
 	model.WritePBRLog(c)
-	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	// 不记录响应正文：渠道测试同样受"日志只存元数据"约束（design-v1 §8）。
+	common.SysLog(fmt.Sprintf("testing channel #%d succeeded (response_bytes=%d)", channel.Id, len(respBody)))
 	return testResult{
 		context:     c,
 		localErr:    nil,
@@ -868,12 +869,17 @@ func TestChannel(c *gin.Context) {
 	}
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
-	go channel.UpdateResponseTime(milliseconds)
+	// 只有真正成功拿到上游响应的测试才更新渠道速度（response_time）：
+	// 失败/超时的耗时不是渠道吞吐样本，写进去会把健康渠道的延迟“测坏”。
+	if result.localErr == nil && result.newAPIError == nil {
+		go channel.UpdateResponseTime(milliseconds)
+	}
 	consumedTime := float64(milliseconds) / 1000.0
 	if result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"success":    false,
-			"message":    result.newAPIError.Error(),
+			"success": false,
+			// 上游错误体可能回显 key/URL；管理面响应同样必须脱敏。
+			"message":    result.newAPIError.MaskSensitiveErrorWithStatusCode(),
 			"time":       consumedTime,
 			"error_code": result.newAPIError.GetErrorCode(),
 		})
@@ -896,6 +902,28 @@ type channelTestSummary struct {
 	Enabled   int `json:"enabled"`
 }
 
+// evaluateChannelTest 把一次测试结果折算为失败原因与禁用判定。
+//
+// 禁用只由 service.ShouldDisableChannel 的分类白名单决定（hard_auth/hard_quota）；
+// localErr（测试没跑起来）与慢响应只影响失败计数，不能成为禁用依据。
+func evaluateChannelTest(result testResult, milliseconds, disableThreshold int64) (*types.NewAPIError, bool) {
+	newAPIError := result.newAPIError
+	shouldBanChannel := false
+	if newAPIError != nil {
+		// 不能因 localErr != nil 跳过判定：testChannel 的真实失败路径通常
+		// **同时**设置 localErr 与 newAPIError（SetupContext 失败、DoRequest/
+		// DoResponse 失败等）。禁用仍只由分类白名单决定，本地构造的 5xx/
+		// 慢响应不会命中 hard_auth/hard_quota。
+		shouldBanChannel = service.ShouldDisableChannel(newAPIError)
+	}
+	if result.localErr == nil && newAPIError == nil &&
+		common.AutomaticDisableChannelEnabled && milliseconds > disableThreshold {
+		err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
+		newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
+	}
+	return newAPIError, shouldBanChannel
+}
+
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
@@ -908,24 +936,14 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 
 	summary.Tested++
 
-	shouldBanChannel := false
-	newAPIError := result.newAPIError
-	if newAPIError != nil {
-		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
-	}
+	newAPIError, shouldBanChannel := evaluateChannelTest(result, milliseconds, disableThreshold)
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
-		if milliseconds > disableThreshold {
-			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
-			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
-			shouldBanChannel = true
-		}
-	}
-
-	if newAPIError == nil {
-		summary.Succeeded++
-	} else {
+	// localErr 是"这条测试没跑起来"（不支持的类型、构造请求失败等），
+	// 不是渠道健康样本：必须计失败，但不能据此禁用渠道。
+	if result.localErr != nil || newAPIError != nil {
 		summary.Failed++
+	} else {
+		summary.Succeeded++
 	}
 
 	if allowDisable && isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
@@ -938,7 +956,10 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Enabled++
 	}
 
-	channel.UpdateResponseTime(milliseconds)
+	// 慢响应但上游成功时仍记录真实耗时；上游失败的耗时不是速度样本。
+	if result.localErr == nil && result.newAPIError == nil {
+		channel.UpdateResponseTime(milliseconds)
+	}
 	return summary
 }
 

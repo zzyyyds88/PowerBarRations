@@ -46,10 +46,21 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 	result := &StatsRebuildResult{DryRun: dryRun}
 
 	// rebuild 与 outbox worker 互斥：先暂停增量 worker，再从明细全量重建。
-	// outbox 只是聚合的加速缓存；rebuild 成功后会在同一事务里清空它，
-	// 因此死信/积压不会阻止权威重建。
+	// outbox 只是聚合的加速缓存；rebuild 成功后在同一事务里清空水位以内的
+	// 行（含死信），因此死信/积压不会阻止权威重建。
 	pbrStatsOutboxMu.Lock()
 	defer pbrStatsOutboxMu.Unlock()
+
+	// 请求写入（明细+outbox）不持有 pbrStatsOutboxMu，重建期间仍会继续落库。
+	// 记录开始时的最大明细 id 作为水位：只重算 <= 水位的明细，最终也只清
+	// <= 水位的 outbox；水位之后的新请求由 worker 增量补算，避免“聚合漏计但
+	// outbox 被清掉”的永久缺口。
+	var maxRow struct{ MaxID int64 }
+	if err := DB.Model(&PBRRequestLog{}).
+		Select("COALESCE(MAX(id), 0) AS max_id").Scan(&maxRow).Error; err != nil {
+		return nil, err
+	}
+	maxLogID := maxRow.MaxID
 
 	// 明细已被保留策略 prune 时，prune 边界之前的聚合没有明细来源，必须保留。
 	// 边界小时桶（min(ts) 所在小时）也整体保留：prune 只删旧明细，边界桶里
@@ -132,7 +143,7 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 	costAfter := 0.0
 	for {
 		var entries []PBRRequestLog
-		if err := DB.Where("id > ?", lastID).Order("id asc").Limit(batchSize).Find(&entries).Error; err != nil {
+		if err := DB.Where("id > ? AND id <= ?", lastID, maxLogID).Order("id asc").Limit(batchSize).Find(&entries).Error; err != nil {
 			return nil, err
 		}
 		if len(entries) == 0 {
@@ -290,9 +301,9 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 				return err
 			}
 		}
-		// 全量重建已覆盖所有明细；outbox 中的增量（含死信）已被最终聚合吸收，
-		// 同一事务清空，避免死信/积压阻断后续 rebuild 或让 health 永久 degraded。
-		return tx.Where("1 = 1").Delete(&PBRStatsOutbox{}).Error
+		// 全量重建已覆盖水位以内的所有明细；只清这部分 outbox（含历史
+		// log_id=0 的旧行）。水位之后的新请求保留，由 worker 增量补算。
+		return tx.Where("log_id = 0 OR log_id <= ?", maxLogID).Delete(&PBRStatsOutbox{}).Error
 	})
 	if err != nil {
 		return nil, err

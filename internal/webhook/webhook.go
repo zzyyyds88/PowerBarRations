@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,6 +99,22 @@ func MaskSecret(secret string) string {
 		return "****"
 	}
 	return "****" + secret[len(secret)-4:]
+}
+
+// MaskedTargets 返回 secret 已掩码的副本，供所有管理面只读回显使用。
+// 调用方不得把掩码值写回配置（写入口只接受 /api/webhooks 的明文/留空语义）。
+func MaskedTargets(targets []Target) []Target {
+	out := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		target.Secret = MaskSecret(target.Secret)
+		// Events 来自全局配置缓存：拷贝切片，避免调用方 append 污染运行态。
+		target.Events = slices.Clone(target.Events)
+		if target.Events == nil {
+			target.Events = []string{}
+		}
+		out = append(out, target)
+	}
+	return out
 }
 
 // configLoader 抽出来供测试注入；生产实现读 common.OptionMap。
@@ -496,11 +513,10 @@ func postWebhook(target Target, body []byte, ts int64, signature string) (int, e
 	return resp.StatusCode, nil
 }
 
+// clampError 投递错误会落 webhook_deliveries 并经管理面回显；transport 错误
+// 带目标 URL（可能含 query token），先脱敏再按 UTF-8 边界截断。
 func clampError(msg string) string {
-	if len(msg) > maxErrorLen {
-		return msg[:maxErrorLen]
-	}
-	return msg
+	return common.TruncateUTF8(common.MaskSensitiveInfo(msg), maxErrorLen)
 }
 
 // recordDelivery 投递结论落库（含重试耗尽的死信与测试投递）。
