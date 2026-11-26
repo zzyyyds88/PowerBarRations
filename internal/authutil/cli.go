@@ -46,6 +46,7 @@ func runReset(args []string) int {
 	fs := flag.NewFlagSet("auth reset", flag.ContinueOnError)
 	dbPath := fs.String("db", "", "目标 PBR SQLite 路径（缺省取 $SQLITE_PATH）")
 	confirm := fs.Bool("yes", false, "确认清除管理凭据（必填）")
+	force := fs.Bool("force", false, "服务仍在写库时强制继续（默认拒绝）")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -69,11 +70,24 @@ func runReset(args []string) int {
 		fmt.Fprintln(os.Stderr, "拒绝执行：reset 会把网关打回未初始化，确认请加 --yes")
 		return 2
 	}
+	// 第二写连接会与运行中的服务争抢 SQLite 单写锁；WAL/SHM 存在是"服务可能
+	// 仍在运行"的强提示。默认拒绝，要求先 stop；崩溃残留可用 --force 跳过。
+	if !*force {
+		for _, suffix := range []string{"-wal", "-shm"} {
+			if _, err := os.Stat(path + suffix); err == nil {
+				fmt.Fprintf(os.Stderr, "检测到 %s%s：PBR 可能仍在运行。请先停止服务再 reset；确认无服务时可加 --force\n", path, suffix)
+				return 1
+			}
+		}
+	}
 
-	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := gorm.Open(sqlite.Open(common.SQLiteDSN(path)), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "打开数据库失败: "+err.Error())
 		return 1
+	}
+	if sqlDB, dbErr := db.DB(); dbErr == nil {
+		defer sqlDB.Close()
 	}
 	previousDB := model.DB
 	model.DB = db

@@ -44,6 +44,7 @@ const (
 	CodeUpstreamError         = "upstream_error"
 	CodeNoAvailableMember     = "no_available_member"
 	CodeWebhookTargetNotFound = "webhook_target_not_found"
+	CodeStatsUnavailable      = "stats_unavailable"
 	CodeInternalError         = "internal_error"
 )
 

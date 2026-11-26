@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -219,8 +221,5 @@ func CleanupExpiredAsyncObjects(now time.Time) (int64, error) {
 }
 
 func truncateAsyncField(value string, max int) string {
-	if len(value) <= max {
-		return value
-	}
-	return value[:max]
+	return common.TruncateUTF8(value, max)
 }

@@ -1,5 +1,10 @@
 package common
 
+import (
+	"net/url"
+	"strings"
+)
+
 type DatabaseType string
 
 const (
@@ -62,4 +67,39 @@ func UsingLogDatabase(databaseType DatabaseType) bool {
 //     front, so writers serialize through the busy timeout instead of dying on
 //     a stale snapshot. Autocommit SELECTs stay concurrent because WAL keeps
 //     readers unlocked.
-var SQLitePath = "pbr.db?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_txlock=immediate"
+var SQLitePath = SQLiteDSN("pbr.db")
+
+// SQLiteDSN 在调用方给的路径/DSN 上强制补齐并发正确性所需的参数。
+//
+// SQLITE_PATH 允许用户只写 `pbr.db`（README 的简写），也允许带自定义参数。
+// 但 busy_timeout(WAL/_txlock=immediate 是正确性依赖，不能因为用户漏写或
+// 写了冲突值（例如 journal_mode(DELETE)）而失效：这里删除同名旧值后追加
+// 规范值，其余参数（mode/cache 等）原样保留。空路径回落到默认 pbr.db。
+func SQLiteDSN(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		path = "pbr.db"
+	}
+	base, rawQuery, _ := strings.Cut(path, "?")
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		// 无法解析的查询串不猜测：保留原样，由驱动报错，避免静默改坏路径。
+		return path
+	}
+	values.Del("_busy_timeout")
+	values.Del("_txlock")
+
+	// 只保留用户自定义的 pragma；busy_timeout/journal_mode 由这里统一。
+	pragmas := make([]string, 0, 3)
+	for _, pragma := range values["_pragma"] {
+		lower := strings.ToLower(strings.TrimSpace(pragma))
+		if strings.HasPrefix(lower, "busy_timeout(") || strings.HasPrefix(lower, "journal_mode(") {
+			continue
+		}
+		pragmas = append(pragmas, pragma)
+	}
+	pragmas = append(pragmas, "busy_timeout(30000)", "journal_mode(WAL)")
+	values["_pragma"] = pragmas
+	values.Set("_txlock", "immediate")
+	return base + "?" + values.Encode()
+}

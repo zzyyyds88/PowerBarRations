@@ -28,17 +28,19 @@ bash verify/deploy/smoke.sh
 | 现网容器未被触碰 | 前后比对 `docker ps` | 容器集合未变 | 日志第 117 行 |
 | 清理 | `down -v` | 本次项目容器数为 0 | 日志第 119 行 |
 
-## 备份与回滚（实测过的步骤）
+## 备份与回滚（脚本实测步骤）
 
 ```bash
-# 备份：卷里的 SQLite（含 -wal/-shm）
-docker run --rm -v pbr-data:/data -v "$PWD":/backup alpine \
-  tar czf /backup/pbr-data-$(date +%F).tgz -C /data .
+# 在线备份：镜像内 pbr backup（SQLite 在线快照 + quick_check），不停服。
+docker exec pbr /app/pbr backup --out /data/backups/pbr-$(date -u +%Y%m%dT%H%M%SZ).db
+docker cp pbr:/data/backups/pbr-<时间>.db "$PWD/"
 
-# 回滚：恢复卷后重启
-docker run --rm -v pbr-data:/data -v "$PWD":/backup alpine \
-  sh -c 'rm -rf /data/* && tar xzf /backup/pbr-data-<日期>.tgz -C /data'
-docker restart pbr
+# 回滚：必须停容器，替换主库并清掉旧 WAL/SHM，再启动
+docker stop pbr
+install -m 600 pbr-<时间>.db /srv/docker/data/pbr/pbr.db
+rm -f /srv/docker/data/pbr/pbr.db-wal /srv/docker/data/pbr/pbr.db-shm
+docker start pbr
+curl -sf http://127.0.0.1:3000/api/health
 ```
 
 配置级备份/回滚另有一条不依赖容器的路径：`GET /api/v1/export` 导出，

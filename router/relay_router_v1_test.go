@@ -345,5 +345,10 @@ func hasFunctionalRoute(engine *gin.Engine, prefix string) bool {
 // migratePBRMetricsTestTables 让收尾点的日志写入在测试库里真实执行。
 func migratePBRMetricsTestTables(t *testing.T) {
 	t.Helper()
-	require.NoError(t, model.DB.AutoMigrate(&model.PBRRequestLog{}, &model.PBRStatsHourly{}))
+	require.NoError(t, model.DB.AutoMigrate(
+		&model.PBRRequestLog{},
+		&model.PBRRequestContext{},
+		&model.PBRStatsHourly{},
+		&model.PBRStatsOutbox{},
+	))
 }

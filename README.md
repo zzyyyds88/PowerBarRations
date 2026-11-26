@@ -274,7 +274,7 @@ curl -s -X PUT $BASE/api/v1/lanes/lane-1 -H "Authorization: Bearer $ADMIN_KEY" \
   AI/脚本用口令自行计算管理密钥：`Base64(SHA256(口令))` 作 `Authorization: Bearer`。
   一行：`printf '%s' '<口令>' | openssl dgst -sha256 -binary | openssl base64 -A`
 - 口令丢失：`PBR_ADMIN_KEY`（单把）或 `PBR_ADMIN_KEYS`（多把，逗号分隔）环境变量直接指定，
-  或 `pbr auth reset --db <pbr.db> --yes` 清掉库内凭据回到未初始化状态（`--yes` 为破坏性动作确认）。
+  或停服后 `pbr auth reset --db <pbr.db> --yes` 清掉库内凭据回到未初始化状态（`--yes` 为破坏性动作确认）。
 - 口令变更即管理密钥变更，旧密钥立即失效。登录接口对连续失败做指数退避（上限 30s）。
 - **本网关只跑明文 HTTP，不提供 TLS/HTTPS**（与上游 new-api 口径一致）。
   安全边界：派生规则（单次 SHA256、无盐）抗离线爆破弱——**口令必须是长随机串**（建议 ≥32 字符）；
@@ -321,7 +321,7 @@ POST /api/v1/import?dry_run=true        # 导入前先看 diff
 GET  /api/v1/openapi.json               # 完整契约
 ```
 
-- **备份**：备份 Docker 卷里的 `pbr.db`（含 `-wal`/`-shm`）即可；也可用 `/export` 导出配置。
+- **备份**：容器内 `docker exec pbr /app/pbr backup --out /data/backups/pbr-<时间>.db`（SQLite 在线快照 + `quick_check`，不停服），再 `docker cp` 到宿主机；本机直跑可用 `pbr backup` 或 `scripts/backup_pbr_db.sh`。**不要**在运行中直接 tar `pbr.db`/`-wal`/`-shm`。恢复必须先停服务、替换主库并删除旧 `-wal`/`-shm`。也可用 `/export` 导出配置。
 - **日志**：只存元数据（车道、成员、尝试链、token 数、耗时、折算金额），
   不存请求/响应正文，不存密钥明文，不存余额。
 - **升级**：`docker compose up -d --build`；数据库结构由启动时的迁移自动补齐。
@@ -375,10 +375,12 @@ server {
 
 ```bash
 ./pbr                        # 启动网关
-./pbr auth reset --db <pbr.db> --yes   # 清库内管理凭据→回到未初始化（破坏性，需 --yes）
+./pbr backup --db <pbr.db> --out <backup.db>   # 在线一致性备份 + quick_check（不停服）
+./pbr auth reset --db <pbr.db> --yes           # 清库内管理凭据→回到未初始化（需先停服）
 ```
 
-- `auth reset` 的 `--db` 缺省取 `$SQLITE_PATH`；也可用 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 临时覆盖口令派生。
+- `auth reset` 的 `--db` 缺省取 `$SQLITE_PATH`；也可用 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 临时覆盖口令派生。检测到 `-wal`/`-shm` 默认拒绝，确认无服务时可加 `--force`。
+- `backup` 的 `--out` 缺省 `./backups/pbr-<UTC>.db`；已存在文件拒绝覆盖，副本权限 0600。
 
 ---
 
@@ -402,7 +404,7 @@ server {
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PORT` | `5700` | 监听端口 |
-| `SQLITE_PATH` | `/data/pbr.db?...` | SQLite 路径；建议保留 WAL / busy_timeout 参数 |
+| `SQLITE_PATH` | `/data/pbr.db?...` | SQLite 路径；只写文件名即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 会强制补齐（自定义值会被规范值覆盖）。`LOG_SQL_DSN` 不得指向同一 SQLite 文件 |
 | `SESSION_SECRET` / `CRYPTO_SECRET` | 必填 | 同 Compose 中的 `PBR_*` 两项 |
 | `PBR_BIND` | `0.0.0.0` | 监听地址 |
 | `SESSION_COOKIE_SECURE` | `false` | 走 HTTPS 反代时设为 `true`（单开关，会话 Cookie 带 `Secure`） |

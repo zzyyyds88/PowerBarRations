@@ -96,6 +96,10 @@ type metricsSet struct {
 	circuitState    *prometheus.GaugeVec
 	channelUp       *prometheus.GaugeVec
 
+	logWriteFailures   *prometheus.CounterVec
+	statsOutboxBacklog prometheus.Gauge
+	statsOutboxDead    prometheus.Gauge
+
 	channelMu     sync.Mutex
 	channelStates map[string]struct{}
 }
@@ -151,6 +155,21 @@ func newMetrics() *metricsSet {
 			Name:      "channel_up",
 			Help:      "渠道当前是否可用：1=up，0=down。",
 		}, []string{"channel"}),
+		logWriteFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "pbr",
+			Name:      "log_write_failures_total",
+			Help:      "日志/聚合写入失败次数（按阶段）。",
+		}, []string{"stage"}),
+		statsOutboxBacklog: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "pbr",
+			Name:      "stats_outbox_backlog",
+			Help:      "待聚合的 outbox 行数（不含死信）。",
+		}),
+		statsOutboxDead: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "pbr",
+			Name:      "stats_outbox_dead",
+			Help:      "超过最大重试次数、不再自动处理的 outbox 行数。",
+		}),
 	}
 
 	// 注册的 collector 全部是编译期常量构造，重复注册只可能是改错指标名，
@@ -166,6 +185,9 @@ func newMetrics() *metricsSet {
 		m.upstreamErrors,
 		m.circuitState,
 		m.channelUp,
+		m.logWriteFailures,
+		m.statsOutboxBacklog,
+		m.statsOutboxDead,
 	)
 	return m
 }
@@ -185,6 +207,21 @@ func (m *metricsSet) handler() http.Handler {
 // ObserveRequest 用一次请求的终态更新默认指标集合。
 func ObserveRequest(obs RequestObservation) {
 	defaultMetrics.observeRequest(obs)
+}
+
+// ObserveLogWriteFailure 记录一次日志/聚合写入失败；stage 只允许低基数枚举
+// （detail_transaction / stats_outbox），不得放请求 ID 或 SQL。
+func ObserveLogWriteFailure(stage string) {
+	if strings.TrimSpace(stage) == "" {
+		stage = labelUnknown
+	}
+	defaultMetrics.logWriteFailures.WithLabelValues(stage).Inc()
+}
+
+// SetStatsOutboxBacklog 更新 outbox 待处理/死信行数（只读计数，不查库）。
+func SetStatsOutboxBacklog(pending, dead int64) {
+	defaultMetrics.statsOutboxBacklog.Set(float64(pending))
+	defaultMetrics.statsOutboxDead.Set(float64(dead))
 }
 
 // observeRequest 记录一次模型面请求的终态。

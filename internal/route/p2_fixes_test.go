@@ -134,7 +134,7 @@ func TestMemberRecoveredPairsCooldown(t *testing.T) {
 	require.False(t, ok)
 
 	key := memberKeyOf(&state.Route.Members[0])
-	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0, CurrentCircuitSettings()) })
+	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0, CurrentCircuitSettings(), true) })
 
 	assert.Equal(t, []string{EventCooldown, EventMemberRecovered}, eventTypes(state.Runtime))
 	if assert.Len(t, state.Runtime.Events, 2) {
@@ -155,7 +155,7 @@ func TestLaneUnavailableAndRecoveredPair(t *testing.T) {
 
 	// 恢复：第一次成功服务收口。
 	key := memberKeyOf(&state.Route.Members[0])
-	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0, CurrentCircuitSettings()) })
+	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0, CurrentCircuitSettings(), true) })
 	assert.Equal(t, []string{EventLaneUnavailable, EventLaneRecovered}, eventTypes(state.Runtime))
 
 	// 未配车道（unconfigured）不发车道级事件：那是配置问题，不是运行态故障。

@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
@@ -223,8 +224,10 @@ func Classify(err *types.NewAPIError) ErrorKind {
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
 		return KindHardAuth
 	case code == http.StatusBadRequest || code == http.StatusUnprocessableEntity,
+		code == http.StatusFailedDependency,
 		code == http.StatusUnavailableForLegalReasons:
 		// 400/422：上游对该成员的拒绝（内容审查、参数不支持等），换成员可能就过。
+		// 424：上游明确拒绝重放（如 Automatic replay is not allowed），换成员；
 		// 451：因法律原因不可用，属确定性拒绝，不是瞬时故障。
 		return KindUpstreamReject
 	case code == http.StatusPaymentRequired:
@@ -245,6 +248,40 @@ func Classify(err *types.NewAPIError) ErrorKind {
 		// 不冷却，直接撞死在第一个成员上。
 		return KindSoftTransient
 	}
+}
+
+// requestScopedRejectMarkers 是上游明确针对"这一份请求"的拒绝标记
+// （内容审查/参数不支持/上下文超限/重放拒绝）。它们仍按 upstream_reject
+// 换成员，但不累计 reject_streak（routing-spec §4.1.3）——那不是配置过错。
+var requestScopedRejectMarkers = []string{
+	"data_inspection_failed",
+	"content_filter",
+	"content policy",
+	"invalid_parameter",
+	"invalid_request_error",
+	"context_length_exceeded",
+	"unsupported_parameter",
+	"unsupported_value",
+	"automatic replay is not allowed",
+}
+
+// IsRequestScopedUpstreamReject 判断一次 upstream_reject 是否只针对本次请求。
+// 无法识别的报文按配置可疑处理（保守），仍累计 reject_streak。
+func IsRequestScopedUpstreamReject(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	// 424 = 上游明确拒绝重放，属于本次请求/本次重放条件，不是配置过错。
+	if err.StatusCode == http.StatusFailedDependency {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, marker := range requestScopedRejectMarkers {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // isUpstreamErrorObject 判断 RelayError 是否是上游错误对象（值或指针形式）。
@@ -326,6 +363,9 @@ type State struct {
 	admissionReady func(*model.RouteMember) bool
 	// throttledIdx 本轮因准入未就绪被跳过的首成员（用于排队/本地 429）。
 	throttledIdx int
+	// abortErr 本请求需要原样透传的上游错误（当前用于 429 Retry-After 超上限）。
+	// 与 throttle 不同：它不是本地准入拒绝，也不合成 503。
+	abortErr *types.NewAPIError
 	// admissionDeadline 请求级绝对准入预算，只由 PBRServe 入口计算一次；
 	// 所有成员与重试共享，不能每次 PBRNextChannel 重新计时。
 	admissionDeadline    time.Time
@@ -526,6 +566,14 @@ func routeSnapshotSignature(resolved *model.ResolvedRoute) string {
 	return b.String()
 }
 
+// AbortError 返回本请求需要原样透传的上游错误（如 429 Retry-After 超上限）。
+// 调用方在 Next 返回 ok=false 后读取；没有中止时返回 nil。
+func (s *State) AbortError() *types.NewAPIError {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.abortErr
+}
+
 // Current 返回当前成员（未选过时为 nil）。
 func (s *State) Current() *model.RouteMember {
 	s.mu.Lock()
@@ -543,8 +591,9 @@ func (s *State) currentMemberLocked() *model.RouteMember {
 // Next 返回本轮应尝试的成员。lastErr 为 nil 表示这是本请求的首次尝试。
 //
 // 第二个返回值是本轮开始前应等待的时长（同成员重试间隔，routing-spec §3.1）。
-// 返回 ok=false 表示"没有可用成员/不该继续尝试"，调用方应按 §4.2 快抛 503
-// （客户端的错则原样返回，见 §4.1 的 client_error / canceled 两行）。
+// 返回 ok=false 表示"没有可用成员/不该继续尝试"，调用方先读 AbortError()：
+// 非 nil 表示需要原样透传的上游错误（如 Retry-After 超上限的 429）；
+// 否则按 §4.2 快抛 503（客户端的错则原样返回，见 §4.1 的 client_error / canceled 两行）。
 //
 // 请求级快照不可变：上一轮错误按实际尝试的同一份快照归属，随后只在该
 // 快照内推进成员/重试预算，不重读车道、渠道或成员配置（ADR 0014）。
@@ -588,6 +637,12 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 					s.releaseOwnedProbeLocked(key)
 				}
 			})
+			// routing-spec §4.1.1：Retry-After 超过本地上限时不做无谓挂起，
+			// 原样把该 429 交回 controller（写 Retry-After 头，不换成员、不合成 503）。
+			if lastErr.RetryAfterSeconds > rateLimitMaxPaceSeconds {
+				s.abortErr = lastErr
+				return nil, 0, false
+			}
 			if budgetLeft && ShouldRetrySameMember(kind) {
 				// 原地重试的等待取 max(retry_interval, 剩余减速)：上游说了
 				// Retry-After 5s、本地间隔 3s，就必须等满 5s 再打（§3.1）。
@@ -610,7 +665,7 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 				if s.Runtime.generation != s.runtimeGeneration {
 					return
 				}
-				s.Runtime.recordReject(key, kind, s.Route.Mode != model.LaneModeManual)
+				s.Runtime.recordReject(key, kind, s.Route.Mode != model.LaneModeManual, IsRequestScopedUpstreamReject(lastErr), CurrentCircuitSettings())
 				s.releaseOwnedProbeLocked(key)
 			})
 		} else if budgetLeft && ShouldRetrySameMember(kind) {
@@ -624,6 +679,12 @@ func (s *State) Next(lastErr *types.NewAPIError) (*model.RouteMember, time.Durat
 			// §2.1：manual 车道不参与冷却——人工指定的成员就是唯一选择，冷却在此
 			// 没有可换的替代者，只会把请求变成 503；熔断计分照常。
 			// 429 已在上面写过减速，落到这里只继续换人，不能重复判罚。
+			if kind == KindTimeout {
+				// timeout 已送达但无响应：同一份请求/同一成员再打大概率重复失败
+				// （routing-spec §4.1）。一次性耗尽本请求预算，防止短冷却到期后
+				// 在同一请求内再次选中它（30s×2 的 200s 串行链）。
+				s.attempts[s.current] = s.budgetFor(s.current)
+			}
 			manual := s.Route.Mode == model.LaneModeManual
 			s.Runtime.withLock(func() {
 				if s.Runtime.generation != s.runtimeGeneration {
@@ -746,17 +807,22 @@ func (s *State) chooseFailoverLocked() int {
 		return -1
 	}
 	chosen := -1
+	pacedIdx := -1
+	var pacedUntil int64
 	s.throttledIdx = -1
 	s.Runtime.withLock(func() {
 		// 亲和期内沿用当前成员（§6：不提前切回高优先级成员）。
 		if s.Runtime.HasCurrent && s.Runtime.AffinityUntil > nowMs() {
 			if idx := s.indexOfKey(s.Runtime.CurrentMember); idx >= 0 {
 				key := memberKeyOf(&s.Route.Members[idx])
+				availability := s.Runtime.availabilityOf(key, CurrentCircuitSettings())
 				if !s.Route.Members[idx].Disabled &&
+					s.Route.Members[idx].ConfigError == nil &&
 					s.Route.Members[idx].OverrideError == nil &&
 					s.attempts[idx] < s.budgetFor(idx) &&
 					s.admissionAllowsLocked(&s.Route.Members[idx]) &&
-					s.Runtime.availabilityOf(key, CurrentCircuitSettings()) != availSkip {
+					availability == availOK &&
+					s.Runtime.paceUntil(key) == 0 {
 					// 亲和绕过的高优先级成员必须留痕，否则 attempts 链无法解释
 					// "为什么没用 P1"（routing-spec §6/§9）。
 					s.recordAffinitySkipsLocked(idx)
@@ -802,6 +868,16 @@ func (s *State) chooseFailoverLocked() int {
 				}
 				continue
 			}
+			// 限流减速不改变“可选”，但同优先级内先让非减速成员上；全部减速时
+			// 选最早到期者（routing-spec §4.1.1/§5.3）。探测槽仍优先用于恢复。
+			if availability == availOK {
+				if until := s.Runtime.paceUntil(key); until > 0 {
+					if pacedIdx < 0 || until < pacedUntil {
+						pacedIdx, pacedUntil = idx, until
+					}
+					continue
+				}
+			}
 			switch availability {
 			case availProbeReady:
 				lease, acquired := s.Runtime.acquireProbeLocked(key, DefaultProbeLeaseTTL)
@@ -819,6 +895,12 @@ func (s *State) chooseFailoverLocked() int {
 			}
 		}
 
+		// 全成员都在减速：选最早到期者，不把车道判成不可用（§5.3）。
+		if chosen < 0 && pacedIdx >= 0 {
+			chosen = pacedIdx
+			return
+		}
+
 		// ── 恐慌模式（panic threshold，与 Envoy 同名机制同义）──────────────────
 		// 常规选路把「冷却中」一律跳过。若**冷却**是唯一阻止选路的原因（成员没被人工停用、
 		// 也没熔断打开——它们只是刚打了个喷嚏在休息），此时直接返回「本车道无可选成员」，
@@ -832,8 +914,11 @@ func (s *State) chooseFailoverLocked() int {
 		if chosen < 0 {
 			best, bestUntil := -1, int64(0)
 			for _, idx := range s.order {
-				if s.attempts[idx] >= s.budgetFor(idx) ||
-					s.Route.Members[idx].Disabled || s.Route.Members[idx].OverrideError != nil {
+				if s.attempts[idx] > 0 || // 本请求已试过：panic 只做一次新往返，不二次记账
+					s.attempts[idx] >= s.budgetFor(idx) ||
+					s.Route.Members[idx].Disabled ||
+					s.Route.Members[idx].ConfigError != nil ||
+					s.Route.Members[idx].OverrideError != nil {
 					continue
 				}
 				key := memberKeyOf(&s.Route.Members[idx])
@@ -881,11 +966,11 @@ func (s *State) recordAffinitySkipsLocked(affinityIdx int) {
 		// （routing-spec §5.3/§9）。
 		if s.Route.Members[idx].ConfigError != nil {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "channel_config_error")
-			return
+			continue
 		}
 		if s.Route.Members[idx].OverrideError != nil {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "member_config_error")
-			return
+			continue
 		}
 		if s.Route.Members[idx].Disabled {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "disabled")
@@ -917,6 +1002,14 @@ func (s *State) pickManualLocked() (*model.RouteMember, bool) {
 		}
 		if s.Route.Members[idx].OverrideError != nil {
 			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "member_config_error")
+			return
+		}
+		if s.Route.Members[idx].ConfigError != nil {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "channel_config_error")
+			return
+		}
+		if !s.Route.Members[idx].ChannelEnabled {
+			s.recordSkipWithStatusLocked(key, memberLabel(&s.Route.Members[idx]), "channel_disabled")
 			return
 		}
 		// manual 忽略冷却，但仍先判熔断；已经确定本轮不可发的成员不应进入
@@ -995,11 +1088,12 @@ func (s *State) OnSuccess() {
 	}
 	key := memberKeyOf(&s.Route.Members[s.current])
 	affinitySeconds := s.configFor(s.current).MemberAffinitySeconds
+	fromProbe := s.probe != nil && s.probe.key == key
 	s.Runtime.withLock(func() {
 		if s.Runtime.generation != s.runtimeGeneration {
 			return
 		}
-		s.Runtime.recordSuccess(key, affinitySeconds, CurrentCircuitSettings())
+		s.Runtime.recordSuccess(key, affinitySeconds, CurrentCircuitSettings(), fromProbe)
 		s.releaseOwnedProbeLocked(key)
 	})
 }
@@ -1398,10 +1492,7 @@ func truncate(err *types.NewAPIError, max int) string {
 	}
 	// 脱敏后再截断：上游错误体可能回显 Authorization/key，而 attempts 链会进日志与 API
 	msg := err.MaskSensitiveErrorWithStatusCode()
-	if len(msg) <= max {
-		return msg
-	}
-	return msg[:max]
+	return common.TruncateUTF8(msg, max)
 }
 
 // ---------- gin.Context 往来 ----------

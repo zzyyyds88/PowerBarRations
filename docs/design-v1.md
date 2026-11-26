@@ -367,8 +367,9 @@ type LaneRelayConfig struct {
 - **恢复探测使用 `ProbeLease`**（[ADR 0014](adr/0014-request-resource-leases-and-route-snapshots.md)）：租约记录 owner、generation 与 expiry；只有 owner 的请求 State 幂等收口或 State 的到期回收可释放，`recordSuccess` / `recordFailure` 不隐式释放。迁移不转移 live lease，Prune 不清 live lease，Reset 递增 generation 使旧租约失效。
 - **限流（429）不写冷却**（2026-11-23 立，routing-spec §4.1.1）：`429` 表示"你发得太快"而非
   "成员故障"，只写 `PacedUntil` 减速（默认 3s，尊重 `Retry-After`，上限 60s），
-  期间该成员仍 `available=true`、只在本轮排到后面。关键词命中欠费/额度的 429 归 `hard_quota`，
-  仍走长冷却（账号状态，与并发无关）。
+  期间该成员仍 `available=true`、只在本轮排到后面。`Retry-After` 超过 60s 时不等待：
+  原样透传该 429 与 `Retry-After` 头，不换成员、不合成 503。关键词命中欠费/额度的 429 归
+  `hard_quota`，仍走长冷却（账号状态，与并发无关）。
 - 切换成功后按 `AffinitySeconds` 粘住当前成员，避免抖动；成员失败立即结束亲和。
 - 进程内保存；重启清空属可接受语义，README 写明。
 
@@ -378,7 +379,7 @@ type LaneRelayConfig struct {
 - **半开与冷却到期探测共用 `ProbeLease`**：generation 隔离 Reset/迁移前后的所有权，Health 只读投影 `probe_since` / `probe_lease_until`，不修复运行态（ADR 0014）。
 - **软/硬故障分离**：`429`/限流类为软故障，**不计熔断分、不写冷却**（routing-spec §4.1.1）；
   其余软故障（5xx/超时）按分级冷却，硬故障（401/403/欠费）按倍率冷却。
-- 连续失败达阈值 → 打开；退避期到 → 半开放一个真实请求；成功即自动复通并写恢复事件日志。
+- 连续失败达阈值 → 打开；退避期到 → 半开放一个真实请求；**连续 `circuit_half_open_successes` 次探测成功才复通**并写恢复事件日志（单次成功只解除本次冷却，不直接恢复全量流量）；熔断打开前已发出、随后成功的普通在飞请求不得关闭 open。
 - 触发证据除关键词外，补"滚动窗口失败率"（定长环形缓冲：数据面非阻塞上报、控制面评估）。
 - **禁用语义 = "熔断中"**；保留开关名 `AutomaticEnableChannelEnabled` 兼容现网口径，**默认 true**（README 写明）。注意：该开关只是"允许写回 enabled"的许可，真正执行复通的是渠道巡检任务（`monitor_setting.auto_test_channel_enabled`，默认 **false**）或人工触发"测试全部渠道"；即默认部署下不会自动复通，README 必须如实写明。
 - 阈值/半开周期进 `system/options` 可配，经 API 修改。
@@ -463,7 +464,9 @@ routing-spec §3.2）。要点：
   零内容帧→bad_response；不得用"空流"顶替超时或取消。
 - **任何"已写错误响应却返回成功"的路径必须修正**：未提交的返回错误走换人，已提交的
   标记为已提交失败（记失败、不重试、不二次写）。
-- **自动禁用按分类白名单**：只有 `hard_auth` / `hard_quota` 可触发，且状态码范围禁止 429/5xx。
+- **自动禁用按分类白名单**：只有 `hard_auth` / `hard_quota` 可触发，且状态码范围禁止 429/5xx；
+  该判定必须先于 `IsChannelError`/`channel:` 前缀匹配，`timeout`（`channel:response_time_exceeded`）
+  与 5xx/429 一律不得自动禁用渠道。
 
 ---
 
@@ -491,6 +494,8 @@ attempts(JSON), total_attempts, estimated_cost(仅折算), price_band(命中时�
 **上下文组成**：每条 chat-like 请求在转发前按 7 个分区（system/tools/skills/memory/files/results/chat）统计 prompt 的 token 组成，**只存名称、标签与 token 数**（usage-spec §5），正文、工具参数与文件内容不落库；完整分区明细在 `pbr_request_contexts`，随明细日志一起清理，`pbr_request_logs` 只留 `context_tokens` / `context_window` / `context_counted` / `context_status` 供列表与会话聚合。上下文解析失败、body 过大或格式不支持都不影响转发，只写状态。
 
 **隐私脱敏**：开启后，入站 JSON body 在协议解析前把密钥/个人数据/用户词替换为占位符，回复在最终写出前恢复；`mask_hits` 只存 kind/by/placeholder/head/len/n/action，**不存原值与正文**。默认关闭；规则引擎与本地模型语义、失败策略、API 与页面见 [`privacy-spec-v1.md`](privacy-spec-v1.md)。脱敏后的正文才进入上下文解析与上游发送，因此上下文统计看到的是占位符而不是原值。
+
+**写入协议（2026-11-26 收口）**：明细、上下文与聚合 outbox 必须在**同一 SQLite 事务**内落库；任一失败整条回滚，`carrier.Written` 只在提交成功后置位。`pbr_stats_outbox` 只存聚合所需字段，由常驻 worker 逐行在独立事务内 upsert 全部维度并删除 outbox 行——崩溃后要么整条未生效（重试），要么整条已生效（不重复计数）。SQLite `BUSY/LOCKED` 做有限重试；磁盘满/损坏立即暴露为写入失败并计入 `pbr_log_write_failures_total{stage}`。因此 `/api/stats` 的聚合在请求结束后**短期滞后**（worker 轮询 ≤2s），明细/日志视图仍即时一致。
 
 **聚合口径**：`pbr_stats_hourly` 新增 `client` 维度，并记录归一输入总量、缓存读写、推理 token 与首字耗时之和（usage-spec §6.3）。**缓存命中率 = `cache_read_tokens / input_tokens`**，其中 `input_tokens` 已按 `usage_semantic` 归一：Anthropic 的 input 不含缓存，需加上 `cache_read + cache_write`；OpenAI/Gemini 的 prompt 已包含 `cache_read`。
 
@@ -635,13 +640,17 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 - 开发阶段只保证当前 PBR schema 在新建 SQLite 数据库上初始化成功；破坏性 schema 变化允许重建开发库。
 - 不提供旧 `new-api`/`octopus` 数据库导入、历史数据回填、双写、旧字段兼容或数据恢复兜底。
 - 同版本 `/api/export` 与 `/api/import` 只处理 PBR 配置快照；它们不是数据库迁移工具。
+- **SQLite 运行纪律**：`SQLITE_PATH` 只写文件路径即可，`busy_timeout(30000)`/`journal_mode(WAL)`/`_txlock=immediate` 由 `common.SQLiteDSN` 强制补齐并覆盖冲突值；`LOG_SQL_DSN` 指向同一文件时启动失败。SQLite 主库连接生命周期默认 0（不周期性重建连接），连接池为单连接。
+- **备份/恢复**：生产用镜像内 `pbr backup`（SQLite 在线快照 + `quick_check`；本机开发可用同命令或 `scripts/backup_pbr_db.sh`），不得热 tar `pbr.db`/`-wal`/`-shm`；恢复必须先停服务、替换主库并删除旧 WAL/SHM。`pbr auth reset` 同样要求先停服务（检测到 WAL/SHM 默认拒绝，崩溃残留可 `--force`）。
 
 ### 16.5 日志保留
 
-- 不引入 cron。保留策略由 `system/options.log_retention_days` 配置（默认 30），并提供 `POST /api/logs/prune?before=<ts>&dry_run=` 由外部按需触发。
-- 聚合表（`pbr_stats_hourly`）长期保留（体积小）；明细表按上述策略清理。
-- 上下文明细表（`pbr_request_contexts`）按 `log_id` 与明细日志**同批清理**，不单独保留；会话与上下文曲线因此只覆盖保留期内的明细。聚合表不受影响。
+- 保留策略由 `system/options.log_retention_days` 配置（默认 30）。**内置每日分批清理**：系统任务调度器每 24h 创建一个 `log_cleanup` 任务，按 `ts < now - retention_days` 分批删除明细与上下文；保留期内的明细不会被提前删除。`POST /api/logs/prune?before=<ts>&dry_run=` 仍保留为手动入口。
+- 清理只动明细，聚合表（`pbr_stats_hourly`）**长期保留**（体积小）；一次 prune 不得改变 `/api/stats` 的历史数值。
+- 上下文明细表（`pbr_request_contexts`）按 `log_id` 与明细日志**同批清理**（同一事务、按批有界），不单独保留；会话与上下文曲线因此只覆盖保留期内的明细。
 - **`GET /api/stats` 必须读聚合表**（hour 直读、day 由小时桶上卷），不得读明细表——否则一次 prune 就把历史统计抹掉，与"聚合长期保留"自相矛盾。
+- `POST /api/stats/rebuild` 先 drain `pbr_stats_outbox`；重建时保留**已无明细来源**的小时桶（prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。仍有待处理/死信 outbox 行时 rebuild 失败，避免在聚合缺口上继续。
+- `/api/health` 暴露 `stats_outbox.pending/dead` 与最近一次 `db_last_write_error`；`dead > 0` 或 outbox 不可读时整体 `degraded`。
 
 ### 16.6 并发与超时
 

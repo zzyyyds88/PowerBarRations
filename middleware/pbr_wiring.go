@@ -81,6 +81,16 @@ func init() {
 				settings.AllowedFails = parsed
 			}
 		}
+		if raw, ok := common.OptionMap[route.OptionRejectStreakThreshold]; ok {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && parsed > 0 {
+				settings.RejectStreakThreshold = parsed
+			}
+		}
+		if raw, ok := common.OptionMap[route.OptionRejectCooldownSeconds]; ok {
+			if parsed, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && parsed > 0 {
+				settings.RejectCooldownSeconds = parsed
+			}
+		}
 		return settings
 	})
 

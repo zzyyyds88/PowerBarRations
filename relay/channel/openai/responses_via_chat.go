@@ -96,6 +96,12 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		if !handled {
 			return false
 		}
+		// 失败终态事件写出 ≠ 本次尝试成功：没有错误值时在此兜底，避免调用方
+		// 随后 sr.Stop(nil) 以 handler_stop 收尾，把上游失败吞成成功
+		// （ADR 0013 第 4 条、routing-spec §4.3）。
+		if streamErr == nil {
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+		}
 		for _, result := range failureResults {
 			event, ok := result.Value.(relayconvert.ChatToResponsesStreamEvent)
 			if !ok {
@@ -130,11 +136,13 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		var errorResp dto.OpenAITextResponse
 		if err := common.UnmarshalJsonStr(data, &errorResp); err == nil {
 			if oaiError := errorResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+				// 上游用流内错误对象拒绝：先按原始上游错误记失败分类，再写
+				// 失败终态事件。事件已写出不代表本次尝试成功（§4.3/§4.4）。
+				streamErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
 				if failResponsesStream(fmt.Errorf("%s", oaiError.Message)) {
 					sr.Stop(streamErr)
 					return
 				}
-				streamErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
 				sr.Stop(streamErr)
 				return
 			}
@@ -143,22 +151,24 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		var chunk dto.ChatCompletionsStreamResponse
 		if err := common.UnmarshalJsonStr(data, &chunk); err != nil {
 			logger.LogError(c, "failed to unmarshal chat stream response: "+err.Error())
+			// 先记录失败原因再写失败终态事件：事件写出后本次尝试仍然失败。
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 			if failResponsesStream(err) {
 				sr.Stop(streamErr)
 				return
 			}
-			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 			sr.Stop(streamErr)
 			return
 		}
 
 		results, err := service.ConvertStreamResponseChunk(c, info, state, &chunk)
 		if err != nil {
+			// 同上：转换失败即便已写失败终态事件，也必须记本次尝试失败。
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 			if failResponsesStream(err) {
 				sr.Stop(streamErr)
 				return
 			}
-			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 			sr.Stop(streamErr)
 			return
 		}
@@ -180,11 +190,12 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		return nil, streamErr
 	}
 
-	// 上游建流后零有效帧 = 空响应，按成员级失败处理（routing-spec §4.1）。
-	// 必须在 FinalizeStreamResponse 之前判：收尾会合成 response.completed，
-	// 写出去就变成"看起来成功"的空响应。
-	if helper.StreamFailedWithoutFrames(c, info) {
-		return nil, helper.EmptyStreamError()
+	// 非正常结束（客户端取消/首事件超时/读流失败）与零内容帧空流都必须按
+	// 真实原因分类（ADR 0013 第 4 条、routing-spec §4.1/§4.3）。必须在
+	// FinalizeStreamResponse 之前判：收尾会合成 response.completed，写出去
+	// 就变成"看起来成功"的空响应。
+	if outcomeErr := helper.StreamOutcomeError(c, info); outcomeErr != nil {
+		return nil, outcomeErr
 	}
 
 	usage := state.Usage()
@@ -195,10 +206,11 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	finalResults, err := service.FinalizeStreamResponse(c, info, state)
 	if err != nil {
-		if failResponsesStream(err) {
-			return usage, streamErr
-		}
-		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+		// 收尾失败同样是本次尝试失败：先记录错误，避免失败终态事件写出后
+		// 以 streamErr==nil 返回成功。
+		streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+		failResponsesStream(err)
+		return nil, streamErr
 	}
 	for _, result := range finalResults {
 		event, ok := result.Value.(relayconvert.ChatToResponsesStreamEvent)

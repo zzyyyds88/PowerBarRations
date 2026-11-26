@@ -23,15 +23,27 @@ func Health(c *gin.Context) {
 	if err := model.PingDB(); err != nil {
 		dbStatus = "error"
 	}
+	lastWriteError := model.LastDBWriteError()
+	outbox := gin.H{"pending": int64(0), "dead": int64(0), "available": true}
+	pending, dead, outboxErr := model.PBRStatsOutboxBacklog()
+	if outboxErr != nil {
+		outbox["available"] = false
+		outbox["reason"] = "stats_outbox_unavailable"
+	} else {
+		outbox["pending"] = pending
+		outbox["dead"] = dead
+	}
 	status := "ok"
-	if dbStatus != "ok" {
+	if dbStatus != "ok" || outboxErr != nil || dead > 0 {
 		status = "degraded"
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"status":   status,
-		"version":  common.Version,
-		"uptime_s": int64(time.Since(processStart).Seconds()),
-		"db":       dbStatus,
+		"status":              status,
+		"version":             common.Version,
+		"uptime_s":            int64(time.Since(processStart).Seconds()),
+		"db":                  dbStatus,
+		"db_last_write_error": lastWriteError,
+		"stats_outbox":        outbox,
 	})
 }
 

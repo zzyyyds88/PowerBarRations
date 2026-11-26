@@ -42,6 +42,39 @@ func webhookRequest(t *testing.T, method, path, body string) (*gin.Context, *htt
 	return c, recorder
 }
 
+// options/all 不能成为 webhook 明文 secret 的第二个出口。
+func TestGetAllSystemOptionsMasksWebhookSecrets(t *testing.T) {
+	setupWebhookTestDB(t)
+	const secret = "super-long-secret-4321"
+	c, rec := webhookRequest(t, http.MethodPut, "/api/webhooks",
+		`{"targets":[{"name":"notify","url":"http://127.0.0.1:8645/webhooks/xxx",
+		  "secret":"`+secret+`","enabled":true,"events":["circuit_open"]}]}`)
+	PutWebhooks(c)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	getCtx, getRec := webhookRequest(t, http.MethodGet, "/api/system/options/all", "")
+	GetAllSystemOptions(getCtx)
+	require.Equal(t, http.StatusOK, getRec.Code, getRec.Body.String())
+	assert.NotContains(t, getRec.Body.String(), secret, "完整 secret 不得出现在 options 列表")
+
+	var body struct {
+		Items []struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(getRec.Body.Bytes(), &body))
+	found := false
+	for _, item := range body.Items {
+		if item.Key != webhook.OptionKey {
+			continue
+		}
+		found = true
+		assert.Contains(t, item.Value, "****4321")
+	}
+	assert.True(t, found, "options/all 必须包含 webhook 配置键")
+}
+
 // 配置 PUT/GET 回读 + secret 掩码 + 空 secret 保留原值（api-spec §5.8）。
 func TestWebhookTargetsPutGetRoundTrip(t *testing.T) {
 	setupWebhookTestDB(t)

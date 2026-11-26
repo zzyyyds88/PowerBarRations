@@ -101,7 +101,7 @@ func TestRollingSuccessRateInHealthSnapshot(t *testing.T) {
 		"无样本时 rolling_success_rate 应为 0")
 
 	// 1 次成功 → 1.0
-	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0, CurrentCircuitSettings()) })
+	state.Runtime.withLock(func() { state.Runtime.recordSuccess(key, 0, CurrentCircuitSettings(), true) })
 	snapshot = state.Runtime.Health(resolved, CurrentCircuitSettings())
 	assert.Equal(t, 1.0, snapshot.Members[0].RollingSuccessRate)
 

@@ -57,8 +57,8 @@ func TestNonRejectOutcomeBreaksRejectStreak(t *testing.T) {
 	key := memberKeyOf(&resolved.Members[0])
 
 	runtime.withLock(func() {
-		runtime.recordReject(key, KindUpstreamReject, true)
-		runtime.recordReject(key, KindUpstreamReject, true)
+		runtime.recordReject(key, KindUpstreamReject, true, false, DefaultCircuitSettings())
+		runtime.recordReject(key, KindUpstreamReject, true, false, DefaultCircuitSettings())
 		require.Equal(t, 2, runtime.Circuits[key].RejectStreak)
 	})
 
@@ -69,14 +69,14 @@ func TestNonRejectOutcomeBreaksRejectStreak(t *testing.T) {
 			"非 reject 失败必须清零连续拒绝计数")
 	})
 	runtime.withLock(func() {
-		runtime.recordReject(key, KindUpstreamReject, true)
+		runtime.recordReject(key, KindUpstreamReject, true, false, DefaultCircuitSettings())
 		assert.Equal(t, 1, runtime.Circuits[key].RejectStreak,
 			"timeout 之后的拒绝必须从 1 重新计数")
 	})
 
 	// 429 只写 PacedUntil，不写冷却，也不是连续拒绝的一部分。
 	runtime.withLock(func() {
-		runtime.recordReject(key, KindUpstreamReject, true)
+		runtime.recordReject(key, KindUpstreamReject, true, false, DefaultCircuitSettings())
 		require.Equal(t, 2, runtime.Circuits[key].RejectStreak)
 		runtime.recordFailure(key, KindSoftRateLimit, 0, 5, false, settings)
 		assert.Zero(t, runtime.Circuits[key].RejectStreak,

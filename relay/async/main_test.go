@@ -47,6 +47,7 @@ func TestMain(m *testing.M) {
 		&model.LaneMember{},
 		&model.PBRRequestLog{},
 		&model.PBRStatsHourly{},
+		&model.PBRStatsOutbox{},
 	); err != nil {
 		panic("failed to migrate async test db: " + err.Error())
 	}
@@ -66,6 +67,7 @@ func resetAsyncState(t *testing.T) {
 		"pbr_files",
 		"pbr_request_logs",
 		"pbr_stats_hourly",
+		"pbr_stats_outbox",
 		"lane_members",
 		"lanes",
 		"channels",

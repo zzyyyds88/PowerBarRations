@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -311,15 +310,18 @@ type RecordConsumeLogParams struct {
 	// 决定缓存 token 与 prompt 的包含关系，从而决定折算公式——OpenAI/Gemini 的
 	// prompt 含缓存命中（cache_read 是子集，折算时要从 prompt 里扣掉），Anthropic
 	// 的 input 不含缓存（cache 单独计，prompt 全额按输入价）。空串按 openai。
-	UsageSemantic  string    `json:"usage_semantic"`
-	ModelName      string    `json:"model_name"`
-	TokenName      string    `json:"token_name"`
-	Content        string    `json:"content"`
-	TokenId        int       `json:"token_id"`
-	UseTimeSeconds int       `json:"use_time_seconds"`
-	IsStream       bool      `json:"is_stream"`
-	Group          string    `json:"group"`
-	Other          *LogOther `json:"other"`
+	UsageSemantic  string `json:"usage_semantic"`
+	ModelName      string `json:"model_name"`
+	TokenName      string `json:"token_name"`
+	Content        string `json:"content"`
+	TokenId        int    `json:"token_id"`
+	UseTimeSeconds int    `json:"use_time_seconds"`
+	// UseTimeMs 精确耗时（毫秒），只用于 PBR 请求日志与聚合；基座 logs 仍按
+	// UseTimeSeconds 的秒级口径。未提供时由 UseTimeSeconds 回退换算。
+	UseTimeMs int64     `json:"use_time_ms"`
+	IsStream  bool      `json:"is_stream"`
+	Group     string    `json:"group"`
+	Other     *LogOther `json:"other"`
 }
 
 // estimateRequestCost 折算一次请求的上游花费（人民币）与命中的峰谷时段下标。
@@ -414,6 +416,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 				params.PromptTokens, params.CompletionTokens,
 				params.CacheReadTokens, params.CacheWriteTokens,
 				params.UsageSemantic)
+			totalMs := params.UseTimeMs
+			if totalMs <= 0 {
+				totalMs = int64(params.UseTimeSeconds) * 1000
+			}
 			carrier.Usage = &PBRTokenUsage{
 				PromptTokens:     params.PromptTokens,
 				CompletionTokens: params.CompletionTokens,
@@ -421,7 +427,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 				CacheWriteTokens: params.CacheWriteTokens,
 				ReasoningTokens:  params.ReasoningTokens,
 				IsStream:         params.IsStream,
-				TotalMs:          int64(params.UseTimeSeconds) * 1000,
+				TotalMs:          totalMs,
 				EstimatedCost:    cost,
 				PriceBand:        &priceBand,
 			}
@@ -622,46 +628,5 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	return logs, total, err
 }
 
-func CountOldLog(ctx context.Context, targetTimestamp int64) (int64, error) {
-	var total int64
-	if err := LOG_DB.WithContext(ctx).Model(&Log{}).Where("created_at < ?", targetTimestamp).Count(&total).Error; err != nil {
-		return 0, err
-	}
-	return total, nil
-}
-
-func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	if nil != ctx.Err() {
-		return 0, ctx.Err()
-	}
-
-	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
-		// ClickHouse DELETE is a heavy mutation that rewrites data parts, so
-		// per-batch mutations would be pathologically slow. Remove all matching
-		// rows in a single synchronous mutation regardless of limit; the reported
-		// count lets the caller's progress loop complete in one pass.
-		total, err := CountOldLog(ctx, targetTimestamp)
-		if err != nil {
-			return 0, err
-		}
-		if total == 0 {
-			return 0, nil
-		}
-		if err := LOG_DB.WithContext(ctx).Exec(
-			"ALTER TABLE logs DELETE WHERE created_at < ? SETTINGS mutations_sync = 1",
-			targetTimestamp,
-		).Error; err != nil {
-			return 0, err
-		}
-		return total, nil
-	}
-
-	result := LOG_DB.WithContext(ctx).Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&Log{})
-	if nil != result.Error {
-		return 0, result.Error
-	}
-	return result.RowsAffected, nil
-}
+// 基座 logs 表的清理函数已随 PBR 明细日志统一而删除：log-cleanup 系统任务
+// 只清理 pbr_request_logs / pbr_request_contexts（见 PrunePBRRequestLogsBefore）。

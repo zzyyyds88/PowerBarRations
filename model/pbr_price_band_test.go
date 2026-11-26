@@ -213,10 +213,18 @@ func TestMigratePBRRequestLogPriceBandBackfillsFallback(t *testing.T) {
 	require.NoError(t, db.Raw("SELECT price_band FROM pbr_request_logs WHERE id = 1").Scan(&band).Error)
 	assert.Equal(t, pricing_setting.FallbackPriceBand, band, "历史明细等价于旧单层价（恒 -1）")
 
+	// 一次性 DEFAULT -1 必须被归一掉，否则 AutoMigrate 每次启动都会重建表。
+	var ddl string
+	require.NoError(t, db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='pbr_request_logs'").Scan(&ddl).Error)
+	assert.NotContains(t, ddl, "DEFAULT -1", "迁移后列不得保留 default，结构体是无 default 形态")
+
 	// 幂等：第二次执行不改列、不改值。
 	require.NoError(t, migratePBRRequestLogPriceBand(db))
 	require.NoError(t, db.Raw("SELECT price_band FROM pbr_request_logs WHERE id = 1").Scan(&band).Error)
 	assert.Equal(t, pricing_setting.FallbackPriceBand, band)
+	var ddlAgain string
+	require.NoError(t, db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='pbr_request_logs'").Scan(&ddlAgain).Error)
+	assert.Equal(t, ddl, ddlAgain, "重复迁移不得再次重建表")
 
 	// 升级路径闭环：随后按当前结构 AutoMigrate，存量值不得被改动，新行能写入
 	// band 0（证明"NOT NULL 无 default"的列语义与写入路径一致）。

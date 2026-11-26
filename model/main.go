@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -223,7 +224,17 @@ func InitDB() (err error) {
 		}
 		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", defaultIdleConns))
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", defaultOpenConns))
-		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		// SQLite 默认不让连接周期性过期：每次重建连接都会触发/放大 WAL checkpoint
+		// 与文件打开开销，而 busy_timeout + 单连接已经负责串行化。其它数据库仍用 60s。
+		defaultLifetime := 60
+		if common.MainDatabaseType() == common.DatabaseTypeSQLite {
+			defaultLifetime = 0
+		}
+		lifetime := common.GetEnvOrDefault("SQL_MAX_LIFETIME", defaultLifetime)
+		if lifetime < 0 {
+			lifetime = 0
+		}
+		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(lifetime))
 
 		if !common.IsMasterNode {
 			return nil
@@ -252,6 +263,21 @@ func InitLogDB() (err error) {
 	}
 	db, dbType, err := chooseDB("LOG_SQL_DSN", true)
 	if err == nil {
+		if dbType == common.DatabaseTypeSQLite && common.MainDatabaseType() == common.DatabaseTypeSQLite {
+			mainDSN := strings.TrimSpace(os.Getenv("SQL_DSN"))
+			if mainDSN == "" {
+				mainDSN = common.SQLitePath
+			}
+			mainPath := sqliteFilePath(mainDSN)
+			logPath := sqliteFilePath(os.Getenv("LOG_SQL_DSN"))
+			if mainPath != "" && logPath != "" {
+				absMain, mainErr := filepath.Abs(mainPath)
+				absLog, logErr := filepath.Abs(logPath)
+				if mainErr == nil && logErr == nil && absMain == absLog {
+					return fmt.Errorf("LOG_SQL_DSN points to the same SQLite file as the main database (%s); use a separate file or unset LOG_SQL_DSN", absMain)
+				}
+			}
+		}
 		common.SetLogDatabaseType(dbType)
 		initCol()
 		if common.DebugEnabled {
@@ -268,9 +294,19 @@ func InitLogDB() (err error) {
 		if err != nil {
 			return err
 		}
-		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
-		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
-		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
+		defaultIdle, defaultOpen := 100, 1000
+		defaultLifetime := 60
+		if common.LogDatabaseType() == common.DatabaseTypeSQLite {
+			defaultIdle, defaultOpen = 1, 1
+			defaultLifetime = 0
+		}
+		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", defaultIdle))
+		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", defaultOpen))
+		lifetime := common.GetEnvOrDefault("SQL_MAX_LIFETIME", defaultLifetime)
+		if lifetime < 0 {
+			lifetime = 0
+		}
+		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(lifetime))
 
 		if !common.IsMasterNode {
 			return nil
@@ -367,6 +403,7 @@ func migrateDB() error {
 		&PBRRequestLog{},
 		&PBRRequestContext{},
 		&PBRStatsHourly{},
+		&PBRStatsOutbox{},
 		&PBRProbeLog{},
 		&WebhookDelivery{},
 		&User{},

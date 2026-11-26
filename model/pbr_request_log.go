@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/constant"
+	"github.com/zzyyyds88/PowerBarRations/internal/metrics"
 	"github.com/zzyyyds88/PowerBarRations/internal/usage"
 	"github.com/zzyyyds88/PowerBarRations/setting/pricing_setting"
 
@@ -231,20 +233,27 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 	if carrier == nil || carrier.Written {
 		return
 	}
+	// 先占位防止同一请求重复写；事务失败时回滚为 false，允许后续收尾重试。
 	carrier.Written = true
 
 	attempts := carrier.Attempts
 	if attempts == nil {
 		attempts = []PBRAttempt{}
 	}
+	// attempts 必须有上界：成员数 × 单成员预算可能很大，整链写入会撑大日志行
+	// 与导出。保留最近 64 条（最终结果链最可解释），每条 msg 仍按 1KiB 截断。
+	const maxPersistedAttempts = 64
+	if len(attempts) > maxPersistedAttempts {
+		attempts = attempts[len(attempts)-maxPersistedAttempts:]
+	}
+	for i := range attempts {
+		attempts[i].Msg = common.TruncateUTF8(attempts[i].Msg, 1024)
+	}
 	encoded, err := json.Marshal(attempts)
 	if err != nil {
 		encoded = []byte("[]")
 	}
-	summary := carrier.ErrorSummary
-	if len(summary) > 2048 {
-		summary = summary[:2048]
-	}
+	summary := common.TruncateUTF8(carrier.ErrorSummary, 2048)
 	totalMs := carrier.TotalMs
 	if totalMs == 0 && carrier.StartedAtMs > 0 {
 		totalMs = time.Now().UnixMilli() - carrier.StartedAtMs
@@ -309,7 +318,9 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 		if carrier.TTFTMs == 0 {
 			entry.TTFTMs = tokenUsage.TTFTMs
 		}
-		if tokenUsage.TotalMs > 0 {
+		if tokenUsage.TotalMs > 0 && entry.TotalMs == 0 {
+			// 收尾阶段已用毫秒计时；usage 只在明细没有更精确耗时时兜底，
+			// 不得用秒级换算值覆盖真实毫秒（长请求会被抹成整秒）。
 			entry.TotalMs = tokenUsage.TotalMs
 		}
 	}
@@ -327,16 +338,43 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 			entry.ContextCounted = carrier.Context.Counted
 		}
 	}
-	if err := DB.Create(&entry).Error; err != nil {
+	if err := writePBRLogTx(&entry, carrier); err != nil {
+		carrier.Written = false
+		RecordDBWriteError("detail_transaction", err)
+		metrics.ObserveLogWriteFailure("detail_transaction")
 		common.SysError("pbr: write request log failed: " + err.Error())
-		return
 	}
-	if carrier.Context != nil && carrier.Context.Status == usage.StatusOK {
-		if err := SavePBRRequestContext(entry.Id, carrier.Context, carrier.ContextBodySize, entry.Ts); err != nil {
-			common.SysError("pbr: write request context failed: " + err.Error())
+}
+
+// writePBRLogTx 在一个事务内落明细、上下文与聚合 outbox。
+//
+// 三者必须同生共死：明细写成功但上下文/outbox 失败会留下"有日志无分区"
+// 或"有日志不进聚合"的静默缺口。SQLite 单写者下 BUSY/LOCKED 是短暂的
+// 调度竞争，做有限重试；磁盘满/库损坏等错误立即上抛，不伪装成偶发。
+func writePBRLogTx(entry *PBRRequestLog, carrier *PBRLogCarrier) error {
+	const maxAttempts = 3
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		lastErr = DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(entry).Error; err != nil {
+				return err
+			}
+			if carrier.Context != nil && carrier.Context.Status == usage.StatusOK {
+				if err := savePBRRequestContextWithDB(tx, entry.Id, carrier.Context, carrier.ContextBodySize, entry.Ts); err != nil {
+					return err
+				}
+			}
+			return enqueuePBRStatsOutboxTx(tx, entry)
+		})
+		if lastErr == nil {
+			return nil
 		}
+		if !isRetryableSQLiteWriteError(lastErr) || attempt == maxAttempts-1 {
+			return lastErr
+		}
+		time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
 	}
-	upsertPBRHourlyStat(&entry)
+	return lastErr
 }
 
 // PBRStatsHourly 小时级聚合（design-v1 §8：供 /stats 与 UI 图表）。
@@ -345,9 +383,9 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 func (PBRStatsHourly) TableName() string { return "pbr_stats_hourly" }
 
 type PBRStatsHourly struct {
-	BucketTs         int64   `json:"bucket_ts" gorm:"primaryKey"`
-	GroupKind        string  `json:"group_kind" gorm:"primaryKey;type:varchar(16)"`
-	GroupKey         string  `json:"group" gorm:"primaryKey;type:varchar(191)"`
+	BucketTs         int64   `json:"bucket_ts" gorm:"primaryKey;index:idx_pbr_stats_group,priority:3"`
+	GroupKind        string  `json:"group_kind" gorm:"primaryKey;type:varchar(16);index:idx_pbr_stats_group,priority:1"`
+	GroupKey         string  `json:"group" gorm:"primaryKey;type:varchar(191);index:idx_pbr_stats_group,priority:2"`
 	Requests         int64   `json:"requests"`
 	Successes        int64   `json:"successes"`
 	PromptTokens     int64   `json:"prompt_tokens"`
@@ -375,10 +413,17 @@ func normalizedInputTokens(prompt, cacheRead, cacheWrite int, semantic string) i
 }
 
 func upsertPBRHourlyStat(entry *PBRRequestLog) {
+	if err := upsertPBRHourlyStatTx(DB, entry); err != nil {
+		// 同步入口只用于测试/兜底；生产聚合走 outbox 事务，错误由 worker 重试。
+		common.SysError("pbr: upsert hourly stat failed: " + err.Error())
+	}
+}
+
+func upsertPBRHourlyStatTx(db *gorm.DB, entry *PBRRequestLog) error {
 	if entry.RouteSource == PBRRouteSourceTest {
 		// 渠道/模型测试是诊断流量：写明细供排障，但不得污染小时聚合
 		// （否则看板会出现"测试跑多了成功率变好/变差"的假信号）。
-		return
+		return nil
 	}
 	bucket := (entry.Ts / 3600) * 3600
 	successes := int64(0)
@@ -431,7 +476,7 @@ func upsertPBRHourlyStat(entry *PBRRequestLog) {
 			TTFTMsSum:        entry.TTFTMs,
 			TTFTSamples:      ttftSample,
 		}
-		if err := DB.Clauses(clause.OnConflict{
+		if err := db.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "bucket_ts"}, {Name: "group_kind"}, {Name: "group_key"}},
 			DoUpdates: clause.Assignments(map[string]any{
 				"requests":           gorm.Expr("requests + ?", 1),
@@ -447,10 +492,10 @@ func upsertPBRHourlyStat(entry *PBRRequestLog) {
 				"ttft_samples":       gorm.Expr("ttft_samples + ?", ttftSample),
 			}),
 		}).Create(&row).Error; err != nil {
-			// 聚合是派生数据，失败不能影响主流程，但必须可见——否则"少记"会静默发生
-			common.SysError("pbr: upsert hourly stat failed: " + err.Error())
+			return err
 		}
 	}
+	return nil
 }
 
 // PBRTokenUsage 计费路径提供的用量与折算（成本只折算，不参与准入）。
@@ -486,6 +531,8 @@ type PBRRequestLogFilter struct {
 	MaskAction string
 	// ErrorKind 精确过滤 error_kind（/api/logs?error_kind=…，空 = 不过滤）。
 	ErrorKind string
+	// HasError 只要 error_kind 非空（含"提交后流内拒绝"这种 success=true 的记录）。
+	HasError bool
 	// RouteSource / ExcludeRouteSource 精确匹配/排除 route_source。
 	// 渠道测试（route_source=test）是诊断流量，必须能被排除出
 	// "最近失败"与小时聚合（api-spec §6.12）。
@@ -551,6 +598,9 @@ func applyPBRLogFilter(query *gorm.DB, filter PBRRequestLogFilter) *gorm.DB {
 	}
 	if filter.ErrorKind != "" {
 		query = query.Where("error_kind = ?", filter.ErrorKind)
+	}
+	if filter.HasError {
+		query = query.Where("error_kind <> ''")
 	}
 	if filter.RouteSource != "" {
 		query = query.Where("route_source = ?", filter.RouteSource)
@@ -629,14 +679,44 @@ func CountPBRRequestLogsBefore(before int64) (int64, error) {
 //
 // 只删明细表：聚合表（pbr_stats_hourly）体积小且长期保留（design-v1 §16.5）。
 // 上下文明细按 log_id 与明细同批清理（usage-spec §6.2）；两者在同一事务里完成，
-// 避免"日志没了、上下文还在"的孤儿行。
+// 避免"日志没了、上下文还在"的孤儿行。按批删除，避免大表长事务锁住单写连接。
 func PrunePBRRequestLogsBefore(before int64) (int64, error) {
+	var total int64
+	for {
+		deleted, err := DeletePBRRequestLogBatch(context.Background(), before, 1000)
+		if err != nil {
+			return total, err
+		}
+		total += deleted
+		if deleted == 0 {
+			return total, nil
+		}
+	}
+}
+
+// DeletePBRRequestLogBatch 删除一批 ts < before 的明细与对应上下文，返回明细行数。
+// 以 id 排序取批，保证有界事务；上下文按同批 log_id 删除。
+func DeletePBRRequestLogBatch(ctx context.Context, before int64, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	var deleted int64
-	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("created_at < ?", before).Delete(&PBRRequestContext{}).Error; err != nil {
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var ids []int
+		if err := tx.Model(&PBRRequestLog{}).Where("ts < ?", before).
+			Order("id asc").Limit(limit).Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		result := tx.Where("ts < ?", before).Delete(&PBRRequestLog{})
+		if len(ids) == 0 {
+			return nil
+		}
+		if err := tx.Where("log_id IN ?", ids).Delete(&PBRRequestContext{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("id IN ?", ids).Delete(&PBRRequestLog{})
 		deleted = result.RowsAffected
 		return result.Error
 	})
@@ -817,9 +897,19 @@ func aggregatePBRStatsFromHourly(from, until int64, granularity, groupBy, groupK
 	}
 	if from > 0 {
 		// 严格相交：桶 [bucket_ts, bucket_ts+窗长) 与 [from, until) 有交集才算。
-		// 用 `>` 而不是 `>=`——桶正好在 from 处**结束**时并不含窗口内的数据，
-		// 放进来会让"把桶相加成窗口总数"的调用方多算一整个桶（注释与实现必须同义）。
-		query = query.Where(bucketExpr+" + ? > ?", windowSeconds, from)
+		// 写成常量下界，可走 (group_kind, group_key, bucket_ts) 索引，避免逐行
+		// 表达式计算。day 粒度下 bucket_ts 仍是小时桶，下界要按"日桶起点"换算。
+		lower := from - windowSeconds
+		if strings.EqualFold(granularity, "day") {
+			if lower < 0 {
+				lower = 0
+			} else {
+				lower = (lower/86400 + 1) * 86400
+			}
+			query = query.Where("bucket_ts >= ?", lower)
+		} else {
+			query = query.Where("bucket_ts > ?", lower)
+		}
 	}
 	if until > 0 {
 		// 同理：桶起点正好等于 until 的桶不含窗口内数据。

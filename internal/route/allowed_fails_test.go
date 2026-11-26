@@ -87,7 +87,7 @@ func TestSuccessResetsAllowedFailStreak(t *testing.T) {
 		for i := 0; i < 2; i++ {
 			runtime.recordFailure(key, KindHardAuth, 0, 0, false, settings)
 		}
-		runtime.recordSuccess(key, 0, settings)
+		runtime.recordSuccess(key, 0, settings, true)
 		for i := 0; i < 2; i++ {
 			runtime.recordFailure(key, KindHardAuth, 0, 0, false, settings)
 		}

@@ -302,11 +302,12 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		return nil, streamErr
 	}
 
-	// 上游建流后零有效帧 = 空响应，按成员级失败处理（routing-spec §4.1）。
-	// 必须在 FinalizeStreamResponse 之前判：收尾会合成完整流，
-	// 写出去就变成"看起来成功"的空响应。
-	if helper.StreamFailedWithoutFrames(c, info) {
-		return nil, helper.EmptyStreamError()
+	// 非正常结束（客户端取消/首事件超时/读流失败）与零内容帧空流都必须按
+	// 真实原因分类（ADR 0013 第 4 条、routing-spec §4.1/§4.3）。必须在
+	// FinalizeStreamResponse 之前判：收尾会合成完整流，写出去就变成
+	// "看起来成功"的空响应。
+	if outcomeErr := helper.StreamOutcomeError(c, info); outcomeErr != nil {
+		return nil, outcomeErr
 	}
 
 	usage := state.Usage()

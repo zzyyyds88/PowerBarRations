@@ -34,7 +34,9 @@ type ApiKeyCostCellProps = {
 
 export function ApiKeyCostCell(props: ApiKeyCostCellProps) {
   const { t } = useTranslation()
-  const formatted = formatCostYuan(props.apiKey.cost)
+  const available = props.apiKey.cost_available !== false
+  const formatted = available ? formatCostYuan(props.apiKey.cost) : '-'
+  const title = available ? formatted : t('Unavailable')
 
   if (props.variant === 'card') {
     return (
@@ -43,7 +45,7 @@ export function ApiKeyCostCell(props: ApiKeyCostCellProps) {
         <span
           data-slot='api-key-cost'
           className='min-w-0 truncate text-right tabular-nums'
-          title={formatted}
+          title={title}
         >
           {formatted}
         </span>
@@ -55,7 +57,7 @@ export function ApiKeyCostCell(props: ApiKeyCostCellProps) {
     <span
       data-slot='api-key-cost'
       className={cn('block min-w-0 text-left font-medium tabular-nums')}
-      title={formatted}
+      title={title}
     >
       {formatted}
     </span>

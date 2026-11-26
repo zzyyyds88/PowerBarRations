@@ -67,6 +67,8 @@ type PbrClientKey = {
   key?: string
   // 只读统计：上游折算花费（元），由后端按 key_name 聚合 pbr_stats_hourly 派生。
   cost?: number
+  // false = 聚合查询失败，cost 不可用（后端恒回；老后端缺席按可用处理）。
+  cost_available?: boolean
 }
 
 const idToName = new Map<number, string>()
@@ -103,6 +105,7 @@ function toApiKey(item: PbrClientKey): ApiKey {
     key_plain: item.key ?? '',
     status: item.enabled ? 1 : 2,
     cost: item.cost ?? 0,
+    cost_available: item.cost_available !== false,
     expired_time: item.expires_at ? unixSeconds(item.expires_at) : -1,
     created_time: unixSeconds(item.created_at),
     accessed_time: unixSeconds(item.last_used_at),

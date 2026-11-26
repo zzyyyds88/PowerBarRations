@@ -55,7 +55,9 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		}
 	}()
 
-	responseBody, err := io.ReadAll(resp.Body)
+	// 上游错误体只需足够识别错误类型与摘要；无界读取会把异常大响应带进内存
+	// 与日志。64KiB 上限后按脱敏文本截断。
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
 		return
 	}

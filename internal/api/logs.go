@@ -238,7 +238,7 @@ func GetStats(c *gin.Context) {
 	// 读明细会让"清理过一次日志"的实例历史统计凭空消失。
 	buckets, err := model.AggregatePBRStatsFromHourly(from, to, granularity, groupBy)
 	if err != nil {
-		writeAPIError(c, err)
+		writeStatsUnavailable(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{

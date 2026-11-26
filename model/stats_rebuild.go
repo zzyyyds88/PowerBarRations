@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -21,11 +22,12 @@ import (
 
 // StatsRebuildResult rebuild 的结果形状（dry_run 与实跑同形）。
 type StatsRebuildResult struct {
-	DryRun        bool    `json:"dry_run"`
-	AggregateRows int64   `json:"aggregate_rows"`
-	UpdatedLogs   int64   `json:"updated_logs"`
-	CostSumBefore float64 `json:"cost_sum_before"`
-	CostSumAfter  float64 `json:"cost_sum_after"`
+	DryRun           bool    `json:"dry_run"`
+	AggregateRows    int64   `json:"aggregate_rows"`
+	UpdatedLogs      int64   `json:"updated_logs"`
+	CostSumBefore    float64 `json:"cost_sum_before"`
+	CostSumAfter     float64 `json:"cost_sum_after"`
+	PreservedBuckets int64   `json:"preserved_buckets"`
 }
 
 // priceKeyForEntry 折算键：优先成员所选模型（member_model，新明细），
@@ -43,6 +45,61 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 		return nil, errors.New("database not initialized")
 	}
 	result := &StatsRebuildResult{DryRun: dryRun}
+
+	// rebuild 与 outbox worker 互斥：先 drain，再读明细/写聚合，避免 worker
+	// 在重建期间插入的增量被整表重写覆盖。
+	pbrStatsOutboxMu.Lock()
+	defer pbrStatsOutboxMu.Unlock()
+	if err := flushPBRStatsOutboxLocked(context.Background()); err != nil {
+		return nil, err
+	}
+
+	// 明细已被保留策略 prune 时，prune 边界之前的聚合没有明细来源，必须保留。
+	// 边界小时桶（min(ts) 所在小时）也整体保留：prune 只删旧明细，边界桶里
+	// 被删掉的请求已经计入既有聚合，重算剩余明细会把它们抹掉。
+	var minRow struct{ MinTs int64 }
+	if err := DB.Model(&PBRRequestLog{}).
+		Select("COALESCE(MIN(ts), 0) AS min_ts").Scan(&minRow).Error; err != nil {
+		return nil, err
+	}
+	preserveAll := minRow.MinTs <= 0
+	preserveThrough := int64(-1)
+	preservedBuckets := map[int64]bool{}
+	deleteFrom := int64(0)
+	if !preserveAll {
+		preserveThrough = (minRow.MinTs / 3600) * 3600
+		// 早于边界小时的桶已经没有明细来源，必须整桶保留。
+		var earlier []int64
+		if err := DB.Model(&PBRStatsHourly{}).Where("bucket_ts < ?", preserveThrough).
+			Distinct("bucket_ts").Pluck("bucket_ts", &earlier).Error; err != nil {
+			return nil, err
+		}
+		for _, bucket := range earlier {
+			preservedBuckets[bucket] = true
+		}
+		// 边界桶可能同时含已 prune 与仍保留的明细。若既有聚合的请求数大于
+		// 仍保留的明细数，说明桶里有已 prune 的行，整桶保留（重算会抹掉它们）；
+		// 否则可以安全重算，价格变更也能作用到这一小时。
+		hasPruned, err := boundaryBucketHasPrunedRows(preserveThrough)
+		if err != nil {
+			return nil, err
+		}
+		if hasPruned {
+			preservedBuckets[preserveThrough] = true
+			deleteFrom = preserveThrough + 3600
+		} else {
+			deleteFrom = preserveThrough
+		}
+	} else {
+		var buckets []int64
+		if err := DB.Model(&PBRStatsHourly{}).Distinct("bucket_ts").Pluck("bucket_ts", &buckets).Error; err != nil {
+			return nil, err
+		}
+		for _, bucket := range buckets {
+			preservedBuckets[bucket] = true
+		}
+	}
+	result.PreservedBuckets = int64(len(preservedBuckets))
 
 	var before struct {
 		Total float64
@@ -174,15 +231,31 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 		}
 	}
 	result.CostSumAfter = costAfter
-	result.AggregateRows = int64(len(agg))
 	if dryRun {
+		for key := range agg {
+			parts := strings.SplitN(key, "\u0000", 3)
+			if len(parts) != 3 {
+				continue
+			}
+			bucket, parseErr := strconv.ParseInt(parts[0], 10, 64)
+			if parseErr != nil {
+				continue
+			}
+			if preserveAll || preservedBuckets[bucket] {
+				continue
+			}
+			result.AggregateRows++
+		}
 		return result, nil
 	}
 
-	// 整表重写聚合（派生数据；清空重建是最直接的幂等形态）。
+	// 重写聚合（派生数据）：只覆盖仍有明细来源的小时桶；prune 边界及更早的
+	// 聚合没有明细可重算，原样保留（BucketTs <= preserveThrough 的行不插入）。
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("1 = 1").Delete(&PBRStatsHourly{}).Error; err != nil {
-			return err
+		if !preserveAll {
+			if err := tx.Where("bucket_ts >= ?", deleteFrom).Delete(&PBRStatsHourly{}).Error; err != nil {
+				return err
+			}
 		}
 		rows := make([]PBRStatsHourly, 0, len(agg))
 		for key, cell := range agg {
@@ -192,6 +265,9 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 			}
 			bucket, parseErr := strconv.ParseInt(parts[0], 10, 64)
 			if parseErr != nil {
+				continue
+			}
+			if preserveAll || preservedBuckets[bucket] {
 				continue
 			}
 			rows = append(rows, PBRStatsHourly{
@@ -211,6 +287,7 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 				TTFTSamples:      cell.TTFTSamples,
 			})
 		}
+		result.AggregateRows = int64(len(rows))
 		if len(rows) > 0 {
 			return tx.CreateInBatches(rows, 500).Error
 		}
@@ -220,4 +297,35 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// boundaryBucketHasPrunedRows 判断边界小时桶的既有聚合是否包含已 prune 的明细。
+//
+// 每个参与聚合的日志会在多个维度各加 1；取任一维度的请求数都不可能超过
+// 仍未 prune 的明细数。若既有聚合的最大维度请求数大于剩余明细数，说明桶里
+// 有已删除明细贡献的计数，重算会把它们抹掉。
+func boundaryBucketHasPrunedRows(bucket int64) (bool, error) {
+	var rows []struct {
+		GroupKind string
+		Requests  int64
+	}
+	if err := DB.Model(&PBRStatsHourly{}).
+		Select("group_kind, COALESCE(SUM(requests), 0) AS requests").
+		Where("bucket_ts = ?", bucket).Group("group_kind").Scan(&rows).Error; err != nil {
+		return false, err
+	}
+	var maxRequests int64
+	for _, row := range rows {
+		if row.Requests > maxRequests {
+			maxRequests = row.Requests
+		}
+	}
+	var remaining int64
+	if err := DB.Model(&PBRRequestLog{}).
+		Where("ts >= ? AND ts < ? AND COALESCE(route_source, '') <> ?",
+			bucket, bucket+3600, PBRRouteSourceTest).
+		Count(&remaining).Error; err != nil {
+		return false, err
+	}
+	return maxRequests > remaining, nil
 }
