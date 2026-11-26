@@ -375,7 +375,7 @@ export function LogSettingsSection({
               <h4 className='text-sm font-medium'>{t('Clean history logs')}</h4>
               <p className='text-muted-foreground text-sm'>
                 {t(
-                  'Remove all log entries created before the selected timestamp.'
+                  'Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.'
                 )}
               </p>
             </div>

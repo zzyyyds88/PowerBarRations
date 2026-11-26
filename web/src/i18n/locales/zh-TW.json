@@ -3568,6 +3568,7 @@
     "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = 不限制；max_concurrency 填 -1 啟用自適應 AIMD；queue_limit 0 使用預設 32；queue_wait_seconds 0 表示不排隊。",
     "Rate limited": "限流中",
     "Queued": "排隊中",
-    "Remove model": "移除模型"
+    "Remove model": "移除模型",
+    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "移除所選時間戳之前的明細日誌與上下文明細；小時聚合長期保留。"
   }
 }

@@ -3568,6 +3568,7 @@
     "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = không giới hạn. max_concurrency -1 bật AIMD thích ứng; queue_limit 0 dùng 32; queue_wait_seconds 0 tắt hàng đợi.",
     "Rate limited": "Đang giới hạn",
     "Queued": "Đang xếp hàng",
-    "Remove model": "Xóa mô hình"
+    "Remove model": "Xóa mô hình",
+    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Xóa nhật ký chi tiết và các dòng ngữ cảnh được tạo trước mốc thời gian đã chọn. Các tổng hợp theo giờ được giữ lại."
   }
 }

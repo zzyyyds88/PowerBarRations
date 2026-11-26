@@ -3568,6 +3568,7 @@
     "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = 無制限。max_concurrency -1 で適応型 AIMD を有効化、queue_limit 0 は 32 を使用、queue_wait_seconds 0 はキューなし。",
     "Rate limited": "制限中",
     "Queued": "待機中",
-    "Remove model": "モデルを削除"
+    "Remove model": "モデルを削除",
+    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "選択したタイムスタンプより前の詳細ログとコンテキスト行を削除します。時間別集計は保持されます。"
   }
 }

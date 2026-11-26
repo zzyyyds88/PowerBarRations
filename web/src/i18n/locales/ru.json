@@ -3568,6 +3568,7 @@
     "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = без ограничений. max_concurrency -1 включает адаптивный AIMD; queue_limit 0 использует 32; queue_wait_seconds 0 отключает очередь.",
     "Rate limited": "Ограничено",
     "Queued": "В очереди",
-    "Remove model": "Удалить модель"
+    "Remove model": "Удалить модель",
+    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Удалить подробные журналы и строки контекста, созданные до выбранной отметки времени. Почасовые агрегаты сохраняются."
   }
 }

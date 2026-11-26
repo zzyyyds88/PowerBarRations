@@ -3568,6 +3568,7 @@
     "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.": "0 = unlimited. max_concurrency -1 enables adaptive AIMD; queue_limit 0 uses 32; queue_wait_seconds 0 disables queueing.",
     "Rate limited": "Rate limited",
     "Queued": "Queued",
-    "Remove model": "Remove model"
+    "Remove model": "Remove model",
+    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained."
   }
 }
