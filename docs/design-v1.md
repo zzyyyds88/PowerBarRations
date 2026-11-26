@@ -364,6 +364,7 @@ type LaneRelayConfig struct {
 ### 7.4 成员冷却 + 亲和（移植现行路由层语义）
 
 - 成员耗尽 attempts → 写入冷却截止 `now + CooldownSeconds`，期间被跳过；到期自动重新可用。
+- **恢复探测使用 `ProbeLease`**（[ADR 0014](adr/0014-request-resource-leases-and-route-snapshots.md)）：租约记录 owner、generation 与 expiry；只有 owner 的请求 State 幂等收口或 State 的到期回收可释放，`recordSuccess` / `recordFailure` 不隐式释放。迁移不转移 live lease，Prune 不清 live lease，Reset 递增 generation 使旧租约失效。
 - **限流（429）不写冷却**（2026-11-23 立，routing-spec §4.1.1）：`429` 表示"你发得太快"而非
   "成员故障"，只写 `PacedUntil` 减速（默认 3s，尊重 `Retry-After`，上限 60s），
   期间该成员仍 `available=true`、只在本轮排到后面。关键词命中欠费/额度的 429 归 `hard_quota`，
@@ -373,7 +374,8 @@ type LaneRelayConfig struct {
 
 ### 7.5 熔断 + 半开自愈（新增）
 
-- 键为**成员粒度**：车道内 `channel_id : upstream_model`（同一渠道的同一上游模型在一条车道里就是一个成员，与成员改名解耦）。
+- 键为类型化 `MemberKey`（渠道 + 上游模型 + 成员条目；车道身份由 Registry 承载），同车道内重复 `(渠道, 所选模型)` 的成员各自独立（ADR 0009/0013）；对外标签仍为 `channel/model`。
+- **半开与冷却到期探测共用 `ProbeLease`**：generation 隔离 Reset/迁移前后的所有权，Health 只读投影 `probe_since` / `probe_lease_until`，不修复运行态（ADR 0014）。
 - **软/硬故障分离**：`429`/限流类为软故障，**不计熔断分、不写冷却**（routing-spec §4.1.1）；
   其余软故障（5xx/超时）按分级冷却，硬故障（401/403/欠费）按倍率冷却。
 - 连续失败达阈值 → 打开；退避期到 → 半开放一个真实请求；成功即自动复通并写恢复事件日志。
@@ -446,6 +448,7 @@ routing-spec §3.2）。要点：
 - **启用限流/自适应的成员，上游 429 不写冷却**（只降并发 + 暂停 1 秒）——避免"网关自己超发"
   把整条车道打成 503；`hard_quota` 仍走长冷却；
 - 探活/渠道测试不排队、不计 RPM；运行态进程内，重启清空。
+- **请求级准入与资源所有权**（ADR 0014）：`PBRServe` 单次 `ResolveRoute`，policy、选路与转发共用不可变快照；`RouteMember` 携带渠道/准入快照，配置纯解析且请求路径 fail-closed。准入结果区分 `success/failure/neutral/canceled`，waiter 可被取消、deadline 或 generation 驱逐；请求 State 最早注册并幂等释放 probe、槽位、密钥 lease 与流式监督资源。
 
 ### 7.11 错误语义与展示码
 
@@ -642,8 +645,12 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 ### 16.6 并发与超时
 
-- 每次尝试的超时由车道六键与成员级覆盖决定；流式用"首事件超时"与"整请求超时"双闸控制。
+- 每次尝试的超时由车道六键与成员级覆盖决定；非流式使用整响应超时，流式使用首事件超时，提交后不设总超时。
+- 每个请求在入口建立准入绝对 deadline，只约束排队与 waiter 唤醒；`queue_wait_seconds` 只能缩短该 deadline。客户端取消、准入超时与上游成员超时严格区分（ADR 0014、routing-spec §8）。
 - 探活并发上限可配（默认 4），避免对上游造成突发压力。
+- 请求 State 是最早注册、幂等收口的资源 owner；probe lease、准入槽位/waiter、客户端密钥 lease、流式监督与后台任务都必须向它注册。迟到回调只能观察已关闭状态，不得二次释放。
+- 流式心跳、读与写共享统一监督；`: PING` 不算提交，但心跳或正文写失败必须立即按客户端断开终止。
+- 后台任务只接收安全值快照，使用有界 worker 池与有界队列；禁止持有请求上下文、可变配置指针或无界创建 goroutine。
 
 ### 16.7 管理密钥的数量语义
 

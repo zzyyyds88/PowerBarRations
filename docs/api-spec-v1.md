@@ -131,6 +131,7 @@
   "models": ["model-1", "model-2", "model-3"],
   "param_override": {},
   "enabled": true,
+  "config_error": null,
   "proxy": "",
   "prices": [
     { "model": "model-1", "input": 10, "output": 20, "cache_read": 1, "cache_write": 2 },
@@ -153,6 +154,11 @@
 ```
 
 - **渠道名是全局唯一标识**：管理面所有路径参数、车道成员、批量运维端点都以**渠道名**寻址；名称经 `TrimSpace` 后精确匹配，必须唯一。创建、改名、复制、批量添加与导入都不得产生重名：命中既有渠道 → `409 conflict`（`details.name`）；**历史数据已重名**时，任何按名寻址的读写一律 `409 channel_name_ambiguous`（`details.name` / `details.count`），**不得静默取第一条**。启动时会扫描重名并在日志中列出，数据清理完成后自动建立唯一索引。
+- `config_error`：**只读结构化配置错误**，无错误时为 `null`，有错误时为 `{code, message, path}`。
+  `code` 是稳定机器码（如 `invalid_json` / `invalid_value` / `missing_required` / `ambiguous_reference`），
+  `message` 是可展示的脱敏摘要，`path` 是出错字段的 JSON Pointer；**不得包含原始配置值、密钥、URL 查询串、
+  请求头或任何敏感片段**。配置解析是纯函数，getter 发现坏配置时只投影错误，**不得静默清空缓存、数据库或返回空值**。
+  管理面写入仍按原契约拒绝非法配置；请求路径对已有坏配置 fail-closed，受影响成员不可用且不发上游。
 - `models`：本渠道提供的**模型清单**（模型名）。它既是"该渠道能提供什么"的目录，也是控制台成员选择器的候选来源（成员可任选任意渠道的任意模型，[ADR 0006](adr/0006-lane-free-member-composition.md)）。声明**不等于可调用**：必须存在同名启用车道才可路由（[routing-spec-v1.md](routing-spec-v1.md) §1.1、ADR 0005）；**声明/新增模型绝不自动建车道**，未配车道的模型请求返回 `503`。可用 `POST /api/channels/{name}/sync-models` 从上游拉取模型清单（渠道编辑器内手动触发）。
 - **渠道没有 `priority` 与 `weight`**（已物理删除）：路由顺序完全由车道成员顺序决定。请求体里出现这两个字段会被忽略（不报 400），旧导出文件导入时同样忽略。
 - **写**：body 可含 `"key": "<明文>"`；**读**：一律不含 `key`，只有 `key_set` 与 `key_prefix`（明文前 4 字符，短密钥不整串回显）。`PUT` 时若省略 `key` 则保留原值。
@@ -206,6 +212,7 @@
 - **成员布尔值的命名规则（单处规范，防止一处两种拼法）**：管理面 JSON 里成员是否参与选路**一律用正向 `enabled`**——写端点（§4.2 / §5.2）、读端点（`GET /lanes/{name}`、`GET /routes/{model}`、`GET /lane-summaries`）、健康快照与 SSE（§6.5）全部同此，**不存在"写面 enabled、展示面 disabled"这种分裂**。取反只在两个地方出现，且各自合理：① **Go 侧字段一律反向**——存储是 `LaneMember.Disabled`、解析态是 `RouteMember.Disabled`（两者同向，零值 = 启用/参与选路；为绕开 GORM 忽略零值导致全站停用，也避免正向字段的零值把忘记置真的构造点静默变成"已停用"，见 routing-spec §1.2），映射在 API 边界做一次；② **`disabled` 作为 `attempts[].status` 的枚举值**（§4.4）与 **`disabled_member_count` 计数名**（§5.7）保留——它们描述"因人工停用而被跳过/有几个被停用"，是独立命名空间，**不得**被顺手统一成 `enabled`。
 - **`active_member` 仅 `manual` 模式使用**：人工指定的成员（成员的 `public_alias`，或 **`channel/model`** 标签，`model` = 成员所选模型；空串表示未指定）。成员身份稳定，不随渠道映射改动漂移。`orphan_member_count` 是成员中"渠道已不存在"的悬空数量（只读，不落库）；`created_at` / `updated_at` 为车道时间戳。
 - **每条车道都是显式对象**：`GET /lanes` 就是全部路由入口，不存在隐藏的自动链（ADR 0005）；没建车道的模型一律 `503`。
+- **请求级不可变路由快照（ADR 0014）**：`PBRServe` 每个请求只解析一次车道，客户端密钥 policy、成员、渠道配置、模型映射、六键与准入配置来自同一快照；重试不重新读取另一版本配置。对外 Lane 对象仍是持久配置投影，不暴露内部快照；若成员引用的渠道快照含 `config_error`，该成员在请求路径 fail-closed，health 的成员条目按 §6.5 返回同样的结构化错误。
 
 ### 4.3 ClientKey
 
@@ -888,6 +895,7 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
 ```json
 {
   "lane": "lane-alpha",
+  "generation": 7,
   "probed": 2,
   "results": [
     { "channel": "channel-a", "upstream_model": "model-x", "status": "success", "duration_ms": 640,
@@ -904,7 +912,8 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
 - **判定按真实响应**（ADR 0013 第 5 条）：`200 + {"error":...}` 必须判失败（`error_kind=upstream_reject`）；2xx 但没有 completion choices 判 `bad_response`；失败分类与转发共用 `route.Classify`（401/403→`hard_auth`、402→`hard_quota`、429→`soft_rate_limit`、5xx→`soft_transient`、超时→`timeout`、连接失败→`network_error`）。原生协议渠道不支持 OpenAI Chat 探活形态时返回独立 `error_kind=unsupported`，不得伪装成 `network_error`。
 - **模型口径**：探活模型取 `?model=`（所选模型名），经渠道 `model_mapping` 换成上游真名；缺省取渠道声明清单第一个。两者都为空时返回 `error_kind=invalid_request`，**不再回落 `gpt-4o-mini`**（用未声明模型探活会把配置缺失伪装成上游结论）。Azure 渠道使用 `/openai/deployments/{deployment}/chat/completions?api-version=...`。
 
-- **探活覆盖全部成员，包括被人工停用的**（`probed` 等于成员链全长）。理由：探活不经选路——它直接按成员链逐个对上游发最小真实请求，不读冷却/熔断表、不占用探测槽；"不参与选路"和"不许探测上游"是两件事：关掉一个成员恰恰常常是因为它可疑，此时"能不能先单独看一眼它通不通"正是运维需要的能力，跳过它等于把诊断入口一起关掉。
+- **探活覆盖全部成员，包括被人工停用的**（`probed` 等于成员链全长）。理由：探活不经选路——它直接按成员链逐个对上游发最小真实请求，不读冷却/熔断表、不占出站准入槽位、不计 RPM；"不参与选路"和"不许探测上游"是两件事：关掉一个成员恰恰常常是因为它可疑，此时"能不能先单独看一眼它通不通"正是运维需要的能力，跳过它等于把诊断入口一起关掉。
+- **generation 与 ProbeLease 对齐**（ADR 0014）：响应中的 `generation` 是本次探活读取的车道运行态代次。人工探活不接管业务请求的 live `ProbeLease`；若目标成员持有未过期且 generation 匹配的租约，则不清理惩罚态，并在 `penalty_cleared.probe_busy_lanes` 列出。清理前再次校验 generation；若期间发生 Reset 或迁移，则放弃本次清理，避免旧探活结论写入新状态。
 - 被停用成员的探活结果**照常如实返回**，不加"已停用所以忽略"之类的修饰；调用方靠成员链自身的 `enabled`（§5.7 / §6.5）判断该结果对应一个在用的还是一个停用的成员。
 - **探活成功会清除该成员的惩罚态**（routing-spec §5.4，2026-11-23 立）：删除冷却、熔断回到 `closed`、连续拒绝计数清零，并记 `member_recovered`（`detail=from=manual_probe`）。作用域是该成员在**所有车道**的运行态（同一渠道×模型可被多条车道共享）。响应新增 `penalty_cleared`：
 
@@ -912,7 +921,7 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/probe \
   { "lane": "lane-alpha", "probed": 2, "penalty_cleared": { "lanes": ["lane-alpha"], "members": 1 }, "results": [ ... ] }
   ```
 
-  `lanes` 是实际被清理的车道名（去重、升序）；`members` 是成功清除惩罚态的成员数（探活成功但本来就没有惩罚态时为 0，`lanes` 为空数组）。探活失败**不动任何运行态**，也不累计熔断分。若该成员正占用半开探测槽，本次不清理并在 `penalty_cleared.probe_busy_lanes` 列出对应车道（保持单探测槽不变量，可等探测结束后重试）。
+  `lanes` 是实际被清理的车道名（去重、升序）；`members` 是成功清除惩罚态的成员数（探活成功但本来就没有惩罚态时为 0，`lanes` 为空数组）。探活失败**不动任何运行态**，也不累计熔断分。若该成员正持有有效的 `ProbeLease`，本次不清理并在 `penalty_cleared.probe_busy_lanes` 列出对应车道（保持单探测租约不变量，可等探测结束后重试）。
 
 ### 6.5 车道健康快照（冷却/熔断/亲和）
 
@@ -925,14 +934,16 @@ curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
   "members": [
     { "channel": "channel-a", "upstream_model": "model-x",
       "circuit": "open", "cooldown_until": "2026-09-14T12:01:00Z", "paced_until": null,
-      "circuit_open_until": "2026-09-14T12:03:00Z", "probe_pending": false,
+      "circuit_open_until": "2026-09-14T12:03:00Z",
+      "probe_since": null, "probe_lease_until": null, "config_error": null,
       "inflight": 0, "queued": 0, "adaptive_limit": null,
       "enabled": true, "available": false,
       "consecutive_failures": 3, "rolling_success_rate": 0.0, "rolling_samples": 12,
       "last_error_kind": "timeout", "last_error_at": "2026-09-14T12:00:30Z" },
     { "channel": "channel-b", "upstream_model": "model-y",
       "circuit": "closed", "cooldown_until": null, "paced_until": "2026-09-14T12:00:03Z",
-      "circuit_open_until": null, "probe_pending": false,
+      "circuit_open_until": null,
+      "probe_since": null, "probe_lease_until": null, "config_error": null,
       "inflight": 2, "queued": 1, "adaptive_limit": 4,
       "enabled": true, "available": true,
       "consecutive_failures": 0, "rolling_success_rate": 0.95, "rolling_samples": 20,
@@ -944,7 +955,8 @@ curl -s $PBR/api/lanes/lane-alpha/health -H "Authorization: Bearer $ADMIN_KEY"
 
 - 成员 `enabled`（恒回）= 该成员是否参与选路（配置态人工停用，§4.2）；被人工停用必然 `available=false`。
 - **`paced_until`（限流减速，routing-spec §4.1.1）与 `cooldown_until`（冷却）是两个字段、两套语义**：`paced_until` 非空表示"该成员刚收到上游 429，正在放慢，本轮排到后面"，但它**仍然 `available=true`**、`circuit` 不变、`consecutive_failures` 不增加——限流不是故障。示例第二条就是这种状态：`available=true` + `paced_until` 非空 + `last_error_kind=soft_rate_limit`。
-- **`available` 的精确口径**（routing-spec §7）：未人工停用、渠道存在且启用、不在冷却、熔断非 open、且（若已到期待探测）探测槽空闲。**限流减速不影响 `available`**（减速中的成员仍可选，只是本轮排到后面）；`probe_pending=true` 时 `available=false`，但其他运行态字段照常给出。
+- **`available` 的精确口径**（routing-spec §7）：未人工停用、渠道存在且启用、不在冷却、熔断非 open、且（若已到期待探测）不存在未过期且 generation 匹配的 `ProbeLease`。**限流减速不影响 `available`**（减速中的成员仍可选，只是本轮排到后面）；持有有效租约的成员 `available=false`，但其他运行态字段照常给出。
+- **`probe_since` / `probe_lease_until` / `config_error`**：前两者分别是当前 `ProbeLease` 的取得时间与租约上界，无租约时均为 `null`；`config_error` 是无错误为 `null`、有错误为 `{code,message,path}` 的只读结构化投影，不含敏感值。Health 与 SSE 都是只读投影，不释放租约、不重置 generation、不触发上游请求。
 - **`inflight` / `queued` / `adaptive_limit`** 是出站准入运行态（routing-spec §3.2）：`inflight` = 已发给上游未结束的请求数，`queued` = 正在排队的请求数，`adaptive_limit` = 自适应模式当前学到的上限（非自适应为 `null`）。未配置 `rate_limits` 时 `inflight/queued` 均为 0。
 - **`rolling_samples`** 是滚动窗口样本数：`rolling_success_rate=0` 且 `rolling_samples=0` 表示"无样本（冷启动）"，与"最近全失败"（样本数 > 0 且成功率为 0）必须可区分。
 - 成员 `last_error_kind` / `last_error_at` 是**历史留痕**（最近一次失败的分类与时间），不代表"当前有故障"；当前状态看 `circuit` / `cooldown_until` / `paced_until` / `available`。取值域 = routing-spec §4.1 的失败分类（`soft_rate_limit` / `soft_transient` / `timeout` / `hard_auth` / `hard_quota` / `upstream_reject` / `client_error` / `bad_response` / `canceled`）；**`upstream_reject` 只说明"这个成员拒绝过请求"，不代表它故障**（不计冷却、不计熔断分，见 routing-spec §4.1）；**`soft_rate_limit` 同理只影响 `paced_until`**。
@@ -961,6 +973,9 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/circuits/reset \
 ```json
 {
   "lane": "lane-alpha",
+  "generation": 8,
+  "previous_generation": 7,
+  "invalidated_probe_leases": 1,
   "reset": 2,
   "cleared": {
     "circuits": 2,
@@ -974,6 +989,10 @@ curl -s -X POST $PBR/api/lanes/lane-alpha/circuits/reset \
 ```
 
 - **`reset` 是兼容字段** = `circuits`（被清除的熔断器条目数，含 `closed` 条目）。
+- **Reset 同时推进 generation**（ADR 0014）：`previous_generation` / `generation` 表示重置前后的车道运行态代次，
+  `invalidated_probe_leases` 是本轮失效的 live `ProbeLease` 数量。Reset 不等待、不取消在飞请求；旧请求仍可结束，
+  但其运行态写入与租约释放必须通过 generation 校验，不能污染新状态。`cleared.probe` 只统计被清除的租约条目，
+  不能替代 `invalidated_probe_leases`。
 - **`cleared` 是结构化明细**：该端点清的是**全部运行态**，不只是熔断——`circuits`（熔断器条目）、
   `cooldowns`（冷却条目）、`paces`（限流减速条目）、`probe`（探测槽，0/1）、`affinity`（亲和窗口，0/1）、
   `lane_down`（是否清除了车道停摆标记）。调用方按 `cleared` 判断影响面，不要只看 `reset`。

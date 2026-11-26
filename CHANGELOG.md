@@ -5,9 +5,11 @@
 ## [Unreleased]
 
 ### 破坏性变更
+- **请求生命周期与资源所有权重构**（ADR 0014）：成员/准入运行态改用类型化 `MemberKey`/`AdmissionKey`；恢复探测改为含 owner、generation、expiry 的 `ProbeLease`，`recordSuccess`/`recordFailure` 不再隐式释放，请求 State 统一幂等收口。迁移不转移 live lease，Prune 不清 live lease，Reset 递增 generation；Health/SSE 只读并新增 `probe_since`、`probe_lease_until`、`config_error`，Reset 响应新增 generation 与失效 lease 数。
+- **请求使用不可变路由快照**：`PBRServe` 单次 `ResolveRoute`，客户端密钥 policy、选路与转发共用同一份渠道/准入快照；配置解析变为纯函数，坏配置不再被 getter 静默清空，而是在请求路径 fail-closed。出站准入新增 `success/failure/neutral/canceled` outcome，waiter 可被取消、准入 deadline 或 generation 驱逐；流式心跳/写失败与客户端取消统一终止并释放资源。
 - **429 语义改为"减速"**（ADR 0013、routing-spec §4.1.1）：上游 429 不再写成员冷却、不计熔断分、
   不发 `cooldown` 事件，只写 `paced_until` 并短暂减速；成员仍 `available=true`。
-  健康快照新增 `paced_until`、`last_error_at`、`rolling_samples`、`probe_pending`；
+  健康快照新增 `paced_until`、`last_error_at`、`rolling_samples`；
   日志 `error_kind` 新增 `local_throttle`（本地准入排队超界）。`circuit_allowed_fails.soft_rate_limit`
   键保留但不再生效。
 - **运行态键带 memberId**（ADR 0009 修订）：同车道内"组内成员 + 散成员"重复同一 `(渠道, 模型)` 时
