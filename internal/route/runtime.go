@@ -1134,8 +1134,9 @@ func (r *Runtime) appendEvent(eventType string, member MemberKey, detail string)
 	if len(r.Events) > 200 {
 		r.Events = r.Events[len(r.Events)-200:]
 	}
-	// 旁路转发给订阅者（非阻塞；订阅者自行缓冲，见 eventSubscriber 注释）。
-	events.Publish(event)
+	// 旁路转发给订阅者：锁内只做非阻塞入队，webhook/未来订阅者变慢不会
+	// 阻塞选路锁（events.PublishAsync 的队列满即丢弃并计数）。
+	events.PublishAsync(event)
 }
 
 // Reset 清空该车道的全部运行态（冷却/熔断/探测槽/亲和），返回被清除的

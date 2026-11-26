@@ -6,9 +6,17 @@
 package events
 
 import (
+	"log"
 	"sort"
 	"sync"
+	"sync/atomic"
+
+	"github.com/zzyyyds88/PowerBarRations/internal/metrics"
 )
+
+// asyncQueueSize 是运行态事件异步分发的有界队列。事件是通知而不是业务数据，
+// 队列满时丢弃并计数，绝不阻塞选路锁或请求路径。
+const asyncQueueSize = 1024
 
 const (
 	// 路由运行态事件。
@@ -56,22 +64,22 @@ type Event struct {
 // 切勿直接暴露可变 map；调用方应使用 IsSupportedType 或
 // SupportedEventTypes。
 var supportedTypes = map[string]struct{}{
-	EventCircuitOpen:     {},
-	EventCircuitHalfOpen: {},
-	EventCircuitClosed:   {},
-	EventCooldown:        {},
-	EventReset:           {},
-	EventSkip:            {},
-	EventMemberPaced:     {},
-	EventMemberRecovered: {},
-	EventLaneUnavailable: {},
-	EventLaneRecovered:   {},
-	EventMemberThrottled: {},
+	EventCircuitOpen:          {},
+	EventCircuitHalfOpen:      {},
+	EventCircuitClosed:        {},
+	EventCooldown:             {},
+	EventReset:                {},
+	EventSkip:                 {},
+	EventMemberPaced:          {},
+	EventMemberRecovered:      {},
+	EventLaneUnavailable:      {},
+	EventLaneRecovered:        {},
+	EventMemberThrottled:      {},
 	EventAdaptiveLimitChanged: {},
-	EventChannelDisabled: {},
-	EventChannelEnabled:  {},
-	EventChannelDeleted:  {},
-	EventUpstreamBurst:   {},
+	EventChannelDisabled:      {},
+	EventChannelEnabled:       {},
+	EventChannelDeleted:       {},
+	EventUpstreamBurst:        {},
 }
 
 // SupportedEventTypes 返回 webhook events 白名单支持的事件类型。
@@ -116,5 +124,45 @@ func Publish(event Event) {
 	subscriber.mu.RUnlock()
 	if fn != nil {
 		fn(event)
+	}
+}
+
+var (
+	asyncOnce    sync.Once
+	asyncQueue   = make(chan Event, asyncQueueSize)
+	asyncDropped atomic.Uint64
+	asyncPanics  atomic.Uint64
+)
+
+// PublishAsync 把事件放入进程级有界队列后立即返回，由单个后台 goroutine
+// 顺序调用订阅者。选路运行态在持锁时调用它：锁内只做一次非阻塞入队，
+// 不会因为 webhook/未来订阅者变慢而阻塞同车道的其他请求。
+func PublishAsync(event Event) {
+	asyncOnce.Do(func() { go asyncDispatchLoop() })
+	select {
+	case asyncQueue <- event:
+	default:
+		asyncDropped.Add(1)
+		metrics.ObserveRouteEventDrop()
+	}
+}
+
+// AsyncDropped 返回异步事件因队列满被丢弃的累计数量（测试/诊断用）。
+func AsyncDropped() uint64 { return asyncDropped.Load() }
+
+// AsyncPanics 返回订阅者回调 panic 被兜住的次数；panic 不应杀掉分发循环。
+func AsyncPanics() uint64 { return asyncPanics.Load() }
+
+func asyncDispatchLoop() {
+	for event := range asyncQueue {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					asyncPanics.Add(1)
+					log.Printf("pbr events: subscriber panic recovered: %v", r)
+				}
+			}()
+			Publish(event)
+		}()
 	}
 }

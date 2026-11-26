@@ -1,7 +1,9 @@
 package route
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,8 +14,8 @@ import (
 func TestAppendEventNotifiesSubscriberWithLane(t *testing.T) {
 	withFakeClock(t)
 
-	var events []Event
-	SetEventSubscriber(func(ev Event) { events = append(events, ev) })
+	ch := make(chan Event, 16)
+	SetEventSubscriber(func(ev Event) { ch <- ev })
 	t.Cleanup(func() { SetEventSubscriber(nil) })
 
 	runtime := Default.For("lane-subscribe-test")
@@ -21,10 +23,9 @@ func TestAppendEventNotifiesSubscriberWithLane(t *testing.T) {
 		// 硬失败权重 1.0 < 阈值 2：只触发 cooldown 事件，不打开熔断。
 		runtime.recordFailure(MemberKey{ChannelID: 7, UpstreamModel: "model-x"}, KindHardAuth, 60, 0, true, DefaultCircuitSettings())
 	})
-	require.NotEmpty(t, events)
-	last := events[len(events)-1]
-	assert.Equal(t, EventCooldown, last.Type)
-	assert.Equal(t, "lane-subscribe-test", last.Lane, "事件必须携带车道键")
+	last := waitRouteEvent(t, ch, func(ev Event) bool {
+		return ev.Type == EventCooldown && ev.Lane == "lane-subscribe-test"
+	})
 	assert.Equal(t, "7:model-x", last.Member)
 	assert.Contains(t, last.Detail, "cooldown_until=")
 	assert.NotZero(t, last.Ts)
@@ -40,36 +41,54 @@ func TestAppendEventNotifiesSubscriberWithLane(t *testing.T) {
 func TestEventSubscriberCanBeUnset(t *testing.T) {
 	withFakeClock(t)
 
-	called := false
-	SetEventSubscriber(func(Event) { called = true })
+	var called atomic.Bool
+	SetEventSubscriber(func(Event) { called.Store(true) })
 	SetEventSubscriber(nil)
 
 	runtime := Default.For("lane-unset-test")
 	runtime.withLock(func() {
 		runtime.recordFailure(MemberKey{ChannelID: 7, UpstreamModel: "model-x"}, KindHardAuth, 60, 0, true, DefaultCircuitSettings())
 	})
-	assert.False(t, called)
+	time.Sleep(100 * time.Millisecond)
+	assert.False(t, called.Load())
 }
 
 // reset 事件（手动复通 circuits/reset）经订阅钩子转发，为车道级（member 空）。
 func TestResetNotifiesSubscriber(t *testing.T) {
 	withFakeClock(t)
 
-	var events []Event
-	SetEventSubscriber(func(ev Event) { events = append(events, ev) })
+	ch := make(chan Event, 16)
+	SetEventSubscriber(func(ev Event) { ch <- ev })
 	t.Cleanup(func() { SetEventSubscriber(nil) })
 
 	runtime := Default.For("lane-reset-test")
 	runtime.withLock(func() {
 		runtime.recordFailure(MemberKey{ChannelID: 7, UpstreamModel: "model-x"}, KindHardAuth, 60, 0, true, DefaultCircuitSettings())
 	})
-	require.NotEmpty(t, events)
+	waitRouteEvent(t, ch, func(ev Event) bool {
+		return ev.Type == EventCooldown && ev.Lane == "lane-reset-test"
+	})
 	runtime.Reset()
 
-	require.NotEmpty(t, events)
-	last := events[len(events)-1]
-	assert.Equal(t, EventReset, last.Type)
-	assert.Equal(t, "lane-reset-test", last.Lane, "reset 事件必须携带车道键")
+	last := waitRouteEvent(t, ch, func(ev Event) bool {
+		return ev.Type == EventReset && ev.Lane == "lane-reset-test"
+	})
 	assert.Equal(t, "", last.Member, "reset 是车道级事件，member 为空")
 	assert.NotZero(t, last.Ts)
+}
+
+func waitRouteEvent(t *testing.T, ch <-chan Event, match func(Event) bool) Event {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case ev := <-ch:
+			if match(ev) {
+				return ev
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for route event")
+			return Event{}
+		}
+	}
 }

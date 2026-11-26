@@ -407,7 +407,7 @@
 | POST | `/api/auth/password` | 修改口令（会改变管理密钥；旧会话随之失效，当前会话自动续签）。**`PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 生效时返回 409 `conflict`**：环境变量管理密钥优先，口令变更不影响实际生效的密钥 |
 | GET | `/api/capabilities` | 适配器、模式、能力枚举。其中 `async_objects` 为 `{lane_header, files, batches, anthropic_files}`：`lane_header` 固定 `"X-PBR-Lane"`；`files`/`batches` 表示 OpenAI 异步对象端点已注册；`anthropic_files` 表示网关侧 Anthropic Files 存储已启用（`anthropic-beta: files-api-*` 分流，不需要 lane 头，见 ADR 0011） |
 | GET | `/api/openapi.json` | OpenAPI 3 文档（**免鉴权**） |
-| GET | `/metrics` | **Prometheus 文本格式**（复用管理密钥 Bearer；不在 `/api` 前缀下）。指标：`pbr_requests_total{model,lane,channel,status}`、`pbr_request_duration_seconds`（histogram）、`pbr_ttft_seconds`（histogram）、`pbr_tokens_total{model,kind}`、`pbr_cost_total{model,channel}`、`pbr_upstream_errors_total{kind}`、`pbr_circuit_state{channel}`、`pbr_channel_up{channel}`，另含 Go runtime 默认指标。只读进程内计数器与路由运行态快照，抓取时不查 DB |
+| GET | `/metrics` | **Prometheus 文本格式**（复用管理密钥 Bearer；不在 `/api` 前缀下）。指标：`pbr_requests_total{model,lane,channel,status}`、`pbr_request_duration_seconds`（histogram）、`pbr_ttft_seconds`（histogram）、`pbr_tokens_total{model,kind}`、`pbr_cost_total{model,channel}`、`pbr_upstream_errors_total{kind}`、`pbr_circuit_state{channel}`、`pbr_channel_up{channel}`、`pbr_log_write_failures_total{stage}`、`pbr_stats_outbox_backlog`、`pbr_stats_outbox_dead`、`pbr_route_event_drops_total`，另含 Go runtime 默认指标。只读进程内计数器与路由运行态快照，抓取时不查 DB |
 
 > **根路径文档页不属于 OpenAPI 契约面**：`GET /doc`（面向 AI 的管理 API 手册，`text/markdown`；浏览器 `Accept: text/html` 时返回说明页）、`GET /llms.txt`（与 `/doc` 同源的纯文本手册）、`GET /doc/ui`（复用 Scalar 的交互式文档，指向 `/api/openapi.json`）三者**免鉴权**、返回手册/UI 页面而非可被工具解析的资源，因此**刻意不登记进 `openapi.json`**（其 `servers` 只声明 `/api`）。该边界由 `router/openapi_coverage_test.go` 的 `TestDocRoutesAreOutsideOpenAPI` 固化：三者必须已注册、且不得出现在 openapi 中。
 | GET | `/api/system/options` | 全局选项 |
@@ -565,7 +565,7 @@
 | GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model\|key_model\|client`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。**聚合异步补齐（outbox worker，最长约 2s + 处理时间）**：刚结束的请求可能尚未出现在聚合里，明细/日志视图不受影响。**`model` 与 `channel_model`/`key_model` 的"模型"一律是 `upstream_model`（渠道映射后的真实上游模型名）**——车道名维度由 `lane` 单独承担，两个口径不混用（2026-10-25 变更：旧口径把 `request_model`（车道名）当"模型"聚合，池化车道下看不到真实模型分布）。`channel_model`/`key_model` 的 `group` 形如 `渠道␟模型` / `令牌␟模型`。`client` 维度的 `group` 是 `AgentOf` 的原始值；桶另带 `client_group`（库/other → `script`）与 `client_name`（已知 agent 的显示名），供控制台分组与展示。桶字段新增 `input_tokens`（按 `usage_semantic` 归一的输入总量）、`cache_read_tokens`、`cache_write_tokens`、`reasoning_tokens`、`ttft_ms_sum`、`ttft_samples`；缓存命中率由调用方按 `cache_read_tokens / input_tokens` 计算（`input_tokens=0` 时无意义，不得显示 0%）。 |
 | GET | `/api/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
 | GET | `/api/audit` | 变更审计 |
-| POST | `/api/stats/rebuild?dry_run=` | **按当前口径重建小时聚合表**：先同步 drain `pbr_stats_outbox`（仍有待处理/死信行时返回错误，避免在聚合缺口上继续），再从 `request_logs` 明细重算全部 `lane`/`channel`/`key`/`model`/`channel_model`/`key_model`/`client` 维度（`model` 相关按 `upstream_model`），并按**当前**渠道单价表重折算全部明细的 `estimated_cost` 后重算 `cost_sum`；同时按明细重算 `input_tokens`/`cache_read_tokens`/`cache_write_tokens`/`reasoning_tokens`/`ttft_ms_sum`/`ttft_samples`。峰谷价格按每条日志 `ts` 在价格行 `timezone` 下重新匹配 band（`price_band` 一并重写）。**已无明细来源的小时桶（prune 边界及更早）整桶保留，响应新增 `preserved_buckets`**；边界小时桶若既有聚合请求数大于剩余明细数（含已 prune 行）也保留，否则可安全重算。`dry_run=true` 只返回将写入的行数、保留桶数与成本合计差异，不落库。用于统计口径变更后的历史回填（幂等：重复执行结果一致）。**它重写派生数据，不触碰明细日志与 `pbr_request_contexts` 本身** |
+| POST | `/api/stats/rebuild?dry_run=` | **按当前口径重建小时聚合表**：直接读 `request_logs` 明细重算全部 `lane`/`channel`/`key`/`model`/`channel_model`/`key_model`/`client` 维度（`model` 相关按 `upstream_model`），并按**当前**渠道单价表重折算全部明细的 `estimated_cost` 后重算 `cost_sum`；同时按明细重算 `input_tokens`/`cache_read_tokens`/`cache_write_tokens`/`reasoning_tokens`/`ttft_ms_sum`/`ttft_samples`。**明细是唯一真源，outbox 只是增量缓存**：rebuild 不再要求 outbox 清空，也不再因死信失败；成功后在同一事务清空全部 outbox 行（含死信）。峰谷价格按每条日志 `ts` 在价格行 `timezone` 下重新匹配 band（`price_band` 一并重写）。**已无明细来源的小时桶（历史 prune 边界及更早）整桶保留，响应新增 `preserved_buckets`**；边界小时桶若既有聚合请求数大于剩余明细数（含历史已 prune 行）也保留，否则可安全重算。`dry_run=true` 只返回将写入的行数、保留桶数与成本合计差异，不落库、不处理 outbox。用于统计口径变更后的历史回填（幂等：重复执行结果一致）。**它重写派生数据，不触碰明细日志与 `pbr_request_contexts` 本身** |
 | GET | `/api/logs/export` | 导出请求日志：`format=csv\|ndjson`，过滤同 `/api/logs`（含 `client`/`session`）；必须给 `from`/`to`（≤31 天），行数上限 100,000，流式返回；CSV 不含 `attempts`/`error_summary`，NDJSON 含完整行。**上下文分区明细不进入导出**（§5.5.1）。详见 §5.5.1 |
 
 #### 5.5.1 日志导出契约（`GET /api/logs/export`）
@@ -835,7 +835,7 @@ curl -s $PBR/api/health
 
 - `db`：`ok|degraded|error`（连通性 + 最近 5 分钟写失败）；`degraded`/`error` 时整体 `degraded`。
 - `db_last_write_error`：最近一次明细/聚合写库失败的结构化快照 `{stage,message,at}`，从未失败为 `null`。成功写入不会自动清除它，排障时结合 `at` 判断是否为近期故障。
-- `stats_outbox`：`pending` 待聚合行数、`dead` 超过最大重试次数的死信行数、`available=false` 表示 outbox 表不可读（迁移未完成/库故障）。`dead > 0` 或不可读时整体 `degraded`；`pending > 0` 是正常异步滞后，不代表故障。
+- `stats_outbox`：`pending` 待聚合行数、`dead` 超过最大重试次数的死信行数、`available=false` 表示 outbox 表不可读（迁移未完成/库故障）。`dead > 0` 或不可读时整体 `degraded`；`pending > 0` 是正常异步滞后，不代表故障。死信不再阻断 `POST /api/stats/rebuild`（重建成功后自动清空）；也可用 `pbr outbox status/retry/discard` 定向处理。
 
 ```bash
 curl -s $PBR/api/capabilities -H "Authorization: Bearer $ADMIN_KEY"
