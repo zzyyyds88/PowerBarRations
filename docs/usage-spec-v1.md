@@ -17,7 +17,7 @@
 
 - 让控制台回答四个问题：**谁在调用（客户端）**、**这次/这次会话用了多少**、**花在哪个模型上**、
   **上下文窗口被什么占满**。
-- 所有派生数据必须可追溯到 `pbr_request_logs` 明细；聚合表长期保留，明细按既有保留策略清理。
+- 所有派生数据必须可追溯到 `pbr_request_logs` 明细；聚合表长期保留；超期只压缩明细的排障细节，汇总行不删除。
 - 会话与上下文都是**尽力而为的观测**：解析失败绝不影响转发；拿不到就留空并给出明确状态，
   不允许伪造成 0 或猜测。
 
@@ -243,9 +243,10 @@ log_id, version, status, tokens, estimated_tokens, window, counted, held, turns,
 parts_json, body_bytes, truncated, created_at
 ```
 
-`parts_json` 是 §5.1 的分区数组（分区 → 物品）。明细日志被 `POST /api/logs/prune` 或内置每日
-`log_cleanup` 任务清理时，按 `log_id` 同批删除对应上下文行；聚合表不受影响。明细与上下文必须
-在**同一事务**内写入，避免"日志存在但上下文缺失"的静默缺口。上下文不进入日志导出
+`parts_json` 是 §5.1 的分区数组（分区 → 物品）。`POST /api/logs/prune` 或内置每日 `log_cleanup`
+任务超过保留期时，按 `log_id` 分批删除对应上下文行，并清空旧明细的 `attempts`/`error_summary`/
+`mask_hits`；**`pbr_request_logs` 汇总行永久保留**（历史请求仍可逐条检索与聚合），聚合表不受影响。
+明细与上下文必须在**同一事务**内写入，避免"日志存在但上下文缺失"的静默缺口。上下文不进入日志导出
 （CSV/NDJSON 都不含），避免把文件路径等明细带进导出文件；需要时经 `GET /api/logs/{id}` 读取。
 
 ### 6.3 聚合表扩展
@@ -269,8 +270,8 @@ parts_json, body_bytes, truncated, created_at
 
 **写入与重建**：明细事务只写 `pbr_stats_outbox`，常驻 worker 逐行在独立事务内 upsert 全部维度
 并删除 outbox 行（崩溃安全、不重复计数）；`/api/stats` 因此最多滞后约 2s + 处理时间。
-`POST /api/stats/rebuild` 先 drain outbox，再只重算仍有明细覆盖的小时桶；prune 边界及更早的
-桶整桶保留（响应 `preserved_buckets`），不会因为明细被清理而抹掉历史聚合。
+`POST /api/stats/rebuild` 先 drain outbox，再只重算仍有明细覆盖的小时桶；对历史上已删除明细的桶
+（旧版 prune 边界及更早）整桶保留（响应 `preserved_buckets`），不会因为历史缺口抹掉聚合。
 
 **缓存命中率**（只在 UI 计算，API 只给原始和）：
 
@@ -330,5 +331,5 @@ hit_rate = cache_read_tokens / input_tokens   (input_tokens > 0)
 - 解析失败/超大 body 不影响转发，状态可区分。
 - 会话聚合分页、排序、时间范围默认值、`404 session_not_found`。
 - 统计归一（anthropic vs openai）与缓存命中率边界（input_tokens=0 不给 0%）。
-- `logs/prune` 同时清理上下文，聚合不变。
+- `logs/prune` 删除超期上下文并清空旧明细的 attempts/error/mask 细节，汇总行与聚合不变。
 - 模型目录 `context_window` 写入/回读/规则匹配。

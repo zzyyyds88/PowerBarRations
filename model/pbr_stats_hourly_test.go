@@ -40,20 +40,21 @@ func TestStatsSurviveDetailPrune(t *testing.T) {
 	assert.EqualValues(t, 30, before[0].PromptTokens)
 	assert.InDelta(t, 0.75, before[0].EstimatedCost, 1e-9)
 
-	// 明细按保留策略清理：聚合统计不得变化。
-	deleted, err := PrunePBRRequestLogsBefore(baseTs + 100)
+	// 明细超过保留期只压缩细节；汇总行保留，聚合统计不得变化。
+	compacted, err := CompactPBRRequestLogsBefore(baseTs + 100)
 	require.NoError(t, err)
-	assert.EqualValues(t, 3, deleted)
+	assert.EqualValues(t, 0, compacted.CompactedRows, "本用例的明细没有 attempts/error/mask 细节")
+	assert.EqualValues(t, 0, compacted.DeletedContexts)
 
 	after, err := AggregatePBRStatsFromHourly(0, 0, "hour", "lane")
 	require.NoError(t, err)
-	require.Len(t, after, 1, "prune 后聚合桶必须还在")
-	assert.Equal(t, before[0], after[0], "prune 不得改变聚合统计")
+	require.Len(t, after, 1, "压缩后聚合桶必须还在")
+	assert.Equal(t, before[0], after[0], "压缩不得改变聚合统计")
 
-	// 明细口径确实已经空了（证明这次断言不是"两边都没数据"）。
+	// 汇总行仍在：历史逐条检索不再因保留期消失。
 	detail, err := AggregatePBRStats(0, 0, "hour", "lane")
 	require.NoError(t, err)
-	assert.Empty(t, detail, "明细已清空，这正是读明细会丢历史的原因")
+	assert.NotEmpty(t, detail, "明细汇总行必须保留")
 }
 
 // 渠道/模型测试（route_source=test）是诊断流量：写明细，但不进小时聚合。

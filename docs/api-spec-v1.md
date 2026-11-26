@@ -303,7 +303,7 @@
 
 `status ∈ success | failed | cooldown | circuit_break | skipped | disabled | throttled`。`disabled` 表示该成员被人工停用（成员级 `enabled=false`，§4.2）而被跳过——**不是故障**，与 `cooldown`/`circuit_break`/`skipped`（运行态不可选）必须可区分；`disabled` 的尝试不产生冷却、不计入熔断。`throttled` 表示该成员因**本地出站准入**（并发槽位满、排队超界或队列满，routing-spec §3.2）未被使用——同样不是故障，不写冷却、不计熔断；该条带 `wait_ms`（实际排队时长）。
 
-`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled` / `test`——`test` 为渠道测试等管理动作记录）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）。**`error_kind` 取值域** = routing-spec §4.1 的分类：`soft_rate_limit` / `soft_transient` / **`timeout`**（我方成员级 deadline 到期：流式首帧/非流式响应/响应头等待超时；冷却熔断与 `soft_transient` 同档，但**不在同一成员原地重试**）/ `hard_auth` / `hard_quota` / **`upstream_reject`**（上游对该成员的拒绝：400/422 或流内 error 帧；会被车道内部换成员消化，只在"所有成员都拒绝"时成为最终失败）/ `client_error` / `bad_response` / `canceled`，以及 **`local_throttle`**（本地出站准入排队超界/队列满，routing-spec §3.2；只出现在请求日志，**不是成员失败分类**，不写冷却、不计熔断，成员 `last_error_kind` 不出现该值）。**一个例外**：流式请求已提交后收到的流内 error 帧（routing-spec §4.4）——传输层记 `success=true` + 200（客户端确实拿到了 200 流），但 `error_kind=upstream_reject`、`error_summary` 记上游报文，使这类此前完全不可见的失败可被检索。`total_ms` 为**收尾实测毫秒**（优先于 usage 的秒级换算；usage 仅在明细没有耗时时兜底），`ttft_ms` 为流式首帧毫秒。`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。`price_band` 为命中的峰谷时段下标（-1 = 未命中、使用行级兜底价；旧单层价格恒为 -1）。**缓存折算按 `usage_semantic` 区分**：`openai`/`gemini`（含历史空值）的 prompt 含缓存命中，计费输入 = `prompt − cache_read`；`anthropic` 的 prompt 不含缓存，全额计输入价（design §16.9#7）。**所有日志统一写 `request_logs` 一张表**：`type` 区分消耗（2）与错误（5）；模型面请求的 `user_id/username/ip` 为空（调用方身份是客户端密钥 `key_name`），渠道测试等管理动作记录管理员。基座 `logs` 表停写（历史数据保留只读）。
+`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled` / `test`——`test` 为渠道测试等管理动作记录）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）。**`error_kind` 取值域** = routing-spec §4.1 的分类：`soft_rate_limit` / `soft_transient` / **`timeout`**（我方成员级 deadline 到期：流式首帧/非流式响应/响应头等待超时；冷却熔断与 `soft_transient` 同档，但**不在同一成员原地重试**）/ `hard_auth` / `hard_quota` / **`upstream_reject`**（上游对该成员的拒绝：400/422 或流内 error 帧；会被车道内部换成员消化，只在"所有成员都拒绝"时成为最终失败）/ `client_error` / `bad_response` / `canceled`，以及 **`local_throttle`**（本地出站准入排队超界/队列满，routing-spec §3.2；只出现在请求日志，**不是成员失败分类**，不写冷却、不计熔断，成员 `last_error_kind` 不出现该值）。**一个例外**：流式请求已提交后收到的流内 error 帧（routing-spec §4.4）——传输层记 `success=true` + 200（客户端确实拿到了 200 流），但 `error_kind=upstream_reject`、`error_summary` 记上游报文，使这类此前完全不可见的失败可被检索。`total_ms` 为**收尾实测毫秒**（优先于 usage 的秒级换算；usage 仅在明细没有耗时时兜底），`ttft_ms` 为流式首帧毫秒。超过 `log_retention_days` 后 `attempts`/`error_summary`/`mask_hits` 会被清空，但汇总列（含 `total_attempts`、`error_kind` 与 token/成本/耗时）永久保留。`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。`price_band` 为命中的峰谷时段下标（-1 = 未命中、使用行级兜底价；旧单层价格恒为 -1）。**缓存折算按 `usage_semantic` 区分**：`openai`/`gemini`（含历史空值）的 prompt 含缓存命中，计费输入 = `prompt − cache_read`；`anthropic` 的 prompt 不含缓存，全额计输入价（design §16.9#7）。**所有日志统一写 `request_logs` 一张表**：`type` 区分消耗（2）与错误（5）；模型面请求的 `user_id/username/ip` 为空（调用方身份是客户端密钥 `key_name`），渠道测试等管理动作记录管理员。基座 `logs` 表停写（历史数据保留只读）。
 
 **会话与客户端**：`session_id` / `session_key` / `client` / 子代理字段的提取与归一口径见 [usage-spec-v1.md](usage-spec-v1.md) §3–§4。`session_id` 为空表示未归属；`client` 是 magpie `AgentOf` 语义的原始结果（库保留 `curl` 等产品名），只作展示与聚合，不参与鉴权或选路；`client_group` 把 HTTP 库/运行时/SDK 与 `other` 归为 `script`，`client_name` 是已知 agent 的显示名——两者都是后端计算的展示字段，控制台不得自建第二张客户端表。`context_*` 是每条 chat-like 请求的上下文摘要（token 数/窗口/是否已按上游计数校准/解析状态，见 usage-spec §5–§6）；列表项只带这四个摘要字段，**完整分区明细只在 `GET /api/logs/{id}` 返回**：
 
@@ -543,7 +543,7 @@
 
 - **`cost`（只读，number，单位元）**：该令牌的**上游折算花费**，等于
   `GET /api/stats?group_by=key` 中同名 `key_name` 的 `estimated_cost` 跨时间总计。
-  数据源是**小时聚合表**（与看板/日志同源），因此 `POST /logs/prune` 清理明细后该值不变。
+  数据源是**小时聚合表**（与看板/日志同源），因此 `POST /logs/prune` 压缩明细细节后该值不变。
   从无请求或聚合表为空时为 `0`。该字段是**统计展示**，不参与任何鉴权、限额或拒绝逻辑。
 - **`lane_policy.allow_lanes` / `deny_lanes` 必须是存在的路由键**：写入既无同名车道、也无任何启用渠道
   声明的键会被拒绝（422 `validation_failed`，message 列出未知键）。否则令牌表面"允许/拒绝了模型 X"，
@@ -561,7 +561,7 @@
 | GET | `/api/logs/{id}` | 单条（含 attempts 链与完整 `context` 分区明细；无上下文时 `context=null`，原因见 `context_status`） |
 | GET | `/api/logs/sessions` | **会话列表**（按 `session_key` 聚合）：`from`/`to`（RFC3339 或 Unix 秒，可选；默认最近 30 天）、`client`、`model`、`lane`、`q`（`session_id` 子串，≤128）、`sort ∈ last_ts\|first_ts\|requests\|tokens\|cost`（默认 `last_ts`）、`order ∈ asc\|desc`（默认 `desc`）、`page`+`page_size`（默认 1/50，上限 100）。响应 `{items,total,page,page_size,summary}`；`summary` 是同筛选条件下**整个窗口**的总量 `{sessions,requests,successes,errors,prompt_tokens,completion_tokens,estimated_cost}`（不是当前页），供控制台 KPI。空结果 `items=[]`。每项字段见 §4.6。只统计 `session_key` 非空的模型面请求；管理动作不计入。 |
 | GET | `/api/logs/sessions/{key}` | **会话详情**：`key` 是 32 位十六进制 `session_key`。返回会话摘要（§4.6 单对象）+ `request_items`（分页请求列表，每项是 §4.4 RequestLog + 紧凑 `context`：仅分区 token，不含物品）+ `context_series`（最多 500 个 `{ts,id,tokens,window}` 点，按时间升序；超出置 `context_series_truncated=true`）。`request_items` 支持 `page`/`page_size`（默认 1/50，上限 100）与 `order`（默认 `desc`）；摘要的 `requests` 仍是计数。会话不存在 → 404 `session_not_found`。 |
-| POST | `/api/logs/prune?before=&dry_run=` | 按需清理**明细**日志（`before` 省略则按 `system/options.log_retention_days`，默认 30 天），并**同批删除对应的 `pbr_request_contexts` 行**（同一事务、按批有界）；聚合表长期保留，**清理后 `/api/stats` 的历史数值不变**（会话与上下文曲线只覆盖保留期内的明细，见 usage-spec §6.2）。另有内置每日 `log_cleanup` 系统任务按同一保留天数自动执行 |
+| POST | `/api/logs/prune?before=&dry_run=` | 按需**压缩**超期明细（`before` 省略则按 `system/options.log_retention_days`，默认 30 天）：删除对应 `pbr_request_contexts` 分区，清空 `attempts`/`error_summary`/`mask_hits`，但**保留 `pbr_request_logs` 汇总行**（历史日志列表/会话/成本检索不消失）；聚合表长期保留，清理后 `/api/stats` 历史数值不变。响应 `compacted` / `deleted_contexts`；dry-run 返回 `would_compact` / `would_delete_contexts`。另有内置每日 `log_cleanup` 系统任务按同一保留天数自动执行 |
 | GET | `/api/stats` | 聚合：`granularity=hour\|day` `from` `to` `group_by=lane\|channel\|key\|model\|channel_model\|key_model\|client`；数据源是**小时聚合表**（day 由小时桶上卷），与明细清理互不影响。**聚合异步补齐（outbox worker，最长约 2s + 处理时间）**：刚结束的请求可能尚未出现在聚合里，明细/日志视图不受影响。**`model` 与 `channel_model`/`key_model` 的"模型"一律是 `upstream_model`（渠道映射后的真实上游模型名）**——车道名维度由 `lane` 单独承担，两个口径不混用（2026-10-25 变更：旧口径把 `request_model`（车道名）当"模型"聚合，池化车道下看不到真实模型分布）。`channel_model`/`key_model` 的 `group` 形如 `渠道␟模型` / `令牌␟模型`。`client` 维度的 `group` 是 `AgentOf` 的原始值；桶另带 `client_group`（库/other → `script`）与 `client_name`（已知 agent 的显示名），供控制台分组与展示。桶字段新增 `input_tokens`（按 `usage_semantic` 归一的输入总量）、`cache_read_tokens`、`cache_write_tokens`、`reasoning_tokens`、`ttft_ms_sum`、`ttft_samples`；缓存命中率由调用方按 `cache_read_tokens / input_tokens` 计算（`input_tokens=0` 时无意义，不得显示 0%）。 |
 | GET | `/api/route-events` | **SSE**：车道运行态增量（当前成员/探测占用/亲和/冷却表），供控制台实时显示 |
 | GET | `/api/audit` | 变更审计 |
@@ -732,7 +732,7 @@ curl -s $PBR/api/routes/model-1 -H "Authorization: Bearer $ADMIN_KEY"
 | PUT | `/api/model-metadata/{model}` | `diff.model_metadata.{add,update}` |
 | DELETE | `/api/model-metadata/{model}` | `diff.model_metadata.remove` |
 | PUT | `/api/webhooks` | `diff.webhooks.update` |
-| POST | `/api/logs/prune` | 清理前后计数（不删明细） |
+| POST | `/api/logs/prune` | 压缩前的计数：`would_compact` / `would_delete_contexts`（不落库） |
 | POST | `/api/import` | 完整 `diff`（见 §6.10） |
 | POST | `/api/channels/batch/status` | `diff.channels.update`（将变更的渠道名） |
 | POST | `/api/channels/batch/tag` | `diff.channels.update` |
@@ -1082,7 +1082,7 @@ curl -s -X PUT $PBR/api/system/options \
   （选项键 `PBRLaneDefaults`，数值默认值单处规范见 routing-spec §1.2）：作用于新建车道，
   以及自身未显式配置六键的车道；**已显式配置的车道仍以自身为准**。
   校验：四个时长/预算键必须 > 0，两个间隔键必须 ≥ 0；否则 422。
-- `log_retention_days`（默认 30）同时驱动内置每日 `log_cleanup` 系统任务与 `POST /api/logs/prune` 的默认 before；只清理明细与上下文，聚合长期保留。
+- `log_retention_days`（默认 30）同时驱动内置每日 `log_cleanup` 系统任务与 `POST /api/logs/prune` 的默认 before；超期只压缩排障细节并删除上下文，`pbr_request_logs` 汇总行与聚合长期保留。
 - `probe_concurrency`（默认 4，取值 1–16）限制 `POST /lanes/{name}/probe` 与探活任务对上游的并发压力；超出上限的写配置返回 422，读取时钳制到上限。
 - **没有全局单价选项**：成本折算只用渠道级 `prices`（§4.1），渠道未配价即不折算（0）。
 
@@ -1175,7 +1175,7 @@ curl -s "$PBR/api/channels/channel-a/status?window=24h" -H "Authorization: Beare
 - `summary` 与 `daily` 来自**小时聚合表**（`pbr_stats_hourly`，design §16.5）：
   `summary.requests/successes/estimated_cost` 是窗口内合计，`success_rate = successes / requests`
   （`requests = 0` 时为 `0`）；`daily` 是窗口按自然日（本地时区）切分的同一组数字，最多返回
-  窗口对应天数（`24h` → 2 个日期桶，`7d` → 7 个）。**`POST /logs/prune` 清理明细不影响它们。**
+  窗口对应天数（`24h` → 2 个日期桶，`7d` → 7 个）。**`POST /logs/prune` 压缩细节不影响它们。**
   **窗口边界**：`until = 现在`，`from =（现在 − 24h/7d）向下取整到整点`。聚合表只有小时桶，
   窗口合计只能由小时桶相加得出；起点若不落在桶边界上，边界桶会被整份计入，把窗口悄悄拉长
   最多一小时（实测曾让 24h 档把前一整天的量算进来）。对齐到整点后，`summary` 与 `models[]`
@@ -1194,14 +1194,15 @@ curl -s "$PBR/api/channels/channel-a/status?window=24h" -H "Authorization: Beare
   含等待与失败往返，不代表生成速度，不计入。`tps_samples = 0` 时界面显示 `-`。
   `ttft_ms` 在**首个内容帧转发给客户端**时打点（`relay/helper.MarkFirstByte`，只记一次；2026-11-21 起从"第一帧"口径收敛为内容帧口径，见 routing-spec §3 第 6 步——仅角色/开场帧不计），
   故升级前的历史行 `ttft_ms` 为 `0`，这些行只影响"平均首字"的样本量，不影响成功率与请求数。
-  同一取舍：数据源是明细日志，`POST /logs/prune` 清理后该表为空数组。
+  数据源是 `pbr_request_logs` 汇总行；超期压缩只清 attempts/error_summary/mask_hits，**不删行**，因此历史模型表现仍可回溯。
 - `summary.p50_total_ms` / `p95_total_ms` / `avg_ttft_ms` 来自**明细日志**（`pbr_request_logs`）
   在窗口内的分位数/均值（分位只计成功请求；`ttft_ms` 只计流式请求，无样本时为 `0`；
-  窗口成功样本 < 5 时分位数为 `0`）——这三项**会被 `POST /logs/prune` 影响**，
-  清理后回落为 `0`；聚合表不存耗时，这是刻意的（不引入第二份耗时常量表）。
+  窗口成功样本 < 5 时分位数为 `0`）。汇总行长期保留，超期压缩不会让这些数字归零；
+  聚合表不存耗时，这是刻意的（不引入第二份耗时常量表）。
 - `recent_failures` 取该渠道**最近 N 条失败**（N=20）的明细日志（含 `error_kind` 与摘要；
   `route_source=test` 的探活记录不计入失败列表，也**不计入小时聚合与 `window` 统计**——
-  渠道/模型测试是诊断流量，否则多跑几次测试就会让看板的成功率与请求量失真）。
+  渠道/模型测试是诊断流量，否则多跑几次测试就会让看板的成功率与请求量失真）。超过保留期的
+  旧失败行仍保留 `error_kind`，但 `error_summary`/attempts 已按策略清空。
 - `probe_history` 取该渠道**最近 N 条探活记录**（N=20）——每次
   `POST /api/channels/{name}/test` 落一条（表 `pbr_probe_logs`：`ts/channel/upstream_model/
   status/duration_ms/http_status/error_kind/msg`）。**每渠道只保留最近 200 条**（写入时滚动裁剪），
@@ -1264,8 +1265,8 @@ curl -s "$PBR/api/model-status?group_by=lane&from=1789000000&to=1789600000" -H "
   `total_attempts = 1`** 的请求——多次尝试的累计时长含等待与失败往返，不代表生成速度）。
   `tps_samples` = 参与折算的样本数（0 时界面显示 `-`，不拿 0 冒充"速度为零"；嵌入模型无输出 token 同理）。
   控制台的「输出速度」使用 `output_tokens_per_second`，不是 `output_tps`；后者只作为诊断字段。
-- 数据源是**明细日志**：`POST /logs/prune` 清理后该窗口的样本随之减少（这是刻意的取舍，
-  聚合表不存耗时与 token 的模型级细分）。
+- 数据源是**明细汇总行**：超期压缩只清 attempts/error_summary 等细节，**不删行**，
+  因此历史耗时/速度样本仍在（聚合表不存耗时与 token 的模型级细分）。
 
 ---
 
@@ -1309,7 +1310,7 @@ curl -s "$PBR/api/channel-speed?from=1789000000&to=1789000900" \
   `avg_ttft_ms` 只对流式有样本；`tokens_*` 与 `estimated_cost` 同日志口径。
 - `from` / `to` 为 Unix 秒或 RFC3339，**都可省略**（省略 `from` = 最近 15 分钟；
   省略 `to` = 现在）。
-- 数据源是**明细日志**：`POST /logs/prune` 清理后窗口样本随之减少（与 §6.13 同一取舍）。
+- 数据源是**明细汇总行**：超期压缩只清排障细节，不删行，因此历史窗口样本仍可回溯。
 
 ---
 

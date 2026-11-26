@@ -666,7 +666,7 @@ func GetPBRRequestLogById(id int) (*PBRRequestLog, error) {
 	return &entry, nil
 }
 
-// CountPBRRequestLogsBefore 统计 ts < before 的明细条数（prune 的 dry-run 用）。
+// CountPBRRequestLogsBefore 统计 ts < before 的明细行数（仅展示用）。
 func CountPBRRequestLogsBefore(before int64) (int64, error) {
 	var count int64
 	if err := DB.Model(&PBRRequestLog{}).Where("ts < ?", before).Count(&count).Error; err != nil {
@@ -675,52 +675,100 @@ func CountPBRRequestLogsBefore(before int64) (int64, error) {
 	return count, nil
 }
 
-// PrunePBRRequestLogsBefore 删除 ts < before 的明细日志，返回删除条数。
-//
-// 只删明细表：聚合表（pbr_stats_hourly）体积小且长期保留（design-v1 §16.5）。
-// 上下文明细按 log_id 与明细同批清理（usage-spec §6.2）；两者在同一事务里完成，
-// 避免"日志没了、上下文还在"的孤儿行。按批删除，避免大表长事务锁住单写连接。
-func PrunePBRRequestLogsBefore(before int64) (int64, error) {
-	var total int64
+// pbrLogNeedsCompaction 是"明细行仍有可清理细节"的判定。
+// 汇总列（时间/车道/渠道/模型/token/成本/耗时/状态/会话/总尝试数）永不删；
+// 超期只清 attempts 链、error_summary 与 mask_hits。
+const pbrLogNeedsCompaction = "(COALESCE(error_summary, '') <> '' OR " +
+	"(COALESCE(attempts, '') <> '' AND COALESCE(attempts, '') <> '[]') OR " +
+	"COALESCE(mask_hits, '') <> '')"
+
+// CountPBRRequestLogsNeedingCompactionBefore 统计仍含细节、需要压缩的旧明细行。
+func CountPBRRequestLogsNeedingCompactionBefore(before int64) (int64, error) {
+	var count int64
+	if err := DB.Model(&PBRRequestLog{}).
+		Where("ts < ? AND "+pbrLogNeedsCompaction, before).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// CountPBRRequestContextsBefore 统计超期上下文行数。
+func CountPBRRequestContextsBefore(before int64) (int64, error) {
+	var count int64
+	if err := DB.Model(&PBRRequestContext{}).Where("created_at < ?", before).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// PBRLogCompactionResult 一次明细压缩的结果。
+type PBRLogCompactionResult struct {
+	CompactedRows   int64 `json:"compacted_rows"`
+	DeletedContexts int64 `json:"deleted_contexts"`
+}
+
+// CompactPBRRequestLogsBefore 压缩 ts < before 的明细：删除上下文分区，清空
+// attempts/error_summary/mask_hits，但**保留汇总行本身**（用户要求历史明细行
+// 可长期逐条检索，只去掉排障细节）。聚合表不受影响。
+func CompactPBRRequestLogsBefore(before int64) (PBRLogCompactionResult, error) {
+	var total PBRLogCompactionResult
 	for {
-		deleted, err := DeletePBRRequestLogBatch(context.Background(), before, 1000)
+		part, err := CompactPBRRequestLogBatch(context.Background(), before, 1000)
 		if err != nil {
 			return total, err
 		}
-		total += deleted
-		if deleted == 0 {
+		total.CompactedRows += part.CompactedRows
+		total.DeletedContexts += part.DeletedContexts
+		if part.CompactedRows == 0 && part.DeletedContexts == 0 {
 			return total, nil
 		}
 	}
 }
 
-// DeletePBRRequestLogBatch 删除一批 ts < before 的明细与对应上下文，返回明细行数。
-// 以 id 排序取批，保证有界事务；上下文按同批 log_id 删除。
-func DeletePBRRequestLogBatch(ctx context.Context, before int64, limit int) (int64, error) {
+// CompactPBRRequestLogBatch 压缩一批旧明细并删除一批旧上下文，返回两类行数。
+// 以 id 排序取批，保证有界事务；不删除 pbr_request_logs 行。
+func CompactPBRRequestLogBatch(ctx context.Context, before int64, limit int) (PBRLogCompactionResult, error) {
 	if limit <= 0 {
 		limit = 1000
 	}
+	var result PBRLogCompactionResult
 	if err := ctx.Err(); err != nil {
-		return 0, err
+		return result, err
 	}
-	var deleted int64
 	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var ids []int
-		if err := tx.Model(&PBRRequestLog{}).Where("ts < ?", before).
+		if err := tx.Model(&PBRRequestLog{}).
+			Where("ts < ? AND "+pbrLogNeedsCompaction, before).
 			Order("id asc").Limit(limit).Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		if len(ids) == 0 {
-			return nil
+		if len(ids) > 0 {
+			updated := tx.Model(&PBRRequestLog{}).Where("id IN ?", ids).Updates(map[string]any{
+				"attempts":      "[]",
+				"error_summary": "",
+				"mask_hits":     "",
+			})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			result.CompactedRows = updated.RowsAffected
 		}
-		if err := tx.Where("log_id IN ?", ids).Delete(&PBRRequestContext{}).Error; err != nil {
+
+		var contextIDs []int
+		if err := tx.Model(&PBRRequestContext{}).Where("created_at < ?", before).
+			Order("log_id asc").Limit(limit).Pluck("log_id", &contextIDs).Error; err != nil {
 			return err
 		}
-		result := tx.Where("id IN ?", ids).Delete(&PBRRequestLog{})
-		deleted = result.RowsAffected
-		return result.Error
+		if len(contextIDs) > 0 {
+			deleted := tx.Where("log_id IN ?", contextIDs).Delete(&PBRRequestContext{})
+			if deleted.Error != nil {
+				return deleted.Error
+			}
+			result.DeletedContexts = deleted.RowsAffected
+		}
+		return nil
 	})
-	return deleted, err
+	return result, err
 }
 
 // PBRStatBucket 聚合桶。

@@ -352,9 +352,10 @@ func parseTimeQuery(raw string) (int64, error) {
 
 // PruneLogs POST /api/v1/logs/prune?before=<ts>&dry_run=
 //
-// 按需清理明细日志（design-v1 §16.5：不引入 cron，由外部触发）。只删明细表，
-// 聚合表长期保留。before 省略时按 system/options.log_retention_days 推算
-// （默认 30 天）。dry_run 只报将删除的条数，不落库。
+// 按需压缩超期明细：删除上下文分区，清空 attempts/error_summary/mask_hits，
+// 但保留 pbr_request_logs 汇总行（design-v1 §16.5：历史明细行可长期检索，
+// 只去掉排障细节）；聚合表长期保留。before 省略时按
+// system/options.log_retention_days 推算（默认 30 天）。
 func PruneLogs(c *gin.Context) {
 	before, err := parseTimeQuery(c.Query("before"))
 	if err != nil {
@@ -366,18 +367,23 @@ func PruneLogs(c *gin.Context) {
 		before = time.Now().AddDate(0, 0, -retentionDays).Unix()
 	}
 
-	count, err := model.CountPBRRequestLogsBefore(before)
+	compactCount, err := model.CountPBRRequestLogsNeedingCompactionBefore(before)
 	if err != nil {
 		writeAPIError(c, err)
 		return
 	}
-	// webhook_deliveries 随明细日志同一保留期清理（design-v1 §16.10）。
+	contextCount, err := model.CountPBRRequestContextsBefore(before)
+	if err != nil {
+		writeAPIError(c, err)
+		return
+	}
+	// webhook_deliveries / 探活记录仍按保留期删除（它们是独立的运维流水，
+	// 不是用户要长期保留的请求汇总行）。
 	webhookCount, err := model.CountWebhookDeliveriesBefore(before)
 	if err != nil {
 		writeAPIError(c, err)
 		return
 	}
-	// 探活记录同一保留期清理（api-spec §6.12：探活历史的清理入口就在这里）。
 	probeCount, err := model.CountProbeLogsBefore(before)
 	if err != nil {
 		writeAPIError(c, err)
@@ -391,16 +397,20 @@ func PruneLogs(c *gin.Context) {
 			"valid":                           true,
 			"before":                          rfc3339(before),
 			"retention_days":                  retentionDays,
-			"deleted":                         0,
-			"would_delete":                    count,
+			"compacted":                       0,
+			"would_compact":                   compactCount,
+			"would_delete_contexts":           contextCount,
 			"would_delete_webhook_deliveries": webhookCount,
 			"would_delete_probe_logs":         probeCount,
-			"diff":                            gin.H{"logs": gin.H{"remove": count}},
+			"diff": gin.H{"logs": gin.H{
+				"compact":         compactCount,
+				"delete_contexts": contextCount,
+			}},
 		})
 		return
 	}
 
-	deleted, err := model.PrunePBRRequestLogsBefore(before)
+	compacted, err := model.CompactPBRRequestLogsBefore(before)
 	if err != nil {
 		writeAPIError(c, err)
 		return
@@ -417,9 +427,10 @@ func PruneLogs(c *gin.Context) {
 	}
 	writeAudit(c, "prune", "logs", "logs")
 	c.JSON(http.StatusOK, gin.H{
-		"deleted":        deleted,
-		"before":         rfc3339(before),
-		"retention_days": retentionDays,
+		"compacted":        compacted.CompactedRows,
+		"deleted_contexts": compacted.DeletedContexts,
+		"before":           rfc3339(before),
+		"retention_days":   retentionDays,
 		// 投递日志清理条数（additive；design-v1 §16.10）
 		"webhook_deliveries_deleted": webhookDeleted,
 		// 探活记录清理条数（additive；api-spec §6.12）

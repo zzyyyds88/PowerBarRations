@@ -99,7 +99,6 @@
     "{{count}} channel(s) failed to enable": "{{count}} canal(canaux) n'ont pas pu être activé(s)",
     "{{count}} disabled channel(s) deleted": "{{count}} canal(canaux) désactivé(s) supprimé(s)",
     "{{count}} IP(s)": "{{count}} IP",
-    "{{count}} log entries removed.": "{{count}} entrées de journal supprimées.",
     "{{count}} models": "{{count}} modèles",
     "{{count}} records selected. Bulk actions are available.": "{{count}} fiches sélectionnées. Actions groupées disponibles.",
     "{{count}} selected": "{{count}} sélectionnés",
@@ -528,8 +527,6 @@
     "Claude CLI Header Passthrough": "Passthrough en-tête Claude CLI",
     "Claude only": "Claude uniquement",
     "Clean": "Sans conflit",
-    "Clean history logs": "Nettoyer les journaux d'historique",
-    "Clean logs": "Nettoyer les logs",
     "Clean up inactive cache": "Nettoyer le cache inactif",
     "Clean Up Log Files": "Nettoyer les fichiers journaux",
     "Cleaned up {{count}} log files, freed {{size}}": "{{count}} fichiers journaux nettoyés, {{size}} libérés",
@@ -777,7 +774,6 @@
     "Delete failed models ({{count}})": "Supprimer les modèles en échec ({{count}})",
     "Delete Field": "Supprimer le champ",
     "Delete Header": "Supprimer l'en-tête",
-    "Delete logs": "Supprimer les journaux",
     "Delete mapping": "Supprimer le mappage",
     "Delete Model": "Supprimer le modèle",
     "Delete model \"{{name}}\"?": "Supprimer le modèle « {{name}} » ?",
@@ -2465,8 +2461,6 @@
     "This will delete temporary cache files that have not been used for more than 10 minutes": "Cela supprimera les fichiers de cache temporaires inutilisés depuis plus de 10 minutes",
     "This will permanently delete all manually and automatically disabled channels. This action cannot be undone.": "Cela supprimera définitivement tous les canaux désactivés manuellement et automatiquement. Cette action ne peut pas être annulée.",
     "This will permanently delete API key": "Cela supprimera définitivement la clé API",
-    "This will permanently remove all log entries created before {{date}}.": "Cela supprimera définitivement toutes les entrées de journal créées avant le {{date}}.",
-    "This will permanently remove log entries before the selected timestamp.": "Cela supprimera définitivement les entrées de journal antérieures à l'horodatage sélectionné.",
     "This will remove {{removed}} forwarding routes and replace them with the {{template}} template ({{created}} routes). Model list and balance routes will be preserved.": "Cette action supprimera {{removed}} routes de transfert et les remplacera par le modèle {{template}} ({{created}} routes). Les routes de liste des modèles et de solde seront conservées.",
     "Thought for {{duration}} seconds": "Réflexion pendant {{duration}} secondes",
     "Three steps to get started": "Trois étapes pour commencer",
@@ -3569,6 +3563,10 @@
     "Rate limited": "Limité",
     "Queued": "En file d'attente",
     "Remove model": "Supprimer le modèle",
-    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Supprimer les journaux détaillés et les lignes de contexte créés avant l'horodatage sélectionné. Les agrégats horaires sont conservés."
+    "Compact history logs": "Compacter les journaux d'historique",
+    "Compact logs": "Compacter les journaux",
+    "This will remove context details and clear attempts/error summaries for log entries created before {{date}}. Summary rows are retained.": "Cela supprimera les détails de contexte et effacera les tentatives/résumés d'erreur des journaux créés avant {{date}}. Les lignes de synthèse sont conservées.",
+    "This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.": "Cela supprimera les détails de contexte et effacera les tentatives/résumés d'erreur des journaux antérieurs à l'horodatage sélectionné. Les lignes de synthèse sont conservées.",
+    "{{count}} log entries processed.": "{{count}} entrées de journal traitées."
   }
 }

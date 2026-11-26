@@ -62,12 +62,15 @@ export type LogCleanupTaskPayload = {
 export type LogCleanupTaskState = {
   total: number
   processed: number
+  compacted_rows: number
+  deleted_contexts: number
   progress: number
   remaining: number
 }
 
 export type LogCleanupTaskResult = {
-  deleted_count: number
+  compacted_rows: number
+  deleted_contexts: number
 }
 
 export type LogCleanupTask = SystemTask<

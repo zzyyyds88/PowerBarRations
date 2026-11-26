@@ -114,14 +114,17 @@ type LogCleanupPayload struct {
 }
 
 type LogCleanupState struct {
-	Total     int64 `json:"total"`
-	Processed int64 `json:"processed"`
-	Progress  int   `json:"progress"`
-	Remaining int64 `json:"remaining"`
+	Total           int64 `json:"total"`
+	Processed       int64 `json:"processed"`
+	CompactedRows   int64 `json:"compacted_rows"`
+	DeletedContexts int64 `json:"deleted_contexts"`
+	Progress        int   `json:"progress"`
+	Remaining       int64 `json:"remaining"`
 }
 
 type LogCleanupResult struct {
-	DeletedCount int64 `json:"deleted_count"`
+	CompactedRows   int64 `json:"compacted_rows"`
+	DeletedContexts int64 `json:"deleted_contexts"`
 }
 
 var (
@@ -377,7 +380,7 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 	}
 
 	for {
-		remaining, err := model.CountPBRRequestLogsBefore(payload.TargetTimestamp)
+		remaining, err := countLogCleanupRemaining(payload.TargetTimestamp)
 		if err != nil {
 			failSystemTask(task, runnerID, err)
 			return
@@ -391,28 +394,31 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 			break
 		}
 
-		// Track whether this pass deleted anything so a fresh recount that still
+		// Track whether this pass made progress so a fresh recount that still
 		// reports remaining rows resumes immediately instead of waiting for the
-		// lock to expire. If a whole pass deletes nothing while rows remain, the
-		// rows cannot be removed and we fail instead of busy-looping.
+		// lock to expire. If a whole pass does nothing while rows remain, we fail
+		// instead of busy-looping.
 		progressed := false
 		for state.Remaining > 0 {
-			rowsAffected, err := model.DeletePBRRequestLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
+			part, err := model.CompactPBRRequestLogBatch(ctx, payload.TargetTimestamp, payload.BatchSize)
 			if err != nil {
 				failSystemTask(task, runnerID, err)
 				return
 			}
-			if rowsAffected == 0 {
+			affected := part.CompactedRows + part.DeletedContexts
+			if affected == 0 {
 				break
 			}
 			progressed = true
+			state.CompactedRows += part.CompactedRows
+			state.DeletedContexts += part.DeletedContexts
 
-			state.Processed += rowsAffected
+			state.Processed += affected
 			if state.Total < state.Processed {
 				state.Total = state.Processed
 			}
-			if state.Remaining > rowsAffected {
-				state.Remaining -= rowsAffected
+			if state.Remaining > affected {
+				state.Remaining -= affected
 			} else {
 				state.Remaining = 0
 			}
@@ -425,7 +431,7 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		}
 
 		if !progressed {
-			failSystemTask(task, runnerID, errors.New("no log rows were deleted"))
+			failSystemTask(task, runnerID, errors.New("no log rows were compacted and no contexts were deleted"))
 			return
 		}
 	}
@@ -440,10 +446,26 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		return
 	}
 
-	result := LogCleanupResult{DeletedCount: state.Processed}
+	result := LogCleanupResult{
+		CompactedRows:   state.CompactedRows,
+		DeletedContexts: state.DeletedContexts,
+	}
 	if err := model.FinishSystemTask(task.TaskID, runnerID, model.SystemTaskStatusSucceeded, result, ""); err != nil {
 		logSystemTaskLockError(ctx, task, err)
 	}
+}
+
+// countLogCleanupRemaining 统计"仍需压缩的旧明细行 + 超期上下文行"。
+func countLogCleanupRemaining(before int64) (int64, error) {
+	logs, err := model.CountPBRRequestLogsNeedingCompactionBefore(before)
+	if err != nil {
+		return 0, err
+	}
+	contexts, err := model.CountPBRRequestContextsBefore(before)
+	if err != nil {
+		return 0, err
+	}
+	return logs + contexts, nil
 }
 
 func syncLogCleanupStateFromRemaining(state *LogCleanupState, remaining int64) {

@@ -299,13 +299,18 @@ IMPORT=$(curl -s "${A[@]}" -X POST --data-binary @"$WORK/export.json" "$BASE/api
 assert_json "dry_run 导入无实际变更" "$IMPORT" "d.get('dry_run') is True or d.get('dry_run')==True"
 
 echo
-echo "=== 运维 12：日志保留（prune 明细与上下文、聚合不变）==="
+echo "=== 运维 12：日志保留（压缩细节、保留汇总行、聚合不变）==="
 STATS_BEFORE=$(curl -s "${A[@]}" "$BASE/api/v1/stats?granularity=hour&group_by=lane")
-curl -s "${A[@]}" -X POST "$BASE/api/v1/logs/prune?before=9999999999" > /dev/null
+PRUNE=$(curl -s "${A[@]}" -X POST "$BASE/api/v1/logs/prune?before=9999999999")
+assert_json "prune 返回压缩与上下文清理计数" "$PRUNE" "'compacted' in d and 'deleted_contexts' in d"
 AFTER_LOGS=$(curl -s "${A[@]}" "$BASE/api/v1/logs?limit=5")
-assert_json "prune 后明细清空" "$AFTER_LOGS" "len(d['items'])==0"
+assert_json "prune 后汇总行保留" "$AFTER_LOGS" "len(d['items'])>0"
+FIRST_ID=$(echo "$AFTER_LOGS" | python3 -c 'import sys,json; print(json.load(sys.stdin)["items"][0]["id"])')
+DETAIL=$(curl -s "${A[@]}" "$BASE/api/v1/logs/$FIRST_ID")
+assert_json "超期明细 attempts 已清空" "$DETAIL" "d.get('attempts')==[]"
+assert_json "超期明细上下文已删除" "$DETAIL" "d.get('context') is None"
 STATS_AFTER=$(curl -s "${A[@]}" "$BASE/api/v1/stats?granularity=hour&group_by=lane")
-assert_json "prune 后聚合仍保留" "$STATS_AFTER" "any(i['requests']>0 for i in d['items'])"
+assert_json "压缩后聚合仍保留" "$STATS_AFTER" "any(i['requests']>0 for i in d['items'])"
 
 echo
 echo "=== 运维 13：审计（上述写操作均有记录）==="

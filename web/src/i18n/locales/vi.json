@@ -99,7 +99,6 @@
     "{{count}} channel(s) failed to enable": "{{count}} kênh không thể bật",
     "{{count}} disabled channel(s) deleted": "Đã xóa {{count}} kênh đã tắt",
     "{{count}} IP(s)": "{{count}} IP",
-    "{{count}} log entries removed.": "Đã xóa {{count}} mục nhật ký.",
     "{{count}} models": "{{count}} mô hình",
     "{{count}} records selected. Bulk actions are available.": "Đã chọn {{count}} bản ghi. Có thể thực hiện thao tác hàng loạt.",
     "{{count}} selected": "Đã chọn {{count}}",
@@ -528,8 +527,6 @@
     "Claude CLI Header Passthrough": "Chuyển tiếp header Claude CLI",
     "Claude only": "Chỉ Claude",
     "Clean": "Không xung đột",
-    "Clean history logs": "Xóa nhật ký lịch sử",
-    "Clean logs": "Dọn dẹp nhật ký",
     "Clean up inactive cache": "Dọn dẹp bộ nhớ đệm không hoạt động",
     "Clean Up Log Files": "Dọn dẹp tệp nhật ký",
     "Cleaned up {{count}} log files, freed {{size}}": "Đã dọn dẹp {{count}} tệp nhật ký, giải phóng {{size}}",
@@ -777,7 +774,6 @@
     "Delete failed models ({{count}})": "Xóa các mô hình thất bại ({{count}})",
     "Delete Field": "Xóa trường",
     "Delete Header": "Xóa tiêu đề",
-    "Delete logs": "Xóa nhật ký",
     "Delete mapping": "Xóa ánh xạ",
     "Delete Model": "Xóa Mô hình",
     "Delete model \"{{name}}\"?": "Xóa mô hình \"{{name}}\"?",
@@ -2465,8 +2461,6 @@
     "This will delete temporary cache files that have not been used for more than 10 minutes": "Thao tác này sẽ xóa các tệp bộ nhớ đệm tạm không được sử dụng hơn 10 phút",
     "This will permanently delete all manually and automatically disabled channels. This action cannot be undone.": "Thao tác này sẽ xóa vĩnh viễn tất cả các kênh bị tắt thủ công và tự động. Hành động này không thể hoàn tác.",
     "This will permanently delete API key": "Thao tác này sẽ xóa vĩnh viễn khóa API",
-    "This will permanently remove all log entries created before {{date}}.": "Thao tác này sẽ xóa vĩnh viễn tất cả các mục nhật ký được tạo trước {{date}}.",
-    "This will permanently remove log entries before the selected timestamp.": "Thao tác này sẽ xóa vĩnh viễn các mục nhật ký trước mốc thời gian đã chọn.",
     "This will remove {{removed}} forwarding routes and replace them with the {{template}} template ({{created}} routes). Model list and balance routes will be preserved.": "Thao tác này sẽ xóa {{removed}} tuyến chuyển tiếp và thay thế bằng mẫu {{template}} ({{created}} tuyến). Các tuyến danh sách mô hình và số dư sẽ được giữ lại.",
     "Thought for {{duration}} seconds": "Đã suy nghĩ trong {{duration}} giây",
     "Three steps to get started": "Ba bước để bắt đầu",
@@ -3569,6 +3563,10 @@
     "Rate limited": "Đang giới hạn",
     "Queued": "Đang xếp hàng",
     "Remove model": "Xóa mô hình",
-    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Xóa nhật ký chi tiết và các dòng ngữ cảnh được tạo trước mốc thời gian đã chọn. Các tổng hợp theo giờ được giữ lại."
+    "Compact history logs": "Nén nhật ký lịch sử",
+    "Compact logs": "Nén nhật ký",
+    "This will remove context details and clear attempts/error summaries for log entries created before {{date}}. Summary rows are retained.": "Thao tác này sẽ xóa chi tiết ngữ cảnh và xóa các lần thử/tóm tắt lỗi của nhật ký được tạo trước {{date}}. Các dòng tổng hợp vẫn được giữ lại.",
+    "This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.": "Thao tác này sẽ xóa chi tiết ngữ cảnh và xóa các lần thử/tóm tắt lỗi của nhật ký trước mốc thời gian đã chọn. Các dòng tổng hợp vẫn được giữ lại.",
+    "{{count}} log entries processed.": "Đã xử lý {{count}} mục nhật ký."
   }
 }
