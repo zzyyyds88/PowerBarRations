@@ -1,7 +1,6 @@
 package model
 
 import (
-	"context"
 	"errors"
 	"strconv"
 	"strings"
@@ -46,13 +45,11 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 	}
 	result := &StatsRebuildResult{DryRun: dryRun}
 
-	// rebuild 与 outbox worker 互斥：先 drain，再读明细/写聚合，避免 worker
-	// 在重建期间插入的增量被整表重写覆盖。
+	// rebuild 与 outbox worker 互斥：先暂停增量 worker，再从明细全量重建。
+	// outbox 只是聚合的加速缓存；rebuild 成功后会在同一事务里清空它，
+	// 因此死信/积压不会阻止权威重建。
 	pbrStatsOutboxMu.Lock()
 	defer pbrStatsOutboxMu.Unlock()
-	if err := flushPBRStatsOutboxLocked(context.Background()); err != nil {
-		return nil, err
-	}
 
 	// 明细已被保留策略 prune 时，prune 边界之前的聚合没有明细来源，必须保留。
 	// 边界小时桶（min(ts) 所在小时）也整体保留：prune 只删旧明细，边界桶里
@@ -289,9 +286,13 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 		}
 		result.AggregateRows = int64(len(rows))
 		if len(rows) > 0 {
-			return tx.CreateInBatches(rows, 500).Error
+			if err := tx.CreateInBatches(rows, 500).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		// 全量重建已覆盖所有明细；outbox 中的增量（含死信）已被最终聚合吸收，
+		// 同一事务清空，避免死信/积压阻断后续 rebuild 或让 health 永久 degraded。
+		return tx.Where("1 = 1").Delete(&PBRStatsOutbox{}).Error
 	})
 	if err != nil {
 		return nil, err

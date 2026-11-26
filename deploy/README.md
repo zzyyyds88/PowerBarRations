@@ -132,6 +132,14 @@ docker start pbr
 恢复后确认 `/api/health` 为 `ok`、`db_last_write_error` 为空、日志能继续写入。
 配置级备份：`GET /api/v1/export`；导入先 `POST /api/v1/import?dry_run=true`。
 
+聚合 outbox 排障：
+
+```bash
+docker exec pbr /app/pbr outbox status            # pending/dead/最早时间/最近错误
+docker exec pbr /app/pbr outbox retry --dead      # 磁盘/数据库临时故障修复后重试死信
+docker exec pbr /app/pbr outbox discard --dead --yes  # payload 损坏时丢弃；随后可 rebuild
+```
+
 ## 7. 安全纪律
 
 - `production.env` / `test.env` 已被 gitignore，且**从未进入过公开发布的 Git 历史**；请勿把它们或其内容带入任何提交。

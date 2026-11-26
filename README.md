@@ -376,11 +376,15 @@ server {
 ```bash
 ./pbr                        # 启动网关
 ./pbr backup --db <pbr.db> --out <backup.db>   # 在线一致性备份 + quick_check（不停服）
+./pbr outbox status         # 查看聚合 outbox 积压/死信（只读）
+./pbr outbox retry --dead   # 重置死信为可重试（适合磁盘/数据库临时故障）
+./pbr outbox discard --dead --yes   # 丢弃死信；随后可 POST /api/stats/rebuild 从明细补聚合
 ./pbr auth reset --db <pbr.db> --yes           # 清库内管理凭据→回到未初始化（需先停服）
 ```
 
 - `auth reset` 的 `--db` 缺省取 `$SQLITE_PATH`；也可用 `PBR_ADMIN_KEY`/`PBR_ADMIN_KEYS` 临时覆盖口令派生。检测到 `-wal`/`-shm` 默认拒绝，确认无服务时可加 `--force`。
 - `backup` 的 `--out` 缺省 `./backups/pbr-<UTC>.db`；已存在文件拒绝覆盖，副本权限 0600。
+- `outbox` 的 `--db` 同样缺省取 `$SQLITE_PATH`；死信不阻断 `stats rebuild`，重建成功会清空 outbox。
 
 ---
 

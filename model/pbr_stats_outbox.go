@@ -313,3 +313,77 @@ func PBRStatsOutboxBacklog() (pending int64, dead int64, err error) {
 	}
 	return pending, dead, nil
 }
+
+// PBRStatsOutboxStatus 是 CLI 运维视图：积压量、最早时间与最近死信错误。
+type PBRStatsOutboxStatus struct {
+	Pending         int64  `json:"pending"`
+	Dead            int64  `json:"dead"`
+	OldestPendingAt int64  `json:"oldest_pending_at"`
+	OldestDeadAt    int64  `json:"oldest_dead_at"`
+	LastError       string `json:"last_error"`
+}
+
+// LoadPBRStatsOutboxStatus 读取 outbox 运维状态（只读）。
+func LoadPBRStatsOutboxStatus(db *gorm.DB) (PBRStatsOutboxStatus, error) {
+	var status PBRStatsOutboxStatus
+	if db == nil {
+		return status, errors.New("database not initialized")
+	}
+	var pending, dead int64
+	if err := db.Model(&PBRStatsOutbox{}).Where("attempts < ?", pbrStatsOutboxMaxAttempts).Count(&pending).Error; err != nil {
+		return status, err
+	}
+	if err := db.Model(&PBRStatsOutbox{}).Where("attempts >= ?", pbrStatsOutboxMaxAttempts).Count(&dead).Error; err != nil {
+		return status, err
+	}
+	status.Pending, status.Dead = pending, dead
+	var oldest struct {
+		Pending int64
+		Dead    int64
+	}
+	if err := db.Model(&PBRStatsOutbox{}).
+		Select("COALESCE(MIN(CASE WHEN attempts < ? THEN created_at END), 0) AS pending, "+
+			"COALESCE(MIN(CASE WHEN attempts >= ? THEN created_at END), 0) AS dead",
+			pbrStatsOutboxMaxAttempts, pbrStatsOutboxMaxAttempts).
+		Scan(&oldest).Error; err != nil {
+		return status, err
+	}
+	status.OldestPendingAt, status.OldestDeadAt = oldest.Pending, oldest.Dead
+	var last PBRStatsOutbox
+	if err := db.Where("attempts >= ? AND last_error <> ''", pbrStatsOutboxMaxAttempts).
+		Order("id desc").First(&last).Error; err == nil {
+		status.LastError = last.LastError
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return status, err
+	}
+	return status, nil
+}
+
+// RetryPBRStatsOutboxDead 把死信重置为可重试；id=0 表示全部死信。
+func RetryPBRStatsOutboxDead(db *gorm.DB, id int64) (int64, error) {
+	if db == nil {
+		return 0, errors.New("database not initialized")
+	}
+	query := db.Model(&PBRStatsOutbox{}).Where("attempts >= ?", pbrStatsOutboxMaxAttempts)
+	if id > 0 {
+		query = query.Where("id = ?", id)
+	}
+	result := query.Updates(map[string]any{
+		"attempts": 0, "next_attempt_at": 0, "last_error": "",
+	})
+	return result.RowsAffected, result.Error
+}
+
+// DiscardPBRStatsOutboxDead 删除死信；id=0 表示全部死信。
+// 明细行是聚合的唯一真源，删死信后可由 POST /api/stats/rebuild 完整恢复。
+func DiscardPBRStatsOutboxDead(db *gorm.DB, id int64) (int64, error) {
+	if db == nil {
+		return 0, errors.New("database not initialized")
+	}
+	query := db.Where("attempts >= ?", pbrStatsOutboxMaxAttempts)
+	if id > 0 {
+		query = query.Where("id = ?", id)
+	}
+	result := query.Delete(&PBRStatsOutbox{})
+	return result.RowsAffected, result.Error
+}

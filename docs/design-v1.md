@@ -649,7 +649,8 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 - 压缩只动排障细节，聚合表（`pbr_stats_hourly`）**长期保留**（体积小）；一次压缩不得改变 `/api/stats` 的历史数值，也不得让历史明细行从日志列表/会话页消失。
 - 上下文明细表（`pbr_request_contexts`）按 `created_at`/`log_id` 分批删除，不单独保留；会话与上下文曲线因此只覆盖保留期内的上下文细节，但会话汇总仍可由保留的日志行重算。
 - **`GET /api/stats` 必须读聚合表**（hour 直读、day 由小时桶上卷），不得读明细表——否则一次 prune 就把历史统计抹掉，与"聚合长期保留"自相矛盾。
-- `POST /api/stats/rebuild` 先 drain `pbr_stats_outbox`；重建时保留**已无明细来源**的小时桶（prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。仍有待处理/死信 outbox 行时 rebuild 失败，避免在聚合缺口上继续。
+- `POST /api/stats/rebuild` **以明细为唯一真源**：不要求 outbox 清空，死信不阻断重建；成功后在同一事务清空全部 outbox 行（含死信）。重建时保留**已无明细来源**的小时桶（历史 prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。`dry_run` 不写库、不处理 outbox。
+- outbox 死信可用 `pbr outbox status/retry/discard` 定向处理（生产镜像内执行）；`retry` 适合磁盘/数据库临时故障，`discard` 需 `--yes`，丢弃后可 rebuild 从明细补聚合。
 - `/api/health` 暴露 `stats_outbox.pending/dead` 与最近一次 `db_last_write_error`；`dead > 0` 或 outbox 不可读时整体 `degraded`。
 
 ### 16.6 并发与超时
@@ -687,7 +688,7 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 **定位**：把路由运行态的故障事件推送给**任意外部消费方**，**只推事件、不承载指令**。这是管理 API 的一部分：PBR 只负责**定义推送契约并投递**，接收方的验签、路由、呈现一律由消费方自行实现（本机对接——如推给某 agent 的通知通道——由该 agent 侧做，PBR 不内置任何针对特定接收者的集成）。事件量低频（分钟级偶发），选型为 HTTP webhook 推送——不做 WebSocket/SSE 订阅面（日后若需实时全量订阅再评估 SSE，控制台仪表盘已有 SSE 先例）。
 
-**事件源**：共享事件合同包含 `internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / **`member_recovered`** / `reset` / `skip` / **`lane_unavailable`** / **`lane_recovered`**）、渠道状态事件（`channel_disabled` / `channel_enabled` / `channel_deleted`）和上游错误爆发事件（`upstream_burst`）。`reset` / `lane_unavailable` / `lane_recovered` 为车道级事件（`member` 为空）；渠道事件为非车道事件（`lane` 为空，`member` 为渠道 ID）；删除事件 detail 保留删除前的渠道 ID、名称与状态，不含密钥。事件经共享订阅钩子异步旁路投递，绝不阻塞请求路径。
+**事件源**：共享事件合同包含 `internal/route` 运行态事件（`circuit_open` / `circuit_half_open` / `circuit_closed` / `cooldown` / **`member_recovered`** / `reset` / `skip` / **`lane_unavailable`** / **`lane_recovered`**）、渠道状态事件（`channel_disabled` / `channel_enabled` / `channel_deleted`）和上游错误爆发事件（`upstream_burst`）。`reset` / `lane_unavailable` / `lane_recovered` 为车道级事件（`member` 为空）；渠道事件为非车道事件（`lane` 为空，`member` 为渠道 ID）；删除事件 detail 保留删除前的渠道 ID、名称与状态，不含密钥。事件经共享订阅钩子异步旁路投递，绝不阻塞请求路径。**分发结构（2026-11-26 收口）**：运行态在持锁时只调用 `events.PublishAsync`，把事件放入进程级有界队列（1024 条）后立即返回；单个后台 goroutine 顺序调用订阅者。队列满时丢弃并计入 `pbr_route_event_drops_total`，绝不等待；订阅者 panic 被兜住并计数，不会杀死分发循环。事件本身是通知而非业务数据，丢弃只影响外部通知，不影响 `request_logs` 与选路结果。
 
 **配对语义（合同的一部分，不是消费方自行约定）**：`cooldown` ↔ `member_recovered`（成员冷却→第一次成功服务）、`circuit_open` ↔ `circuit_closed`（熔断→恢复）、`lane_unavailable` ↔ `lane_recovered`（车道全成员不可选→第一次成功服务）。每个"开始"事件都有配对的"结束"事件，消费方据此做 ⚠/✅ 配对通知；`reset` 是人工终止态、`skip`/`upstream_burst` 是过程信号，均不配对。事件的判定与产生点以 routing-spec §7 为单处规范，投递契约为 api-spec §5.8。
 

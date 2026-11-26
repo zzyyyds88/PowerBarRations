@@ -65,6 +65,37 @@ func TestWritePBRLogWritesDetailContextAndOutboxAtomically(t *testing.T) {
 	assert.Empty(t, outbox, "worker 处理成功后必须删除 outbox 行")
 }
 
+// rebuild 以明细为唯一真源：死信不得阻断重建，成功后 outbox（含死信）清空。
+func TestRebuildStatsIgnoresDeadOutboxAndClearsIt(t *testing.T) {
+	truncateTables(t)
+	detail := &PBRRequestLog{
+		Ts: 1_700_000_000, LaneName: "lane-dead-outbox", MemberChannelName: "ch",
+		UpstreamModel: "m", Success: true, PromptTokens: 10,
+	}
+	require.NoError(t, DB.Create(detail).Error)
+	require.NoError(t, DB.Create(&PBRStatsOutbox{
+		Payload: "not-json", CreatedAt: 1, Attempts: pbrStatsOutboxMaxAttempts, LastError: "decode",
+	}).Error)
+
+	// dry-run 不得改动 outbox。
+	preview, err := RebuildStatsFromLogs(true)
+	require.NoError(t, err)
+	assert.True(t, preview.DryRun)
+	var outboxCount int64
+	require.NoError(t, DB.Model(&PBRStatsOutbox{}).Count(&outboxCount).Error)
+	assert.EqualValues(t, 1, outboxCount, "dry-run 不得清空 outbox")
+
+	result, err := RebuildStatsFromLogs(false)
+	require.NoError(t, err, "死信不得阻断 rebuild")
+	assert.Greater(t, result.AggregateRows, int64(0))
+	var stat PBRStatsHourly
+	require.NoError(t, DB.Where("group_kind = ? AND group_key = ?", "lane", "lane-dead-outbox").First(&stat).Error)
+	assert.EqualValues(t, 1, stat.Requests)
+
+	require.NoError(t, DB.Model(&PBRStatsOutbox{}).Count(&outboxCount).Error)
+	assert.Zero(t, outboxCount, "重建成功后必须清空全部 outbox 行")
+}
+
 // 同一请求重复调用 WritePBRLog 不得写两行（Written 闸门在事务失败后允许重试）。
 func TestWritePBRLogIsIdempotentPerRequest(t *testing.T) {
 	truncateTables(t)

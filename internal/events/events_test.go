@@ -4,6 +4,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,4 +114,42 @@ func TestConcurrentPublishAndSetSubscriber(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	assert.Equal(t, 800, count)
+}
+
+// 异步分发必须保序，且不阻塞生产者；订阅者 panic 不能杀死分发循环。
+func TestPublishAsyncPreservesOrderAndSurvivesPanic(t *testing.T) {
+	SetSubscriber(nil)
+	t.Cleanup(func() { SetSubscriber(nil) })
+
+	received := make(chan Event, 4)
+	SetSubscriber(func(event Event) { received <- event })
+	PublishAsync(Event{Ts: 1, Type: EventChannelEnabled})
+	PublishAsync(Event{Ts: 2, Type: EventChannelDisabled})
+	for _, want := range []int64{1, 2} {
+		select {
+		case got := <-received:
+			assert.EqualValues(t, want, got.Ts)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timed out waiting for async event %d", want)
+		}
+	}
+
+	before := AsyncPanics()
+	SetSubscriber(func(Event) { panic("subscriber boom") })
+	PublishAsync(Event{Type: EventChannelDeleted})
+	deadline := time.Now().Add(2 * time.Second)
+	for AsyncPanics() == before && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	assert.Greater(t, AsyncPanics(), before, "panic 必须被兜住并计数")
+
+	// 分发循环仍活着。
+	SetSubscriber(func(event Event) { received <- event })
+	PublishAsync(Event{Ts: 3, Type: EventChannelEnabled})
+	select {
+	case got := <-received:
+		assert.EqualValues(t, 3, got.Ts)
+	case <-time.After(2 * time.Second):
+		t.Fatal("dispatcher died after subscriber panic")
+	}
 }
