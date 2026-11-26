@@ -248,7 +248,8 @@ type Circuit struct {
 	RecentOutcomes []bool `json:"-"`
 	// HalfOpenSuccesses 当前半开周期内已连续成功的次数（用于多探针恢复）。
 	HalfOpenSuccesses int `json:"-"`
-	// RejectStreak 连续 upstream_reject 次数；成功一次即清零（routing-spec §4.1）。
+	// RejectStreak 连续 upstream_reject 次数（routing-spec §4.1）。任何非
+	// upstream_reject 的结果（成功、其他失败分类、429 减速）都会清零。
 	RejectStreak int `json:"-"`
 	// FailsByKind 各错误类型的连续失败次数（成功/熔断恢复时清零）。
 	FailsByKind map[ErrorKind]int `json:"-"`
@@ -762,6 +763,10 @@ func (r *Runtime) recordFailure(key MemberKey, kind ErrorKind, memberCooldownSec
 	}
 	circuit.LastErrorKind = kind
 	circuit.LastErrorAt = now
+	// 连续拒绝只统计"连续 upstream_reject"（routing-spec §4.1）：任何其他失败
+	// 都说明该成员不是一直拒绝，序列到此中断。否则 timeout 夹在两次拒绝之间
+	// 仍会被累计成"连续拒绝"，把请求级拒绝误升级成配置结论。
+	circuit.RejectStreak = 0
 	circuit.Score += weightOf(kind)
 	circuit.ConsecutiveFailures++
 	if circuit.FailsByKind == nil {
@@ -861,6 +866,8 @@ func (r *Runtime) applyPaceLocked(key MemberKey, retryAfterSeconds int, now int6
 	}
 	circuit.LastErrorKind = KindSoftRateLimit
 	circuit.LastErrorAt = now
+	// 429 是上游要求放慢，不属于 upstream_reject；同样中断"连续拒绝"序列。
+	circuit.RejectStreak = 0
 
 	r.appendEvent(EventMemberPaced, key,
 		"until="+strconv.FormatInt(until, 10)+" retry_after="+strconv.Itoa(retryAfterSeconds))
@@ -870,7 +877,8 @@ func (r *Runtime) applyPaceLocked(key MemberKey, retryAfterSeconds int, now int6
 // 供排障，**不计熔断分**——拒绝是上游对这份请求的判断，不是成员的故障
 // （下一个请求它可能完全正常）。但**连续拒绝**说明该成员大概率配置有误
 // （例如上游要求一个网关没有转发的头）：达到阈值后写一段短期冷却并留痕，
-// 避免每个请求都先白打它一次。成功一次即清零（recordSuccess）。
+// 避免每个请求都先白打它一次。任何非 upstream_reject 的结果（成功、其他失败
+// 分类、429 减速）都会中断连续语义并由对应记账路径清零。
 // 亲和若粘在被拒绝的当前成员上，同样立即结束：本次请求已经离开它，
 // 继续粘着只会把后续选路拉回同一个拒绝者。
 func (r *Runtime) recordReject(key MemberKey, kind ErrorKind, applyCooldown bool) {

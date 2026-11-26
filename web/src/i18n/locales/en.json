@@ -3214,7 +3214,7 @@
     "By tokens": "By tokens",
     "No clean samples": "No clean samples",
     "No output tokens": "No output tokens",
-    "Rejected · needs fixing": "Rejected · needs fixing",
+    "Upstream rejected · {{count}} in a row": "Upstream rejected · {{count}} in a row",
     "Quick setup: pick a provider": "Quick setup: pick a provider",
     "Choose a provider (optional)": "Choose a provider (optional)",
     "Provider presets": "Provider presets",

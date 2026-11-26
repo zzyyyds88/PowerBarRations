@@ -218,6 +218,7 @@ describe('resolveMemberLiveState', () => {
   it('surfaces a member that keeps getting rejected as "rejected"', () => {
     // upstream_reject 不计冷却、不写熔断，所以 available 仍为 true。若不单独
     // 标记，界面会显示「就绪」，而真实行为是每次请求都先白打它一次。
+    // 文案只陈述连续拒绝次数，不推断配置过错（内容审查/参数不支持也是 400）。
     const state = resolveMemberLiveState(
       {
         available: true,
@@ -227,6 +228,7 @@ describe('resolveMemberLiveState', () => {
       NOW
     )
     expect(state.kind).toBe('rejected')
+    expect(state.streak).toBe(3)
   })
 
   it('keeps cooldown wording when a rejected member is resting', () => {

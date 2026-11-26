@@ -46,3 +46,40 @@ func TestConsecutiveUpstreamRejectsApplyShortCooldown(t *testing.T) {
 		assert.Zero(t, circuit.Score, "上游拒绝不是成员故障，不得计入熔断分")
 	})
 }
+
+// 「连续」必须被任何非 upstream_reject 结果打断（routing-spec §4.1）：
+// reject → timeout → reject 只能算 1 次连续拒绝，不能累计成 2 次；
+// 429 减速同理，它只是放慢，不是拒绝。
+func TestNonRejectOutcomeBreaksRejectStreak(t *testing.T) {
+	resolved := testRoute("lane-reject-streak", 1, 1)
+	settings := DefaultCircuitSettings()
+	runtime := Default.For(resolved.Model)
+	key := memberKeyOf(&resolved.Members[0])
+
+	runtime.withLock(func() {
+		runtime.recordReject(key, KindUpstreamReject, true)
+		runtime.recordReject(key, KindUpstreamReject, true)
+		require.Equal(t, 2, runtime.Circuits[key].RejectStreak)
+	})
+
+	// timeout 是另一种失败，不是拒绝：序列到此中断。
+	runtime.withLock(func() {
+		runtime.recordFailure(key, KindTimeout, 0, 0, false, settings)
+		require.Zero(t, runtime.Circuits[key].RejectStreak,
+			"非 reject 失败必须清零连续拒绝计数")
+	})
+	runtime.withLock(func() {
+		runtime.recordReject(key, KindUpstreamReject, true)
+		assert.Equal(t, 1, runtime.Circuits[key].RejectStreak,
+			"timeout 之后的拒绝必须从 1 重新计数")
+	})
+
+	// 429 只写 PacedUntil，不写冷却，也不是连续拒绝的一部分。
+	runtime.withLock(func() {
+		runtime.recordReject(key, KindUpstreamReject, true)
+		require.Equal(t, 2, runtime.Circuits[key].RejectStreak)
+		runtime.recordFailure(key, KindSoftRateLimit, 0, 5, false, settings)
+		assert.Zero(t, runtime.Circuits[key].RejectStreak,
+			"429 减速不是拒绝，必须清零连续计数")
+	})
+}
