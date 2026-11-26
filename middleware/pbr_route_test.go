@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/constant"
 	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -136,6 +138,35 @@ func TestPBRNextChannelUsesSnapshotWithoutDatabase(t *testing.T) {
 	require.Nil(t, nextErr)
 	assert.Same(t, resolved.Members[0].ChannelSnapshot, selected)
 	assert.Zero(t, *queries, "PBRNextChannel 请求路径不得查库")
+}
+
+// 429 的 Retry-After 超上限时，中间件必须把原错误交回 controller
+// （由 controller 设 Retry-After 并原样响应），不能合成 503 或继续选路。
+func TestPBRNextChannelPropagatesOversizedRetryAfterAbort(t *testing.T) {
+	usePBRRouteTestDB(t)
+	channel := &model.Channel{Id: 1, Name: "channel-a", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled,
+		BaseURL: common.GetPointer("https://example.invalid/v1"), Key: "test-key", Models: "model-a"}
+	require.NoError(t, model.DB.Create(channel).Error)
+	lane := &model.Lane{Id: 1, Name: "lane-429-abort", Mode: model.LaneModeFailover, Enabled: true,
+		Members: []model.LaneMember{{ChannelId: channel.Id, Model: "model-a"}}}
+	require.NoError(t, model.DB.Create(lane).Error)
+	t.Cleanup(func() { route.Default.Remove(lane.Name) })
+
+	resolved, err := model.ResolveRoute(lane.Name)
+	require.NoError(t, err)
+	state := route.NewState(resolved)
+	t.Cleanup(state.Close)
+	c, _ := pbrRouteTestContext(t, lane.Name)
+	selected, nextErr, ok := PBRNextChannel(c, state, lane.Name, nil)
+	require.True(t, ok)
+	require.NotNil(t, selected)
+
+	rateErr := types.NewOpenAIError(errors.New("rate limited"), types.ErrorCode(""), http.StatusTooManyRequests)
+	rateErr.RetryAfterSeconds = 61 // 超过本地 60s 上限
+	selected, nextErr, ok = PBRNextChannel(c, state, lane.Name, rateErr)
+	assert.False(t, ok)
+	assert.Nil(t, selected)
+	assert.Same(t, rateErr, nextErr, "必须原样透传上游 429，而不是合成 503")
 }
 
 func TestPBRNextChannelFailsClosedOnBadChannelConfig(t *testing.T) {

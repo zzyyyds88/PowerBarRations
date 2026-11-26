@@ -54,14 +54,17 @@ export interface LaneMemberHealth {
   circuit_open_until?: string | null
   last_error_kind?: string
   /**
-   * 连续 `upstream_reject` 次数（routing-spec §4.1，后端恒回）。
+   * 连续配置可疑的 `upstream_reject` 次数（routing-spec §4.1.3，后端恒回）。
    *
-   * `upstream_reject` 不计冷却、不计熔断分——成员本身没故障。连续被拒既可能是
-   * 内容审查/参数不支持（请求级），也可能是网关没转发上游必需的头（配置级）；
-   * 此时成员仍是 `available` 且每次请求都会先白打它一次。控制台只按事实显示
-   * 「上游连续拒绝 N 次」而不是「就绪」或「需修复配置」。
+   * 请求级 400（内容审查/参数不支持等）不累计；只有后端判定为配置可疑的
+   * 连续拒绝才计数。成员仍 `available`，控制台只按事实显示
+   * 「上游连续拒绝 N 次」，不推断「需修复配置」。
    */
   reject_streak?: number
+  /** 按错误类型的连续失败计数（解释 circuit_allowed_fails）。 */
+  fails_by_kind?: Record<string, number>
+  /** 成员级覆盖配置错误（非 null 时该成员不可选）。 */
+  override_error?: { code: string; message: string; path: string } | null
   /** 车道当前成员（亲和/粘性选中的成员）。 */
   current: boolean
   /** 探测占用中（半开探测）。 */

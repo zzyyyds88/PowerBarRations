@@ -402,12 +402,17 @@ func TestCircuitOpensHalfOpensAndRecovers(t *testing.T) {
 	assert.Contains(t, eventTypes(runtime), EventCircuitHalfOpen)
 
 	// 上游已修好：半开需要连续成功 2 次才复通（默认 circuit_half_open_successes）。
+	// 每次半开探测都持有一个新的 ProbeLease；第一次成功后租约释放，第二次探测
+	// 必须由新的请求 State 重新取得，不能复用旧 State 的 OnSuccess。
 	opened.OnSuccess()
 	runtime.withLock(func() {
 		circuit := runtime.Circuits[memberKeyOf(&resolved.Members[0])]
 		assert.Equal(t, CircuitHalfOpen, circuit.State, "首次半开成功仍需继续探测")
 	})
-	opened.OnSuccess()
+	probeAgain := NewState(resolved)
+	_, _, ok = probeAgain.Next(nil)
+	require.True(t, ok, "半开仍需放行下一次探测")
+	probeAgain.OnSuccess()
 	runtime.withLock(func() {
 		circuit := runtime.Circuits[memberKeyOf(&resolved.Members[0])]
 		assert.Equal(t, CircuitClosed, circuit.State, "连续两次半开成功应复通")

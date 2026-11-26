@@ -343,3 +343,21 @@ func TestListModelSummariesCountsAvailableMembers(t *testing.T) {
 	}
 	t.Fatal("avail-model not found")
 }
+
+// 六键与成员覆盖共用同一数值校验：member_max_attempts 超过硬上限必须在解析期
+// 失败（fail closed），不静默 Normalize 成默认值。
+func TestParseLaneRelayConfigRejectsExcessiveMemberMaxAttempts(t *testing.T) {
+	raw := `{"member_max_attempts":11}`
+	_, cfgErr := ParseLaneRelayConfigE(raw)
+	require.NotNil(t, cfgErr)
+	assert.Equal(t, "invalid_lane_config", cfgErr.Code)
+	assert.Equal(t, "member_max_attempts", cfgErr.Path)
+
+	_, overrideErr := ParseLaneRelayOverridesE(raw)
+	require.NotNil(t, overrideErr)
+	assert.Equal(t, "member_max_attempts", overrideErr.Path)
+
+	cfg, err := ParseLaneRelayConfigE(`{"member_max_attempts":10}`)
+	require.Nil(t, err)
+	assert.Equal(t, 10, cfg.MemberMaxAttempts)
+}

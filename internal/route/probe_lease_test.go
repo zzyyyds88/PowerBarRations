@@ -109,7 +109,9 @@ func TestNonOwnerOutcomesDoNotReleaseProbe(t *testing.T) {
 	require.True(t, acquired)
 	owner.probe = lease
 
-	other.Runtime.withLock(func() { other.Runtime.recordSuccess(MemberKeyOf(&resolved.Members[1]), 0, DefaultCircuitSettings()) })
+	other.Runtime.withLock(func() {
+		other.Runtime.recordSuccess(MemberKeyOf(&resolved.Members[1]), 0, DefaultCircuitSettings(), true)
+	})
 	other.Runtime.withLock(func() {
 		other.Runtime.recordFailure(MemberKeyOf(&resolved.Members[1]), KindSoftTransient, 5, 0, true, DefaultCircuitSettings())
 	})

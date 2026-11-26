@@ -82,7 +82,7 @@ type LaneMember struct {
   - **取反只发生在对外输出处一次**：管理面 JSON 一律正向 `enabled`（api-spec §4.2 命名规则），`RouteMember` 从不被直接 JSON 序列化（handler 全手工拼 `gin.H`），所以 `enabled = !Disabled` 只在 handler 输出时算一次。
 - **停用 ≠ 删除**：被关闭的成员**仍留在成员链里**，顺序、别名、成员级六键覆盖一律不动——需求是"可逆的临时停用"。停用**不写冷却、不改变熔断器的三态与计数**（§5、§6），重新打开即立即恢复参与选路。开关只约束**选路**这一件事：管理面的逐成员探活仍覆盖被关闭成员（它不经选路、不写运行态，api-spec §6.4），控制台与导出同样照实呈现。
 - **车道成员上游名解析**：`Channel.ModelMapping[成员所选模型] ?? 成员所选模型`（§1.1 单处规则；无成员级覆盖、查表键与路由键无关）。
-- **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。
+- **六键数值默认值（单处规范）**：`member_max_attempts=2`、`member_retry_interval_seconds=3`、`member_non_stream_response_timeout_seconds=120`、`member_stream_first_event_timeout_seconds=30`、`member_cooldown_seconds=60`、`member_affinity_seconds=0`（取 upstream `DefaultGroupRelayConfig`；`affinity` 默认 0 相对上游 300 的理由见 design-v1 §7.3）。全局默认可经 `GET/PUT /api/system/options` 的 `lane_defaults` 调整，只影响新建车道与未显式配置六键的车道。写入口校验数值上界：`member_max_attempts ≤ 10`（429 在 Retry-After 封顶内会原地重试同一成员，不设上界会把单请求放大成数十分钟串行重试）；其余时长/间隔只拒绝负数。
 - **解析结果是权威值，只能应用一次**：选路阶段算出的上游真名经 `ContextKeyPBRUpstreamModel` 注入转发管道；管道内的模型重定向逻辑（基座 `ModelMappedHelper`）**不得再按渠道映射覆盖它**，否则会出现"映射被应用两次"的优先级倒挂。非 PBR 链路（渠道测试直连指定渠道）不受此约束。
 - 成员的 `priority` 数字大者优先，成员数组顺序即写库顺序。成员唯一键为 `(渠道, 所选模型)`，同一渠道的不同模型可在一条车道内多次出现（同一模型不可重复，见 §1.1）。
 - 车道在 `failover` 下按成员顺序降序遍历；`manual` 只走点名成员。**没有 weighted / round_robin，也没有成员 `weight`。** 被人工停用（`Disabled`）的成员在**两种模式下都不被选中**（§2.1、§2.2）。
@@ -388,8 +388,8 @@ type LaneRuntime struct {
   **配置可疑**的持续拒绝（例如上游要求网关未转发的头），不是对单次内容审查的惩罚。
 - **请求级 400 不累计 `reject_streak`**：上游错误 code/type 属于 `data_inspection_failed`、
   `content_filter`、`invalid_parameter`、`invalid_request_error`、`context_length_exceeded`、
-  `unsupported_*` 等明确针对本次请求的拒绝时，只换成员、不冷却、不计数；无法识别的 code
-  按配置可疑计数（保守）。
+  `unsupported_*` 等明确针对本次请求的拒绝时，只换成员、不冷却、不计数，并清零既有连续计数；
+  无法识别的 code 按配置可疑计数（保守）。
 - `reject_streak_threshold` / `reject_cooldown_seconds` 经 `system/options` 可配，写入口校验上界；
   成功、其他失败分类、429 减速都会清零连续计数。
 
@@ -573,7 +573,7 @@ type LaneRuntime struct {
     不能再让成员以半开态继续接流量。
 - **可选性合取**：`可选 = 不在冷却 && 熔断 != open`。限流减速不改变“可选”，只影响排序（§5.3）。`half_open` 也必须先过
   冷却判定——冷却未到期时不得占用探测槽。
-- 阈值与时长经 `system/options` 配置：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`circuit_half_open_successes`、`circuit_allowed_fails`；可用 `POST /api/lanes/{n}/circuits/reset` 手动清除（返回结构化计数）。
+- 阈值与时长经 `system/options` 配置：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`circuit_half_open_successes`、`circuit_allowed_fails`；可用 `POST /api/lanes/{n}/circuits/reset` 手动清除（返回结构化计数）。写入口与读取侧共同钳制：`circuit_open_seconds ≤ 604800`、`circuit_max_open_seconds ∈ [1, 604800]`、`circuit_rolling_min_samples ≤ 20`（防指数退避整数溢出与滚动窗口无限增长）。
 
 ### 5.3 与冷却的关系
 

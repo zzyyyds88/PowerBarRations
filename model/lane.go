@@ -48,6 +48,12 @@ type LaneRelayConfig struct {
 	MemberAffinitySeconds                 int `json:"member_affinity_seconds"`
 }
 
+// MaxLaneMemberAttempts 成员单请求尝试次数硬上限。
+//
+// 429 在 Retry-After 封顶内会原地重试同一成员；若不设上界，一个请求可能
+// 被配置放大成数十分钟的串行重试（而请求已经超时）。10 次对单节点网关足够。
+const MaxLaneMemberAttempts = 10
+
 // LaneRelayOverrides 成员级六键覆盖；nil 字段表示继承车道。
 type LaneRelayOverrides struct {
 	MemberMaxAttempts                     *int `json:"member_max_attempts,omitempty"`
@@ -198,6 +204,9 @@ func validateLaneRelayConfigValues(raw string) *LaneConfigError {
 		}
 		if number < 0 {
 			return &LaneConfigError{Code: "invalid_lane_config", Message: "车道六键不能为负数", Path: key}
+		}
+		if key == "member_max_attempts" && number > MaxLaneMemberAttempts {
+			return &LaneConfigError{Code: "invalid_lane_config", Message: "member_max_attempts 不能超过 10", Path: key}
 		}
 	}
 	return nil

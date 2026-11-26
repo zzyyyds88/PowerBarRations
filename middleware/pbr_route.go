@@ -323,6 +323,10 @@ func PBRNextChannel(c *gin.Context, state *route.State, modelName string, lastEr
 			member, delay, ok = state.Next(nil)
 		}
 		if !ok {
+			// 上游 429 Retry-After 超上限：原样透传该错误，不合成 503、不排队。
+			if abortErr := state.AbortError(); abortErr != nil {
+				return nil, abortErr, false
+			}
 			if err := ctx.Err(); err != nil {
 				return nil, pbrCanceledError(err), false
 			}

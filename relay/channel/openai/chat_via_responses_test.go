@@ -268,6 +268,10 @@ func TestOaiChatToResponsesStreamHandlerConvertsSSEOrderAndUsage(t *testing.T) {
 	)
 }
 
+func TestOaiResponsesToChatStreamHandlerClassifiesStreamOutcome(t *testing.T) {
+	runStreamOutcomeCases(t, OaiResponsesToChatStreamHandler, streamOutcomeCases())
+}
+
 func requireOrderedSubstrings(t *testing.T, s string, parts ...string) {
 	t.Helper()
 

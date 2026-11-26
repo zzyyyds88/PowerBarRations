@@ -61,6 +61,19 @@ func EnableChannel(channelId int, usingKey string, channelName string) {
 	}
 }
 
+// isCredentialChannelError 判定渠道自身的凭据类错误：多 key 渠道没有可用 key
+// （channel:no_available_key）或适配器判定渠道 key 无效（channel:invalid_key）。
+// 这两类由基座以默认 500 构造，语义是渠道配置的持续性故障，Classify 已归
+// hard_auth；它们不是上游 5xx，不能因为状态码范围而被当成瞬时故障放行。
+func isCredentialChannelError(err *types.NewAPIError) bool {
+	switch err.GetErrorCode() {
+	case types.ErrorCodeChannelInvalidKey, types.ErrorCodeChannelNoAvailableKey:
+		return true
+	default:
+		return false
+	}
+}
+
 func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if !common.AutomaticDisableChannelEnabled {
 		return false
@@ -68,20 +81,28 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if err == nil {
 		return false
 	}
-	if types.IsChannelError(err) {
-		return true
-	}
-	if types.IsSkipRetryError(err) {
-		return false
-	}
-	// 分类白名单（ADR 0013 第 6 条）：只有凭据失效/额度耗尽这类**持续性**故障
-	// 允许自动禁用。429（减速）、5xx/超时（瞬时）、成员级拒绝、客户端取消与
-	// 坏请求一律跳过——它们的正确处置是冷却/换人与退避，不是关渠道。
+	// 分类白名单必须最先判定（design-v1 §7.11、routing-spec §8）：只有凭据失效/
+	// 额度耗尽这类**持续性**故障允许自动禁用。`channel:` 前缀本身不是禁用依据——
+	// 流式首事件超时（channel:response_time_exceeded）归 timeout，429 归
+	// soft_rate_limit，5xx 归 soft_transient，成员级拒绝、客户端取消与坏请求
+	// 同样不在白名单；它们的正确处置是冷却/换人与退避，不是关渠道。
 	kind := pbrroute.Classify(err)
 	if kind != pbrroute.KindHardAuth && kind != pbrroute.KindHardQuota {
 		return false
 	}
-	// 状态码范围同样限制：即便关键词命中，429 与 5xx 也不得成为禁用依据。
+	// 我方构造的 skipRetry 错误（请求校验失败等）不得关掉健康渠道；Classify
+	// 通常在状态码之前就把它归为 client_error，这里再兜一层，避免欠费关键词
+	// 命中时把本地校验错误升级成 hard_quota。
+	if types.IsSkipRetryError(err) {
+		return false
+	}
+	// 凭据类通道错误与 hard_auth 分类保持一致：它们可能携带基座默认的 500，
+	// 但属于渠道自身配置错误，允许自动禁用。
+	if isCredentialChannelError(err) {
+		return true
+	}
+	// 状态码范围同样限制：即便关键词或状态码区间命中，429（减速）与 5xx
+	// （瞬时）也不得成为禁用依据。
 	if err.StatusCode == 429 || err.StatusCode >= 500 {
 		return false
 	}

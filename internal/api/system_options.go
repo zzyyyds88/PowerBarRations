@@ -30,6 +30,8 @@ type systemOptions struct {
 	CircuitRollingFailureRate  float64        `json:"circuit_rolling_failure_rate"`
 	CircuitHalfOpenSuccesses   int            `json:"circuit_half_open_successes"`
 	CircuitAllowedFails        map[string]int `json:"circuit_allowed_fails"`
+	RejectStreakThreshold      int            `json:"reject_streak_threshold"`
+	RejectCooldownSeconds      int            `json:"reject_cooldown_seconds"`
 	UpstreamBurstThreshold     int            `json:"upstream_burst_threshold"`
 	UpstreamBurstWindowSeconds int            `json:"upstream_burst_window_seconds"`
 	LogRetentionDays           int            `json:"log_retention_days"`
@@ -50,6 +52,8 @@ type systemOptionsPatch struct {
 	CircuitRollingFailureRate  *float64               `json:"circuit_rolling_failure_rate"`
 	CircuitHalfOpenSuccesses   *int                   `json:"circuit_half_open_successes"`
 	CircuitAllowedFails        *map[string]int        `json:"circuit_allowed_fails"`
+	RejectStreakThreshold      *int                   `json:"reject_streak_threshold"`
+	RejectCooldownSeconds      *int                   `json:"reject_cooldown_seconds"`
 	UpstreamBurstThreshold     *int                   `json:"upstream_burst_threshold"`
 	UpstreamBurstWindowSeconds *int                   `json:"upstream_burst_window_seconds"`
 	LogRetentionDays           *int                   `json:"log_retention_days"`
@@ -68,6 +72,8 @@ func validateLaneDefaults(cfg *model.LaneRelayConfig) error {
 	switch {
 	case cfg.MemberMaxAttempts <= 0:
 		return errors.New("lane_defaults.member_max_attempts must be > 0")
+	case cfg.MemberMaxAttempts > model.MaxLaneMemberAttempts:
+		return errors.New("lane_defaults.member_max_attempts must be <= 10")
 	case cfg.MemberRetryIntervalSeconds < 0:
 		return errors.New("lane_defaults.member_retry_interval_seconds must be >= 0")
 	case cfg.MemberNonStreamResponseTimeoutSeconds <= 0:
@@ -125,6 +131,8 @@ func currentSystemOptions() systemOptions {
 		CircuitRollingFailureRate:  settings.RollingFailureRate,
 		CircuitHalfOpenSuccesses:   settings.HalfOpenSuccesses,
 		CircuitAllowedFails:        allowedFailsToStrings(settings.AllowedFails),
+		RejectStreakThreshold:      settings.RejectStreakThreshold,
+		RejectCooldownSeconds:      settings.RejectCooldownSeconds,
 		UpstreamBurstThreshold:     currentUpstreamBurstThreshold(),
 		UpstreamBurstWindowSeconds: currentUpstreamBurstWindowSeconds(),
 		LogRetentionDays:           CurrentLogRetentionDays(),
@@ -227,6 +235,12 @@ func systemOptionsUpdates(options systemOptions) (map[string]string, error) {
 		}
 		updates[route.OptionCircuitAllowedFails] = route.EncodeAllowedFails(allowed)
 	}
+	if options.RejectStreakThreshold > 0 {
+		updates[route.OptionRejectStreakThreshold] = strconv.Itoa(options.RejectStreakThreshold)
+	}
+	if options.RejectCooldownSeconds > 0 {
+		updates[route.OptionRejectCooldownSeconds] = strconv.Itoa(options.RejectCooldownSeconds)
+	}
 	keywords := make([]string, 0, len(options.AutomaticDisableKeywords))
 	for _, keyword := range options.AutomaticDisableKeywords {
 		if keyword = strings.TrimSpace(keyword); keyword != "" {
@@ -260,22 +274,22 @@ func PutSystemOptions(c *gin.Context) {
 		updates[route.OptionCircuitFailureThreshold] = strconv.FormatFloat(*patch.CircuitFailureThreshold, 'f', -1, 64)
 	}
 	if patch.CircuitOpenSeconds != nil {
-		if *patch.CircuitOpenSeconds < 0 {
-			apierr.Validation(c, "circuit_open_seconds must be >= 0")
+		if *patch.CircuitOpenSeconds < 0 || *patch.CircuitOpenSeconds > route.MaxCircuitOpenSeconds {
+			apierr.Validation(c, "circuit_open_seconds must be in [0, 604800]")
 			return
 		}
 		updates[route.OptionCircuitOpenSeconds] = strconv.Itoa(*patch.CircuitOpenSeconds)
 	}
 	if patch.CircuitMaxOpenSeconds != nil {
-		if *patch.CircuitMaxOpenSeconds <= 0 {
-			apierr.Validation(c, "circuit_max_open_seconds must be > 0")
+		if *patch.CircuitMaxOpenSeconds <= 0 || *patch.CircuitMaxOpenSeconds > route.MaxCircuitOpenSeconds {
+			apierr.Validation(c, "circuit_max_open_seconds must be in [1, 604800]")
 			return
 		}
 		updates[route.OptionCircuitMaxOpenSeconds] = strconv.Itoa(*patch.CircuitMaxOpenSeconds)
 	}
 	if patch.CircuitRollingMinSamples != nil {
-		if *patch.CircuitRollingMinSamples <= 0 {
-			apierr.Validation(c, "circuit_rolling_min_samples must be > 0")
+		if *patch.CircuitRollingMinSamples <= 0 || *patch.CircuitRollingMinSamples > route.MaxCircuitRollingMinSamples {
+			apierr.Validation(c, "circuit_rolling_min_samples must be in [1, 20]")
 			return
 		}
 		updates[route.OptionCircuitRollingMinSamples] = strconv.Itoa(*patch.CircuitRollingMinSamples)
@@ -313,6 +327,20 @@ func PutSystemOptions(c *gin.Context) {
 			allowed[route.ErrorKind(kind)] = value
 		}
 		updates[route.OptionCircuitAllowedFails] = route.EncodeAllowedFails(allowed)
+	}
+	if patch.RejectStreakThreshold != nil {
+		if *patch.RejectStreakThreshold <= 0 || *patch.RejectStreakThreshold > 1000 {
+			apierr.Validation(c, "reject_streak_threshold must be in [1, 1000]")
+			return
+		}
+		updates[route.OptionRejectStreakThreshold] = strconv.Itoa(*patch.RejectStreakThreshold)
+	}
+	if patch.RejectCooldownSeconds != nil {
+		if *patch.RejectCooldownSeconds <= 0 || *patch.RejectCooldownSeconds > 86400 {
+			apierr.Validation(c, "reject_cooldown_seconds must be in [1, 86400]")
+			return
+		}
+		updates[route.OptionRejectCooldownSeconds] = strconv.Itoa(*patch.RejectCooldownSeconds)
 	}
 	if patch.UpstreamBurstThreshold != nil {
 		if *patch.UpstreamBurstThreshold <= 0 {
