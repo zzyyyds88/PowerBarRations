@@ -367,8 +367,9 @@ type LaneRelayConfig struct {
 - **恢复探测使用 `ProbeLease`**（[ADR 0014](adr/0014-request-resource-leases-and-route-snapshots.md)）：租约记录 owner、generation 与 expiry；只有 owner 的请求 State 幂等收口或 State 的到期回收可释放，`recordSuccess` / `recordFailure` 不隐式释放。迁移不转移 live lease，Prune 不清 live lease，Reset 递增 generation 使旧租约失效。
 - **限流（429）不写冷却**（2026-11-23 立，routing-spec §4.1.1）：`429` 表示"你发得太快"而非
   "成员故障"，只写 `PacedUntil` 减速（默认 3s，尊重 `Retry-After`，上限 60s），
-  期间该成员仍 `available=true`、只在本轮排到后面。关键词命中欠费/额度的 429 归 `hard_quota`，
-  仍走长冷却（账号状态，与并发无关）。
+  期间该成员仍 `available=true`、只在本轮排到后面。`Retry-After` 超过 60s 时不等待：
+  原样透传该 429 与 `Retry-After` 头，不换成员、不合成 503。关键词命中欠费/额度的 429 归
+  `hard_quota`，仍走长冷却（账号状态，与并发无关）。
 - 切换成功后按 `AffinitySeconds` 粘住当前成员，避免抖动；成员失败立即结束亲和。
 - 进程内保存；重启清空属可接受语义，README 写明。
 
@@ -378,7 +379,7 @@ type LaneRelayConfig struct {
 - **半开与冷却到期探测共用 `ProbeLease`**：generation 隔离 Reset/迁移前后的所有权，Health 只读投影 `probe_since` / `probe_lease_until`，不修复运行态（ADR 0014）。
 - **软/硬故障分离**：`429`/限流类为软故障，**不计熔断分、不写冷却**（routing-spec §4.1.1）；
   其余软故障（5xx/超时）按分级冷却，硬故障（401/403/欠费）按倍率冷却。
-- 连续失败达阈值 → 打开；退避期到 → 半开放一个真实请求；成功即自动复通并写恢复事件日志。
+- 连续失败达阈值 → 打开；退避期到 → 半开放一个真实请求；**连续 `circuit_half_open_successes` 次探测成功才复通**并写恢复事件日志（单次成功只解除本次冷却，不直接恢复全量流量）；熔断打开前已发出、随后成功的普通在飞请求不得关闭 open。
 - 触发证据除关键词外，补"滚动窗口失败率"（定长环形缓冲：数据面非阻塞上报、控制面评估）。
 - **禁用语义 = "熔断中"**；保留开关名 `AutomaticEnableChannelEnabled` 兼容现网口径，**默认 true**（README 写明）。注意：该开关只是"允许写回 enabled"的许可，真正执行复通的是渠道巡检任务（`monitor_setting.auto_test_channel_enabled`，默认 **false**）或人工触发"测试全部渠道"；即默认部署下不会自动复通，README 必须如实写明。
 - 阈值/半开周期进 `system/options` 可配，经 API 修改。
@@ -463,7 +464,9 @@ routing-spec §3.2）。要点：
   零内容帧→bad_response；不得用"空流"顶替超时或取消。
 - **任何"已写错误响应却返回成功"的路径必须修正**：未提交的返回错误走换人，已提交的
   标记为已提交失败（记失败、不重试、不二次写）。
-- **自动禁用按分类白名单**：只有 `hard_auth` / `hard_quota` 可触发，且状态码范围禁止 429/5xx。
+- **自动禁用按分类白名单**：只有 `hard_auth` / `hard_quota` 可触发，且状态码范围禁止 429/5xx；
+  该判定必须先于 `IsChannelError`/`channel:` 前缀匹配，`timeout`（`channel:response_time_exceeded`）
+  与 5xx/429 一律不得自动禁用渠道。
 
 ---
 

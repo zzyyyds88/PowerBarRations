@@ -350,11 +350,11 @@ type LaneRuntime struct {
 | 类别 | 判据 | 是否原地重试 | 是否触发冷却/熔断 | 是否换下一成员 |
 |---|---|---|---|---|
 | `soft_rate_limit` | HTTP 429 / 明确的限流体（**未命中欠费/额度关键词**） | 是（预算内） | **否**（2026-11-23 立，见下）——只减速，不冷却、不计熔断分 | 是 |
-| `timeout` | **我方成员级 deadline 到期**（2026-11-21 立，拆出自 `soft_transient`）：流式首个有效事件超时、非流式响应超时、响应头等待超时——**请求已送达上游**，但窗口内未产生首个有效事件/响应 | **否**——已送达但无响应的上游，同成员重试大概率重复失败（参考 magpie `replayable` 的实践：只有"请求根本没送达"才值得原地重发）。生产 2026-11-21 实证：高峰期一次请求在同一成员上白等 30s×2，整条链串行 1412×2 → 一枝春×2 → tokenav×2 → 基元律动才成功，总耗时 200s | 是；与 `soft_transient` **完全同档**（§4.5 分级递减、`circuit_allowed_fails` 默认 4、熔断权重同软档） | 是，立即 |
+| `timeout` | **我方成员级 deadline 到期**（2026-11-21 立，拆出自 `soft_transient`）：流式首个有效事件超时、非流式响应超时、响应头等待超时——**请求已送达上游**，但窗口内未产生首个有效事件/响应 | **否**——已送达但无响应的上游，同成员重试大概率重复失败（参考 magpie `replayable` 的实践：只有"请求根本没送达"才值得原地重发）。生产 2026-11-21 实证：高峰期一次请求在同一成员上白等 30s×2，整条链串行 1412×2 → 一枝春×2 → tokenav×2 → 基元律动才成功，总耗时 200s。**该成员在本请求内的预算一次性耗尽，本请求不再重选它**（短冷却到期也不行） | 是；与 `soft_transient` **完全同档**（§4.5 分级递减、`circuit_allowed_fails` 默认 4、熔断权重同软档） | 是，立即 |
 | `soft_transient` | 408、5xx、**"未送达"类传输瞬断**（dial 失败、connection reset、EOF——请求根本没到上游，原地重试换一条连接即可） | 是（预算内） | 是；成员冷却**分级**：连续第 n 次 → n=1 `base/8`、n=2 `base/4`、n=3 `base/2`、n≥4 `base`（下限 5s，成功清零）。见 §4.5 | 是 |
 | `hard_auth` | 401 / 403（非欠费类）、key 失效 | 否，立即 | 是，冷却取较长档（§6） | 是 |
 | `hard_quota` | 命中欠费/额度关键词（如 `arrearage` 等，条目属部署数据）；**内置判定（2026-11-21 立）**：报文含 `free-limit` / `free usage limit` / `usage limit` / `quota exceeded` / `insufficient quota` 之一即归本类（上游免费档/配额耗尽，秒级不会自愈，不得反复撞墙） | 否，立即 | 是，冷却取较长档（§6） | 是 |
-| `upstream_reject` | **上游对"该成员"的拒绝**：400/422（未命中欠费关键词、非我方校验错误）、**451**（因法律原因不可用），或**流内 error 帧**（§4.4，提交前）；200 + 上游错误对象（OpenAI/Claude/Gemini 任一格式）同样归本类 | 否（同一份请求体再打一次仍是拒绝） | **否**——成员无过错 | **是** |
+| `upstream_reject` | **上游对"该成员"的拒绝**：400/422（未命中欠费关键词、非我方校验错误）、**424**（上游明确拒绝重放，如 `Automatic replay is not allowed`）、**451**（因法律原因不可用），或**流内 error 帧**（§4.4，提交前）；200 + 上游错误对象（OpenAI/Claude/Gemini 任一格式）同样归本类 | 否（同一份请求体再打一次仍是拒绝） | **否**——成员无过错；请求级 400（内容审查/参数不支持/上下文超限等）也不累计 `reject_streak`（§4.1.3） | **是** |
 | `client_error` | **仅限我方可判定的"请求本身不合法"**：我方校验类错误（skipRetry）、请求体解析失败、**413**（请求过大，重打必然失败） | 否 | **否** | **否**，原样返回客户端 |
 | `bad_response` | 200 但响应体不合法/无法解析；**含流式上游建流后零有效帧**（读超时、立即 EOF、只有 `[DONE]`） | 是（预算内） | 是 | 是 |
 | `canceled` | 客户端断开 / 上下文取消；**499**（客户端关闭请求） | 否 | 否 | 否，静默结束 |
@@ -379,6 +379,20 @@ type LaneRuntime struct {
 - **内置额度词**包含 `usage limit`（不限于 `usage limit reached`），命中即 `hard_quota`；
   关键词优先于状态码。
 
+#### 4.1.3 请求级拒绝与连续拒绝冷却（2026-11-26 立）
+
+- `424` 是上游明确拒绝重放（如 `Automatic replay is not allowed`），归 `upstream_reject`：换成员、
+  不原地重试、不冷却。
+- `upstream_reject` 仍不写冷却；但同一成员**连续**被上游拒绝达到 `reject_streak_threshold`
+  （默认 5）时，写 `reject_cooldown_seconds`（默认 300s）的短期冷却（§6）。该机制只针对
+  **配置可疑**的持续拒绝（例如上游要求网关未转发的头），不是对单次内容审查的惩罚。
+- **请求级 400 不累计 `reject_streak`**：上游错误 code/type 属于 `data_inspection_failed`、
+  `content_filter`、`invalid_parameter`、`invalid_request_error`、`context_length_exceeded`、
+  `unsupported_*` 等明确针对本次请求的拒绝时，只换成员、不冷却、不计数；无法识别的 code
+  按配置可疑计数（保守）。
+- `reject_streak_threshold` / `reject_cooldown_seconds` 经 `system/options` 可配，写入口校验上界；
+  成功、其他失败分类、429 减速都会清零连续计数。
+
 #### 4.1.1 限流 = 减速，不是故障（2026-11-23 立）
 
 `429` 的语义是"**你发得太快**"，不是"**我坏了**"。此前把它与 401/5xx 一同当作成员故障、
@@ -402,6 +416,8 @@ type LaneRuntime struct {
 - 同成员重试的等待取 `max(member_retry_interval_seconds, 剩余 pace)`，避免立刻撞回同一堵墙。
 - `Retry-After` 超过 `rateLimitMaxPaceSeconds`（内置 60s）时**不等待**：
   直接把该 429 原样返回客户端（语义如实，客户端自行退避），不做无谓挂起。
+  实现口径：`State.Next` 直接中止本轮并把该 429 交回 controller，原样写出上游错误体与
+  `Retry-After` 响应头，不换成员、不等待、不合成 503。
 - `ShouldSwitchMember` 仍为 `true`：有别的成员时优先去别的成员，不浪费往返。
 - **关键词优先**（不变）：429 报文命中欠费/额度关键词时归 `hard_quota`，走长冷却——
   那是账号状态，与"发太快"不同（§4.1 分类表的判定顺序）。
@@ -436,6 +452,10 @@ type LaneRuntime struct {
 `bad_response`（成员自身故障）。**`soft_rate_limit` 不进这套分级**：它不写冷却，只写
 `PacedUntil` 减速（§4.1.1）。
 
+**连续按同类型计算**：记录某一 `kind` 时清空其他类型的连续计数；`timeout` 与 `soft_transient`
+都按当前类型的连续次数取档。`timeout` 还一次性耗尽该成员的本请求预算（本请求不再重选），
+避免短冷却到期后在同一请求内二次白等；`bad_response` 仍按满档冷却。
+
 **② 恐慌模式**（`internal/route/route.go::chooseFailoverLocked`，参 Envoy `panic threshold`）
 常规选路把「冷却中」一律跳过。当**冷却**是唯一阻止选路的原因时（成员没被人工停用、也没熔断
 打开，只是刚打了个喷嚏在休息），不要对外返回 503，而是**压着冷却强行上一个**：挑冷却最早到期
@@ -446,6 +466,8 @@ type LaneRuntime struct {
   都属确定不可用，压进去只会白付一次必然失败的往返；
 - 只在「冷却未到期」这一种不可选上生效，`availProbeReady`（冷却到期但探测槽被占）**不放行**，
   以保住半开成员的单探测槽语义（§5.2）；`manual` 车道不走本分支（它本来就不参与冷却，§2.1）。
+- **本请求已尝试过的成员、`ConfigError`/`OverrideError` 成员同样跳过**：panic 只做一次
+  “可能失败的新往返”，不得把同一成员在同一请求内二次记账。
 
 - **关键词优先于状态码**：欠费类上游以 400 到达且不在默认重试码集内，关键词是唯一捕获路径（design-v1 §7.6）。
 - `client_error` 不得触发冷却，也不得换成员——否则一个错误请求会把健康成员打冷。
@@ -541,7 +563,7 @@ type LaneRuntime struct {
 
 - `closed`：累计失败。达阈值 `circuit_failure_threshold` 打开。**硬故障计数权重高；软故障（5xx/超时）权重中；429 不计分**。
 - **滚动窗口失败率证据**（design-v1 §7.5）：窗口内样本数 ≥ `circuit_rolling_min_samples`（默认 8）且失败率 ≥ `circuit_rolling_failure_rate`（默认 0.8）时同样打开；与累计阈值**取或**。**429 不进入滚动窗口**（不 `recordOutcome(false)`），避免"持续限流把熔断拉响"。
-- **按错误类型的连续失败次数（`circuit_allowed_fails`）**：每一类错误可单独配置"连续失败几次即打开"，默认 `hard_auth=2`、`hard_quota=2`、`soft_transient=4`、`bad_response=3`；与累计阈值、滚动失败率**取或**。成功一次即清零该类计数。默认值刻意让硬故障更快开断。**`soft_rate_limit` 不在本机制内**：429 不计熔断分、不计入 `FailsByKind`（§4.1.1），因此 `circuit_allowed_fails` 里的 `soft_rate_limit` 键仅为兼容既有配置而保留，**不生效**（写入被接受但无行为）。
+- **按错误类型的连续失败次数（`circuit_allowed_fails`）**：每一类错误可单独配置"连续失败几次即打开"，默认 `hard_auth=2`、`hard_quota=2`、`soft_transient=4`、`timeout=4`、`bad_response=3`；与累计阈值、滚动失败率**取或**。**记录某一类失败时清空其他类的连续计数**（严格“连续”），成功一次即清零该类计数。默认值刻意让硬故障更快开断。**`soft_rate_limit` 不在本机制内**：429 不计熔断分、不计入 `FailsByKind`（§4.1.1），因此 `circuit_allowed_fails` 里的 `soft_rate_limit` 键仅为兼容既有配置而保留，**不生效**（写入被接受但无行为）。
 - `open`：持续 `circuit_open_seconds`（默认取该成员冷却时长）。期间该成员等价于"冷却中"，被选择算法跳过。
 - `half_open`：到期后放开**一个**探测请求（取得 `ProbeLease`，与冷却探测共用机制）。
   - **连续成功 `circuit_half_open_successes` 次（默认 2）才回到 `closed`**；单次成功只解除本次冷却，仍保持半开继续探测。这样上游抖动时不会在一次成功后就恢复全量流量、下一分钟又熔断。
@@ -549,7 +571,7 @@ type LaneRuntime struct {
   - **失败 → 立即回到 `open`**（不依赖累计阈值再次达标），`HalfOpenSuccesses` 清零，
     退避时长按次数指数增长（`open_seconds × 2^k`，设上限）。半开阶段的失败就是"探测没过"，
     不能再让成员以半开态继续接流量。
-- **可选性合取**：`可选 = 不在冷却 && 不在限流减速 && 熔断 != open`。`half_open` 也必须先过
+- **可选性合取**：`可选 = 不在冷却 && 熔断 != open`。限流减速不改变“可选”，只影响排序（§5.3）。`half_open` 也必须先过
   冷却判定——冷却未到期时不得占用探测槽。
 - 阈值与时长经 `system/options` 配置：`circuit_failure_threshold`、`circuit_open_seconds`、`circuit_max_open_seconds`、`circuit_rolling_min_samples`、`circuit_rolling_failure_rate`、`circuit_half_open_successes`、`circuit_allowed_fails`；可用 `POST /api/lanes/{n}/circuits/reset` 手动清除（返回结构化计数）。
 
@@ -559,8 +581,9 @@ type LaneRuntime struct {
 - **限流减速**（`PacedUntil`）= 上游 429 要求的放慢，不是故障、不进可选性判定；
 - **熔断** = 基于历史失败率的长期回避。
 - 三者作用于同一份"该成员当前是否可选"的判断：`可选 = 不在冷却 && 熔断 != open`。
-  **限流减速不改变"可选"**：减速中的成员仍可选、仍 `available=true`，只是本轮排到后面，
-  等它 3 秒即可；`就绪 = 可选 && 未减速 && 有空槽 && RPM 未满`（§3.2）。
+  **限流减速不改变"可选"**：减速中的成员仍可选、仍 `available=true`，只是本轮排到后面；
+  选路在同优先级内优先非减速成员，全部减速时选最早到期者，不因减速把成员判为不可用；
+  `就绪 = 可选 && 未减速 && 有空槽 && RPM 未满`（§3.2）。
   实现上可统一为一个 `MemberAvailability` 查询，避免多套逻辑打架。
 - **成员人工停用（§1.2）是第四个回避来源，但不同层**：它是配置态，不在这份"可选"判断里，也不得被并进去——该判断只能看见冷却/减速/熔断三份运行态表，把配置态开关塞进去会让运行态函数反向依赖车道配置，并把"我关的"误报成"故障"。停用判定放选路调用方、排在可用性查询之前（§2.1、§2.2、§9）。渠道停用同理，属配置态跳过（`channel_disabled`），不写冷却、不计熔断。
 
@@ -570,10 +593,14 @@ type LaneRuntime struct {
 **成功**时，视为一次真实的成功上游往返，对**该成员**执行与 `recordSuccess` 等价的清理：
 
 - 删除该成员的冷却（`Cooldowns[memberKey]`）与减速（`PacedUntil[memberKey]`）；
-- 熔断条目回到 `closed`（`State`/`Score`/`ConsecutiveFailures`/`FailsByKind`/`OpenUntil`/
+- 熔断条目回到 `closed`（`State`/`Score`/`ConsecutiveFailures`/`FailsByKind`/`RecentOutcomes`/`OpenUntil`/
   `HalfOpenSuccesses`/`OpenCount`/`RejectStreak` 全部复位），`LastTransitionAt` 更新；
 - 发一条 `member_recovered`（`detail=from=manual_probe`），与先前的 `cooldown` 事件配对；
   若此前处于 `open`，另发 `circuit_closed`（配对语义与 §5.2 一致）。
+- **普通在飞成功不能关闭 open**：只有携带有效 `ProbeLease` 的探测成功才能推进
+  `half_open → closed`；在熔断打开前已发出、随后成功的普通请求只记滚动窗口并清 `PacedUntil`，
+  不关闭熔断、不清 `OpenCount`。`member_recovered` 在冷却被删除的第一次成功立即发出
+  （即使半开还需要更多成功），`circuit_closed` 仍只在真正回到 `closed` 时发出。
 
 **作用域是成员，不是车道**：清理键 = `channelId:model:memberId`，遍历注册表里**所有**含该成员的
 车道（同一渠道×模型常被多条车道通过成员组共享）。清理结果（车道名列表）写进探活响应的
@@ -600,8 +627,10 @@ type LaneRuntime struct {
 - **Retry-After 的施加顺序（2026-11-24 立）**：先对**本地 base** 做分类/分级计算，再与
   `Retry-After` 取**较大值**，最后才做 1 小时封顶与抖动。禁止先取 `Retry-After` 再做
   `base/8、base/4、base/2` 的分级除法——那会把上游要求的 90s 缩成 11s，提前回去再撞。
+- **冷却/减速单调合并**：同一成员并发失败时，`Cooldowns`/`PacedUntil` 只允许延长
+  （`until` 取较大值）；后到的短失败不得覆盖先前的长冷却/减速，事件只在真正延长时发。
 - **`upstream_reject` 的连续拒绝冷却**同样走上面的统一写法（抖动 + 1 小时封顶），
-  不得直接 `now + 300s` 绕过抖动。
+  不得直接 `now + 300s` 绕过抖动；阈值/时长经 `system/options` 可配（§4.1.3）。
 - **冷却抖动**：写入冷却时叠加 0–20% 的上偏抖动（按成员键与时间确定性散列）。只上偏，保证不会提前于 `Retry-After` 或本地配置恢复；目的只是错开同批成员的恢复时刻，避免同一秒一起回场再次同时打上游。
 - 冷却到期 → 只放行一个探测请求（取得 `ProbeLease`）；探测成功即解除冷却。
 - 探测租约是**车道级单租约**，但释放必须匹配 owner 与 generation（见 §2.2、§1.3）；请求 State 幂等收口，
@@ -614,13 +643,18 @@ type LaneRuntime struct {
 
 ## 7. 运行态对外的暴露
 
-- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / **`paced_until`（限流减速截止，§4.1.1；与冷却分开）** / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / **`rolling_samples`（滚动窗口样本数；用于区分"冷启动无样本"与"最近全失败"）** / `last_error_kind` / **`last_error_at`（最近一次失败的时间；`last_error_kind` 是历史留痕，不是"当前有故障"）** / **`reject_streak`（连续 `upstream_reject` 次数；任何非 `upstream_reject` 结果清零，达到 §4.1 阈值后写短期冷却并清零）** / **`enabled`（布尔，恒回；§1.2 的人工停用态，被停用为 `false`。API 面一律正向命名，取反只存在于 Go 存储字段，见 api-spec §4.2）** / **`probe_since`（当前 ProbeLease 的取得时间；无租约为 `null`）** / **`probe_lease_until`（当前租约上界；无租约为 `null`）** / **`config_error`（该成员渠道配置的结构化错误；无错误为 `null`，只含稳定 code/message/path，不含敏感值）** / **`inflight` / `queued` / `rpm_used`（出站准入运行态，§3.2；无准入配置时均为 0）** / **`adaptive_limit`（自适应模式学到的当前上限；非自适应时为 `null`）** / **`ttft_baseline_ms`（自适应 TTFT 基线，无样本省略）**，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无减速/无退避/无亲和为 `null`。`last_error_kind` 取值域 = §4.1 的分类（`soft_rate_limit` / `soft_transient` / `timeout` / `hard_auth` / `hard_quota` / `upstream_reject` / `client_error` / `bad_response` / `canceled`）；**`soft_rate_limit` 只影响 `paced_until`，不影响 `cooldown_until`、`circuit`、`consecutive_failures` 与 `rolling_success_rate`**。
-- **`available` 的精确口径** = `!member.Disabled` **且** 渠道存在且启用 **且** 不在冷却
+- `GET /api/lanes/{name}/health` → 快照：每成员 `circuit` / `cooldown_until` / **`paced_until`（限流减速截止，§4.1.1；与冷却分开）** / `circuit_open_until` / `consecutive_failures` / `rolling_success_rate` / **`rolling_samples`（滚动窗口样本数；用于区分"冷启动无样本"与"最近全失败"）** / `last_error_kind` / **`last_error_at`（最近一次失败的时间；`last_error_kind` 是历史留痕，不是"当前有故障"）** / **`reject_streak`（连续配置可疑的 `upstream_reject` 次数；请求级 400 不计数，任何非 `upstream_reject` 结果清零，达到 §4.1.3 阈值后写短期冷却并清零）** / **`fails_by_kind`（按错误类型的连续失败计数；用于解释 `circuit_allowed_fails`，`soft_rate_limit` 不在内）** / **`override_error`（成员覆盖配置的结构化错误；无错误为 `null`，有错误时该成员不可选）** / **`enabled`（布尔，恒回；§1.2 的人工停用态，被停用为 `false`。API 面一律正向命名，取反只存在于 Go 存储字段，见 api-spec §4.2）** / **`probe_since`（当前 ProbeLease 的取得时间；无租约为 `null`）** / **`probe_lease_until`（当前租约上界；无租约为 `null`）** / **`config_error`（该成员渠道配置的结构化错误；无错误为 `null`，只含稳定 code/message/path，不含敏感值）** / **`inflight` / `queued` / `rpm_used`（出站准入运行态，§3.2；无准入配置时均为 0）** / **`adaptive_limit`（自适应模式学到的当前上限；非自适应时为 `null`）** / **`ttft_baseline_ms`（自适应 TTFT 基线，无样本省略）**，以及 `current_member` / `probe_member` / `affinity`（对象，见 api-spec §6.5）。时间字段为 RFC3339 UTC 字符串，无冷却/无减速/无退避/无亲和为 `null`。`last_error_kind` 取值域 = §4.1 的实际运行态分类（`soft_rate_limit` / `soft_transient` / `timeout` / `hard_auth` / `hard_quota` / `upstream_reject` / `bad_response`；`client_error` / `canceled` 不写运行态、不出现）；**`soft_rate_limit` 只影响 `paced_until`，不影响 `cooldown_until`、`circuit`、`consecutive_failures` 与 `rolling_success_rate`**。
+- **`available` 的精确口径** = `!member.Disabled` **且** 渠道存在且启用 **且**
+  `member.ConfigError == nil` **且** `member.OverrideError == nil` **且** 不在冷却
   **且** 熔断 != open **且** 若处于"到期待探测"则不存在未过期且 generation 匹配的 `ProbeLease`。
+  manual 模式同样必须满足 `ConfigError/OverrideError == nil`、渠道启用且 live `ProbeLease` 未被占用。
   **限流减速不影响 `available`**（减速中的成员仍可选，只是本轮排到后面）；
   持有有效 `ProbeLease` 的成员 `available=false`（实际选路会跳过），但运行态字段照常如实给出。
   `available` 是"运行态可选"，`available_member_count` 是"配置态可用"（渠道启用且未人工停用），
   两者**不是同一个东西**，API 必须分别命名（api-spec §6.5/§6.13）。
+- **亲和投影只含未过期窗口**：`AffinityUntil` 已过期时 Health/SSE 返回 `affinity: null`；
+  只读投影不得为了展示去修改运行态。`member_recovered` 在冷却被删除的第一次成功立即发出
+  （即使半开还需要更多成功才 `circuit_closed`）。
 - **运行态事件（`events[]` 与 webhook 同一份事件流）**：成员级 `cooldown` / **`member_paced`（限流减速开始，§4.1.1；与 `cooldown` 互斥）** / `circuit_open` / `circuit_half_open` / `circuit_closed` / **`member_recovered`（成员自失败态恢复：在冷却/失败留痕之后**第一次成功服务**时发出，与 `cooldown` 成对）**；车道级 `reset` / **`lane_unavailable`（选路判定全部成员不可选、请求按 §4.2 收尾时发出一次，同一停摆期不重复）** / **`lane_recovered`（停摆期后第一次成功服务时发出）**；渠道级与上游健康事件见 api-spec §5.8。成对语义是硬要求：**每个"开始"事件都有配对的"结束"事件**（`cooldown`↔`member_recovered`、`circuit_open`↔`circuit_closed`、`lane_unavailable`↔`lane_recovered`）；`member_paced` **不配对**——它是"放慢"而非"停摆"，减速到期自动消失，不发恢复事件。
 - **人工关闭的成员 `available=false`**（它当前确实不可选），但其 `circuit` / `cooldown_until` / `consecutive_failures` 等运行态字段**照常如实给出，不因人工关闭而归零或省略**——排障时要能同时看到"我把它关了"和"关之前它是什么状态"。`enabled` 与 `available` 是两件事：`available=false` 不蕴含任何故障结论，`enabled=false` 才说明是人工关的。
 - **`GET /api/models` 的聚合可辨识性**：`degraded` 的判定**保持既有定义不变**——成员总数 > 0 且**当前可选成员数 == 0**（可选 = 运行态可选，即上面 `available` 的口径）。配置态另有四个**互斥**计数回答"为什么不可选"：`available_member_count`（渠道存在且启用、成员未停用）、`disabled_member_count`（成员被人工停用）、`channel_disabled_member_count`（渠道存在但被停用）、`orphan_member_count`（渠道已不存在），四者之和 = `member_count`。"全部成员被人工关闭/渠道停用"与"上游全挂"都会 `degraded=true`，靠这三个停用计数区分；限流减速不改变 `available`，不会单独造成 `degraded`。
@@ -644,6 +678,8 @@ type LaneRuntime struct {
 - 必须在响应体读取与等待响应头两个位置都保留错误链，确保 `errors.Is(context.DeadlineExceeded)` 与
   `errors.Is(context.Canceled)` 可判定；展示层不得销毁 cause。
 - 车道级默认 + 成员级覆盖；成员级未设则继承。
+- **`timeout` 不得作为自动禁用依据**：自动禁用只允许 `hard_auth` / `hard_quota`，且必须先于
+  `channel:` 前缀判定（design-v1 §7.11）；流式首事件超时只走冷却/熔断，不关渠道。
 
 **算术**：单次上游尝试的最坏判定耗时 = 成员级超时 + 重试间隔；流式提交后不设总超时。
 准入排队另受请求入口的绝对 deadline 限制；端到端客户端重试仍按客户端次数相乘。
