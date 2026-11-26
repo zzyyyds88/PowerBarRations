@@ -33,6 +33,8 @@ export const apiKeySchema = z.object({
   // 只读统计：该令牌的上游折算花费（元），来自 GET /api/keys（api-spec §5.4）。
   // cost 不参与任何鉴权或限额。
   cost: z.number(),
+  // false = 聚合查询失败，cost 不可用；缺席按可用处理（旧后端兼容）。
+  cost_available: z.boolean().optional(),
   expired_time: z.number(), // -1 for never expires
   created_time: z.number(),
   accessed_time: z.number(),

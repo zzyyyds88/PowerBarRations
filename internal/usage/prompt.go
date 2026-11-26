@@ -28,6 +28,9 @@ const (
 	promptItems     = 24
 	imageTokens     = 1600
 	maxContextBytes = 64 << 10
+	// maxItemNameBytes 单个物品名（工具/文件/MCP 名）的上界，防止异常长名称
+	// 把上下文 JSON 撑大；截断按 UTF-8 边界（usage-spec §5.2）。
+	maxItemNameBytes = 256
 )
 
 // promptBuilder accumulates a prompt while the body is read once. The rules,
@@ -52,6 +55,9 @@ func newPromptBuilder() *promptBuilder {
 func (b *promptBuilder) add(kind, name, tag string, tokens int) {
 	if tokens <= 0 {
 		return
+	}
+	if len(name) > maxItemNameBytes {
+		name = clip(name, maxItemNameBytes)
 	}
 	m := b.parts[kind]
 	if m == nil {

@@ -77,6 +77,12 @@ it('falls back to ¥0 when the API omits the cost field', () => {
   expect(screen.getByText('¥0')).toBeVisible()
 })
 
+it('shows a dash instead of ¥0 when the backend marks cost unavailable', () => {
+  renderCost({ ...key, cost: 0, cost_available: false })
+  expect(screen.getByText('-')).toBeVisible()
+  expect(screen.queryByText('¥0')).not.toBeInTheDocument()
+})
+
 it('labels the mobile card cost with the translated Consumed key', () => {
   render(
     <I18nextProvider i18n={i18n}>

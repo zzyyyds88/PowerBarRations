@@ -303,7 +303,7 @@
 
 `status ∈ success | failed | cooldown | circuit_break | skipped | disabled | throttled`。`disabled` 表示该成员被人工停用（成员级 `enabled=false`，§4.2）而被跳过——**不是故障**，与 `cooldown`/`circuit_break`/`skipped`（运行态不可选）必须可区分；`disabled` 的尝试不产生冷却、不计入熔断。`throttled` 表示该成员因**本地出站准入**（并发槽位满、排队超界或队列满，routing-spec §3.2）未被使用——同样不是故障，不写冷却、不计熔断；该条带 `wait_ms`（实际排队时长）。
 
-`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled` / `test`——`test` 为渠道测试等管理动作记录）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）。**`error_kind` 取值域** = routing-spec §4.1 的分类：`soft_rate_limit` / `soft_transient` / **`timeout`**（我方成员级 deadline 到期：流式首帧/非流式响应/响应头等待超时；冷却熔断与 `soft_transient` 同档，但**不在同一成员原地重试**）/ `hard_auth` / `hard_quota` / **`upstream_reject`**（上游对该成员的拒绝：400/422 或流内 error 帧；会被车道内部换成员消化，只在"所有成员都拒绝"时成为最终失败）/ `client_error` / `bad_response` / `canceled`，以及 **`local_throttle`**（本地出站准入排队超界/队列满，routing-spec §3.2；只出现在请求日志，**不是成员失败分类**，不写冷却、不计熔断，成员 `last_error_kind` 不出现该值）。**一个例外**：流式请求已提交后收到的流内 error 帧（routing-spec §4.4）——传输层记 `success=true` + 200（客户端确实拿到了 200 流），但 `error_kind=upstream_reject`、`error_summary` 记上游报文，使这类此前完全不可见的失败可被检索。`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。`price_band` 为命中的峰谷时段下标（-1 = 未命中、使用行级兜底价；旧单层价格恒为 -1）。**缓存折算按 `usage_semantic` 区分**：`openai`/`gemini`（含历史空值）的 prompt 含缓存命中，计费输入 = `prompt − cache_read`；`anthropic` 的 prompt 不含缓存，全额计输入价（design §16.9#7）。**所有日志统一写 `request_logs` 一张表**：`type` 区分消耗（2）与错误（5）；模型面请求的 `user_id/username/ip` 为空（调用方身份是客户端密钥 `key_name`），渠道测试等管理动作记录管理员。基座 `logs` 表停写（历史数据保留只读）。
+`route_source` 为路由来源（`explicit` / `unconfigured` / `disabled` / `test`——`test` 为渠道测试等管理动作记录）；`inbound_format` 为入站协议（`openai` / `anthropic` / `gemini` / `embeddings` / `openai_responses`）；`error_kind` 与 `error_summary` 记录最终失败分类与摘要（成功时为空）。**`error_kind` 取值域** = routing-spec §4.1 的分类：`soft_rate_limit` / `soft_transient` / **`timeout`**（我方成员级 deadline 到期：流式首帧/非流式响应/响应头等待超时；冷却熔断与 `soft_transient` 同档，但**不在同一成员原地重试**）/ `hard_auth` / `hard_quota` / **`upstream_reject`**（上游对该成员的拒绝：400/422 或流内 error 帧；会被车道内部换成员消化，只在"所有成员都拒绝"时成为最终失败）/ `client_error` / `bad_response` / `canceled`，以及 **`local_throttle`**（本地出站准入排队超界/队列满，routing-spec §3.2；只出现在请求日志，**不是成员失败分类**，不写冷却、不计熔断，成员 `last_error_kind` 不出现该值）。**一个例外**：流式请求已提交后收到的流内 error 帧（routing-spec §4.4）——传输层记 `success=true` + 200（客户端确实拿到了 200 流），但 `error_kind=upstream_reject`、`error_summary` 记上游报文，使这类此前完全不可见的失败可被检索。`total_ms` 为**收尾实测毫秒**（优先于 usage 的秒级换算；usage 仅在明细没有耗时时兜底），`ttft_ms` 为流式首帧毫秒。`estimated_cost` 为该请求按渠道级 `prices` 折算的上游花费（单位元；渠道未配价即 `0`）。`price_band` 为命中的峰谷时段下标（-1 = 未命中、使用行级兜底价；旧单层价格恒为 -1）。**缓存折算按 `usage_semantic` 区分**：`openai`/`gemini`（含历史空值）的 prompt 含缓存命中，计费输入 = `prompt − cache_read`；`anthropic` 的 prompt 不含缓存，全额计输入价（design §16.9#7）。**所有日志统一写 `request_logs` 一张表**：`type` 区分消耗（2）与错误（5）；模型面请求的 `user_id/username/ip` 为空（调用方身份是客户端密钥 `key_name`），渠道测试等管理动作记录管理员。基座 `logs` 表停写（历史数据保留只读）。
 
 **会话与客户端**：`session_id` / `session_key` / `client` / 子代理字段的提取与归一口径见 [usage-spec-v1.md](usage-spec-v1.md) §3–§4。`session_id` 为空表示未归属；`client` 是 magpie `AgentOf` 语义的原始结果（库保留 `curl` 等产品名），只作展示与聚合，不参与鉴权或选路；`client_group` 把 HTTP 库/运行时/SDK 与 `other` 归为 `script`，`client_name` 是已知 agent 的显示名——两者都是后端计算的展示字段，控制台不得自建第二张客户端表。`context_*` 是每条 chat-like 请求的上下文摘要（token 数/窗口/是否已按上游计数校准/解析状态，见 usage-spec §5–§6）；列表项只带这四个摘要字段，**完整分区明细只在 `GET /api/logs/{id}` 返回**：
 
@@ -454,9 +454,9 @@
 | PUT | `/api/channels/{name}` | 全量 upsert（`key` 只写不读）；`model_mapping` 为"路由键 → 上游真名"的 JSON dict。**收窄 `models` 时按成员所选模型判定**：被移除模型仍被车道/成员组引用则 409 `conflict`，**车道名在 `error.details.lanes`、成员组名在 `error.details.groups`**（机器可判定，不要解析 message）。`?force=1` 只允许清理散成员（从命中车道移除本渠道的**被移除模型**成员，成员清空的空车道整条删除）；**成员组引用一律阻断，必须先编辑组**。发生清理时响应附带 `cleaned_lanes` / `deleted_lanes` |
 | DELETE | `/api/channels/{name}` | 删除；被车道或成员组引用时 409 `conflict`，引用它的车道名在 `error.details.lanes`、成员组名在 `error.details.groups`。**严格语义不变**；控制台"删除"入口走下面的 retire |
 | POST | `/api/channels/{name}/retire?dry_run=` | **退役编排**（design-v1 §7.9）：事务内 停用 → 移除全部散成员（成员清空的车道整条删除）→ 从成员组移除条目（**组保留**；变空组列在 `groups_emptied`）→ 通过空组失效的车道一并删除 → 删除渠道 → 历史标记（`pbr_request_logs` 按 `member_channel_id`、`pbr_stats_hourly` 的 `channel`/`channel_model` 组键改写为 `原名（已退役 YYYY-MM-DD HH:MM）`）。成功返回 `{"retired":true,"name",lanes_cleaned,lanes_deleted,groups_affected,groups_emptied,manual_lanes_cleared,logs_renamed,stats_rows_renamed,pending_async_objects}`。`dry_run=true` 返回 `{dry_run:true,plan:{...}}`（逐项预览，不落库）；`dry_run` 类别 preview |
-| GET | `/api/channels/status` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.12；控制台「渠道状态」页用它一次取全量 |
+| GET | `/api/channels/status` | **全部渠道的状态汇总**（只读）：`?window=24h` 或 `7d`（默认 `24h`）。形状与口径见 §6.12；控制台「渠道状态」页用它一次取全量。任一统计/引用查询失败 → `503 stats_unavailable`（不得用全 0 冒充"没有请求"） |
 | GET | `/api/channel-speed` | **按渠道聚合的实时速度**（只读）：`?from=&to=`（省略 = 最近 15 分钟）。按渠道返回请求数、成功率、延迟分位、输出速度（干净样本 tps）与 Token；只返回配置的渠道，空闲渠道也出现并带零值。形状与口径见 §6.14 |
-| GET | `/api/channels/{name}/status` | **单渠道状态详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.12 |
+| GET | `/api/channels/{name}/status` | **单渠道状态详情**（只读）：配置摘要 + 车道引用 + 成员运行态（冷却/熔断）+ 窗口统计与逐日序列 + 最近失败 + 探活历史 + 上游模型变动提示。形状与口径见 §6.12；任一项统计/引用/日志查询失败 → `503 stats_unavailable`，不返回全 0 的假状态 |
 | POST | `/api/channels/{name}/test` | 单渠道探活；**每次探活写一条探活记录**（`pbr_probe_logs`，见 §6.11），供渠道状态页的"探活历史"。响应形状不变，另新增 `penalty_cleared`（`{lanes, members}`）：探活成功时清除该成员在**所有车道**的冷却与熔断（routing-spec §5.4）。可选 `?model=` 指定探活模型，缺省取渠道声明清单的第一个 |
 | POST | `/api/channels/{name}/sync-models` | 从上游拉取模型清单并回写 `models`（`?dry_run=` 只返回差异）。**上游返回空清单时默认拒绝清空**（需 `?force=1`）；被移除模型仍被车道/成员组引用则 409，车道名在 `referenced_by`、成员组名在 `groups`。`?force=1` 只清理散成员（从命中车道移除本渠道的**被移除模型**成员，空车道删除）；**成员组引用一律阻断**。响应附带 `cleaned_lanes` / `deleted_lanes` / `groups` |
 
@@ -494,7 +494,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维）；成功 `{"items":[{"key":"..","value":".."}]}` |
+| GET | `/api/system/options/all` | **完整**系统选项（站点/内容/运维）；成功 `{"items":[{"key":"..","value":".."}]}`。敏感后缀键（`*Token`/`*Secret`/`*Key`/`*secret`/`*api_key`）不返回；`PBRWebhookTargets` 的 `secret` 按 `/api/webhooks` 同一掩码规则处理后返回，**明文 secret 只经专用写接口接收，不从任何读接口回显** |
 | PUT | `/api/system/options/all` | 更新**单个**系统选项：body `{key: string, value: any}`（与基座同形，非子集对象）；成功 `{"key":"..","updated":true}`；值校验失败 → 422 `validation_failed` |
 | GET | `/api/system-tasks` | 系统任务列表；成功 `{"items":[...],"next_cursor":null}` |
 | GET | `/api/system-tasks/current` | 某类型当前运行中的任务：**必须带** `?type=`（`log_cleanup` / `channel_test` / `model_update` / `async_task_poll` / `file_cleanup`）；成功 `{"task":<对象或 null>}`；缺 `type` → 400 |
@@ -529,9 +529,9 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/keys` | 列表（每项含只读 `cost` 与明文 `key`） |
+| GET | `/api/keys` | 列表（每项含只读 `cost` 与明文 `key`）。`cost` 来自小时聚合；聚合查询失败时该项 `cost_available=false`、`cost` 不具业务含义，控制台必须显示 `-` 而不是 `0` |
 | POST | `/api/keys` | 创建（生成明文入库，响应含 `key`） |
-| GET | `/api/keys/{name}` | 详情（含只读 `cost` 与明文 `key`） |
+| GET | `/api/keys/{name}` | 详情（含只读 `cost` 与明文 `key`，`cost_available` 口径同列表） |
 | PUT | `/api/keys/{name}` | 更新（权限/限流/备注；不改密钥与哈希） |
 | DELETE | `/api/keys/{name}` | 删除 |
 | POST | `/api/keys/{name}/rotate` | 轮换（换新明文入库并返回，旧密钥立即失效） |

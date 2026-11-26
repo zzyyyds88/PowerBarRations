@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/internal/events"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
@@ -1491,10 +1492,7 @@ func truncate(err *types.NewAPIError, max int) string {
 	}
 	// 脱敏后再截断：上游错误体可能回显 Authorization/key，而 attempts 链会进日志与 API
 	msg := err.MaskSensitiveErrorWithStatusCode()
-	if len(msg) <= max {
-		return msg
-	}
-	return msg[:max]
+	return common.TruncateUTF8(msg, max)
 }
 
 // ---------- gin.Context 往来 ----------

@@ -11,6 +11,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
 	"github.com/zzyyyds88/PowerBarRations/internal/route"
+	"github.com/zzyyyds88/PowerBarRations/internal/webhook"
 	"github.com/zzyyyds88/PowerBarRations/model"
 	"github.com/zzyyyds88/PowerBarRations/setting/operation_setting"
 
@@ -239,6 +240,44 @@ func systemOptionsUpdates(options systemOptions) (map[string]string, error) {
 	}
 	updates["AutomaticDisableKeywords"] = strings.Join(keywords, "\n")
 	return updates, nil
+}
+
+// GetAllSystemOptions GET /api/system/options/all：完整选项列表（{items}）。
+//
+// 与基座 GET /api/option/ 的区别：契约固定为 {items}，且把 PBRWebhookTargets
+// 的 secret 掩码后再回显。专用 /api/webhooks 仍返回结构化 targets；这里不再
+// 提供第二份明文密钥出口。
+func GetAllSystemOptions(c *gin.Context) {
+	// 先算掩码值：CurrentTargets 会读 OptionMap，不能持有写锁时调用。
+	maskedWebhook, err := json.Marshal(maskedTargets(webhook.CurrentTargets()))
+	if err != nil {
+		apierr.Write(c, http.StatusInternalServerError, apierr.CodeInternalError, "failed to encode webhook targets", "")
+		return
+	}
+
+	items := make([]gin.H, 0, len(common.OptionMap))
+	common.OptionMapRWMutex.RLock()
+	for key, value := range common.OptionMap {
+		if key == "theme.frontend" {
+			continue
+		}
+		// 与基座同一敏感键判定：Token/Secret/Key/secret/api_key 后缀直接不返回。
+		if strings.HasSuffix(key, "Token") || strings.HasSuffix(key, "Secret") ||
+			strings.HasSuffix(key, "Key") || strings.HasSuffix(key, "secret") ||
+			strings.HasSuffix(key, "api_key") {
+			continue
+		}
+		raw := common.Interface2String(value)
+		if key == webhook.OptionKey {
+			raw = string(maskedWebhook)
+		}
+		items = append(items, gin.H{"key": key, "value": raw})
+	}
+	common.OptionMapRWMutex.RUnlock()
+	sort.Slice(items, func(i, j int) bool {
+		return items[i]["key"].(string) < items[j]["key"].(string)
+	})
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 // GetSystemOptions GET /api/v1/system/options

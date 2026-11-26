@@ -436,3 +436,21 @@ func utf8Valid(s string) bool {
 	}
 	return true
 }
+
+// 物品名必须有界：异常长的工具/文件名不能把上下文 JSON 撑大。
+func TestPromptItemNameIsBounded(t *testing.T) {
+	b := newPromptBuilder()
+	name := strings.Repeat("中", 200) // 600 字节
+	b.add(PartTools, name, "tool", 10)
+	ctx := b.build()
+	part := partOf(t, ctx, PartTools)
+	if part == nil || len(part.Items) != 1 {
+		t.Fatalf("expected one tools item, got %+v", part)
+	}
+	if len(part.Items[0].Name) > maxItemNameBytes {
+		t.Fatalf("item name length = %d", len(part.Items[0].Name))
+	}
+	if !utf8Valid(part.Items[0].Name) {
+		t.Fatalf("item name split a rune: %q", part.Items[0].Name)
+	}
+}

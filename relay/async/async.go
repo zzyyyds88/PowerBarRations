@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/zzyyyds88/PowerBarRations/common"
 	"github.com/zzyyyds88/PowerBarRations/internal/apierr"
 	"github.com/zzyyyds88/PowerBarRations/internal/route"
 	"github.com/zzyyyds88/PowerBarRations/model"
@@ -232,8 +233,5 @@ func memberLabel(m *model.RouteMember) string {
 }
 
 func truncate(value string, max int) string {
-	if len(value) <= max {
-		return value
-	}
-	return value[:max]
+	return common.TruncateUTF8(value, max)
 }

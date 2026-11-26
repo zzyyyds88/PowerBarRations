@@ -310,15 +310,18 @@ type RecordConsumeLogParams struct {
 	// 决定缓存 token 与 prompt 的包含关系，从而决定折算公式——OpenAI/Gemini 的
 	// prompt 含缓存命中（cache_read 是子集，折算时要从 prompt 里扣掉），Anthropic
 	// 的 input 不含缓存（cache 单独计，prompt 全额按输入价）。空串按 openai。
-	UsageSemantic  string    `json:"usage_semantic"`
-	ModelName      string    `json:"model_name"`
-	TokenName      string    `json:"token_name"`
-	Content        string    `json:"content"`
-	TokenId        int       `json:"token_id"`
-	UseTimeSeconds int       `json:"use_time_seconds"`
-	IsStream       bool      `json:"is_stream"`
-	Group          string    `json:"group"`
-	Other          *LogOther `json:"other"`
+	UsageSemantic  string `json:"usage_semantic"`
+	ModelName      string `json:"model_name"`
+	TokenName      string `json:"token_name"`
+	Content        string `json:"content"`
+	TokenId        int    `json:"token_id"`
+	UseTimeSeconds int    `json:"use_time_seconds"`
+	// UseTimeMs 精确耗时（毫秒），只用于 PBR 请求日志与聚合；基座 logs 仍按
+	// UseTimeSeconds 的秒级口径。未提供时由 UseTimeSeconds 回退换算。
+	UseTimeMs int64     `json:"use_time_ms"`
+	IsStream  bool      `json:"is_stream"`
+	Group     string    `json:"group"`
+	Other     *LogOther `json:"other"`
 }
 
 // estimateRequestCost 折算一次请求的上游花费（人民币）与命中的峰谷时段下标。
@@ -413,6 +416,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 				params.PromptTokens, params.CompletionTokens,
 				params.CacheReadTokens, params.CacheWriteTokens,
 				params.UsageSemantic)
+			totalMs := params.UseTimeMs
+			if totalMs <= 0 {
+				totalMs = int64(params.UseTimeSeconds) * 1000
+			}
 			carrier.Usage = &PBRTokenUsage{
 				PromptTokens:     params.PromptTokens,
 				CompletionTokens: params.CompletionTokens,
@@ -420,7 +427,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 				CacheWriteTokens: params.CacheWriteTokens,
 				ReasoningTokens:  params.ReasoningTokens,
 				IsStream:         params.IsStream,
-				TotalMs:          int64(params.UseTimeSeconds) * 1000,
+				TotalMs:          totalMs,
 				EstimatedCost:    cost,
 				PriceBand:        &priceBand,
 			}

@@ -116,10 +116,10 @@ func channelStatusBucketStats(buckets []model.PBRStatBucket) map[string]channelS
 // 运行态取自进程内注册表（route.Default.Get，**只读不创建**）：车道登记过运行态就用
 // 真实快照；没登记过（从未有请求选中过它）按"冷启"合成——此时冷却/熔断本来就为空，
 // 合成的语义与真实空运行态一致，避免读端点产生副作用。
-func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef, members []channelStatusMember, laneCount, totalMembers, availableCount int) {
+func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef, members []channelStatusMember, laneCount, totalMembers, availableCount int, err error) {
 	lanes, err := model.ListLanes()
 	if err != nil {
-		return nil, nil, 0, 0, 0
+		return nil, nil, 0, 0, 0, err
 	}
 	settings := route.CurrentCircuitSettings()
 	seenLanes := map[string]bool{}
@@ -140,7 +140,11 @@ func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef,
 			}
 			groups := map[int]*model.MemberGroup{}
 			if len(groupIDs) > 0 {
-				groups, _ = model.LoadMemberGroupsByIDs(groupIDs)
+				loaded, loadErr := model.LoadMemberGroupsByIDs(groupIDs)
+				if loadErr != nil {
+					return nil, nil, 0, 0, 0, loadErr
+				}
+				groups = loaded
 			}
 			for j := range lanes[i].Members {
 				lm := &lanes[i].Members[j]
@@ -261,7 +265,7 @@ func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef,
 		}
 		return refs[a].Priority > refs[b].Priority
 	})
-	return refs, members, len(seenLanes), totalMembers, availableCount
+	return refs, members, len(seenLanes), totalMembers, availableCount, nil
 }
 
 // channelWindowStats 窗口内的统计汇总与逐日序列（小时聚合表，对 prune 免疫）。
@@ -269,12 +273,12 @@ func channelRefsAndRuntime(channel *model.Channel) (refs []channelStatusLaneRef,
 // 汇总读**小时桶**再相加（口径见 channelStatusWindowBounds）；逐日序列由同一批小时桶
 // 在内存里按天折叠，所以 Σ逐日恒等于 summary.Requests，图表与概览不会互相打脸。
 // 窗口边界所在的两天是"部分天"，其数值只覆盖窗口内的小时。
-func channelWindowStats(channelName string, from, until int64) (channelStatusSummary, []gin.H) {
+func channelWindowStats(channelName string, from, until int64) (channelStatusSummary, []gin.H, error) {
 	summary := channelStatusSummary{}
 	daily := []gin.H{}
 	buckets, err := model.AggregatePBRChannelStats(channelName, from, until, "hour")
 	if err != nil {
-		return summary, daily
+		return summary, daily, err
 	}
 	type dayAcc struct {
 		requests  int64
@@ -316,7 +320,7 @@ func channelWindowStats(channelName string, from, until int64) (channelStatusSum
 	if summary.Requests > 0 {
 		summary.SuccessRate = float64(summary.Successes) / float64(summary.Requests)
 	}
-	return summary, daily
+	return summary, daily, nil
 }
 
 // channelModelStats 该渠道在窗口内**按模型**的表现（渠道状态页的主表；api-spec §6.12）。
@@ -330,9 +334,9 @@ func channelWindowStats(channelName string, from, until int64) (channelStatusSum
 // （成功且 total_attempts=1）的 `Σcompletion_tokens / Σ生成耗时`，生成耗时 = 流式取
 // `max(total_ms - ttft_ms, 1)`、非流式取 `total_ms`——多次尝试的累计时长含等待与
 // 失败往返，不代表吐字速度。`tps_samples=0` 时界面显示 `-`。
-func channelModelStats(channelName string, from, until int64) []gin.H {
+func channelModelStats(channelName string, from, until int64) ([]gin.H, error) {
 	if model.DB == nil || strings.TrimSpace(channelName) == "" {
-		return []gin.H{}
+		return []gin.H{}, nil
 	}
 	channel := strings.TrimSpace(channelName)
 	scoped := func(q *gorm.DB) *gorm.DB {
@@ -361,7 +365,7 @@ func channelModelStats(channelName string, from, until int64) []gin.H {
 		Group("upstream_model").
 		Order("requests desc").
 		Scan(&rows).Error; err != nil {
-		return []gin.H{}
+		return nil, err
 	}
 
 	// 干净样本的 tps 聚合。
@@ -379,10 +383,11 @@ func channelModelStats(channelName string, from, until int64) []gin.H {
 			"COUNT(*) AS samples").
 		Where("upstream_model <> '' AND success = 1 AND total_attempts <= 1").
 		Group("upstream_model").
-		Scan(&tpsRows).Error; err == nil {
-		for _, r := range tpsRows {
-			tpsByModel[strings.TrimSpace(r.Model)] = r
-		}
+		Scan(&tpsRows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range tpsRows {
+		tpsByModel[strings.TrimSpace(r.Model)] = r
 	}
 
 	// 成功请求耗时样本（分位）。
@@ -395,11 +400,12 @@ func channelModelStats(channelName string, from, until int64) []gin.H {
 	if err := scoped(model.DB.Table("pbr_request_logs")).
 		Select("upstream_model AS model, total_ms").
 		Where("upstream_model <> '' AND success = 1").
-		Scan(&samples).Error; err == nil {
-		for _, s := range samples {
-			name := strings.TrimSpace(s.Model)
-			samplesByModel[name] = append(samplesByModel[name], s.TotalMs)
-		}
+		Scan(&samples).Error; err != nil {
+		return nil, err
+	}
+	for _, s := range samples {
+		name := strings.TrimSpace(s.Model)
+		samplesByModel[name] = append(samplesByModel[name], s.TotalMs)
 	}
 
 	out := make([]gin.H, 0, len(rows))
@@ -432,20 +438,21 @@ func channelModelStats(channelName string, from, until int64) []gin.H {
 			"tokens_out":   r.TokensOut,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // recentChannelFailures 该渠道最近 N 条失败明细（只读元数据，不含请求/响应正文）。
-func recentChannelFailures(channelName string) []gin.H {
-	success := false
+func recentChannelFailures(channelName string) ([]gin.H, error) {
 	entries, err := model.ListPBRRequestLogs(model.PBRRequestLogFilter{
-		Channel:            channelName,
-		Success:            &success,
+		Channel: channelName,
+		// 按 error_kind 非空而不是 success=false：提交后才收到的流内拒绝
+		// 传输层是 200（success=true），但仍是本次请求的失败（ADR 0013）。
+		HasError:           true,
 		ExcludeRouteSource: model.PBRRouteSourceTest,
 		Limit:              channelStatusRecentLimit,
 	})
 	if err != nil {
-		return []gin.H{}
+		return nil, err
 	}
 	if len(entries) > channelStatusRecentLimit {
 		entries = entries[:channelStatusRecentLimit]
@@ -464,14 +471,14 @@ func recentChannelFailures(channelName string) []gin.H {
 			"error_summary":  e.ErrorSummary,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // channelProbeHistory 该渠道最近 N 条探活记录（新 → 旧）。
-func channelProbeHistory(channelId int) []gin.H {
+func channelProbeHistory(channelId int) ([]gin.H, error) {
 	rows, err := model.RecentProbeLogs(channelId, channelStatusRecentLimit)
 	if err != nil {
-		return []gin.H{}
+		return nil, err
 	}
 	out := make([]gin.H, 0, len(rows))
 	for i := range rows {
@@ -486,7 +493,7 @@ func channelProbeHistory(channelId int) []gin.H {
 			"msg":            r.Msg,
 		})
 	}
-	return out
+	return out, nil
 }
 
 // channelUpstreamUpdateSnapshot 上游模型变动提示（渠道设置里上次探测的快照，不访问上游）。
@@ -512,6 +519,14 @@ func channelUpstreamUpdateSnapshot(channel *model.Channel) gin.H {
 	}
 }
 
+// writeStatsUnavailable 把统计/引用读失败转成显式 503，而不是返回全 0 的
+// "健康"数字。管理面必须能区分"没有请求"与"查不到数据"。
+func writeStatsUnavailable(c *gin.Context, err error) {
+	common.SysError("pbr: channel status read failed: " + err.Error())
+	apierr.Write(c, http.StatusServiceUnavailable, apierr.CodeStatsUnavailable,
+		"channel statistics are temporarily unavailable", "retry later; check database health")
+}
+
 // GetChannelStatusByName GET /api/channels/{name}/status：单渠道状态详情（api-spec §6.12）。
 func GetChannelStatusByName(c *gin.Context) {
 	channel, err := findChannelByName(c.Param("name"))
@@ -528,20 +543,46 @@ func GetChannelStatusByName(c *gin.Context) {
 	}
 	from, until := channelStatusWindowBounds(time.Now(), seconds)
 
-	refs, members, _, totalMembers, availableCount := channelRefsAndRuntime(channel)
+	refs, members, _, totalMembers, availableCount, err := channelRefsAndRuntime(channel)
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
+	}
 	refGroups := []string{}
-	if channelRefs, refErr := model.ChannelReferences(channel.Id); refErr == nil {
+	if channelRefs, refErr := model.ChannelReferences(channel.Id); refErr != nil {
+		writeStatsUnavailable(c, refErr)
+		return
+	} else {
 		refGroups = channelRefs.Groups
 	}
-	summary, daily := channelWindowStats(channel.Name, from, until)
+	summary, daily, err := channelWindowStats(channel.Name, from, until)
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
+	}
 	p50, p95, avgTTFT, err := model.ChannelLatencyStats(channel.Name, from, until)
 	if err != nil {
-		writeAPIError(c, err)
+		writeStatsUnavailable(c, err)
 		return
 	}
 	summary.P50TotalMs = p50
 	summary.P95TotalMs = p95
 	summary.AvgTTFTMs = avgTTFT
+	models, err := channelModelStats(channel.Name, from, until)
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
+	}
+	failures, err := recentChannelFailures(channel.Name)
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
+	}
+	probes, err := channelProbeHistory(channel.Id)
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"channel":   channelResponse(channel),
@@ -553,10 +594,10 @@ func GetChannelStatusByName(c *gin.Context) {
 		},
 		"window":           window,
 		"summary":          summary,
-		"models":           channelModelStats(channel.Name, from, until),
+		"models":           models,
 		"daily":            daily,
-		"recent_failures":  recentChannelFailures(channel.Name),
-		"probe_history":    channelProbeHistory(channel.Id),
+		"recent_failures":  failures,
+		"probe_history":    probes,
 		"upstream_updates": channelUpstreamUpdateSnapshot(channel),
 	})
 }
@@ -577,18 +618,29 @@ func ListChannelStatus(c *gin.Context) {
 	// 一次取全量渠道的窗口小时桶，再按渠道名分发（渠道数量级很小）。
 	// 必须用 `hour` 粒度：日粒度会把边界那天整份算进来（见 channelStatusWindowBounds）。
 	bucketTotals := map[string]channelStatusSummary{}
-	if buckets, err := model.AggregatePBRStatsFromHourly(from, until, "hour", "channel"); err == nil {
-		bucketTotals = channelStatusBucketStats(buckets)
+	buckets, err := model.AggregatePBRStatsFromHourly(from, until, "hour", "channel")
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
 	}
+	bucketTotals = channelStatusBucketStats(buckets)
 	ids := make([]int, 0, len(channels))
 	for _, ch := range channels {
 		ids = append(ids, ch.Id)
 	}
-	latestProbes, _ := model.LatestProbeLogByChannel(ids)
+	latestProbes, err := model.LatestProbeLogByChannel(ids)
+	if err != nil {
+		writeStatsUnavailable(c, err)
+		return
+	}
 
 	items := make([]gin.H, 0, len(channels))
 	for _, ch := range channels {
-		_, members, laneCount, memberCount, availableCount := channelRefsAndRuntime(ch)
+		_, members, laneCount, memberCount, availableCount, err := channelRefsAndRuntime(ch)
+		if err != nil {
+			writeStatsUnavailable(c, err)
+			return
+		}
 		lastErrorKind := ""
 		degraded := false
 		for _, m := range members {

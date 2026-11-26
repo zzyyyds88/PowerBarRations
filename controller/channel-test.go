@@ -503,6 +503,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		TokenName:        "模型测试",
 		Content:          "模型测试",
 		UseTimeSeconds:   int(consumedTime),
+		UseTimeMs:        milliseconds,
 		IsStream:         info.IsStream,
 		Group:            info.UsingGroup,
 	})

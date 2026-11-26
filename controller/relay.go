@@ -166,7 +166,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// 避免中间件快抛路径与这里各写一份、字段悄悄漂移。
 			attempts := pbrState.LogAttempts()
 			if newAPIError == nil {
-				success := pbrState.SuccessAttempt(carrier.ChannelName + "/" + carrier.UpstreamModel)
+				// 成功尝试的 member 标签必须与失败尝试同口径（channel/成员所选模型），
+				// 不能换成映射后的上游真名，否则同一条 attempts 链里同一成员前后不一致。
+				successModel := carrier.MemberModel
+				if successModel == "" {
+					successModel = carrier.UpstreamModel
+				}
+				success := pbrState.SuccessAttempt(carrier.ChannelName + "/" + successModel)
 				attempts = append(attempts, model.PBRAttempt{
 					AttemptNum: len(attempts) + 1,
 					Member:     success.Member,

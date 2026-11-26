@@ -339,9 +339,7 @@ func TestChannel(c *gin.Context) {
 // writeProbeRecord 把一次探活落成探活记录（api-spec §6.12 的"探活历史"）。
 func writeProbeRecord(channel *model.Channel, result ProbeMember) {
 	msg := result.Msg
-	if len(msg) > model.ProbeLogMsgLimit {
-		msg = msg[:model.ProbeLogMsgLimit]
-	}
+	msg = common.TruncateUTF8(msg, model.ProbeLogMsgLimit)
 	entry := &model.PBRProbeLog{
 		Ts:            time.Now().Unix(),
 		ChannelId:     channel.Id,

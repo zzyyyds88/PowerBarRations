@@ -240,6 +240,15 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 	if attempts == nil {
 		attempts = []PBRAttempt{}
 	}
+	// attempts 必须有上界：成员数 × 单成员预算可能很大，整链写入会撑大日志行
+	// 与导出。保留最近 64 条（最终结果链最可解释），每条 msg 仍按 1KiB 截断。
+	const maxPersistedAttempts = 64
+	if len(attempts) > maxPersistedAttempts {
+		attempts = attempts[len(attempts)-maxPersistedAttempts:]
+	}
+	for i := range attempts {
+		attempts[i].Msg = common.TruncateUTF8(attempts[i].Msg, 1024)
+	}
 	encoded, err := json.Marshal(attempts)
 	if err != nil {
 		encoded = []byte("[]")
@@ -309,7 +318,9 @@ func WritePBRLogWithUsage(c *gin.Context, tokenUsage *PBRTokenUsage) {
 		if carrier.TTFTMs == 0 {
 			entry.TTFTMs = tokenUsage.TTFTMs
 		}
-		if tokenUsage.TotalMs > 0 {
+		if tokenUsage.TotalMs > 0 && entry.TotalMs == 0 {
+			// 收尾阶段已用毫秒计时；usage 只在明细没有更精确耗时时兜底，
+			// 不得用秒级换算值覆盖真实毫秒（长请求会被抹成整秒）。
 			entry.TotalMs = tokenUsage.TotalMs
 		}
 	}
@@ -372,9 +383,9 @@ func writePBRLogTx(entry *PBRRequestLog, carrier *PBRLogCarrier) error {
 func (PBRStatsHourly) TableName() string { return "pbr_stats_hourly" }
 
 type PBRStatsHourly struct {
-	BucketTs         int64   `json:"bucket_ts" gorm:"primaryKey"`
-	GroupKind        string  `json:"group_kind" gorm:"primaryKey;type:varchar(16)"`
-	GroupKey         string  `json:"group" gorm:"primaryKey;type:varchar(191)"`
+	BucketTs         int64   `json:"bucket_ts" gorm:"primaryKey;index:idx_pbr_stats_group,priority:3"`
+	GroupKind        string  `json:"group_kind" gorm:"primaryKey;type:varchar(16);index:idx_pbr_stats_group,priority:1"`
+	GroupKey         string  `json:"group" gorm:"primaryKey;type:varchar(191);index:idx_pbr_stats_group,priority:2"`
 	Requests         int64   `json:"requests"`
 	Successes        int64   `json:"successes"`
 	PromptTokens     int64   `json:"prompt_tokens"`
@@ -520,6 +531,8 @@ type PBRRequestLogFilter struct {
 	MaskAction string
 	// ErrorKind 精确过滤 error_kind（/api/logs?error_kind=…，空 = 不过滤）。
 	ErrorKind string
+	// HasError 只要 error_kind 非空（含"提交后流内拒绝"这种 success=true 的记录）。
+	HasError bool
 	// RouteSource / ExcludeRouteSource 精确匹配/排除 route_source。
 	// 渠道测试（route_source=test）是诊断流量，必须能被排除出
 	// "最近失败"与小时聚合（api-spec §6.12）。
@@ -585,6 +598,9 @@ func applyPBRLogFilter(query *gorm.DB, filter PBRRequestLogFilter) *gorm.DB {
 	}
 	if filter.ErrorKind != "" {
 		query = query.Where("error_kind = ?", filter.ErrorKind)
+	}
+	if filter.HasError {
+		query = query.Where("error_kind <> ''")
 	}
 	if filter.RouteSource != "" {
 		query = query.Where("route_source = ?", filter.RouteSource)
@@ -881,9 +897,19 @@ func aggregatePBRStatsFromHourly(from, until int64, granularity, groupBy, groupK
 	}
 	if from > 0 {
 		// 严格相交：桶 [bucket_ts, bucket_ts+窗长) 与 [from, until) 有交集才算。
-		// 用 `>` 而不是 `>=`——桶正好在 from 处**结束**时并不含窗口内的数据，
-		// 放进来会让"把桶相加成窗口总数"的调用方多算一整个桶（注释与实现必须同义）。
-		query = query.Where(bucketExpr+" + ? > ?", windowSeconds, from)
+		// 写成常量下界，可走 (group_kind, group_key, bucket_ts) 索引，避免逐行
+		// 表达式计算。day 粒度下 bucket_ts 仍是小时桶，下界要按"日桶起点"换算。
+		lower := from - windowSeconds
+		if strings.EqualFold(granularity, "day") {
+			if lower < 0 {
+				lower = 0
+			} else {
+				lower = (lower/86400 + 1) * 86400
+			}
+			query = query.Where("bucket_ts >= ?", lower)
+		} else {
+			query = query.Where("bucket_ts > ?", lower)
+		}
 	}
 	if until > 0 {
 		// 同理：桶起点正好等于 until 的桶不含窗口内数据。

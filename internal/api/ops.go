@@ -1105,7 +1105,6 @@ func DeleteDisabledChannels(c *gin.Context) {
 
 var (
 	DetectAllUpstream      = controller.DetectAllChannelUpstreamModelUpdates
-	GetAllSystemOptions    = controller.GetOptions
 	ListSystemTasksHandler = controller.ListSystemTasks
 	CurrentSystemTask      = controller.GetCurrentSystemTask
 	PerformanceStats       = controller.GetPerformanceStats

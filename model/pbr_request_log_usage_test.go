@@ -10,6 +10,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// 毫秒耗时以收尾实测为准；usage 的秒级换算只能在明细没有耗时时兜底，
+// 不能把 3.9s 的长请求覆盖成 3.0s。
+func TestWritePBRLogKeepsMillisecondTotalMs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	truncateTables(t)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	carrier := EnsurePBRLogCarrier(c)
+	carrier.Lane = "lane-ms"
+	carrier.RequestModel = "model-ms"
+	carrier.Success = true
+	carrier.TotalMs = 3_900
+	WritePBRLogWithUsage(c, &PBRTokenUsage{TotalMs: 3_000})
+	var row PBRRequestLog
+	require.NoError(t, DB.Where("lane_name = ?", "lane-ms").First(&row).Error)
+	assert.EqualValues(t, 3_900, row.TotalMs, "收尾实测毫秒不得被 usage 秒级值覆盖")
+
+	c2, _ := gin.CreateTestContext(httptest.NewRecorder())
+	carrier2 := EnsurePBRLogCarrier(c2)
+	carrier2.Lane = "lane-ms-fallback"
+	carrier2.RequestModel = "model-ms"
+	carrier2.Success = true
+	WritePBRLogWithUsage(c2, &PBRTokenUsage{TotalMs: 2_345})
+	var row2 PBRRequestLog
+	require.NoError(t, DB.Where("lane_name = ?", "lane-ms-fallback").First(&row2).Error)
+	assert.EqualValues(t, 2_345, row2.TotalMs, "没有收尾耗时时采用 usage 的毫秒值")
+}
+
 // TestWritePBRLogWithUsageReasoningTokens 防回归：上游 usage 的 reasoning_tokens
 // （completion_tokens_details.reasoning_tokens）必须落进 request_logs.reasoning_tokens。
 // 修复前 PBRTokenUsage 构造漏映射该字段，日志恒为 0，排障被误导（误判思考未开）。
