@@ -241,10 +241,12 @@ export function LogSettingsSection({
         if (!isActiveLogCleanupTask(task)) {
           if (task.status === 'succeeded') {
             const count =
-              task.result?.deleted_count ?? task.state?.processed ?? 0
+              task.state?.processed ??
+              (task.result?.compacted_rows ?? 0) +
+                (task.result?.deleted_contexts ?? 0)
             toast.success(
               count > 0
-                ? t('{{count}} log entries removed.', { count })
+                ? t('{{count}} log entries processed.', { count })
                 : t('No log entries matched the selected time.')
             )
           } else if (task.status === 'failed') {
@@ -372,10 +374,12 @@ export function LogSettingsSection({
 
           <SettingsControlGroup className='space-y-3'>
             <div>
-              <h4 className='text-sm font-medium'>{t('Clean history logs')}</h4>
+              <h4 className='text-sm font-medium'>
+                {t('Compact history logs')}
+              </h4>
               <p className='text-muted-foreground text-sm'>
                 {t(
-                  'Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.'
+                  'This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.'
                 )}
               </p>
             </div>
@@ -399,7 +403,7 @@ export function LogSettingsSection({
               >
                 {isStartingLogCleanup || logCleanupActive
                   ? t('Cleaning...')
-                  : t('Clean logs')}
+                  : t('Compact logs')}
               </Button>
             </div>
             {logCleanupTask && (
@@ -591,13 +595,12 @@ export function LogSettingsSection({
             <AlertDialogDescription>
               {formattedPurgeDate
                 ? t(
-                    'This will permanently remove all log entries created before {{date}}.',
+                    'This will remove context details and clear attempts/error summaries for log entries created before {{date}}. Summary rows are retained.',
                     { date: formattedPurgeDate }
                   )
                 : t(
-                    'This will permanently remove log entries before the selected timestamp.'
-                  )}{' '}
-              {t('This action cannot be undone.')}
+                    'This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.'
+                  )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -609,7 +612,7 @@ export function LogSettingsSection({
               onClick={handleCleanLogs}
               disabled={isStartingLogCleanup}
             >
-              {isStartingLogCleanup ? t('Cleaning...') : t('Delete logs')}
+              {isStartingLogCleanup ? t('Cleaning...') : t('Compact logs')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

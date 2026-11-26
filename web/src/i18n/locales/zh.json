@@ -99,7 +99,6 @@
     "{{count}} channel(s) failed to enable": "{{count}} 个渠道启用失败",
     "{{count}} disabled channel(s) deleted": "已删除 {{count}} 个已禁用的渠道",
     "{{count}} IP(s)": "{{count}} 个 IP",
-    "{{count}} log entries removed.": "已删除 {{count}} 条日志。",
     "{{count}} models": "{{count}} 个模型",
     "{{count}} records selected. Bulk actions are available.": "已选择 {{count}} 条记录，可执行批量操作。",
     "{{count}} selected": "已选择 {{count}} 条",
@@ -528,8 +527,6 @@
     "Claude CLI Header Passthrough": "Claude CLI 请求头透传",
     "Claude only": "仅 Claude",
     "Clean": "无冲突",
-    "Clean history logs": "清理历史日志",
-    "Clean logs": "清理日志",
     "Clean up inactive cache": "清理不活跃缓存",
     "Clean Up Log Files": "清理日志文件",
     "Cleaned up {{count}} log files, freed {{size}}": "已清理 {{count}} 个日志文件，释放 {{size}}",
@@ -777,7 +774,6 @@
     "Delete failed models ({{count}})": "删除失败模型（{{count}}）",
     "Delete Field": "删除字段",
     "Delete Header": "删请求头",
-    "Delete logs": "删除日志",
     "Delete mapping": "删除映射",
     "Delete Model": "删除模型",
     "Delete model \"{{name}}\"?": "删除模型“{{name}}”？",
@@ -2465,8 +2461,6 @@
     "This will delete temporary cache files that have not been used for more than 10 minutes": "这将删除超过 10 分钟未使用的临时缓存文件",
     "This will permanently delete all manually and automatically disabled channels. This action cannot be undone.": "这将永久删除所有手动禁用和自动禁用的渠道。此操作无法撤销。",
     "This will permanently delete API key": "这将永久删除 API 密钥",
-    "This will permanently remove all log entries created before {{date}}.": "这将永久删除 {{date}} 之前创建的所有日志条目。",
-    "This will permanently remove log entries before the selected timestamp.": "这将永久删除所选时间戳之前的日志条目。",
     "This will remove {{removed}} forwarding routes and replace them with the {{template}} template ({{created}} routes). Model list and balance routes will be preserved.": "这将移除 {{removed}} 条转发路由，并替换为 {{template}} 模板（{{created}} 条路由）。模型列表和余额路由将保留。",
     "Thought for {{duration}} seconds": "思考了 {{duration}} 秒",
     "Three steps to get started": "三步快速上手",
@@ -3569,6 +3563,10 @@
     "Rate limited": "限流中",
     "Queued": "排队中",
     "Remove model": "移除模型",
-    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "移除所选时间戳之前的明细日志与上下文明细；小时聚合长期保留。"
+    "Compact history logs": "压缩历史日志",
+    "Compact logs": "压缩日志",
+    "This will remove context details and clear attempts/error summaries for log entries created before {{date}}. Summary rows are retained.": "将删除 {{date}} 之前日志的上下文明细，并清空 attempts/错误摘要；汇总行保留。",
+    "This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.": "将删除所选时间戳之前日志的上下文明细，并清空 attempts/错误摘要；汇总行保留。",
+    "{{count}} log entries processed.": "已处理 {{count}} 条日志。"
   }
 }

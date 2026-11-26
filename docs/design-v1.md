@@ -645,9 +645,9 @@ Hermes 专用数据面、运维 API 和假上游验收见 [`hermes-spec-v1.md`](
 
 ### 16.5 日志保留
 
-- 保留策略由 `system/options.log_retention_days` 配置（默认 30）。**内置每日分批清理**：系统任务调度器每 24h 创建一个 `log_cleanup` 任务，按 `ts < now - retention_days` 分批删除明细与上下文；保留期内的明细不会被提前删除。`POST /api/logs/prune?before=<ts>&dry_run=` 仍保留为手动入口。
-- 清理只动明细，聚合表（`pbr_stats_hourly`）**长期保留**（体积小）；一次 prune 不得改变 `/api/stats` 的历史数值。
-- 上下文明细表（`pbr_request_contexts`）按 `log_id` 与明细日志**同批清理**（同一事务、按批有界），不单独保留；会话与上下文曲线因此只覆盖保留期内的明细。
+- 保留策略由 `system/options.log_retention_days` 配置（默认 30）。**内置每日分批压缩**：系统任务调度器每 24h 创建一个 `log_cleanup` 任务，对 `ts < now - retention_days` 的行删除上下文分区、清空 `attempts`/`error_summary`/`mask_hits`，但**永久保留 `pbr_request_logs` 汇总行**（时间、车道/渠道/模型、token、成本、首字/耗时、状态、会话、总尝试数等）；保留期内的细节不会被提前清理。`POST /api/logs/prune?before=<ts>&dry_run=` 仍是手动入口。
+- 压缩只动排障细节，聚合表（`pbr_stats_hourly`）**长期保留**（体积小）；一次压缩不得改变 `/api/stats` 的历史数值，也不得让历史明细行从日志列表/会话页消失。
+- 上下文明细表（`pbr_request_contexts`）按 `created_at`/`log_id` 分批删除，不单独保留；会话与上下文曲线因此只覆盖保留期内的上下文细节，但会话汇总仍可由保留的日志行重算。
 - **`GET /api/stats` 必须读聚合表**（hour 直读、day 由小时桶上卷），不得读明细表——否则一次 prune 就把历史统计抹掉，与"聚合长期保留"自相矛盾。
 - `POST /api/stats/rebuild` 先 drain `pbr_stats_outbox`；重建时保留**已无明细来源**的小时桶（prune 边界及更早），只重算仍有明细覆盖的桶。响应含 `preserved_buckets`。仍有待处理/死信 outbox 行时 rebuild 失败，避免在聚合缺口上继续。
 - `/api/health` 暴露 `stats_outbox.pending/dead` 与最近一次 `db_last_write_error`；`dead > 0` 或 outbox 不可读时整体 `degraded`。

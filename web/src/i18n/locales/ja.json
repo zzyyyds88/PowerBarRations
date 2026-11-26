@@ -99,7 +99,6 @@
     "{{count}} channel(s) failed to enable": "{{count}} 個のチャネルの有効化に失敗しました",
     "{{count}} disabled channel(s) deleted": "{{count}} 個の無効チャネルを削除しました",
     "{{count}} IP(s)": "{{count}} IP",
-    "{{count}} log entries removed.": "{{count}} 件のログエントリを削除しました。",
     "{{count}} models": "{{count}} モデル",
     "{{count}} records selected. Bulk actions are available.": "{{count}} 件を選択しました。一括操作が可能です。",
     "{{count}} selected": "{{count}} 件を選択中",
@@ -528,8 +527,6 @@
     "Claude CLI Header Passthrough": "Claude CLI ヘッダーパススルー",
     "Claude only": "Claude のみ",
     "Clean": "問題なし",
-    "Clean history logs": "履歴ログをクリーンアップ",
-    "Clean logs": "ログをクリア",
     "Clean up inactive cache": "非アクティブキャッシュをクリーンアップ",
     "Clean Up Log Files": "ログファイルをクリーンアップ",
     "Cleaned up {{count}} log files, freed {{size}}": "{{count}}個のログファイルをクリーンアップし、{{size}}を解放しました",
@@ -777,7 +774,6 @@
     "Delete failed models ({{count}})": "失敗したモデルを削除（{{count}}）",
     "Delete Field": "フィールドを削除",
     "Delete Header": "ヘッダーを削除",
-    "Delete logs": "ログを削除",
     "Delete mapping": "マッピングを削除",
     "Delete Model": "モデルを削除",
     "Delete model \"{{name}}\"?": "モデル「{{name}}」を削除しますか？",
@@ -2465,8 +2461,6 @@
     "This will delete temporary cache files that have not been used for more than 10 minutes": "10分以上使用されていない一時キャッシュファイルが削除されます",
     "This will permanently delete all manually and automatically disabled channels. This action cannot be undone.": "手動および自動で無効化されたすべてのチャネルを完全に削除します。この操作は元に戻せません。",
     "This will permanently delete API key": "これによりAPIキーが完全に削除されます",
-    "This will permanently remove all log entries created before {{date}}.": "{{date}} より前に作成されたすべてのログエントリが完全に削除されます。",
-    "This will permanently remove log entries before the selected timestamp.": "選択したタイムスタンプより前のログエントリが完全に削除されます。",
     "This will remove {{removed}} forwarding routes and replace them with the {{template}} template ({{created}} routes). Model list and balance routes will be preserved.": "{{removed}} 件の転送ルートを削除し、{{template}} テンプレート（{{created}} 件のルート）に置き換えます。モデル一覧と残高ルートは保持されます。",
     "Thought for {{duration}} seconds": "{{duration}} 秒間思考しました",
     "Three steps to get started": "3ステップで始める",
@@ -3569,6 +3563,10 @@
     "Rate limited": "制限中",
     "Queued": "待機中",
     "Remove model": "モデルを削除",
-    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "選択したタイムスタンプより前の詳細ログとコンテキスト行を削除します。時間別集計は保持されます。"
+    "Compact history logs": "履歴ログを圧縮",
+    "Compact logs": "ログを圧縮",
+    "This will remove context details and clear attempts/error summaries for log entries created before {{date}}. Summary rows are retained.": "{{date}} より前に作成されたログのコンテキスト詳細を削除し、試行/エラー概要を消去します。集計行は保持されます。",
+    "This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.": "選択したタイムスタンプより前のログのコンテキスト詳細を削除し、試行/エラー概要を消去します。集計行は保持されます。",
+    "{{count}} log entries processed.": "{{count}} 件のログを処理しました。"
   }
 }

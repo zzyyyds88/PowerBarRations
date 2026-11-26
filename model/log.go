@@ -628,5 +628,6 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	return logs, total, err
 }
 
-// 基座 logs 表的清理函数已随 PBR 明细日志统一而删除：log-cleanup 系统任务
-// 只清理 pbr_request_logs / pbr_request_contexts（见 PrunePBRRequestLogsBefore）。
+// 基座 logs 表的清理函数已随 PBR 明细日志统一而删除：保留期任务压缩
+// pbr_request_logs 的排障细节并删除 pbr_request_contexts（见
+// CompactPBRRequestLogsBefore），汇总行长期保留。

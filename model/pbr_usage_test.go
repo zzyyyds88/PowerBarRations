@@ -105,15 +105,15 @@ func TestPruneRemovesContextsWithLogs(t *testing.T) {
 		Version: 1, Status: usage.StatusOK, Tokens: 10, Parts: []usage.Part{},
 	}, 42, logEntry.Ts))
 
-	deleted, err := PrunePBRRequestLogsBefore(logEntry.Ts + 1)
+	compacted, err := CompactPBRRequestLogsBefore(logEntry.Ts + 1)
 	require.NoError(t, err)
-	assert.EqualValues(t, 1, deleted)
+	assert.EqualValues(t, 1, compacted.DeletedContexts)
 
 	var logs, contexts int64
 	require.NoError(t, DB.Model(&PBRRequestLog{}).Count(&logs).Error)
 	require.NoError(t, DB.Model(&PBRRequestContext{}).Count(&contexts).Error)
-	assert.Zero(t, logs)
-	assert.Zero(t, contexts, "上下文必须随明细同批清理")
+	assert.EqualValues(t, 1, logs, "汇总行本身必须保留")
+	assert.Zero(t, contexts, "上下文明细必须清理")
 }
 
 func TestUpsertHourlyStatAddsUsageFieldsAndClientDimension(t *testing.T) {

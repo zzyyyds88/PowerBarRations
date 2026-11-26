@@ -99,7 +99,6 @@
     "{{count}} channel(s) failed to enable": "Не удалось включить {{count}} каналов",
     "{{count}} disabled channel(s) deleted": "Удалено {{count}} отключённых каналов",
     "{{count}} IP(s)": "{{count}} IP",
-    "{{count}} log entries removed.": "Удалено {{count}} записей журнала.",
     "{{count}} models": "моделей: {{count}}",
     "{{count}} records selected. Bulk actions are available.": "Выбрано записей: {{count}}. Доступны групповые действия.",
     "{{count}} selected": "Выбрано: {{count}}",
@@ -528,8 +527,6 @@
     "Claude CLI Header Passthrough": "Проброс заголовков Claude CLI",
     "Claude only": "Только Claude",
     "Clean": "Без конфликта",
-    "Clean history logs": "Очистить журналы истории",
-    "Clean logs": "Очистить логи",
     "Clean up inactive cache": "Очистить неактивный кэш",
     "Clean Up Log Files": "Очистить файлы журналов",
     "Cleaned up {{count}} log files, freed {{size}}": "Очищено {{count}} файлов журналов, освобождено {{size}}",
@@ -777,7 +774,6 @@
     "Delete failed models ({{count}})": "Удалить неуспешные модели ({{count}})",
     "Delete Field": "Удалить поле",
     "Delete Header": "Удалить заголовок",
-    "Delete logs": "Удалить логи",
     "Delete mapping": "Удалить сопоставление",
     "Delete Model": "Удалить модель",
     "Delete model \"{{name}}\"?": "Удалить модель «{{name}}»?",
@@ -2465,8 +2461,6 @@
     "This will delete temporary cache files that have not been used for more than 10 minutes": "Будут удалены временные файлы кэша, не использовавшиеся более 10 минут",
     "This will permanently delete all manually and automatically disabled channels. This action cannot be undone.": "Это навсегда удалит все каналы, отключённые вручную и автоматически. Это действие нельзя отменить.",
     "This will permanently delete API key": "Это безвозвратно удалит ключ API",
-    "This will permanently remove all log entries created before {{date}}.": "Это безвозвратно удалит все записи журнала, созданные до {{date}}.",
-    "This will permanently remove log entries before the selected timestamp.": "Это безвозвратно удалит записи журнала до выбранной временной метки.",
     "This will remove {{removed}} forwarding routes and replace them with the {{template}} template ({{created}} routes). Model list and balance routes will be preserved.": "Будет удалено маршрутов переадресации: {{removed}}. Они будут заменены шаблоном {{template}} (маршрутов: {{created}}). Маршруты списка моделей и баланса сохранятся.",
     "Thought for {{duration}} seconds": "Размышлял {{duration}} сек.",
     "Three steps to get started": "Три шага для начала работы",
@@ -3569,6 +3563,10 @@
     "Rate limited": "Ограничено",
     "Queued": "В очереди",
     "Remove model": "Удалить модель",
-    "Remove detail logs and context rows created before the selected timestamp. Hourly aggregates are retained.": "Удалить подробные журналы и строки контекста, созданные до выбранной отметки времени. Почасовые агрегаты сохраняются."
+    "Compact history logs": "Сжать журналы истории",
+    "Compact logs": "Сжать журналы",
+    "This will remove context details and clear attempts/error summaries for log entries created before {{date}}. Summary rows are retained.": "Будут удалены детали контекста и очищены попытки/сводки ошибок для журналов, созданных до {{date}}. Сводные строки сохраняются.",
+    "This will remove context details and clear attempts/error summaries for log entries before the selected timestamp. Summary rows are retained.": "Будут удалены детали контекста и очищены попытки/сводки ошибок для журналов до выбранной отметки времени. Сводные строки сохраняются.",
+    "{{count}} log entries processed.": "Обработано записей журнала: {{count}}."
   }
 }

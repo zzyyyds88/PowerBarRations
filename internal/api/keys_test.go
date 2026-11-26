@@ -83,16 +83,19 @@ func TestListKeysReportsHourlyCostPerKey(t *testing.T) {
 	assert.InDelta(t, 0.25, before["key-beta"], 1e-9, "每个密钥只取自己那份")
 	assert.InDelta(t, 0.0, before["key-empty"], 1e-9, "无聚合数据时为 0")
 
-	// 模拟 POST /logs/prune：清空明细表（聚合表长期保留）。
-	deleted, err := model.PrunePBRRequestLogsBefore(baseTs + 100)
+	// 模拟保留期压缩：汇总行保留，只清细节；cost 必须继续读聚合表。
+	compacted, err := model.CompactPBRRequestLogsBefore(baseTs + 100)
 	require.NoError(t, err)
-	require.EqualValues(t, 2, deleted)
+	require.Zero(t, compacted.CompactedRows)
+	require.Zero(t, compacted.DeletedContexts)
 	var detailCount int64
 	require.NoError(t, db.Model(&model.PBRRequestLog{}).Count(&detailCount).Error)
-	require.Zero(t, detailCount, "明细已清空，这是断言 cost 不读明细的前提")
+	require.EqualValues(t, 2, detailCount, "汇总行必须保留")
+	require.NoError(t, db.Model(&model.PBRRequestLog{}).Where("1 = 1").
+		Update("estimated_cost", 999).Error)
 
 	after := listKeyCosts(t)
-	assert.Equal(t, before, after, "明细 prune 后 cost 必须不变（读聚合表）")
+	assert.Equal(t, before, after, "cost 必须读聚合表，不受明细成本改动/压缩影响")
 }
 
 // GET /api/keys/{name} 详情同样带只读 cost。
