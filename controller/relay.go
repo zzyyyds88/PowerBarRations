@@ -34,6 +34,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// maskedClientMessage 生成客户端可见的错误文案：上游错误体可能回显 key/URL，
+// 必须先走 MaskSensitiveError（优先使用已脱敏的 displayMessage），再加请求 id。
+func maskedClientMessage(err *types.NewAPIError, requestID string) string {
+	return common.MessageWithRequestId(err.MaskSensitiveError(), requestID)
+}
+
+// maskedErrorSummary 生成日志/管理面错误摘要：脱敏后按统一上限做 UTF-8 安全截断。
+func maskedErrorSummary(msg string) string {
+	return common.TruncateUTF8(common.MaskSensitiveInfo(msg), 2048)
+}
+
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	var err *types.NewAPIError
 	switch info.RelayMode {
@@ -145,12 +156,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		} else if msg := common.GetContextKeyString(c, constant.ContextKeyPBRStreamReject); msg != "" {
 			// 提交后才收到的流内 error 帧（routing-spec §4.3/§4.4）：传输层如实记成功
 			// （客户端确实拿到了 200 流），但把失败标记补上，使这类此前完全不可见的
-			// 失败可被检索与统计。摘要按错误摘要的统一上限截断（design-v1 §8）。
-			if len(msg) > 2048 {
-				msg = msg[:2048]
-			}
+			// 失败可被检索与统计。上游帧可能回显凭据，先脱敏再按 UTF-8 边界截断。
 			carrier.ErrorKind = string(pbrroute.KindUpstreamReject)
-			carrier.ErrorSummary = msg
+			carrier.ErrorSummary = maskedErrorSummary(msg)
 		}
 		if pbrState := pbrroute.From(c); pbrState != nil {
 			// 失败尝试来自运行态历史，最后一次成功由这里补齐，形成完整链。
@@ -205,7 +213,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				return
 			}
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
-			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
+			// 客户端可见文案必须脱敏：上游错误体/URL 可能回显凭据（design-v1 §8）。
+			// 这里用 MaskSensitiveError（优先 displayMessage），而不是原始 Error()。
+			newAPIError.SetMessage(maskedClientMessage(newAPIError, requestId))
 			// 客户端看到的是展示映射后的状态码（status_code_mapping，ADR 0013）；
 			// 分类与运行态判定始终使用原始 StatusCode。
 			clientStatus := newAPIError.ClientStatusCode()

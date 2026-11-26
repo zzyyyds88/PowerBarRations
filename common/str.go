@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	kitutil "github.com/zzyyyds88/PowerBarRations/relaykit/relayconvert/kitutil"
@@ -15,12 +16,29 @@ import (
 
 const LocalLogContentLimit = 2048
 
+// TruncateUTF8 按字节上限截断，并回退到最后一个完整 UTF-8 字符边界。
+// 直接 s[:n] 可能把多字节字符切成半个，写进 JSON/日志会变成替换字符。
+func TruncateUTF8(s string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(s) <= maxBytes {
+		return s
+	}
+	s = s[:maxBytes]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
 // LocalLogPreview limits log-only content unless debug logging is enabled.
 func LocalLogPreview(content string) string {
 	if DebugEnabled || len(content) <= LocalLogContentLimit {
 		return content
 	}
-	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]", content[:LocalLogContentLimit], len(content), LocalLogContentLimit)
+	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]",
+		TruncateUTF8(content, LocalLogContentLimit), len(content), LocalLogContentLimit)
 }
 
 func GetStringIfEmpty(str string, defaultValue string) string {

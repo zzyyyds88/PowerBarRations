@@ -845,16 +845,18 @@ func TestChannel(c *gin.Context) {
 		carrier.Username = c.GetString("username")
 		carrier.Ip = c.ClientIP()
 		carrier.Success = false
-		carrier.ErrorSummary = "模型测试失败: " + result.localErr.Error()
+		// 测试失败的原始错误可能包含上游回显的 key/URL；日志与响应都必须脱敏。
+		maskedErr := common.TruncateUTF8(common.MaskSensitiveInfo(result.localErr.Error()), 2048)
+		carrier.ErrorSummary = "模型测试失败: " + maskedErr
 		carrier.TotalMs = time.Since(tik).Milliseconds()
 		model.WritePBRLogWithUsage(c, nil)
 		common.SysError(fmt.Sprintf(
-			"channel test failed: channel_id=%d name=%s type=%d model=%s endpoint_type=%s err=%v",
-			channel.Id, channel.Name, channel.Type, logModel, endpointType, result.localErr,
+			"channel test failed: channel_id=%d name=%s type=%d model=%s endpoint_type=%s err=%s",
+			channel.Id, channel.Name, channel.Type, logModel, endpointType, maskedErr,
 		))
 		resp := gin.H{
 			"success": false,
-			"message": result.localErr.Error(),
+			"message": maskedErr,
 			"time":    0.0,
 		}
 		if result.newAPIError != nil {
