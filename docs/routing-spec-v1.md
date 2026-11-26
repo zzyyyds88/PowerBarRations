@@ -128,6 +128,7 @@ type LaneRuntime struct {
 - `ProbeLease` 是探测所有权的唯一凭证。获取、释放、到期回收都必须匹配 `owner + generation`；旧 owner 的迟到收口不得释放新租约。`ExpiresAt` 是安全上界，不是 goroutine 自行改写运行态的许可。
 - `Runtime.recordSuccess` / `Runtime.recordFailure` 只记账，**不隐式释放 probe**；只有租约 owner 通过请求 State 的统一 `finish/close` 收口，或 State 按 generation 执行到期回收，才能释放。
 - 请求 State 的 `finish/close` 必须幂等；重复 defer、取消回调与 panic 收口只能产生一次有效资源释放。
+- **配置快照 fail-closed**：车道六键或成员覆盖出现非法 JSON、负值时，管理写入必须拒绝；存量坏配置在请求入口返回 503，成员级坏覆盖按 `member_config_error` 跳过，不得静默 `Normalize` 成默认值后转发。`ResolveRoute` 在单个读事务内解析车道、成员组与渠道，避免混版本快照。
 - **快照重建契约（约束，非风险提示）**：解析快照的内容签名**必须显式包含每一个影响选路的成员字段**，新增字段（含本规格里成员的人工停用态）一律**显式入签名**，并应有单测断言"只改该字段就会让签名变化"。
   - 为什么要单列这条：签名里**已经**含车道版本（`Lane.UpdatedAt`，Unix **秒级**）与成员主键，而保存成员是"删光整条链再整体重插、主键重新自增"（§1.2、design §7.7），所以每次保存成员链时这两项必然变化——新字段即使漏入签名，通常也会被这层副作用带着重建快照，**不会**表现为"改了没反应"。
   - 但签名的契约是"只含影响选路的字段"，靠主键 churn 与秒级时间戳驱动快照重建属于**隐式耦合**：同一秒内的两次保存即失效，且渠道级改动、运行态重置等路径根本不经过成员重插。因此按契约规定，不按事故风险规定。
@@ -227,7 +228,7 @@ type LaneRuntime struct {
 - **连续拒绝的短期回避（防热循环）**：`upstream_reject` 本身不计熔断分；但同一成员**连续**被上游拒绝达到 `reject_streak_threshold`（默认 5 次）时，进入 `reject_cooldown_seconds`（默认 300 秒）的短期冷却并在事件里标注 `reason=consecutive_rejects`。理由：持续返回 400（例如上游要求某个网关未转发的会话头）与"这份请求被拒绝"不同，反复把它排在第一优先级只会让每个请求都白付一次上游往返。任意一次成功服务立即清零连续计数。manual 车道不写该冷却（与 §2.1 一致）。
 - **服务商硬性请求头由网关自动补齐**（`relay/channel/provider_quirks.go`）：4 种上游协议描述不了"这家服务商还额外要什么"。已知的、与账号无关的硬性要求按目标 host（必要时叠加路径前缀）在组装上游请求时补齐，例如 OpenCode Zen/Go 的 `x-opencode-session`：客户端带了就原样转发，没带则写兜底值。渠道显式 `header_override` 后应用、优先于兜底值；用户不需要为某个服务商手写 `param_override`。收录标准是"上游文档或实测确认 + 与账号无关 + 值安全"，不猜。
 - 客户端取消/断开 → 不计失败、不冷却，按 `canceled` 收尾并释放本请求持有的资源；不得与"我方 deadline 到期"混用。
-- 我方成员级 deadline 到期或准入排队 deadline 到期 → 按 `timeout`（已取得准入并发出上游尝试）或本地准入超时（尚未发出上游尝试）收尾；两者都不是客户端取消。
+- 我方成员级 deadline 到期或准入排队 deadline 到期 → 按 `timeout`（已取得准入并发出上游尝试）或本地准入超时（尚未发出上游尝试）收尾；两者都不是客户端取消。本地成员计时器必须携带 `LocalAttemptTimeout` marker；裸 `context.DeadlineExceeded` 来自客户端 context，按 `canceled` 处理，不得写冷却/熔断。
 - 每次尝试结束只做运行态记账，probe、准入槽位、waiter、客户端密钥 lease 与流式监督由请求 State 在幂等 `finish/close` 中统一释放；`recordSuccess` / `recordFailure` 不得隐式释放 probe。
 - 人工中止本轮（不适用 PBR 的 HTTP 场景）→ 不计失败，重试。
 

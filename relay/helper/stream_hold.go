@@ -20,12 +20,36 @@ import (
 // 上界 64 KiB：超出立即 flush + 提交兜底（design §16.6——缓冲必须有界），
 // 防止某些非标准上游持续吐非内容帧把内存吃穿。
 
+const streamWriteErrorKey = "pbr_stream_write_error"
+
+func recordStreamWriteError(c *gin.Context, err error) {
+	if c == nil || err == nil {
+		return
+	}
+	c.Set(streamWriteErrorKey, err)
+}
+
+func streamWriteError(c *gin.Context) error {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get(streamWriteErrorKey)
+	if !ok {
+		return nil
+	}
+	err, _ := value.(error)
+	return err
+}
+
 // writeStreamEvent 写一帧 SSE（event 与 data 两段，按既有 helper 的渲染顺序）。
 //
 // isContent=false 且尚未提交：两段按序暂存，不写下游、不提交、不 flush；
 // 暂存超上界时降级为直接写出并提交（兜底）。
 // isContent=true 或已提交：先 flush 暂存帧（保序），再写本帧并提交（首字打点）。
-func writeStreamEvent(c *gin.Context, isContent bool, event, data string) error {
+func writeStreamEvent(c *gin.Context, isContent bool, event, data string) (err error) {
+	defer func() {
+		recordStreamWriteError(c, err)
+	}()
 	if c == nil || c.Writer == nil {
 		return errors.New("context or writer is nil")
 	}
@@ -48,9 +72,13 @@ func writeStreamEvent(c *gin.Context, isContent bool, event, data string) error 
 		return err
 	}
 	if event != "" {
-		c.Render(-1, customEventOf(event))
+		if err := customEventOf(event).Render(c.Writer); err != nil {
+			return err
+		}
 	}
-	c.Render(-1, customEventOf(data))
+	if err := customEventOf(data).Render(c.Writer); err != nil {
+		return err
+	}
 	MarkStreamCommitted(c)
 	// 与旧 helper 一致：每帧写完显式 flush（SSE 逐帧下发；响应字节数统计、
 	// 测试的 NotifyingWriter 都依赖这次 Flush）。

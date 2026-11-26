@@ -112,7 +112,7 @@ func TestHalfOpenCircuitOnlyAllowsSingleProbe(t *testing.T) {
 	first, _, ok := state.Next(nil)
 	require.True(t, ok)
 	require.NotNil(t, first)
-	require.True(t, rt.HasProbe, "首个请求应占用探测槽")
+	require.True(t, rt.probe != nil, "首个请求应占用探测槽")
 
 	// 第二个并发请求：半开且槽被占 → 必须判为无可用，而不是选中该成员。
 	second := NewState(resolved)
@@ -121,7 +121,7 @@ func TestHalfOpenCircuitOnlyAllowsSingleProbe(t *testing.T) {
 
 	// 探测成功后归还槽，后续请求恢复可用。
 	state.OnSuccess()
-	assert.False(t, rt.HasProbe, "成功后应归还探测槽")
+	assert.False(t, rt.probe != nil, "成功后应归还探测槽")
 	third := NewState(resolved)
 	_, _, ok = third.Next(nil)
 	assert.True(t, ok)

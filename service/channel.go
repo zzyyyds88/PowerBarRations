@@ -34,6 +34,24 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 	}
 }
 
+// DisableChannelAtKeyIndex 禁用指定 key 索引，后台闭包无需携带明文 key。
+// notify=false 用于有界队列饱和时的同步收口：状态必须落库，但不能在请求
+// 线程同步发送邮件/webhook。
+func DisableChannelAtKeyIndex(channelID int, keyIndex int, channelName string, reason string, notify bool) {
+	common.SysLog(fmt.Sprintf("通道「%s」（#%d）发生错误，准备禁用，原因：%s", channelName, channelID, common.LocalLogPreview(reason)))
+	var success bool
+	if keyIndex >= 0 {
+		success = model.UpdateChannelStatusAtKeyIndex(channelID, keyIndex, common.ChannelStatusAutoDisabled, reason)
+	} else {
+		success = model.UpdateChannelStatus(channelID, "", common.ChannelStatusAutoDisabled, reason)
+	}
+	if success && notify {
+		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelName, channelID)
+		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelName, channelID, reason)
+		NotifyRootUser(formatNotifyType(channelID, common.ChannelStatusAutoDisabled), subject, content)
+	}
+}
+
 func EnableChannel(channelId int, usingKey string, channelName string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {

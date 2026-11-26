@@ -19,6 +19,17 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	model.SetChannelRuntimeMutationHook(func(operation string, channels []*model.Channel) {
+		if operation == "channel_deleted" {
+			for _, channel := range channels {
+				invalidateChannelAdmission(channel, nil)
+			}
+		}
+		maintainAllRouteRuntime(operation)
+	})
+}
+
 // 渠道是 PBR 的厂商接入点：base_url + key + 模型清单 + 协议类型。
 //
 // 复用迁移基座的 channels 表与 40 家适配器（design-v1 §10.1）：
@@ -95,13 +106,18 @@ func channelResponse(ch *model.Channel) gin.H {
 	} else if len(key) > 1 {
 		prefix = key[:len(key)-1]
 	}
-	prices := ch.GetSetting().PBRPrices
+	settings, _, configErr := ch.SettingsSnapshot()
+	prices := settings.PBRPrices
 	if prices == nil {
 		prices = []dto.ChannelModelPrice{}
 	}
-	rateLimits := ch.GetSetting().PBRRateLimits
+	rateLimits := settings.PBRRateLimits
 	if rateLimits == nil {
 		rateLimits = []dto.ChannelRateLimit{}
+	}
+	var configError any
+	if configErr != nil {
+		configError = configErr
 	}
 	resp := gin.H{
 		"name":                ch.Name,
@@ -110,7 +126,8 @@ func channelResponse(ch *model.Channel) gin.H {
 		"models":              models,
 		"param_override":      jsonObject(derefString(ch.ParamOverride)),
 		"enabled":             ch.Status == common.ChannelStatusEnabled,
-		"proxy":               ch.GetSetting().Proxy,
+		"config_error":        configError,
+		"proxy":               settings.Proxy,
 		"prices":              prices,
 		"model_mapping":       ch.ModelMappingMap(),
 		"status_code_mapping": ch.StatusCodeMappingMap(),
@@ -199,6 +216,10 @@ func PutChannel(c *gin.Context) {
 	channel, applyErr := buildChannel(name, existing, &payload, isCreate)
 	if applyErr != nil {
 		apierr.Write(c, http.StatusBadRequest, applyErr.code, applyErr.message, "")
+		return
+	}
+	if err := channel.ValidateSettings(); err != nil {
+		apierr.Validation(c, err.Error())
 		return
 	}
 	// 从渠道模型清单移除的模型，若仍被车道或成员组引用，默认拒绝（与 DELETE
@@ -290,8 +311,12 @@ func PutChannel(c *gin.Context) {
 					}
 				}
 			}
-			if err := tx.Model(&model.Channel{}).Where("id = ?", channel.Id).
-				Select("*").Omit("id", "created_time").Updates(channel).Error; err != nil {
+			updates := tx.Model(&model.Channel{}).Where("id = ?", channel.Id).
+				Select("*").Omit("id", "created_time", "channel_info")
+			if payload.Enabled == nil {
+				updates = updates.Omit("status")
+			}
+			if err := updates.Updates(channel).Error; err != nil {
 				return err
 			}
 			if strings.TrimSpace(existing.Name) != strings.TrimSpace(channel.Name) {
@@ -322,7 +347,12 @@ func PutChannel(c *gin.Context) {
 			manualLanesCleared, _ = model.ReconcileManualActiveMembersByNames(cleanedLanes)
 		}
 	}
+	if existing != nil {
+		invalidateChannelAdmission(existing, nil)
+	}
+	invalidateChannelAdmission(channel, nil)
 	model.InitChannelCache()
+	maintainAllRouteRuntime("put_channel")
 
 	// 写后回读：响应体是落库后重新读取的最终状态（api-spec §2.2）。
 	saved, err := findChannelByName(name)
@@ -411,8 +441,10 @@ func DeleteChannel(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	invalidateChannelAdmission(ch, nil)
 	model.NotifyChannelDeleted(ch)
 	model.InitChannelCache()
+	maintainAllRouteRuntime("delete_channel")
 	writeAudit(c, "delete", "channel", name, channelResponse(ch))
 	c.JSON(http.StatusOK, gin.H{"deleted": true, "name": name})
 }
@@ -424,11 +456,12 @@ func DeleteChannel(c *gin.Context) {
 // 完整预览；执行结果逐项返回并进审计（api-spec §5.3）。
 func RetireChannel(c *gin.Context) {
 	name := c.Param("name")
-	if _, err := findChannelByName(name); err != nil {
+	ch, err := findChannelByName(name)
+	if err != nil {
 		if writeChannelLookupError(c, err) {
 			return
 		}
-		apierr.NotFound(c, apierr.CodeChannelNotFound, "channel '"+name+"' not found", "GET /api/v1/channels")
+		apierr.NotFound(c, apierr.CodeChannelNotFound, "channel '"+name+"' not found", "POST /api/v1/channels/"+name+"/retire")
 		return
 	}
 	if dryRun(c) {
@@ -448,6 +481,7 @@ func RetireChannel(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	invalidateChannelAdmission(ch, nil)
 	// 运行态收尾与 PUT /channels 的清理路径同口径：删掉的车道从运行态摘除，
 	// manual 车道的活动成员清账（它们的成员被退役移除后不再指向有效对象）。
 	for _, laneName := range result.LanesDeleted {
@@ -457,12 +491,35 @@ func RetireChannel(c *gin.Context) {
 		result.ManualLanesCleared, _ = model.ReconcileManualActiveMembersByNames(result.LanesCleaned)
 	}
 	model.InitChannelCache()
+	maintainAllRouteRuntime("retire_channel")
 	writeAudit(c, "delete", "channel", name, result)
 	c.JSON(http.StatusOK, result)
 }
 
 func findChannelByName(name string) (*model.Channel, error) {
 	return model.GetChannelByName(name)
+}
+
+// invalidateChannelAdmission 唤醒使用旧渠道准入配置的 waiter，并删除空闲运行态。
+// onlyModels 非空时只处理被移除的模型；nil 表示处理渠道当前快照中的全部模型。
+func invalidateChannelAdmission(channel *model.Channel, onlyModels []string) {
+	if channel == nil {
+		return
+	}
+	only := map[string]bool{}
+	for _, name := range onlyModels {
+		only[strings.TrimSpace(name)] = true
+	}
+	settings, _, _ := channel.SettingsSnapshot()
+	for i := range settings.PBRRateLimits {
+		item := settings.PBRRateLimits[i]
+		if len(only) > 0 && !only[strings.TrimSpace(item.Model)] {
+			continue
+		}
+		key := route.AdmissionKey{ChannelID: channel.Id, Model: strings.TrimSpace(item.Model)}
+		route.DefaultAdmission.Invalidate(key)
+		route.DefaultAdmission.DeleteIdle(key)
+	}
 }
 
 // buildChannel 把请求体叠加到已有渠道（或新建渠道）上。

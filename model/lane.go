@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
+	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/setting/ratio_setting"
 
 	"gorm.io/gorm"
@@ -145,18 +146,67 @@ func (c LaneRelayConfig) Apply(o LaneRelayOverrides) LaneRelayConfig {
 	return c.Normalize()
 }
 
-// ParseLaneRelayConfig 解析车道 Config 字段（空串 → 默认值）。
-func ParseLaneRelayConfig(raw string) LaneRelayConfig {
+// LaneConfigError 是车道六键或成员覆盖配置的脱敏结构化错误。请求路径必须
+// fail-closed，不能静默 Normalize 成默认值后继续转发。
+type LaneConfigError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Path    string `json:"path"`
+}
+
+// ParseLaneRelayConfigE 解析车道 Config 字段（空串 → 默认值），并显式返回
+// JSON/范围错误。请求选路使用此版本；旧 ParseLaneRelayConfig 仅供展示兼容。
+func ParseLaneRelayConfigE(raw string) (LaneRelayConfig, *LaneConfigError) {
 	cfg := DefaultLaneRelayConfig()
 	if strings.TrimSpace(raw) == "" {
-		return cfg
+		return cfg, nil
 	}
-	// 先反序列化到零值结构体，再交给 Normalize 填默认，避免"客户端显式写 0"被误当成未设置。
 	var parsed LaneRelayConfig
 	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		return cfg
+		return cfg, &LaneConfigError{Code: "invalid_lane_config", Message: "车道六键配置不是合法 JSON", Path: "config"}
 	}
-	return parsed.Normalize()
+	if err := validateLaneRelayConfigValues(raw); err != nil {
+		return cfg, err
+	}
+	return parsed.Normalize(), nil
+}
+
+// ParseLaneRelayOverridesE 解析成员级覆盖并显式返回错误。
+func ParseLaneRelayOverridesE(raw string) (LaneRelayOverrides, *LaneConfigError) {
+	var o LaneRelayOverrides
+	if strings.TrimSpace(raw) == "" {
+		return o, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &o); err != nil {
+		return LaneRelayOverrides{}, &LaneConfigError{Code: "invalid_member_overrides", Message: "成员六键覆盖不是合法 JSON", Path: "overrides"}
+	}
+	if err := validateLaneRelayConfigValues(raw); err != nil {
+		return LaneRelayOverrides{}, err
+	}
+	return o, nil
+}
+
+func validateLaneRelayConfigValues(raw string) *LaneConfigError {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return &LaneConfigError{Code: "invalid_lane_config", Message: "车道六键配置不是合法 JSON", Path: "config"}
+	}
+	for key, value := range values {
+		var number int
+		if err := json.Unmarshal(value, &number); err != nil {
+			continue
+		}
+		if number < 0 {
+			return &LaneConfigError{Code: "invalid_lane_config", Message: "车道六键不能为负数", Path: key}
+		}
+	}
+	return nil
+}
+
+// ParseLaneRelayConfig 解析车道 Config 字段（空串 → 默认值）。
+func ParseLaneRelayConfig(raw string) LaneRelayConfig {
+	cfg, _ := ParseLaneRelayConfigE(raw)
+	return cfg
 }
 
 // ParseLaneRelayOverrides 解析成员级覆盖（空串 → 无覆盖）。
@@ -298,6 +348,15 @@ type RouteMember struct {
 	// 本结构体不被直接 JSON 序列化（handler 全部手工拼 gin.H），所以对外仍是正向
 	// `enabled`，取反只做在输出处一次（api-spec §4.2 命名规则、routing-spec §1.2）。
 	Disabled bool `json:"-"`
+
+	// 请求级不可变快照字段。它们不进入管理面 JSON，但参与选路、转发与准入。
+	ChannelSnapshot *Channel              `json:"-"`
+	RateLimit       *dto.ChannelRateLimit `json:"-"`
+	ChannelVersion  int64                 `json:"-"`
+	// ConfigError 是渠道配置错误的脱敏结构化投影；nil 表示无错误。请求路径 fail-closed。
+	ConfigError *ChannelConfigError `json:"-"`
+	// OverrideError 是成员六键覆盖解析错误；nil 表示无错误。请求路径 fail-closed。
+	OverrideError *LaneConfigError `json:"-"`
 }
 
 // RouteSourceDisabled 车道存在但被停用：模型不可调用，但仍应在管理面可见，
@@ -324,14 +383,27 @@ type ResolvedRoute struct {
 	// 用它判断"本次解析是否比上次处理过的更新"，避免旧配置的并发请求用旧成员集合
 	// 误删新配置刚写入的成员运行态。0 表示来源无法提供版本（测试夹具/历史数据）。
 	LaneVersion int64 `json:"-"`
+	// ConfigError 是车道级六键解析错误；请求入口必须 fail-closed。
+	ConfigError *LaneConfigError `json:"-"`
+}
+
+// EffectiveConfigE 返回某成员生效的六键（车道默认 + 成员级覆盖），并显式
+// 返回成员覆盖解析错误。请求 State 使用此版本 fail-closed。
+func (r *ResolvedRoute) EffectiveConfigE(member *RouteMember) (LaneRelayConfig, *LaneConfigError) {
+	cfg := r.Config.Normalize()
+	if member != nil && strings.TrimSpace(member.Overrides) != "" {
+		overrides, err := ParseLaneRelayOverridesE(member.Overrides)
+		if err != nil {
+			return cfg, err
+		}
+		cfg = cfg.Apply(overrides)
+	}
+	return cfg, nil
 }
 
 // EffectiveConfig 返回某成员生效的六键（车道默认 + 成员级覆盖）。
 func (r *ResolvedRoute) EffectiveConfig(member *RouteMember) LaneRelayConfig {
-	cfg := r.Config.Normalize()
-	if member != nil && strings.TrimSpace(member.Overrides) != "" {
-		cfg = cfg.Apply(ParseLaneRelayOverrides(member.Overrides))
-	}
+	cfg, _ := r.EffectiveConfigE(member)
 	return cfg
 }
 
@@ -394,11 +466,16 @@ func getLaneByNameWithDB(db *gorm.DB, name string) (*Lane, error) {
 }
 
 func GetLaneById(id int) (*Lane, error) {
+	return GetLaneByIdTx(DB, id)
+}
+
+// GetLaneByIdTx 与 GetLaneById 相同，但在给定事务内查询。
+func GetLaneByIdTx(tx *gorm.DB, id int) (*Lane, error) {
 	var lane Lane
-	if err := DB.Where("id = ?", id).First(&lane).Error; err != nil {
+	if err := tx.Where("id = ?", id).First(&lane).Error; err != nil {
 		return nil, err
 	}
-	if err := DB.Where("lane_id = ?", lane.Id).Order("priority desc, id asc").Find(&lane.Members).Error; err != nil {
+	if err := tx.Where("lane_id = ?", lane.Id).Order("priority desc, id asc").Find(&lane.Members).Error; err != nil {
 		return nil, err
 	}
 	return &lane, nil
@@ -417,11 +494,16 @@ func (e *AliasAmbiguousError) Error() string {
 // GetLaneByAlias 按成员 public_alias 找显式车道，并返回被点名的成员。
 // 历史重复别名不再静默取第一条，而是返回 409 语义的错误。
 func GetLaneByAlias(alias string) (*Lane, *LaneMember, error) {
+	return GetLaneByAliasTx(DB, alias)
+}
+
+// GetLaneByAliasTx 与 GetLaneByAlias 相同，但在给定事务内查询。
+func GetLaneByAliasTx(tx *gorm.DB, alias string) (*Lane, *LaneMember, error) {
 	if strings.TrimSpace(alias) == "" {
 		return nil, nil, gorm.ErrRecordNotFound
 	}
 	var members []LaneMember
-	if err := DB.Where("public_alias = ?", alias).Order("id").Find(&members).Error; err != nil {
+	if err := tx.Where("public_alias = ?", alias).Order("id").Find(&members).Error; err != nil {
 		return nil, nil, err
 	}
 	if len(members) == 0 {
@@ -431,7 +513,7 @@ func GetLaneByAlias(alias string) (*Lane, *LaneMember, error) {
 		return nil, nil, &AliasAmbiguousError{Alias: alias, Count: len(members)}
 	}
 	member := members[0]
-	lane, err := GetLaneById(member.LaneId)
+	lane, err := GetLaneByIdTx(tx, member.LaneId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -756,24 +838,33 @@ func channelServesModel(channel *Channel, modelName string) bool {
 // 先按请求原文精确匹配；未命中时再按 new-api 既有的思考后缀归一化规则匹配一次
 // （design-v1 §4.1「保留思考后缀归一化行为」），保证存量下游带后缀的请求不断流。
 func ResolveRoute(modelName string) (*ResolvedRoute, error) {
-	route, err := resolveExactRoute(modelName)
-	if err != nil || len(route.Members) > 0 || route.Source == RouteSourceExplicit {
-		return route, err
-	}
-	normalized := ratio_setting.RoutingMatchModelName(modelName)
-	if normalized == "" || normalized == modelName {
-		return route, nil
-	}
-	fallback, err := resolveExactRoute(normalized)
-	if err != nil {
-		return nil, err
-	}
-	if len(fallback.Members) == 0 && fallback.Source != RouteSourceExplicit {
-		return route, nil
-	}
-	// 命中归一化名后，路由键仍是请求原文（响应回填、日志、令牌判定都用原文）。
-	fallback.Model = modelName
-	return fallback, nil
+	var route *ResolvedRoute
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		resolved, err := resolveExactRouteWithDB(tx, modelName)
+		if err != nil {
+			return err
+		}
+		route = resolved
+		if len(route.Members) > 0 || route.Source == RouteSourceExplicit {
+			return nil
+		}
+		normalized := ratio_setting.RoutingMatchModelName(modelName)
+		if normalized == "" || normalized == modelName {
+			return nil
+		}
+		fallback, err := resolveExactRouteWithDB(tx, normalized)
+		if err != nil {
+			return err
+		}
+		if len(fallback.Members) == 0 && fallback.Source != RouteSourceExplicit {
+			return nil
+		}
+		// 命中归一化名后，路由键仍是请求原文（响应回填、日志、令牌判定都用原文）。
+		fallback.Model = modelName
+		route = fallback
+		return nil
+	})
+	return route, err
 }
 
 // expandLaneChain 把车道链（含组引用行，ADR 0009）展开为连续成员序列。
@@ -803,6 +894,9 @@ func expandLaneChainWithDB(db *gorm.DB, lane *Lane) ([]RouteMember, error) {
 // 最大 UpdatedAt（无组引用时为 0）。ResolveRoute 用它把组编辑纳入 LaneVersion，
 // 使 PruneStaleState 的"过期配置不剪枝"守卫对组成员变更同样生效（routing-spec §1.3）。
 func expandLaneChainWithVersion(db *gorm.DB, lane *Lane) ([]RouteMember, int64, error) {
+	if db == nil {
+		db = DB
+	}
 	groupIds := make([]int, 0, 4)
 	for _, m := range lane.Members {
 		if m.GroupId != 0 {
@@ -812,26 +906,74 @@ func expandLaneChainWithVersion(db *gorm.DB, lane *Lane) ([]RouteMember, int64, 
 	groups := map[int]*MemberGroup{}
 	var groupVersion int64
 	if len(groupIds) > 0 {
-		loaded, err := loadMemberGroupsByIDsWithDB(db, groupIds)
-		if err != nil {
+		unique := make([]int, 0, len(groupIds))
+		seen := map[int]bool{}
+		for _, id := range groupIds {
+			if id != 0 && !seen[id] {
+				seen[id] = true
+				unique = append(unique, id)
+			}
+		}
+		var loaded []MemberGroup
+		if err := db.Where("id IN ?", unique).Find(&loaded).Error; err != nil {
 			return nil, 0, err
 		}
-		groups = loaded
-		for _, g := range groups {
-			if g != nil && g.UpdatedAt > groupVersion {
+		var items []MemberGroupItem
+		if err := db.Where("group_id IN ?", unique).Order("priority desc, id asc").Find(&items).Error; err != nil {
+			return nil, 0, err
+		}
+		itemsByGroup := make(map[int][]MemberGroupItem, len(loaded))
+		for i := range items {
+			itemsByGroup[items[i].GroupId] = append(itemsByGroup[items[i].GroupId], items[i])
+		}
+		for i := range loaded {
+			g := &loaded[i]
+			g.Members = itemsByGroup[g.Id]
+			groups[g.Id] = g
+			if g.UpdatedAt > groupVersion {
 				groupVersion = g.UpdatedAt
 			}
 		}
 	}
+
+	// 所有直接成员与组成员引用的渠道一次 IN 查询加载，消除逐成员 N+1。
+	channelIDs := make([]int, 0, len(lane.Members))
+	seenChannel := map[int]bool{}
+	for i := range lane.Members {
+		m := &lane.Members[i]
+		if m.GroupId == 0 && m.ChannelId != 0 && !seenChannel[m.ChannelId] {
+			seenChannel[m.ChannelId] = true
+			channelIDs = append(channelIDs, m.ChannelId)
+		}
+	}
+	for _, g := range groups {
+		for i := range g.Members {
+			id := g.Members[i].ChannelId
+			if id != 0 && !seenChannel[id] {
+				seenChannel[id] = true
+				channelIDs = append(channelIDs, id)
+			}
+		}
+	}
+	channels := map[int]*Channel{}
+	if len(channelIDs) > 0 {
+		var loaded []Channel
+		if err := db.Where("id IN ?", channelIDs).Find(&loaded).Error; err != nil {
+			return nil, 0, err
+		}
+		for i := range loaded {
+			ch := &loaded[i]
+			ch.SnapshotChannelSettings()
+			channels[ch.Id] = ch
+		}
+	}
+
 	members := make([]RouteMember, 0, len(lane.Members))
 	for i := range lane.Members {
 		m := &lane.Members[i]
 		if m.GroupId == 0 {
-			rm, err := routeMemberFromLaneMemberWithDB(db, m)
-			if err != nil {
-				return nil, 0, err
-			}
-			members = append(members, rm)
+			members = append(members, routeMemberFromChannelSnapshot(channels[m.ChannelId], m.ChannelId, m.Model,
+				m.PublicAlias, m.Priority, m.Id, "", m.Overrides, m.Disabled))
 			continue
 		}
 		group, ok := groups[m.GroupId]
@@ -840,30 +982,52 @@ func expandLaneChainWithVersion(db *gorm.DB, lane *Lane) ([]RouteMember, int64, 
 		}
 		for j := range group.Members {
 			item := &group.Members[j]
-			ch, chErr := channelOrNilWithDB(db, item.ChannelId)
-			if chErr != nil {
-				return nil, 0, chErr
-			}
-			name := ""
-			if ch != nil {
-				name = ch.Name
-			}
-			members = append(members, RouteMember{
-				ChannelId:      item.ChannelId,
-				Channel:        name,
-				ChannelEnabled: ch != nil && ch.Status == common.ChannelStatusEnabled,
-				Model:          item.Model,
-				UpstreamModel:  effectiveUpstreamModel(ch, item.Model),
-				PublicAlias:    item.PublicAlias,
-				Priority:       m.Priority,
-				MemberId:       -item.Id,
-				Group:          group.Name,
-				Overrides:      item.Overrides,
-				Disabled:       m.Disabled || group.Disabled || item.Disabled,
-			})
+			members = append(members, routeMemberFromChannelSnapshot(channels[item.ChannelId], item.ChannelId, item.Model,
+				item.PublicAlias, m.Priority, -item.Id, group.Name, item.Overrides,
+				m.Disabled || group.Disabled || item.Disabled))
 		}
 	}
 	return members, groupVersion, nil
+}
+
+// routeMemberFromChannelSnapshot 从请求级渠道快照构造成员，确保映射、启用态、准入
+// 配置与配置错误全部来自同一版本。
+func routeMemberFromChannelSnapshot(ch *Channel, channelID int, modelName, publicAlias string,
+	priority, memberID int, group, overrides string, disabled bool) RouteMember {
+	member := RouteMember{
+		ChannelId:       channelID,
+		ChannelEnabled:  ch != nil && ch.Status == common.ChannelStatusEnabled,
+		Model:           modelName,
+		UpstreamModel:   effectiveUpstreamModel(ch, modelName),
+		PublicAlias:     publicAlias,
+		Priority:        priority,
+		MemberId:        memberID,
+		Group:           group,
+		Overrides:       overrides,
+		Disabled:        disabled,
+		ChannelSnapshot: ch,
+	}
+	if _, configErr := ParseLaneRelayOverridesE(overrides); configErr != nil {
+		member.OverrideError = configErr
+	}
+	if ch == nil {
+		return member
+	}
+	member.Channel = ch.Name
+	member.ChannelVersion = ch.UpdatedAt
+	if configErr := ch.ConfigError(); configErr != nil {
+		member.ConfigError = configErr
+	}
+	settings, _, _ := ch.SettingsSnapshot()
+	for i := range settings.PBRRateLimits {
+		item := settings.PBRRateLimits[i]
+		if strings.TrimSpace(item.Model) == strings.TrimSpace(modelName) {
+			item.Normalize()
+			member.RateLimit = &item
+			break
+		}
+	}
+	return member
 }
 
 // ValidateLaneActiveMember 校验 manual 车道的点名成员：非空 active_member
@@ -1024,6 +1188,10 @@ func routeMemberFromLaneMemberWithDB(db *gorm.DB, m *LaneMember) (RouteMember, e
 }
 
 func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
+	return resolveExactRouteWithDB(DB, modelName)
+}
+
+func resolveExactRouteWithDB(db *gorm.DB, modelName string) (*ResolvedRoute, error) {
 	route := &ResolvedRoute{
 		Model:    modelName,
 		RouteKey: modelName,
@@ -1039,13 +1207,13 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	// 唯一路由入口：同名启用车道；否则按成员别名点名（PinnedMemberId 记录被点名成员）。
 	// 别名点名只覆盖散成员（lane_members.public_alias）：组内成员的别名不参与跨车道
 	// 点名——一个组可被多条车道引用，别名点名会有车道歧义（ADR 0009）。
-	lane, err := GetLaneByName(modelName)
+	lane, err := GetLaneByNameTx(db, modelName)
 	var pinned *LaneMember
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
-		lane, pinned, err = GetLaneByAlias(modelName)
+		lane, pinned, err = GetLaneByAliasTx(db, modelName)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
@@ -1061,13 +1229,13 @@ func resolveExactRoute(modelName string) (*ResolvedRoute, error) {
 	route.Source = RouteSourceExplicit
 	route.Mode = lane.Mode
 	route.RouteKey = lane.Name
-	route.Config = ParseLaneRelayConfig(lane.Config)
+	route.Config, route.ConfigError = ParseLaneRelayConfigE(lane.Config)
 	route.ActiveMember = lane.ActiveMember
 	route.LaneVersion = lane.UpdatedAt
 	if pinned != nil {
 		route.PinnedMemberId = pinned.Id
 	}
-	members, groupVersion, err := expandLaneChainWithVersion(DB, lane)
+	members, groupVersion, err := expandLaneChainWithVersion(db, lane)
 	if err != nil {
 		return nil, err
 	}

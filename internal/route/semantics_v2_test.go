@@ -2,7 +2,6 @@ package route
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"testing"
 
@@ -108,15 +107,15 @@ func TestHealthExposesLastErrorAndProbePending(t *testing.T) {
 		state.Runtime.recordFailure(key, KindSoftTransient, 5, 0, false, DefaultCircuitSettings())
 		state.Runtime.Circuits[key].State = CircuitOpen
 		state.Runtime.Circuits[key].OpenUntil = nowMs() - 1
-		state.Runtime.HasProbe = true
-		state.Runtime.ProbeMember = key
+		state.Runtime.probe = &ProbeLease{expiresAt: nowMs() + 60000}
+		state.Runtime.probe = &ProbeLease{key: key, expiresAt: nowMs() + 60000}
 	})
 	snapshot := state.Runtime.Health(resolved, CurrentCircuitSettings())
 	require.Len(t, snapshot.Members, 1)
 	assert.NotEmpty(t, snapshot.Members[0].LastErrorAt, "必须暴露最近错误时间")
 	assert.Equal(t, KindSoftTransient, snapshot.Members[0].LastErrorKind)
 	assert.GreaterOrEqual(t, snapshot.Members[0].RollingSamples, 1, "滚动窗口样本数必须可观测")
-	assert.True(t, snapshot.Members[0].ProbePending, "半开探测在途时 probe_pending=true")
+	assert.True(t, snapshot.Members[0].Probing, "半开探测在途时 probe_pending=true")
 	assert.False(t, snapshot.Members[0].Available, "探测槽被占用时该成员不再对外报告可用")
 }
 
@@ -132,14 +131,14 @@ func TestProbePendingOnlyForSlotOwner(t *testing.T) {
 		now := nowMs()
 		state.Runtime.Circuits[firstKey] = &Circuit{State: CircuitOpen, OpenUntil: now - 1}
 		state.Runtime.Circuits[secondKey] = &Circuit{State: CircuitOpen, OpenUntil: now - 1}
-		state.Runtime.HasProbe = true
-		state.Runtime.ProbeMember = firstKey
+		state.Runtime.probe = &ProbeLease{expiresAt: nowMs() + 60000}
+		state.Runtime.probe = &ProbeLease{key: firstKey, expiresAt: nowMs() + 60000}
 	})
 
 	snapshot := state.Runtime.Health(resolved, CurrentCircuitSettings())
 	require.Len(t, snapshot.Members, 2)
-	assert.True(t, snapshot.Members[0].ProbePending, "持槽成员 probe_pending=true")
-	assert.False(t, snapshot.Members[1].ProbePending, "等槽成员不得标成探测中")
+	assert.True(t, snapshot.Members[0].Probing, "持槽成员 probe_pending=true")
+	assert.False(t, snapshot.Members[1].Probing, "等槽成员不得标成探测中")
 	assert.False(t, snapshot.Members[1].Available, "探测槽被占用时等槽成员本轮不可选")
 }
 
@@ -148,7 +147,7 @@ func TestProbePendingOnlyForSlotOwner(t *testing.T) {
 func TestResetClearsPaceAndLaneDown(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-reset-v2")
-	key := "13:model-reset-v2"
+	key := testMemberKey("13:model-reset-v2")
 	runtime.withLock(func() {
 		runtime.PacedUntil[key] = nowMs() + 30_000
 		runtime.Cooldowns[key] = nowMs() + 60_000
@@ -159,7 +158,7 @@ func TestResetClearsPaceAndLaneDown(t *testing.T) {
 	})
 
 	result := runtime.Reset()
-	assert.Equal(t, ResetResult{Circuits: 1, Cooldowns: 1, Paces: 1, LaneDown: true}, result)
+	assert.Equal(t, ResetResult{Circuits: 1, Cooldowns: 1, Paces: 1, LaneDown: true, Generation: 1}, result)
 	runtime.withLock(func() {
 		assert.Empty(t, runtime.PacedUntil)
 		assert.Empty(t, runtime.Cooldowns)
@@ -175,7 +174,9 @@ func TestResetClearsPaceAndLaneDown(t *testing.T) {
 
 func TestClearMemberPenaltyAcrossLanes(t *testing.T) {
 	withFakeClock(t)
-	key := func(memberId int) string { return fmt.Sprintf("14:model-probe#%d", memberId) }
+	key := func(memberId int) MemberKey {
+		return MemberKey{ChannelID: 14, UpstreamModel: "model-probe", MemberID: memberId}
+	}
 
 	laneA := Default.For("lane-probe-clear-a")
 	laneB := Default.For("lane-probe-clear-b")
@@ -191,11 +192,11 @@ func TestClearMemberPenaltyAcrossLanes(t *testing.T) {
 	}
 	// laneB 的成员探测槽在途：必须跳过并报出，不得破坏单探测槽不变量。
 	laneB.withLock(func() {
-		laneB.HasProbe = true
-		laneB.ProbeMember = key(1)
+		laneB.probe = &ProbeLease{expiresAt: nowMs() + 60000}
+		laneB.probe = &ProbeLease{key: key(1), expiresAt: nowMs() + 60000}
 	})
 
-	cleared := Default.ClearMemberPenalty(14, "model-probe", 1)
+	cleared := Default.ClearMemberPenalty(MemberKey{ChannelID: 14, UpstreamModel: "model-probe", MemberID: 1})
 	assert.Equal(t, []string{"lane-probe-clear-a"}, cleared.Lanes)
 	assert.Equal(t, 1, cleared.Members)
 	assert.Equal(t, []string{"lane-probe-clear-b"}, cleared.ProbeBusyLanes)
@@ -214,22 +215,21 @@ func TestClearMemberPenaltyAcrossLanes(t *testing.T) {
 
 func TestClearMemberPenaltyDropsProbeBusyFlagAfterRelease(t *testing.T) {
 	withFakeClock(t)
-	key := "15:model-probe#2"
+	key := testMemberKey("15:model-probe#2")
 	runtime := Default.For("lane-probe-clear-release")
 	runtime.withLock(func() {
 		runtime.Cooldowns[key] = nowMs() + 60_000
-		runtime.HasProbe = true
-		runtime.ProbeMember = key
+		runtime.probe = &ProbeLease{expiresAt: nowMs() + 60000}
+		runtime.probe = &ProbeLease{key: key, expiresAt: nowMs() + 60000}
 	})
-	first := Default.ClearMemberPenalty(15, "model-probe", 2)
+	first := Default.ClearMemberPenalty(MemberKey{ChannelID: 15, UpstreamModel: "model-probe", MemberID: 2})
 	assert.Empty(t, first.Lanes)
 	assert.Equal(t, []string{"lane-probe-clear-release"}, first.ProbeBusyLanes)
 
 	runtime.withLock(func() {
-		runtime.HasProbe = false
-		runtime.ProbeMember = ""
+		runtime.probe = nil
 	})
-	second := Default.ClearMemberPenalty(15, "model-probe", 2)
+	second := Default.ClearMemberPenalty(MemberKey{ChannelID: 15, UpstreamModel: "model-probe", MemberID: 2})
 	assert.Equal(t, []string{"lane-probe-clear-release"}, second.Lanes)
 	assert.Equal(t, 1, second.Members)
 }
@@ -239,12 +239,12 @@ func TestClearMemberPenaltyChannelScopeClearsAllMemberIDs(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-probe-clear-channel")
 	for _, memberId := range []int{1, 2} {
-		key := fmt.Sprintf("16:model-shared#%d", memberId)
+		key := MemberKey{ChannelID: 16, UpstreamModel: "model-shared", MemberID: memberId}
 		runtime.withLock(func() {
 			runtime.Cooldowns[key] = nowMs() + 60_000
 		})
 	}
-	cleared := Default.ClearMemberPenalty(16, "model-shared", 0)
+	cleared := Default.ClearChannelModelPenalty(16, "model-shared")
 	assert.Contains(t, cleared.Lanes, "lane-probe-clear-channel")
 	assert.Equal(t, 2, cleared.Members)
 }
@@ -286,8 +286,8 @@ func TestReportMemberConfigSkipIsNotFailure(t *testing.T) {
 func TestPruneMigratesRuntimeAcrossMemberIdChange(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-prune-migrate")
-	oldKey := "20:model-x#1"
-	newKey := "20:model-x#2"
+	oldKey := testMemberKey("20:model-x#1")
+	newKey := testMemberKey("20:model-x#2")
 	until := nowMs() + 120_000
 	runtime.withLock(func() {
 		runtime.Cooldowns[oldKey] = until
@@ -295,7 +295,7 @@ func TestPruneMigratesRuntimeAcrossMemberIdChange(t *testing.T) {
 		runtime.Circuits[oldKey] = &Circuit{State: CircuitOpen, OpenUntil: until, ConsecutiveFailures: 1}
 		runtime.HasCurrent = true
 		runtime.CurrentMember = oldKey
-		runtime.pruneStaleLocked(map[string]bool{newKey: true})
+		runtime.pruneStaleLocked(map[MemberKey]bool{newKey: true})
 		assert.Equal(t, until, runtime.Cooldowns[newKey])
 		assert.Equal(t, until, runtime.PacedUntil[newKey])
 		require.NotNil(t, runtime.Circuits[newKey])
@@ -310,8 +310,8 @@ func TestPruneMigratesRuntimeAcrossMemberIdChange(t *testing.T) {
 func TestPruneDoesNotMigrateAmbiguousDuplicateMembers(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-prune-ambiguous")
-	oldKey := "21:model-y#1"
-	valid := map[string]bool{"21:model-y#2": true, "21:model-y#3": true}
+	oldKey := testMemberKey("21:model-y#1")
+	valid := map[MemberKey]bool{testMemberKey("21:model-y#2"): true, testMemberKey("21:model-y#3"): true}
 	runtime.withLock(func() {
 		runtime.Cooldowns[oldKey] = nowMs() + 120_000
 		runtime.pruneStaleLocked(valid)

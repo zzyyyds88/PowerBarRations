@@ -32,7 +32,7 @@ func TestParseAllowedFails(t *testing.T) {
 func TestAllowedFailsOpensCircuitPerKind(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-allowed-fails")
-	key := "7:model-allowed"
+	key := testMemberKey("7:model-allowed")
 	settings := DefaultCircuitSettings()
 	settings.FailureThreshold = 100 // 分数阈值不可达
 	settings.RollingMinSamples = 100
@@ -54,7 +54,7 @@ func TestAllowedFailsOpensCircuitPerKind(t *testing.T) {
 func TestRateLimitNeverOpensCircuitOrCooldown(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-rate-limit-no-fault")
-	key := "7:model-paced"
+	key := testMemberKey("7:model-paced")
 	settings := DefaultCircuitSettings()
 	settings.AllowedFails = map[ErrorKind]int{KindSoftRateLimit: 1}
 
@@ -77,7 +77,7 @@ func TestRateLimitNeverOpensCircuitOrCooldown(t *testing.T) {
 func TestSuccessResetsAllowedFailStreak(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-allowed-reset")
-	key := "8:model-reset"
+	key := testMemberKey("8:model-reset")
 	settings := DefaultCircuitSettings()
 	settings.FailureThreshold = 100
 	settings.RollingMinSamples = 100
@@ -126,7 +126,7 @@ func TestRetryAfterSetsMemberPace(t *testing.T) {
 func TestRetryAfterExtendsMemberCooldown(t *testing.T) {
 	clock := withFakeClock(t)
 	runtime := Default.For("lane-retry-after-cooldown")
-	key := "10:model-cooldown"
+	key := testMemberKey("10:model-cooldown")
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindSoftTransient, 5, 30, true, DefaultCircuitSettings())
 	})
@@ -138,7 +138,7 @@ func TestRetryAfterExtendsMemberCooldown(t *testing.T) {
 func TestRetryAfterCooldownIsCapped(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-retry-after-cap")
-	key := "9:model-cap"
+	key := testMemberKey("9:model-cap")
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindSoftTransient, 5, 999_999, true, DefaultCircuitSettings())
 	})
@@ -151,7 +151,7 @@ func TestRetryAfterCooldownIsCapped(t *testing.T) {
 func TestRateLimitPaceIsCapped(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-pace-cap")
-	key := "9:model-pace-cap"
+	key := testMemberKey("9:model-pace-cap")
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindSoftRateLimit, 5, 999_999, true, DefaultCircuitSettings())
 	})
@@ -163,10 +163,10 @@ func TestRateLimitPaceIsCapped(t *testing.T) {
 func TestCooldownJitterStaysWithin20Percent(t *testing.T) {
 	const base = 100
 	for i := 0; i < 50; i++ {
-		key := "member-" + string(rune('a'+i%26)) + "-" + string(rune('0'+i/26))
+		key := MemberKey{UpstreamModel: "member", MemberID: i}
 		got := jitterSeconds(base, key, int64(i))
 		assert.GreaterOrEqual(t, got, base)
 		assert.LessOrEqual(t, got, base+base/5)
 	}
-	assert.Equal(t, 1, jitterSeconds(1, "tiny", 0), "1 秒不再放大")
+	assert.Equal(t, 1, jitterSeconds(1, MemberKey{UpstreamModel: "tiny"}, 0), "1 秒不再放大")
 }

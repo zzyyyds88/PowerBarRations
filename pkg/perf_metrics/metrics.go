@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zzyyyds88/PowerBarRations/common"
@@ -14,19 +15,67 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/setting/perf_metrics_setting"
 )
 
-var hotBuckets sync.Map
-
 // seriesSchema is a stable client cache/schema marker. Do not change it when
 // hiding fields or making response-only privacy hardening changes.
 const seriesSchema = "dbcd0a3c01b55203"
 
+const relaySampleQueueSize = 1024
+
+var (
+	hotBuckets sync.Map
+
+	relaySampleQueue   chan Sample
+	relaySampleDropped atomic.Uint64
+	relayFlushDropped  atomic.Uint64
+	perfMetricsOnce    sync.Once
+	perfMetricsClose   sync.Once
+	perfMetricsStop    chan struct{}
+	perfMetricsDone    chan struct{}
+	perfMetricsWG      sync.WaitGroup
+	perfMetricsClosed  atomic.Bool
+)
+
 func Init() {
-	go flushLoop()
+	perfMetricsOnce.Do(func() {
+		if perfMetricsClosed.Load() {
+			return
+		}
+		relaySampleQueue = make(chan Sample, relaySampleQueueSize)
+		perfMetricsStop = make(chan struct{})
+		perfMetricsDone = make(chan struct{})
+		perfMetricsWG.Add(2)
+		go relaySampleWorker()
+		go flushLoop()
+		go func() {
+			perfMetricsWG.Wait()
+			close(perfMetricsDone)
+		}()
+	})
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+// Close 停止后台 worker、drain 已接收样本并做最终 flush。进程优雅停机时
+// 调用；重复调用幂等。关闭后不再接受新样本。
+func Close() {
+	perfMetricsClose.Do(func() {
+		perfMetricsClosed.Store(true)
+		perfMetricsOnce.Do(func() {
+			close(perfMetricsDone)
+			return
+		})
+		if perfMetricsStop != nil {
+			close(perfMetricsStop)
+			<-perfMetricsDone
+		}
+		flushCompletedBuckets()
+	})
+}
+
+// SnapshotRelaySample copies only the safe scalar values needed by the perf
+// aggregator. Callers must never retain RelayInfo in a background closure: it
+// contains request bodies, credentials and other request-scoped mutable data.
+func SnapshotRelaySample(info *relaycommon.RelayInfo) Sample {
 	if info == nil {
-		return
+		return Sample{}
 	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
@@ -42,16 +91,89 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if generationMs <= 0 {
 		generationMs = latencyMs
 	}
-	Record(Sample{
+	return Sample{
 		Model:        info.OriginModelName,
 		Group:        info.UsingGroup,
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
-		Success:      success,
-		OutputTokens: outputTokens,
+		OutputTokens: 0,
 		GenerationMs: generationMs,
-	})
+	}
+}
+
+func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+	sample := SnapshotRelaySample(info)
+	if sample.Model == "" {
+		return
+	}
+	sample.Success = success
+	sample.OutputTokens = outputTokens
+	Record(sample)
+}
+
+// RecordRelaySampleAsync submits a safe value snapshot to the bounded perf
+// worker. A full queue drops the sample and increments an explicit counter;
+// request/stream paths never create an unbounded goroutine.
+func RecordRelaySampleAsync(sample Sample) bool {
+	if perfMetricsClosed.Load() {
+		return false
+	}
+	setting := perf_metrics_setting.GetSetting()
+	if !setting.Enabled || sample.Model == "" {
+		return false
+	}
+	Init()
+	sample.redisEnabled = common.RedisEnabled
+	sample.redisConfigured = true
+	return enqueueRelaySample(relaySampleQueue, sample)
+}
+
+func enqueueRelaySample(queue chan Sample, sample Sample) bool {
+	select {
+	case queue <- sample:
+		return true
+	default:
+		relaySampleDropped.Add(1)
+		return false
+	}
+}
+
+func RelaySampleDroppedTotal() uint64 {
+	return relaySampleDropped.Load()
+}
+
+// RelayFlushDroppedTotal counts samples discarded after repeated DB flush failures.
+func RelayFlushDroppedTotal() uint64 {
+	return relayFlushDropped.Load()
+}
+
+func relaySampleWorker() {
+	defer perfMetricsWG.Done()
+	for {
+		select {
+		case <-perfMetricsStop:
+			for {
+				select {
+				case sample := <-relaySampleQueue:
+					recordSampleSafely(sample)
+				default:
+					return
+				}
+			}
+		case sample := <-relaySampleQueue:
+			recordSampleSafely(sample)
+		}
+	}
+}
+
+func recordSampleSafely(sample Sample) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.SysError(fmt.Sprintf("perf metrics sample worker panic: %v", recovered))
+		}
+	}()
+	Record(sample)
 }
 
 func Record(sample Sample) {
@@ -392,7 +514,11 @@ func avgTps(value counters) float64 {
 }
 
 func recordRedis(key bucketKey, sample Sample) {
-	if !common.RedisEnabled || common.RDB == nil {
+	redisEnabled := sample.redisEnabled
+	if !sample.redisConfigured {
+		redisEnabled = common.RedisEnabled
+	}
+	if !redisEnabled || common.RDB == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

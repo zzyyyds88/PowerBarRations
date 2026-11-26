@@ -6,32 +6,31 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// 同成员重试等待期间客户端取消，必须归还本请求持有的唯一探测槽；
-// 否则该车道后续所有半开探测都会被一个已取消的请求永久阻塞。
-func TestWaitRetryCancellationReleasesProbe(t *testing.T) {
-	state := &State{Runtime: &Runtime{}}
-	state.claimedProbe = "1:model#1"
-	state.Runtime.HasProbe = true
-	state.Runtime.ProbeMember = "1:model#1"
+func probeTestState(t *testing.T) (*State, *ProbeLease) {
+	t.Helper()
+	runtime := newRuntime()
+	key := MemberKey{ChannelID: 1, UpstreamModel: "model", MemberID: 1}
+	lease, ok := runtime.AcquireProbe(key, time.Minute)
+	require.True(t, ok)
+	return &State{Runtime: runtime, probe: lease}, lease
+}
 
+// 同成员重试等待期间客户端取消，必须归还本请求持有的唯一探测槽。
+func TestWaitRetryCancellationReleasesProbe(t *testing.T) {
+	state, _ := probeTestState(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-
 	assert.False(t, state.WaitRetry(ctx, time.Second))
-	assert.False(t, state.Runtime.HasProbe)
-	assert.Empty(t, state.Runtime.ProbeMember)
-	assert.Empty(t, state.claimedProbe)
+	assert.Nil(t, state.Runtime.probe)
+	assert.Nil(t, state.probe)
 }
 
 func TestWaitRetryCompletedDelayKeepsProbe(t *testing.T) {
-	state := &State{Runtime: &Runtime{}}
-	state.claimedProbe = "1:model#1"
-	state.Runtime.HasProbe = true
-	state.Runtime.ProbeMember = "1:model#1"
-
+	state, lease := probeTestState(t)
 	assert.True(t, state.WaitRetry(context.Background(), time.Millisecond))
-	assert.True(t, state.Runtime.HasProbe)
-	assert.Equal(t, "1:model#1", state.Runtime.ProbeMember)
+	assert.Same(t, lease, state.Runtime.probe)
+	assert.Equal(t, lease.key, state.Runtime.probe.key)
 }

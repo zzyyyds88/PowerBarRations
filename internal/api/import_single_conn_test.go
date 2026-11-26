@@ -43,7 +43,7 @@ func TestImportDoesNotDeadlockWithSingleConnection(t *testing.T) {
 				Name:    "tx-group",
 				Enabled: enabled,
 				Members: []GroupMemberConfig{
-					{Channel: "tx-ch", Model: "m", Priority: 1},
+					{Channel: "tx-ch", Model: "m", Priority: 1, PublicAlias: "tx-alias"},
 				},
 			},
 		},

@@ -16,6 +16,11 @@ type Sample struct {
 	Success      bool
 	OutputTokens int64
 	GenerationMs int64
+
+	// redisEnabled/redisConfigured 在请求线程入队时快照，后台 worker
+	// 不再读取可变的 common.RedisEnabled，避免测试/运行期配置切换竞态。
+	redisEnabled    bool
+	redisConfigured bool
 }
 
 type QueryParams struct {
@@ -89,6 +94,7 @@ type atomicBucket struct {
 	ttftCount      atomic.Int64
 	outputTokens   atomic.Int64
 	generationMs   atomic.Int64
+	flushFailures  atomic.Int64
 }
 
 func (b *atomicBucket) add(sample Sample) {

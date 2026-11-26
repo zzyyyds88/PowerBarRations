@@ -57,6 +57,15 @@ func StreamOutcomeError(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 				cause = fmt.Errorf("upstream stream keepalive failed")
 			}
 			return types.NewError(cause, types.ErrorCodeDoRequestFailed, types.ErrOptionWithStatusCode(http.StatusBadGateway))
+		case relaycommon.StreamEndReasonWriteFail:
+			if c != nil && c.Request != nil && c.Request.Context().Err() != nil {
+				return streamClientGoneError()
+			}
+			cause := status.EndError
+			if cause == nil {
+				cause = fmt.Errorf("downstream stream write failed")
+			}
+			return types.NewError(cause, types.ErrorCodeDoRequestFailed, types.ErrOptionWithStatusCode(http.StatusBadGateway))
 		}
 	}
 	// 正常结束（done/eof/handler_stop）但一个内容帧都没写出：上游空响应。

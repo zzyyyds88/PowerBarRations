@@ -174,14 +174,9 @@ func buildMemberGroup(payload *memberGroupPayload, existing *model.MemberGroup, 
 			Disabled:    !enabled,
 		}
 		if len(m.Overrides) > 0 && string(m.Overrides) != "null" {
-			if !json.Valid(m.Overrides) {
+			if _, configErr := model.ParseLaneRelayOverridesE(string(m.Overrides)); configErr != nil {
 				return nil, &apiError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
-					message: "group member.overrides must be valid json"}
-			}
-			var parsed model.LaneRelayOverrides
-			if err := json.Unmarshal(m.Overrides, &parsed); err != nil {
-				return nil, &apiError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
-					message: "group member.overrides has invalid fields"}
+					message: configErr.Message}
 			}
 			item.Overrides = string(m.Overrides)
 		}
@@ -191,11 +186,11 @@ func buildMemberGroup(payload *memberGroupPayload, existing *model.MemberGroup, 
 					message: "public_alias '" + alias + "' conflicts with an existing lane or group member"}
 			}
 			var laneAliasCount int64
-			if err := model.DB.Model(&model.LaneMember{}).Where("public_alias = ?", alias).
+			if err := db.Model(&model.LaneMember{}).Where("public_alias = ?", alias).
 				Count(&laneAliasCount).Error; err != nil {
 				return nil, &apiError{status: http.StatusInternalServerError, code: "internal_error", message: err.Error()}
 			}
-			aliasQuery := model.DB.Model(&model.MemberGroupItem{}).Where("public_alias = ?", alias)
+			aliasQuery := db.Model(&model.MemberGroupItem{}).Where("public_alias = ?", alias)
 			if existing != nil {
 				aliasQuery = aliasQuery.Where("group_id <> ?", existing.Id)
 			}
@@ -276,6 +271,7 @@ func CreateMemberGroup(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	maintainAllRouteRuntime("create_member_group")
 	response := memberGroupResponse(saved)
 	writeAudit(c, "add", "member_group", name, response)
 	c.JSON(http.StatusOK, response)
@@ -329,6 +325,7 @@ func UpdateMemberGroup(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	maintainAllRouteRuntime("update_member_group")
 	if manualLanesCleared == nil {
 		manualLanesCleared = []string{}
 	}
@@ -362,6 +359,7 @@ func DeleteMemberGroup(c *gin.Context) {
 	for _, laneName := range deleted {
 		route.Default.Remove(laneName)
 	}
+	maintainAllRouteRuntime("delete_member_group")
 	manualLanesCleared, _ := model.ReconcileManualActiveMembersByNames(cleaned)
 	if cleaned == nil {
 		cleaned = []string{}

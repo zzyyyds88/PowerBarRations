@@ -15,6 +15,20 @@ import (
 	"gorm.io/gorm"
 )
 
+// maintainLaneRuntime 在配置事务成功后收敛车道运行态。维护失败不回滚已提交配置，
+// 但必须留下可排障告警；Health/请求路径不得调用这些函数。
+func maintainLaneRuntime(operation, lane string) {
+	if err := route.Default.MaintainLane(lane); err != nil {
+		common.SysLog("route runtime maintenance failed: operation=" + operation + " lane=" + lane + " error=" + err.Error())
+	}
+}
+
+func maintainAllRouteRuntime(operation string) {
+	if err := route.Default.MaintainAll(); err != nil {
+		common.SysLog("route runtime maintenance failed: operation=" + operation + " error=" + err.Error())
+	}
+}
+
 // 车道是**唯一路由入口**（ADR 0005，见 docs/routing-spec-v1.md §1.1）：渠道
 // Models 只是候选成员的来源，未固化成同名启用车道前该模型不可调用（503）。
 // 自定义顺序 / 成员改名 / 池化不同上游的不同模型名都通过车道表达。
@@ -169,6 +183,7 @@ func CleanupLaneMembers(c *gin.Context) {
 	for _, name := range result.DeletedLanes {
 		route.Default.Remove(name)
 	}
+	maintainAllRouteRuntime("cleanup_lane_members")
 	manualLanesCleared, _ := model.ReconcileManualActiveMembersByNames(result.CleanedLanes)
 	if result.CleanedLanes == nil {
 		result.CleanedLanes = []string{}
@@ -300,6 +315,7 @@ func PutLane(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	maintainLaneRuntime("put_lane", name)
 	response := laneResponse(c, saved)
 	writeAudit(c, action, "lane", name, response)
 	c.JSON(http.StatusOK, response)
@@ -421,17 +437,12 @@ func buildLane(name string, payload *lanePayload, lookups ...*laneBuildLookup) (
 	}
 
 	if len(payload.Config) > 0 && string(payload.Config) != "null" {
-		if !json.Valid(payload.Config) {
+		parsed, configErr := model.ParseLaneRelayConfigE(string(payload.Config))
+		if configErr != nil {
 			return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
-				message: "config must be valid json"}
+				message: configErr.Message, hint: configErr.Path}
 		}
-		var parsed model.LaneRelayConfig
-		if err := json.Unmarshal(payload.Config, &parsed); err != nil {
-			return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
-				message: "config has invalid fields"}
-		}
-		normalized := parsed.Normalize()
-		raw, _ := json.Marshal(normalized)
+		raw, _ := json.Marshal(parsed)
 		lane.Config = string(raw)
 	}
 	// 车道名若同时被某个成员用作别名，解析会歧义，提前拒绝（api-spec §3 的 409 场景）。
@@ -545,14 +556,9 @@ func buildLaneMember(laneName string, laneID int, laneNames []string, seenAliase
 		Disabled:    !enabled,
 	}
 	if len(m.Overrides) > 0 && string(m.Overrides) != "null" {
-		if !json.Valid(m.Overrides) {
+		if _, configErr := model.ParseLaneRelayOverridesE(string(m.Overrides)); configErr != nil {
 			return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
-				message: "member.overrides must be valid json"}
-		}
-		var parsed model.LaneRelayOverrides
-		if err := json.Unmarshal(m.Overrides, &parsed); err != nil {
-			return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
-				message: "member.overrides has invalid fields"}
+				message: configErr.Message, hint: configErr.Path}
 		}
 		member.Overrides = string(m.Overrides)
 	}
@@ -713,6 +719,7 @@ func PutLaneMembers(c *gin.Context) {
 		writeAPIError(c, err)
 		return
 	}
+	maintainLaneRuntime("put_lane_members", name)
 	response := laneResponse(c, saved)
 	writeAudit(c, "update", "lane_members", name, response)
 	c.JSON(http.StatusOK, response)

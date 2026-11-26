@@ -14,7 +14,6 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/relaykit/dto"
 	"github.com/zzyyyds88/PowerBarRations/relaykit/types"
 
-	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 )
 
@@ -131,9 +130,10 @@ func PostTextUsageLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(completionTokens))
-	})
+	sample := perfmetrics.SnapshotRelaySample(relayInfo)
+	sample.Success = true
+	sample.OutputTokens = int64(completionTokens)
+	perfmetrics.RecordRelaySampleAsync(sample)
 }
 
 // PostAudioUsageLog 记录语音类转发（TTS/STT、含音频分解的 responses）的用量元数据日志。
@@ -171,9 +171,10 @@ func PostAudioUsageLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
-	})
+	sample := perfmetrics.SnapshotRelaySample(relayInfo)
+	sample.Success = true
+	sample.OutputTokens = int64(usage.CompletionTokens)
+	perfmetrics.RecordRelaySampleAsync(sample)
 }
 
 // PostWssUsageLog 记录实时（WebSocket/Realtime）转发的用量元数据日志。

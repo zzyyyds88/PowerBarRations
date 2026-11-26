@@ -217,7 +217,7 @@ func TestAffinityBypassRecordsSkippedForHigherPriority(t *testing.T) {
 func TestRollingWindowFailureRateOpensCircuit(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-p2-rolling-open")
-	key := "11:model-rolling-open"
+	key := testMemberKey("11:model-rolling-open")
 	settings := DefaultCircuitSettings()
 	// 分数与 allowed_fails 两条证据都设为不可达，确保开断只能来自滚动窗口。
 	settings.FailureThreshold = 1000
@@ -244,7 +244,7 @@ func TestRollingWindowFailureRateOpensCircuit(t *testing.T) {
 func TestRollingFailureRateNeedsMinimumSamples(t *testing.T) {
 	withFakeClock(t)
 	runtime := Default.For("lane-p2-rolling-min")
-	key := "12:model-rolling-min"
+	key := testMemberKey("12:model-rolling-min")
 	settings := DefaultCircuitSettings()
 	settings.FailureThreshold = 1000
 	settings.AllowedFails = map[ErrorKind]int{}
@@ -276,14 +276,14 @@ func TestPruneStaleIgnoresOlderLaneVersion(t *testing.T) {
 	// 新配置（版本 2，新增 ch2），先被观测并写入 ch2 的冷却。
 	newRoute := testRoute("lane-p2-stale-version", 2, 1)
 	newRoute.LaneVersion = 2
-	NewState(newRoute)
+	maintainResolvedForTest(t, runtime, newRoute)
 	newKey := memberKeyOf(&newRoute.Members[1])
 	runtime.withLock(func() {
 		runtime.Cooldowns[newKey] = nowMs() + 60_000
 	})
 
 	// 旧配置请求（版本 1）随后到达：必须忽略，不得删除 ch2。
-	NewState(oldRoute)
+	maintainResolvedForTest(t, runtime, oldRoute)
 	runtime.withLock(func() {
 		_, stillThere := runtime.Cooldowns[newKey]
 		assert.True(t, stillThere, "旧配置请求不得删除新配置刚写入的成员运行态")
@@ -292,7 +292,7 @@ func TestPruneStaleIgnoresOlderLaneVersion(t *testing.T) {
 	// 对照：更新版本（3）且成员集合缩小到 {ch1} 时，ch2 应被正常清理（不泄漏）。
 	newer := testRoute("lane-p2-stale-version", 1, 1)
 	newer.LaneVersion = 3
-	NewState(newer)
+	maintainResolvedForTest(t, runtime, newer)
 	runtime.withLock(func() {
 		_, gone := runtime.Cooldowns[newKey]
 		assert.False(t, gone, "更新后的配置删除成员时应正常清理，不得泄漏")
@@ -311,7 +311,7 @@ func TestPruneStaleConcurrentConfigReloadSafe(t *testing.T) {
 	runtime := Default.For(oldRoute.Model)
 	// 先让两条配置都被观测到，运行态进入"已处理版本 2"。
 	NewState(oldRoute)
-	NewState(newRoute)
+	maintainResolvedForTest(t, runtime, newRoute)
 	newKey := memberKeyOf(&newRoute.Members[1])
 
 	var wg sync.WaitGroup
