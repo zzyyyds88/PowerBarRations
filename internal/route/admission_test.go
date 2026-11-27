@@ -375,7 +375,7 @@ func TestLocalThrottleErrorShape(t *testing.T) {
 
 func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-admission-select", 2, 1))
+	state := NewState(testRoute(t, "lane-admission-select", 2, 1))
 	// 只有低优先级成员就绪：选路必须直接顶上，而不是等 P1。
 	state.SetAdmissionReady(func(member *model.RouteMember) bool {
 		return member.Channel == "channel-b"
@@ -386,7 +386,7 @@ func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 
 	// 全部未就绪：Next 返回 false，但 ThrottledMember 给出可排队候选；
 	// 取到槽位后 CommitThrottled 提交该成员（不重复选路）。
-	blocked := NewState(testRoute("lane-admission-select", 2, 1))
+	blocked := NewState(testRoute(t, "lane-admission-select", 2, 1))
 	blocked.SetAdmissionReady(func(*model.RouteMember) bool { return false })
 	_, _, ok = blocked.Next(nil)
 	require.False(t, ok)
@@ -407,7 +407,7 @@ func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 	}
 
 	// 排队期间该成员被同车道其它请求打进冷却：即使已取得准入槽位也不得提交。
-	cooling := NewState(testRoute("lane-admission-select", 2, 1))
+	cooling := NewState(testRoute(t, "lane-admission-select", 2, 1))
 	cooling.SetAdmissionReady(func(*model.RouteMember) bool { return false })
 	_, _, ok = cooling.Next(nil)
 	require.False(t, ok)
@@ -422,7 +422,7 @@ func TestStateAdmissionGivesWayAndCommits(t *testing.T) {
 // 准入等待失败：throttled attempt 必须带回实际 wait_ms（api-spec §4.4），
 // 且不能覆盖其他成员的跳过记录。
 func TestExhaustThrottledRecordsWait(t *testing.T) {
-	state := NewState(testRoute("lane-admission-exhaust-wait", 2, 1))
+	state := NewState(testRoute(t, "lane-admission-exhaust-wait", 2, 1))
 	state.SetAdmissionReady(func(*model.RouteMember) bool { return false })
 	_, _, ok := state.Next(nil)
 	require.False(t, ok)
@@ -447,7 +447,7 @@ func TestExhaustThrottledRecordsWait(t *testing.T) {
 // 先被 throttled 跳过的成员在后续轮次真正被选中/执行时，跳过记录必须消失
 // （throttled 只表示"未被使用"）；不能只在 CommitThrottled 一个入口清理。
 func TestThrottledSkipRemovedWhenMemberSelectedLater(t *testing.T) {
-	state := NewState(testRoute("lane-admission-late-select", 2, 1))
+	state := NewState(testRoute(t, "lane-admission-late-select", 2, 1))
 	aReady := false
 	state.SetAdmissionReady(func(member *model.RouteMember) bool {
 		return member.Channel == "channel-b" || aReady
@@ -471,7 +471,7 @@ func TestThrottledSkipRemovedWhenMemberSelectedLater(t *testing.T) {
 // 排队成功的请求随后在上游失败时，failed attempt 也必须保留排队时长；
 // 否则 wait_ms 只在"排队失败"时出现，成功拿到槽位的等待完全丢失。
 func TestFailedAttemptKeepsQueuedWait(t *testing.T) {
-	state := NewState(testRoute("lane-admission-wait", 1, 1))
+	state := NewState(testRoute(t, "lane-admission-wait", 1, 1))
 	state.SetAdmissionReady(func(*model.RouteMember) bool { return false })
 	_, _, ok := state.Next(nil)
 	require.False(t, ok)

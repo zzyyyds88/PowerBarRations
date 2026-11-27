@@ -22,7 +22,7 @@ func TestTimeoutSharesSoftCooldownTier(t *testing.T) {
 // 而非满档冷却——上游高峰期的单次超时不该把成员锁掉整段 60s。
 func TestTimeoutCooldownScalesLikeSoftTransient(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-timeout-cooldown")
+	runtime := freshRuntime(t, "lane-timeout-cooldown")
 	key := testMemberKey("9:model-timeout")
 
 	runtime.withLock(func() {

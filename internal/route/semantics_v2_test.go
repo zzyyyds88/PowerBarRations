@@ -52,7 +52,7 @@ func TestClassifySkipRetryBeatsErrorCode(t *testing.T) {
 
 func TestDuplicateMembersHaveIndependentRuntime(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-dup-runtime", 1, 1)
+	resolved := testRoute(t, "lane-dup-runtime", 1, 1)
 	second := resolved.Members[0]
 	resolved.Members[0].MemberId = 1
 	second.MemberId = 2
@@ -78,7 +78,7 @@ func TestDuplicateMembersHaveIndependentRuntime(t *testing.T) {
 
 func TestPaceDoesNotMakeMemberUnavailable(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-pace-available", 1, 1)
+	resolved := testRoute(t, "lane-pace-available", 1, 1)
 	state := NewState(resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
@@ -99,7 +99,7 @@ func TestPaceDoesNotMakeMemberUnavailable(t *testing.T) {
 
 func TestHealthExposesLastErrorAndProbePending(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-health-v2", 1, 1)
+	resolved := testRoute(t, "lane-health-v2", 1, 1)
 	state := NewState(resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
@@ -122,7 +122,7 @@ func TestHealthExposesLastErrorAndProbePending(t *testing.T) {
 // 探测槽是车道级单槽：别的成员在探测时，本成员只是"等槽"，不得标成 probe_pending。
 func TestProbePendingOnlyForSlotOwner(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-probe-owner", 2, 1)
+	resolved := testRoute(t, "lane-probe-owner", 2, 1)
 	state := NewState(resolved)
 	firstKey := memberKeyOf(&resolved.Members[0])
 	secondKey := memberKeyOf(&resolved.Members[1])
@@ -146,7 +146,7 @@ func TestProbePendingOnlyForSlotOwner(t *testing.T) {
 
 func TestResetClearsPaceAndLaneDown(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-reset-v2")
+	runtime := freshRuntime(t, "lane-reset-v2")
 	key := testMemberKey("13:model-reset-v2")
 	runtime.withLock(func() {
 		runtime.PacedUntil[key] = nowMs() + 30_000
@@ -178,8 +178,8 @@ func TestClearMemberPenaltyAcrossLanes(t *testing.T) {
 		return MemberKey{ChannelID: 14, UpstreamModel: "model-probe", MemberID: memberId}
 	}
 
-	laneA := Default.For("lane-probe-clear-a")
-	laneB := Default.For("lane-probe-clear-b")
+	laneA := freshRuntime(t, "lane-probe-clear-a")
+	laneB := freshRuntime(t, "lane-probe-clear-b")
 	for _, runtime := range []*Runtime{laneA, laneB} {
 		runtime.withLock(func() {
 			runtime.Cooldowns[key(1)] = nowMs() + 60_000
@@ -216,7 +216,7 @@ func TestClearMemberPenaltyAcrossLanes(t *testing.T) {
 func TestClearMemberPenaltyDropsProbeBusyFlagAfterRelease(t *testing.T) {
 	withFakeClock(t)
 	key := testMemberKey("15:model-probe#2")
-	runtime := Default.For("lane-probe-clear-release")
+	runtime := freshRuntime(t, "lane-probe-clear-release")
 	runtime.withLock(func() {
 		runtime.Cooldowns[key] = nowMs() + 60_000
 		runtime.probe = &ProbeLease{expiresAt: nowMs() + 60000}
@@ -237,7 +237,7 @@ func TestClearMemberPenaltyDropsProbeBusyFlagAfterRelease(t *testing.T) {
 // 渠道级探活没有 memberId：清理该 (channel, model) 下的全部成员条目。
 func TestClearMemberPenaltyChannelScopeClearsAllMemberIDs(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-probe-clear-channel")
+	runtime := freshRuntime(t, "lane-probe-clear-channel")
 	for _, memberId := range []int{1, 2} {
 		key := MemberKey{ChannelID: 16, UpstreamModel: "model-shared", MemberID: memberId}
 		runtime.withLock(func() {
@@ -252,7 +252,7 @@ func TestClearMemberPenaltyChannelScopeClearsAllMemberIDs(t *testing.T) {
 // 渠道停用属配置态跳过：不写冷却、不计熔断分（routing-spec §5.3）。
 func TestReportMemberConfigSkipIsNotFailure(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-config-skip", 2, 2)
+	resolved := testRoute(t, "lane-config-skip", 2, 2)
 	resolved.Members[0].ChannelEnabled = false
 	state := NewState(resolved)
 	member, _, ok := state.Next(nil)
@@ -285,7 +285,7 @@ func TestReportMemberConfigSkipIsNotFailure(t *testing.T) {
 // 否则"打开编辑再保存"会清空冷却/熔断（L2 runbook 3d）。
 func TestPruneMigratesRuntimeAcrossMemberIdChange(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-prune-migrate")
+	runtime := freshRuntime(t, "lane-prune-migrate")
 	oldKey := testMemberKey("20:model-x#1")
 	newKey := testMemberKey("20:model-x#2")
 	until := nowMs() + 120_000
@@ -309,7 +309,7 @@ func TestPruneMigratesRuntimeAcrossMemberIdChange(t *testing.T) {
 // 重复成员（同渠道同模型多条）无法判定旧键归属：不得迁移，宁可丢也不串。
 func TestPruneDoesNotMigrateAmbiguousDuplicateMembers(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-prune-ambiguous")
+	runtime := freshRuntime(t, "lane-prune-ambiguous")
 	oldKey := testMemberKey("21:model-y#1")
 	valid := map[MemberKey]bool{testMemberKey("21:model-y#2"): true, testMemberKey("21:model-y#3"): true}
 	runtime.withLock(func() {

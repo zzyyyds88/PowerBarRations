@@ -11,7 +11,7 @@ import (
 // 审查 7a 回归：hard_auth / hard_quota 的冷却必须取较长档（routing-spec §4.1）。
 func TestHardAuthUsesLongerCooldownTier(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-hard-cooldown", 2, 1)
+	resolved := testRoute(t, "lane-hard-cooldown", 2, 1)
 	resolved.Config.MemberCooldownSeconds = 10
 	state := NewState(resolved)
 
@@ -38,7 +38,7 @@ func TestHardAuthUsesLongerCooldownTier(t *testing.T) {
 // （2026-10-23 Opencode1/华为云 实案）。本测试锁住新契约：base=10 时首次只歇 5s。
 func TestSoftTransientCooldownIsGraded(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-soft-cooldown", 1, 1)
+	resolved := testRoute(t, "lane-soft-cooldown", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 10
 	state := NewState(resolved)
 
@@ -57,7 +57,7 @@ func TestSoftTransientCooldownIsGraded(t *testing.T) {
 // 压着冷却强行上一个，而不是对外返回 503 —— 否则一次抖动就能把整条通道变成不可用。
 func TestPanicModeServesWhenEveryMemberCooling(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-panic", 2, 1)
+	resolved := testRoute(t, "lane-panic", 2, 1)
 	resolved.Config.MemberCooldownSeconds = 60
 	state := NewState(resolved)
 	rt := Default.For(resolved.Model)
@@ -85,7 +85,7 @@ func TestPanicModeServesWhenEveryMemberCooling(t *testing.T) {
 // 恐慌模式不得越过"人工停用"与"熔断打开"：这两类属于确定不可用。
 func TestPanicModeSkipsDisabledAndOpenCircuit(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-panic-guard", 1, 1)
+	resolved := testRoute(t, "lane-panic-guard", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 60
 	resolved.Members[0].Disabled = true
 	state := NewState(resolved)
@@ -97,7 +97,7 @@ func TestPanicModeSkipsDisabledAndOpenCircuit(t *testing.T) {
 // 审查 7c 回归：半开成员不得被并发请求当作健康成员直接选中绕过单探测槽。
 func TestHalfOpenCircuitOnlyAllowsSingleProbe(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-half-open", 1, 1)
+	resolved := testRoute(t, "lane-half-open", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 5
 	state := NewState(resolved)
 	key := memberKeyOf(&resolved.Members[0])
@@ -130,7 +130,7 @@ func TestHalfOpenCircuitOnlyAllowsSingleProbe(t *testing.T) {
 // 审查 7b 回归：成员渠道不可用要记一次失败并进冷却，不能只跳过。
 func TestUnavailableChannelCountsAsFailure(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-unavailable", 1, 1)
+	resolved := testRoute(t, "lane-unavailable", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 30
 	state := NewState(resolved)
 

@@ -69,6 +69,9 @@ func TestEveryManagementWriteRouteDeclaresDryRun(t *testing.T) {
 func TestDryRunDeclarationsMatchRegisteredRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
+	// 声明表同时包含稳定面与基座遗留面；两边都要注册，否则同一进程重复执行时
+	// 前一轮 SetApiRouter 留下的声明会被误报成"幽灵路由"。
+	SetApiRouter(engine)
 	SetPBRRouter(engine)
 
 	registered := map[string]bool{}

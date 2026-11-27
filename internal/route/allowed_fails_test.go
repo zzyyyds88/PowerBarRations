@@ -31,7 +31,7 @@ func TestParseAllowedFails(t *testing.T) {
 // 注意 soft_rate_limit 不参与判罚（routing-spec §4.1.1），这里用 soft_transient 验证机制本身。
 func TestAllowedFailsOpensCircuitPerKind(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-allowed-fails")
+	runtime := freshRuntime(t, "lane-allowed-fails")
 	key := testMemberKey("7:model-allowed")
 	settings := DefaultCircuitSettings()
 	settings.FailureThreshold = 100 // 分数阈值不可达
@@ -53,7 +53,7 @@ func TestAllowedFailsOpensCircuitPerKind(t *testing.T) {
 // 429 只减速、不判罚：即使 allowed_fails 配置成 1，也不能打开熔断或写冷却。
 func TestRateLimitNeverOpensCircuitOrCooldown(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-rate-limit-no-fault")
+	runtime := freshRuntime(t, "lane-rate-limit-no-fault")
 	key := testMemberKey("7:model-paced")
 	settings := DefaultCircuitSettings()
 	settings.AllowedFails = map[ErrorKind]int{KindSoftRateLimit: 1}
@@ -76,7 +76,7 @@ func TestRateLimitNeverOpensCircuitOrCooldown(t *testing.T) {
 // 成功会清零按类型的连续失败计数，避免"跨恢复周期累计"误开断。
 func TestSuccessResetsAllowedFailStreak(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-allowed-reset")
+	runtime := freshRuntime(t, "lane-allowed-reset")
 	key := testMemberKey("8:model-reset")
 	settings := DefaultCircuitSettings()
 	settings.FailureThreshold = 100
@@ -100,7 +100,7 @@ func TestSuccessResetsAllowedFailStreak(t *testing.T) {
 func TestRetryAfterSetsMemberPace(t *testing.T) {
 	clock := withFakeClock(t)
 	// 每次选中即消耗 1 点尝试预算；给 2 点才能观察"429 原地重试"。
-	resolved := testRoute("lane-retry-after", 2, 2)
+	resolved := testRoute(t, "lane-retry-after", 2, 2)
 	resolved.Config.MemberCooldownSeconds = 5
 	state := NewState(resolved)
 
@@ -125,7 +125,7 @@ func TestRetryAfterSetsMemberPace(t *testing.T) {
 // 非 429 的 Retry-After 仍然延长成员冷却（先本地分级、再取较大值、最后封顶+抖动）。
 func TestRetryAfterExtendsMemberCooldown(t *testing.T) {
 	clock := withFakeClock(t)
-	runtime := Default.For("lane-retry-after-cooldown")
+	runtime := freshRuntime(t, "lane-retry-after-cooldown")
 	key := testMemberKey("10:model-cooldown")
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindSoftTransient, 5, 30, true, DefaultCircuitSettings())
@@ -137,7 +137,7 @@ func TestRetryAfterExtendsMemberCooldown(t *testing.T) {
 
 func TestRetryAfterCooldownIsCapped(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-retry-after-cap")
+	runtime := freshRuntime(t, "lane-retry-after-cap")
 	key := testMemberKey("9:model-cap")
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindSoftTransient, 5, 999_999, true, DefaultCircuitSettings())
@@ -150,7 +150,7 @@ func TestRetryAfterCooldownIsCapped(t *testing.T) {
 // 429 的减速同样有上限：上游给再大的 Retry-After 也不能把成员无限期钉住。
 func TestRateLimitPaceIsCapped(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-pace-cap")
+	runtime := freshRuntime(t, "lane-pace-cap")
 	key := testMemberKey("9:model-pace-cap")
 	runtime.withLock(func() {
 		runtime.recordFailure(key, KindSoftRateLimit, 5, 999_999, true, DefaultCircuitSettings())

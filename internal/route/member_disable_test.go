@@ -15,7 +15,7 @@ import (
 // failover 跳过被关闭成员，并在 attempts 留痕 `disabled`（不得复用 cooldown/skipped）。
 func TestFailoverSkipsDisabledMemberAndRecordsDisabledStatus(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-failover", 2, 1)
+	resolved := testRoute(t, "lane-disable-failover", 2, 1)
 	resolved.Members[0].Disabled = true
 	state := NewState(resolved)
 
@@ -34,7 +34,7 @@ func TestFailoverSkipsDisabledMemberAndRecordsDisabledStatus(t *testing.T) {
 // manual 的 active_member 被关闭 → 无可用，绝不静默换人。
 func TestManualDisabledActiveMemberReturnsUnavailable(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-manual", 2, 2)
+	resolved := testRoute(t, "lane-disable-manual", 2, 2)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-a/model-1"
 	resolved.Members[0].Disabled = true
@@ -53,7 +53,7 @@ func TestManualDisabledActiveMemberReturnsUnavailable(t *testing.T) {
 // 跳过被关闭成员不得写冷却、不得建立熔断器——它是配置态结论，不产生运行态副作用。
 func TestDisablingMemberWritesNoRuntimeState(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-no-runtime", 2, 1)
+	resolved := testRoute(t, "lane-disable-no-runtime", 2, 1)
 	resolved.Members[0].Disabled = true
 	state := NewState(resolved)
 
@@ -71,7 +71,7 @@ func TestDisablingMemberWritesNoRuntimeState(t *testing.T) {
 // 恒为 0，因此这里两串的差异只可能来自 Disabled 本身——正是这条契约要保护的场景：
 // 不能靠"整体替换让主键变化"这类副作用驱动快照重建。
 func TestSnapshotSignatureSensitiveToDisabled(t *testing.T) {
-	resolved := testRoute("lane-disable-signature", 2, 2)
+	resolved := testRoute(t, "lane-disable-signature", 2, 2)
 	before := routeSnapshotSignature(resolved)
 
 	resolved.Members[1].Disabled = true
@@ -83,7 +83,7 @@ func TestSnapshotSignatureSensitiveToDisabled(t *testing.T) {
 // 被关闭成员绝不占用每轮唯一的半开探测槽，否则一个关着的成员会饿死整条链的恢复探测。
 func TestDisabledMemberNeverClaimsProbeSlot(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-probe", 2, 2)
+	resolved := testRoute(t, "lane-disable-probe", 2, 2)
 	// ch1 优先级更高且冷却已到期（本是探测候选），但它被人工停用；
 	// ch2 同样到探测窗口，应由 ch2 取得槽位。
 	resolved.Members[0].Disabled = true
@@ -107,7 +107,7 @@ func TestDisabledMemberNeverClaimsProbeSlot(t *testing.T) {
 // 关闭当前成员即打破亲和，立即按顺序重选，而不是等亲和窗口到期。
 func TestDisablingCurrentMemberBreaksAffinityImmediately(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-affinity", 2, 2)
+	resolved := testRoute(t, "lane-disable-affinity", 2, 2)
 	state := NewState(resolved)
 	key1 := memberKeyOf(&resolved.Members[0])
 
@@ -132,7 +132,7 @@ func TestDisablingCurrentMemberBreaksAffinityImmediately(t *testing.T) {
 // 全部成员被关闭：成员链仍解析得到（停用≠删除），但选路无可用。
 func TestAllMembersDisabledKeepsChainButYieldsNoMember(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-all", 2, 2)
+	resolved := testRoute(t, "lane-disable-all", 2, 2)
 	for i := range resolved.Members {
 		resolved.Members[i].Disabled = true
 	}
@@ -153,7 +153,7 @@ func TestAllMembersDisabledKeepsChainButYieldsNoMember(t *testing.T) {
 // 不归零也不省略——排障要能同时看到"我把它关了"和"关之前它是什么状态"。
 func TestHealthSnapshotReportsDisabledWithoutErasingRuntime(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-disable-health", 2, 2)
+	resolved := testRoute(t, "lane-disable-health", 2, 2)
 	resolved.Members[0].Disabled = true
 	state := NewState(resolved)
 	key1 := memberKeyOf(&resolved.Members[0])

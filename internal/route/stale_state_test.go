@@ -14,7 +14,7 @@ import (
 // 成员删除后重新加回同一 (channel_id, upstream_model) 会复用同一个运行态键，
 // 若不清残留，新成员会直接继承旧的冷却/熔断。
 func TestStaleStatePrunedWhenMemberRemoved(t *testing.T) {
-	resolved := testRoute("stale-prune", 2, 1)
+	resolved := testRoute(t, "stale-prune", 2, 1)
 	state := NewState(resolved)
 	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
@@ -38,7 +38,7 @@ func TestStaleStatePrunedWhenMemberRemoved(t *testing.T) {
 
 // live 探测租约不随 memberId 迁移或清理。
 func TestProbeSlotReleasedWhenOwningMemberRemoved(t *testing.T) {
-	resolved := testRoute("stale-probe", 2, 1)
+	resolved := testRoute(t, "stale-probe", 2, 1)
 	state := NewState(resolved)
 	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
@@ -59,7 +59,7 @@ func TestProbeSlotReleasedWhenOwningMemberRemoved(t *testing.T) {
 // 反向守卫：解析结果为空（模型暂时没有可用渠道）时**不得**清空状态，
 // 否则渠道恢复后冷却/熔断的退避保护会丢失。
 func TestStaleStateKeptWhenNoMembersResolved(t *testing.T) {
-	resolved := testRoute("stale-keep", 1, 1)
+	resolved := testRoute(t, "stale-keep", 1, 1)
 	state := NewState(resolved)
 	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])
@@ -68,7 +68,7 @@ func TestStaleStateKeptWhenNoMembersResolved(t *testing.T) {
 		state.Runtime.Cooldowns[key] = nowMs() + 3_600_000
 	})
 
-	empty := testRoute("stale-keep", 0, 1)
+	empty := testRoute(t, "stale-keep", 0, 1)
 	maintainResolvedForTest(t, state.Runtime, empty)
 
 	state.Runtime.withLock(func() {
@@ -80,7 +80,7 @@ func TestStaleStateKeptWhenNoMembersResolved(t *testing.T) {
 
 // 正常路径不受影响：仍在成员链里的冷却状态必须保留。
 func TestStaleStateKeepsActiveMembers(t *testing.T) {
-	resolved := testRoute("stale-active", 2, 1)
+	resolved := testRoute(t, "stale-active", 2, 1)
 	state := NewState(resolved)
 	maintainResolvedForTest(t, state.Runtime, resolved)
 	key := memberKeyOf(&resolved.Members[0])

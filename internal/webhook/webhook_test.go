@@ -54,6 +54,7 @@ func restoreConfig(t *testing.T) {
 		configLoader = func() string { return common.OptionMap[OptionKey] }
 		stormMu.Lock()
 		stormLast = map[string]int64{}
+		lastOpenNotify = map[string]int64{}
 		stormMu.Unlock()
 	})
 }

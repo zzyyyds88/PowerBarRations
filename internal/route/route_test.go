@@ -20,8 +20,21 @@ import (
 // 选路与容错验收：尝试循环、错误分类、冷却、熔断三态、亲和、四种模式。
 // 依据 docs/routing-spec-v1.md §2 / §3 / §4 / §5 / §6。
 
+// freshRuntime 取一条干净的进程级运行态，并在用例结束移除；直接使用
+// Default.For("...") 会让 -count>1 的下一轮继承上一轮冷却/熔断/事件。
+func freshRuntime(t *testing.T, lane string) *Runtime {
+	t.Helper()
+	Default.Remove(lane)
+	t.Cleanup(func() { Default.Remove(lane) })
+	return Default.For(lane)
+}
+
 // testRoute 造一条独立车道的解析结果（车道名唯一，避免共享进程内运行态）。
-func testRoute(lane string, members int, maxAttempts int) *model.ResolvedRoute {
+func testRoute(t *testing.T, lane string, members int, maxAttempts int) *model.ResolvedRoute {
+	t.Helper()
+	// 运行态注册表是进程级单例：测试结束必须清掉本用例的车道键，
+	// 否则 -count>1 或同包重复执行会带着上一轮冷却/熔断/亲和进入下一轮。
+	t.Cleanup(func() { Default.Remove(lane) })
 	cfg := model.DefaultLaneRelayConfig()
 	cfg.MemberMaxAttempts = maxAttempts
 	cfg.MemberRetryIntervalSeconds = 0
@@ -66,7 +79,7 @@ func memberName(m *model.RouteMember) string {
 }
 
 func TestStateNextPublishesUpstreamBurstOnce(t *testing.T) {
-	resolved := testRoute("burst-event", 1, 10)
+	resolved := testRoute(t, "burst-event", 1, 10)
 	SetUpstreamBurstDetector(events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{Threshold: 3, Window: time.Minute}))
 	t.Cleanup(func() {
 		SetUpstreamBurstDetector(events.NewUpstreamBurstDetector(events.UpstreamBurstConfig{}))
@@ -103,7 +116,7 @@ func TestStateNextPublishesUpstreamBurstOnce(t *testing.T) {
 }
 
 func TestPriorityChangeClearsExistingAffinity(t *testing.T) {
-	first := testRoute("priority-hot-reload", 2, 2)
+	first := testRoute(t, "priority-hot-reload", 2, 2)
 	state := NewState(first)
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -113,7 +126,7 @@ func TestPriorityChangeClearsExistingAffinity(t *testing.T) {
 		state.Runtime.AffinityUntil = nowMs() + 300_000
 	})
 
-	updated := testRoute("priority-hot-reload", 2, 2)
+	updated := testRoute(t, "priority-hot-reload", 2, 2)
 	updated.Members[0], updated.Members[1] = updated.Members[1], updated.Members[0]
 	updated.Members[0].Priority = 2
 	updated.Members[1].Priority = 1
@@ -221,7 +234,7 @@ func WithQuotaKeywordMatcher(t *testing.T, matcher func(string) bool) {
 // 软故障先用满单成员预算，再换下一个成员（routing-spec §3.1）。
 func TestSoftFailureRetriesSameMemberThenFailsOver(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-retry-budget", 2, 2))
+	state := NewState(testRoute(t, "lane-retry-budget", 2, 2))
 
 	member, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -248,7 +261,7 @@ func TestSoftFailureRetriesSameMemberThenFailsOver(t *testing.T) {
 // 硬故障不在原地重试，立即换人。
 func TestHardAuthFailsOverImmediately(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-hard-auth", 2, 2))
+	state := NewState(testRoute(t, "lane-hard-auth", 2, 2))
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
 
@@ -260,7 +273,7 @@ func TestHardAuthFailsOverImmediately(t *testing.T) {
 // client_error 不换人、不冷却、不记熔断（否则一个坏请求会把健康成员打冷）。
 func TestClientErrorDoesNotFailOverNorCooldown(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-client-error", 2, 2)
+	resolved := testRoute(t, "lane-client-error", 2, 2)
 	state := NewState(resolved)
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -275,7 +288,7 @@ func TestClientErrorDoesNotFailOverNorCooldown(t *testing.T) {
 
 func TestSingleMemberExhaustion(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-single", 1, 1))
+	state := NewState(testRoute(t, "lane-single", 1, 1))
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
 	_, _, ok = state.Next(apiError(http.StatusInternalServerError, "", false))
@@ -284,14 +297,14 @@ func TestSingleMemberExhaustion(t *testing.T) {
 }
 
 func TestMaxRetriesForLoopCoversAllMembers(t *testing.T) {
-	assert.Equal(t, 4, NewState(testRoute("lane-max-2x2", 2, 2)).MaxRetriesForLoop())
-	assert.Equal(t, 3, NewState(testRoute("lane-max-3x1", 3, 1)).MaxRetriesForLoop())
+	assert.Equal(t, 4, NewState(testRoute(t, "lane-max-2x2", 2, 2)).MaxRetriesForLoop())
+	assert.Equal(t, 3, NewState(testRoute(t, "lane-max-3x1", 3, 1)).MaxRetriesForLoop())
 }
 
 // 同成员原地重试要按 member_retry_interval_seconds 给出等待时长（§3.1）。
 func TestRetryIntervalReportedForSameMemberRetry(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-retry-interval", 1, 3)
+	resolved := testRoute(t, "lane-retry-interval", 1, 3)
 	resolved.Config.MemberRetryIntervalSeconds = 7
 	state := NewState(resolved)
 
@@ -306,7 +319,7 @@ func TestRetryIntervalReportedForSameMemberRetry(t *testing.T) {
 
 func TestPinnedMemberTriedFirst(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-pinned", 3, 1)
+	resolved := testRoute(t, "lane-pinned", 3, 1)
 	resolved.PinnedMemberId = 42
 	resolved.Members[2].MemberId = 42
 	state := NewState(resolved)
@@ -322,7 +335,7 @@ func TestPinnedMemberTriedFirst(t *testing.T) {
 
 func TestNoMembersImmediatelyExhausted(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-empty", 0, 2))
+	state := NewState(testRoute(t, "lane-empty", 0, 2))
 	_, _, ok := state.Next(nil)
 	assert.False(t, ok)
 }
@@ -332,7 +345,7 @@ func TestNoMembersImmediatelyExhausted(t *testing.T) {
 // 成员预算耗尽 → 冷却期间被跳过；冷却到期 → 只放行一个探测（§6）。
 func TestCooldownSkipsThenAllowsSingleProbe(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-cooldown", 2, 1)
+	resolved := testRoute(t, "lane-cooldown", 2, 1)
 	resolved.Config.MemberCooldownSeconds = 5
 	state := NewState(resolved)
 
@@ -371,7 +384,7 @@ func TestCooldownSkipsThenAllowsSingleProbe(t *testing.T) {
 // 熔断：连续软故障达阈值 → 打开并快抛；退避期到 → 半开放一个探测；成功 → 复通。
 func TestCircuitOpensHalfOpensAndRecovers(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-circuit", 1, 1)
+	resolved := testRoute(t, "lane-circuit", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 1
 	soft := apiError(http.StatusInternalServerError, "", false)
 	runtime := Default.For(resolved.Model)
@@ -439,7 +452,7 @@ func TestCircuitOpensHalfOpensAndRecovers(t *testing.T) {
 // 429 权重低：持续限流不应像硬故障那样快速打开熔断（design-v1 §7.5）。
 func TestRateLimitDoesNotOpenCircuitAsFastAsHardFailure(t *testing.T) {
 	clock := withFakeClock(t)
-	softRoute := testRoute("lane-soft-weight", 1, 1)
+	softRoute := testRoute(t, "lane-soft-weight", 1, 1)
 	softRoute.Config.MemberCooldownSeconds = 1
 	soft := apiError(http.StatusTooManyRequests, "", false)
 
@@ -461,7 +474,7 @@ func TestRateLimitDoesNotOpenCircuitAsFastAsHardFailure(t *testing.T) {
 // 指数退避：重复打开时时长按 2^k 增长（设上限）。
 func TestCircuitBackoffGrowsOnRepeatedOpen(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-backoff", 1, 1)
+	resolved := testRoute(t, "lane-backoff", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 1
 	runtime := Default.For(resolved.Model)
 	settings := DefaultCircuitSettings()
@@ -489,7 +502,7 @@ func TestCircuitBackoffGrowsOnRepeatedOpen(t *testing.T) {
 // 亲和默认 0：不做粘滞，高优先级成员恢复后立刻切回（design-v1 §7.3）。
 func TestDefaultAffinityDoesNotStick(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-affinity-default", 2, 1)
+	resolved := testRoute(t, "lane-affinity-default", 2, 1)
 	assert.Zero(t, resolved.Config.MemberAffinitySeconds)
 
 	state := NewState(resolved)
@@ -513,7 +526,7 @@ func TestDefaultAffinityDoesNotStick(t *testing.T) {
 // 显式配置亲和：切到低优先级成员成功后，亲和期内保持粘滞（routing-spec §6）。
 func TestConfiguredAffinitySticksWithinWindow(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-affinity-set", 2, 1)
+	resolved := testRoute(t, "lane-affinity-set", 2, 1)
 	resolved.Config.MemberAffinitySeconds = 300
 
 	state := NewState(resolved)
@@ -546,7 +559,7 @@ func TestConfiguredAffinitySticksWithinWindow(t *testing.T) {
 
 func TestManualModeUsesOnlyActiveMember(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-manual", 3, 1)
+	resolved := testRoute(t, "lane-manual", 3, 1)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-b/model-1"
 	state := NewState(resolved)
@@ -562,7 +575,7 @@ func TestManualModeUsesOnlyActiveMember(t *testing.T) {
 
 func TestManualModeWithoutActiveMemberIsUnavailable(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-manual-empty", 2, 1)
+	resolved := testRoute(t, "lane-manual-empty", 2, 1)
 	resolved.Mode = model.LaneModeManual
 	state := NewState(resolved)
 	_, _, ok := state.Next(nil)
@@ -593,7 +606,7 @@ func eventTypes(runtime *Runtime) []string {
 // 探测槽：client_error / canceled 不换人，收尾必须能归还（否则该成员被永久跳过）。
 func TestReleaseProbeReturnsSlot(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-probe-release", 1, 1)
+	resolved := testRoute(t, "lane-probe-release", 1, 1)
 	runtime := Default.For(resolved.Model)
 
 	state := NewState(resolved)
@@ -616,8 +629,8 @@ func TestReleaseProbeReturnsSlot(t *testing.T) {
 // 运行态键：别名点名与车道名必须共享同一份运行态（routing-spec §1.3「每车道一份」）。
 func TestAliasAndLaneShareRuntime(t *testing.T) {
 	withFakeClock(t)
-	laneRoute := testRoute("lane-shared", 1, 1)
-	aliasRoute := testRoute("lane-shared", 1, 1)
+	laneRoute := testRoute(t, "lane-shared", 1, 1)
+	aliasRoute := testRoute(t, "lane-shared", 1, 1)
 	aliasRoute.Model = "some-alias" // 别名点名：Model 是别名，RouteKey 仍是车道名
 	// 生产解析器对显式车道（含别名点名）总是填 RouteKey = 车道名
 	// （model/lane.go ResolveRoute），这里对齐真实形态。
@@ -631,7 +644,7 @@ func TestAliasAndLaneShareRuntime(t *testing.T) {
 // 成员级覆盖：预算 / 冷却 / 重试间隔都要按成员生效（design-v1 §7.3、routing-spec §3.1）。
 func TestMemberLevelOverridesTakeEffect(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-member-overrides", 2, 3)
+	resolved := testRoute(t, "lane-member-overrides", 2, 3)
 	resolved.Members[0].Overrides = `{"member_max_attempts":1,"member_retry_interval_seconds":0}`
 	resolved.Members[1].Overrides = `{"member_max_attempts":2}`
 
@@ -650,7 +663,7 @@ func TestMemberLevelOverridesTakeEffect(t *testing.T) {
 // 成员级冷却覆盖：冷却时长按成员值写入运行态。
 func TestMemberLevelCooldownOverride(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-member-cooldown", 1, 1)
+	resolved := testRoute(t, "lane-member-cooldown", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 60
 	resolved.Members[0].Overrides = `{"member_cooldown_seconds":3}`
 
@@ -701,7 +714,7 @@ func TestCanceledStaysCanceled(t *testing.T) {
 // 加上 omitempty 后该字段在响应里根本不出现，排障时无法判断"哪个成员慢"。
 func TestFailedAttemptRecordsDuration(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-duration", 1, 1))
+	state := NewState(testRoute(t, "lane-duration", 1, 1))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -721,7 +734,7 @@ func TestFailedAttemptRecordsDuration(t *testing.T) {
 // 成功尝试同样带耗时（api-spec §4.4 示例：success 项含 duration_ms）。
 func TestSuccessAttemptRecordsDuration(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-duration-ok", 1, 1))
+	state := NewState(testRoute(t, "lane-duration-ok", 1, 1))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -736,7 +749,7 @@ func TestSuccessAttemptRecordsDuration(t *testing.T) {
 // client_error 不换人，但仍是一次真实尝试，必须留痕并带耗时。
 func TestClientErrorAttemptStillRecorded(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-duration-client", 1, 1))
+	state := NewState(testRoute(t, "lane-duration-client", 1, 1))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -757,7 +770,7 @@ func TestClientErrorAttemptStillRecorded(t *testing.T) {
 // 冷却中的高优先级成员必须留下 cooldown 记录，用于解释"为什么没用 P1"。
 func TestCooldownMemberRecordedAsCooldown(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-skip-cooldown", 2, 1)
+	resolved := testRoute(t, "lane-skip-cooldown", 2, 1)
 	state := NewState(resolved)
 
 	// 让 ch1 进入冷却（未到期）
@@ -780,7 +793,7 @@ func TestCooldownMemberRecordedAsCooldown(t *testing.T) {
 // 熔断打开的成员留下 circuit_break 记录。
 func TestCircuitOpenMemberRecordedAsCircuitBreak(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-skip-circuit", 2, 1)
+	resolved := testRoute(t, "lane-skip-circuit", 2, 1)
 	state := NewState(resolved)
 
 	state.Runtime.withLock(func() {
@@ -811,7 +824,7 @@ func TestFailedMemberNotAlsoRecordedAsCooldown(t *testing.T) {
 	withFakeClock(t)
 	// 预算 2：ch1 首发硬故障后**预算仍有剩余**，于是本轮选路会再次遍历到它；
 	// 而它此刻已因失败进冷却——这正是重复记录的触发条件。
-	state := NewState(testRoute("lane-skip-after-fail", 2, 2))
+	state := NewState(testRoute(t, "lane-skip-after-fail", 2, 2))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -830,7 +843,7 @@ func TestFailedMemberNotAlsoRecordedAsCooldown(t *testing.T) {
 // 会与单测里看到的链不一致。
 func TestLogAttemptsMirrorsHistory(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-log-attempts", 2, 1))
+	state := NewState(testRoute(t, "lane-log-attempts", 2, 1))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -857,7 +870,7 @@ func TestLogAttemptsMirrorsHistory(t *testing.T) {
 // 同一成员多轮被跳过时只记一次，避免尝试链被噪声撑大。
 func TestSkipRecordedOncePerMember(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-skip-dedup", 2, 2)
+	resolved := testRoute(t, "lane-skip-dedup", 2, 2)
 	state := NewState(resolved)
 
 	state.Runtime.withLock(func() {
