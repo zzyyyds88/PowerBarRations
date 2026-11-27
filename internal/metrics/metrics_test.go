@@ -312,6 +312,20 @@ func TestSetChannelState(t *testing.T) {
 // TestPackageLevelWrappersUseDefaultMetrics 验证包级入口转发到默认实例。
 func TestPackageLevelWrappersUseDefaultMetrics(t *testing.T) {
 	const probe = "__metrics_default_probe__"
+	labels := map[string]string{
+		"model": probe, "lane": probe, "channel": probe, "status": "204",
+	}
+	// 默认实例是进程级的，同包重复执行时计数会累加；断言增量而不是绝对值，
+	// 避免测试自己制造"全局状态不可重复"的假失败。首次执行时该序列还不存在。
+	before := float64(0)
+	if family, ok := scrapeFamilies(t, Handler())["pbr_requests_total"]; ok {
+		for _, metric := range family.GetMetric() {
+			if hasLabels(metric, labels) {
+				before = metric.GetCounter().GetValue()
+				break
+			}
+		}
+	}
 	ObserveRequest(RequestObservation{
 		Model: probe, Lane: probe, Channel: probe, Status: http.StatusNoContent,
 		Duration: time.Millisecond,
@@ -319,10 +333,8 @@ func TestPackageLevelWrappersUseDefaultMetrics(t *testing.T) {
 	SetChannelState(probe, circuitStateHalfOpen, true)
 
 	families := scrapeFamilies(t, Handler())
-	if got := counterValue(t, families, "pbr_requests_total", map[string]string{
-		"model": probe, "lane": probe, "channel": probe, "status": "204",
-	}); got != 1 {
-		t.Fatalf("默认实例请求计数 = %v，want 1", got)
+	if got := counterValue(t, families, "pbr_requests_total", labels); got != before+1 {
+		t.Fatalf("默认实例请求计数 = %v，want %v", got, before+1)
 	}
 	if got := gaugeValue(t, families, "pbr_circuit_state", map[string]string{"channel": probe}); got != 1 {
 		t.Fatalf("默认实例熔断状态 = %v，want 1", got)
