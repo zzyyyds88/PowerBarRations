@@ -14,6 +14,7 @@ import (
 	"github.com/zzyyyds88/PowerBarRations/internal/webhook"
 )
 
+// 修改进程级 OptionMap，测试之间必须串行；禁止对本文件用例加 t.Parallel。
 func setOptionForTest(t *testing.T, key, value string) {
 	t.Helper()
 	common.OptionMapRWMutex.Lock()

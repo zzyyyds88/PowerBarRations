@@ -249,6 +249,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// 注册在错误写出 defer 之后 → 先于它执行，能把 panic 变成一条结构化失败。
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			// debug.Stack() 只有函数/文件/行号，不含运行值；recovered 才可能
+			// 携带上游 URL/key，因此只对 recovered 脱敏。
 			logger.LogError(c, fmt.Sprintf("relay panic: %s\n%s", common.MaskedLogPreview(fmt.Sprint(recovered)), debug.Stack()))
 			newAPIError = types.NewError(
 				fmt.Errorf("relay panic: %v", recovered),

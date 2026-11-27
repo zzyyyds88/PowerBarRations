@@ -189,6 +189,9 @@ func FlushPBRStatsOutbox(ctx context.Context) error {
 func drainPBRStatsOutbox(ctx context.Context) (processed int, err error) {
 	pbrStatsOutboxMu.Lock()
 	defer pbrStatsOutboxMu.Unlock()
+	// 即使因记账失败提前返回也要刷新积压 gauge，否则磁盘满期间 health 会
+	// 一直展示旧值。
+	defer updatePBRStatsOutboxMetrics()
 	for {
 		n, batchErr := processPBRStatsOutboxBatchLocked(ctx)
 		processed += n
@@ -201,11 +204,11 @@ func drainPBRStatsOutbox(ctx context.Context) (processed int, err error) {
 			break
 		}
 	}
-	updatePBRStatsOutboxMetrics()
-	return processed, err
+	return processed, nil
 }
 
 func flushPBRStatsOutboxLocked(ctx context.Context) error {
+	defer updatePBRStatsOutboxMetrics()
 	for {
 		n, err := processPBRStatsOutboxBatchLocked(ctx)
 		if err != nil {
@@ -215,7 +218,6 @@ func flushPBRStatsOutboxLocked(ctx context.Context) error {
 			break
 		}
 	}
-	updatePBRStatsOutboxMetrics()
 	var pending, dead int64
 	if err := DB.Model(&PBRStatsOutbox{}).Where("attempts < ?", pbrStatsOutboxMaxAttempts).Count(&pending).Error; err != nil {
 		return err
@@ -246,7 +248,7 @@ func processPBRStatsOutboxBatchLocked(ctx context.Context) (int, error) {
 		}
 		if err := applyPBRStatsOutboxRow(ctx, &rows[i]); err != nil {
 			if recordErr := recordPBRStatsOutboxFailure(&rows[i], err); recordErr != nil {
-				return i + 1, recordErr
+				return i, recordErr
 			}
 			continue
 		}

@@ -344,10 +344,30 @@ func RotateKey(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// unknownRouteKeys 返回既没有同名车道、也没有任何启用渠道声明的路由键（去重、保序）。
-// 查询失败必须上抛：把 DB 故障当成"键不存在"会返回 422 误导用户去改一个正确的
-// 配置，而真正的故障应让写请求以 5xx 失败并可重试。
-func unknownRouteKeys(keys []string) ([]string, error) {
+// knownRouteKeys 读取"可作为路由键"的集合：全部车道名（含停用车道，与
+// ListModelSummaries 口径一致）+ 启用渠道声明的模型名。只做两次轻查询，
+// 不展开车道链：一条损坏车道不应让无关的客户端密钥写请求全部失败。
+func knownRouteKeys() (map[string]bool, error) {
+	known := map[string]bool{}
+	lanes, err := model.ListLanes()
+	if err != nil {
+		return nil, err
+	}
+	for _, lane := range lanes {
+		known[lane.Name] = true
+	}
+	models, err := model.ListEnabledChannelModels()
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range models {
+		known[name] = true
+	}
+	return known, nil
+}
+
+// unknownRouteKeysIn 从已加载的 known 集合里筛出未知键（去重、保序）。
+func unknownRouteKeysIn(keys []string, known map[string]bool) []string {
 	unique := make([]string, 0, len(keys))
 	seen := map[string]bool{}
 	for _, k := range keys {
@@ -358,31 +378,27 @@ func unknownRouteKeys(keys []string) ([]string, error) {
 		seen[k] = true
 		unique = append(unique, k)
 	}
-	if len(unique) == 0 {
-		return nil, nil
-	}
-	known := map[string]bool{}
-	lanes, err := model.ListLanes()
-	if err != nil {
-		return nil, err
-	}
-	for _, lane := range lanes {
-		known[lane.Name] = true
-	}
-	summaries, err := model.ListModelSummaries()
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range summaries {
-		known[s.Model] = true
-	}
 	unknown := make([]string, 0)
 	for _, k := range unique {
 		if !known[k] {
 			unknown = append(unknown, k)
 		}
 	}
-	return unknown, nil
+	return unknown
+}
+
+// unknownRouteKeys 返回既没有同名车道、也没有任何启用渠道声明的路由键。
+// 查询失败必须上抛：把 DB 故障当成"键不存在"会返回 422 误导用户去改一个
+// 正确的配置，而真正的故障应让写请求以 5xx 失败并可重试。
+func unknownRouteKeys(keys []string) ([]string, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	known, err := knownRouteKeys()
+	if err != nil {
+		return nil, err
+	}
+	return unknownRouteKeysIn(keys, known), nil
 }
 
 func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *apiError {
@@ -404,12 +420,17 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 		// 权限判定的对象是"路由键"（token-spec §3.2）：allow_lanes 里写不存在的键会被
 		// 静默接受，用户以为"允许了模型 X"，实际是死键（请求得到 503 而非 403，分不清
 		// 权限还是没配车道）。这里显式拒绝并列出未知键（api-spec §5.4：422）。
-		unknown, err := unknownRouteKeys(payload.LanePolicy.AllowLanes)
-		if err != nil {
-			common.SysError("pbr: validate lane_policy.allow_lanes failed: " + err.Error())
-			return &apiError{status: http.StatusInternalServerError, code: apierr.CodeInternalError, message: "failed to validate lane_policy.allow_lanes"}
+		// 两张表共用一次已知集合查询，不重复全量扫描。
+		var known map[string]bool
+		if len(payload.LanePolicy.AllowLanes) > 0 || len(payload.LanePolicy.DenyLanes) > 0 {
+			var knownErr error
+			known, knownErr = knownRouteKeys()
+			if knownErr != nil {
+				common.SysError("pbr: load route keys for lane_policy validation failed: " + knownErr.Error())
+				return &apiError{status: http.StatusInternalServerError, code: apierr.CodeInternalError, message: "failed to validate lane_policy"}
+			}
 		}
-		if len(unknown) > 0 {
+		if unknown := unknownRouteKeysIn(payload.LanePolicy.AllowLanes, known); len(unknown) > 0 {
 			return &apiError{
 				status:  http.StatusUnprocessableEntity,
 				code:    apierr.CodeValidationFailed,
@@ -418,12 +439,7 @@ func applyClientKeyPayload(key *model.ClientKey, payload *clientKeyPayload) *api
 		}
 		// deny_lanes 与 allow_lanes 对称校验：否则用户以为"拒绝了模型 X"，实际是拼错的
 		// 死键，等于没有拒绝——同样属于静默放宽权限（api-spec §5.4：422）。
-		unknown, err = unknownRouteKeys(payload.LanePolicy.DenyLanes)
-		if err != nil {
-			common.SysError("pbr: validate lane_policy.deny_lanes failed: " + err.Error())
-			return &apiError{status: http.StatusInternalServerError, code: apierr.CodeInternalError, message: "failed to validate lane_policy.deny_lanes"}
-		}
-		if len(unknown) > 0 {
+		if unknown := unknownRouteKeysIn(payload.LanePolicy.DenyLanes, known); len(unknown) > 0 {
 			return &apiError{
 				status:  http.StatusUnprocessableEntity,
 				code:    apierr.CodeValidationFailed,

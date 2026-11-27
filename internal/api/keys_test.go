@@ -200,3 +200,13 @@ func TestUnknownRouteKeysRejectsDeadKeys(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, unknown)
 }
+
+// DB 读失败必须上抛为 5xx，不能被当成"键不存在"而返回 422。
+func TestUnknownRouteKeysPropagatesDBError(t *testing.T) {
+	db := setupAPITestDB(t)
+	require.NoError(t, db.Migrator().DropTable(&model.Lane{}))
+
+	_, err := unknownRouteKeys([]string{"any-model"})
+
+	require.Error(t, err)
+}

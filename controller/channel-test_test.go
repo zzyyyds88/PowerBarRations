@@ -17,6 +17,8 @@ import (
 
 // 自动健康检查的失败/禁用判定：慢响应/本地构造失败只计失败；凭据/额度
 // 故障即使同时带 localErr（testChannel 的真实失败形状）也必须禁用。
+// 修改进程级 AutomaticDisableChannelEnabled，测试之间必须串行；
+// 禁止对本文件用例加 t.Parallel。
 func TestEvaluateChannelTestSeparatesSlowAndLocalFailuresFromDisable(t *testing.T) {
 	previous := common.AutomaticDisableChannelEnabled
 	common.AutomaticDisableChannelEnabled = true
