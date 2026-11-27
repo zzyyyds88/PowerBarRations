@@ -1763,6 +1763,28 @@ func GetChannelsDeclaringModel(modelName string) ([]*Channel, error) {
 	return declaring, nil
 }
 
+// ListEnabledChannelModels 返回所有启用渠道声明的模型名（去重、已 trim）。
+// 用于路由键存在性校验：只关心"渠道声明了什么"，不展开车道链，避免一条
+// 损坏车道把无关的路由键写请求全部拖成 5xx。
+func ListEnabledChannelModels() ([]string, error) {
+	var channels []*Channel
+	if err := DB.Where("status = ?", common.ChannelStatusEnabled).Omit("key").Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(channels))
+	for _, channel := range channels {
+		for _, name := range channel.GetModels() {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
 func BatchSetChannelTag(ids []int, tag *string) error {
 	// 开启事务
 	tx := DB.Begin()

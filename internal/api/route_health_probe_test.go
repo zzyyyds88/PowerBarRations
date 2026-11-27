@@ -236,6 +236,19 @@ func TestProbeFinishMasksUpstreamSecrets(t *testing.T) {
 	assert.Equal(t, "network_error", result.ErrorKind)
 }
 
+// Msg 可能由调用方单独设置（与 Error 不同源），同样必须脱敏。
+func TestProbeFinishMasksMessageOnly(t *testing.T) {
+	result := ProbeMember{
+		Msg:        `upstream said: key=sk-msgsecret123456 at https://vendor.example.test/v1`,
+		StatusCode: http.StatusBadRequest,
+		ErrorKind:  string(route.KindClientError),
+	}
+	result.finish()
+
+	assert.NotContains(t, result.Msg, "sk-msgsecret123456")
+	assert.NotContains(t, result.Msg, "vendor.example.test")
+}
+
 // 探活失败不得洗掉既有惩罚态（routing-spec §5.4）。
 func TestTestChannelFailureKeepsPenalty(t *testing.T) {
 	setupAPITestDB(t)

@@ -66,7 +66,7 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 	// 边界小时桶（min(ts) 所在小时）也整体保留：prune 只删旧明细，边界桶里
 	// 被删掉的请求已经计入既有聚合，重算剩余明细会把它们抹掉。
 	var minRow struct{ MinTs int64 }
-	if err := DB.Model(&PBRRequestLog{}).
+	if err := DB.Model(&PBRRequestLog{}).Where("id <= ?", maxLogID).
 		Select("COALESCE(MIN(ts), 0) AS min_ts").Scan(&minRow).Error; err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 		// 边界桶可能同时含已 prune 与仍保留的明细。若既有聚合的请求数大于
 		// 仍保留的明细数，说明桶里有已 prune 的行，整桶保留（重算会抹掉它们）；
 		// 否则可以安全重算，价格变更也能作用到这一小时。
-		hasPruned, err := boundaryBucketHasPrunedRows(preserveThrough)
+		hasPruned, err := boundaryBucketHasPrunedRows(preserveThrough, maxLogID)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +112,9 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 	var before struct {
 		Total float64
 	}
-	if err := DB.Model(&PBRRequestLog{}).
+	// before/after 必须同口径：都只覆盖本次重建的水位以内明细，否则大表重建
+	// 期间的新请求会让 dry-run 报出"before 大于 after"的假差异。
+	if err := DB.Model(&PBRRequestLog{}).Where("id <= ?", maxLogID).
 		Select("COALESCE(SUM(estimated_cost), 0) AS total").Scan(&before).Error; err != nil {
 		return nil, err
 	}
@@ -316,7 +318,7 @@ func RebuildStatsFromLogs(dryRun bool) (*StatsRebuildResult, error) {
 // 每个参与聚合的日志会在多个维度各加 1；取任一维度的请求数都不可能超过
 // 仍未 prune 的明细数。若既有聚合的最大维度请求数大于剩余明细数，说明桶里
 // 有已删除明细贡献的计数，重算会把它们抹掉。
-func boundaryBucketHasPrunedRows(bucket int64) (bool, error) {
+func boundaryBucketHasPrunedRows(bucket, maxLogID int64) (bool, error) {
 	var rows []struct {
 		GroupKind string
 		Requests  int64
@@ -334,8 +336,8 @@ func boundaryBucketHasPrunedRows(bucket int64) (bool, error) {
 	}
 	var remaining int64
 	if err := DB.Model(&PBRRequestLog{}).
-		Where("ts >= ? AND ts < ? AND COALESCE(route_source, '') <> ?",
-			bucket, bucket+3600, PBRRouteSourceTest).
+		Where("id <= ? AND ts >= ? AND ts < ? AND COALESCE(route_source, '') <> ?",
+			maxLogID, bucket, bucket+3600, PBRRouteSourceTest).
 		Count(&remaining).Error; err != nil {
 		return false, err
 	}

@@ -29,6 +29,10 @@ import (
 // W2 观测与管理面：车道运行态快照、逐成员探活、熔断/冷却清除、单渠道探活。
 // 契约见 docs/api-spec-v1.md §5.2/§5.3、docs/routing-spec-v1.md §7。
 
+// probeErrorMessageLimit 管理面探活 error/msg 的上界；DB 落库侧另按
+// model.ProbeLogMsgLimit 截断。两者分开：API 要保留足够排障上下文。
+const probeErrorMessageLimit = 2048
+
 // resolveRuntimeRoute 把 {name} 解析为运行态路由：先按车道名（含被禁用车道的快照），
 // 再按成员别名点名（解析到所属车道）。返回的 key 必须与转发链路的运行态 key 一致
 // （route.laneKeyOf）。
@@ -155,8 +159,9 @@ func (p *ProbeMember) finish() {
 	}
 	// 探活错误会回显给管理面并落 pbr_probe_logs：上游错误体/transport URL 可能
 	// 回显 key，必须在离开 probeChannel 前统一脱敏（分类已在上一步完成）。
-	p.Error = common.TruncateUTF8(common.MaskSensitiveInfo(p.Error), 2048)
-	p.Msg = common.TruncateUTF8(common.MaskSensitiveInfo(p.Msg), 2048)
+	// 域名掩码会牺牲部分可读性，但 upstream_model 字段完整保留，排障可交叉定位。
+	p.Error = common.TruncateUTF8(common.MaskSensitiveInfo(p.Error), probeErrorMessageLimit)
+	p.Msg = common.TruncateUTF8(common.MaskSensitiveInfo(p.Msg), probeErrorMessageLimit)
 }
 
 // classifyProbeError 把探活失败归入路由错误分类（共享 route.Classify，
