@@ -81,8 +81,12 @@ func BuiltinLaneRelayConfig() LaneRelayConfig {
 		MemberMaxAttempts:                     2,
 		MemberRetryIntervalSeconds:            3,
 		MemberNonStreamResponseTimeoutSeconds: 120,
-		MemberStreamFirstEventTimeoutSeconds:  30,
-		MemberCooldownSeconds:                 60,
+		// TODO(默认值调整): 生产 lane_defaults 已把流式首事件超时改为 120s
+		// （2026-11-27，30s 对推理型上游过紧，实修见 deploy/production.env 备注）。
+		// 下次升级把这里的 30 一并改成 120，并同步 routing-spec §85 的默认值表述
+		// 与受影响断言；当前编译期兜底先保持 30，避免与已发布文档漂移。
+		MemberStreamFirstEventTimeoutSeconds: 30,
+		MemberCooldownSeconds:                60,
 		// 亲和默认 0：不做粘滞，避免掩盖 priority 语义（design-v1 §7.3）。
 		MemberAffinitySeconds: 0,
 	}

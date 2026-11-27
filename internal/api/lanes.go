@@ -437,6 +437,11 @@ func buildLane(name string, payload *lanePayload, lookups ...*laneBuildLookup) (
 	}
 
 	if len(payload.Config) > 0 && string(payload.Config) != "null" {
+		// TODO(契约修复): api-spec/AGENTS 承诺 lane PUT 的 config「缺席键保留原值」，
+		// 当前实现是整包替换——2026-11-27 生产实修发现：只传首事件超时会把它未传的
+		// member_retry_interval_seconds 静默改成 0。修复方案：以 existing.Config 为
+		// 基底合并 payload 中显式出现的键，再走 ParseLaneRelayConfigE 校验；
+		// 同时补「部分更新保留缺席键 / 全量替换 / 非法合并值报错」回归测试。
 		parsed, configErr := model.ParseLaneRelayConfigE(string(payload.Config))
 		if configErr != nil {
 			return nil, &laneBuildError{status: http.StatusBadRequest, code: apierr.CodeValidationFailed,
