@@ -17,7 +17,7 @@ import (
 // 由 controller 原样透传 429；不得等待、不得换人、不得合成 503。
 func TestRetryAfterOverCapAbortsWithoutWaiting(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-429-abort", 2, 2)
+	resolved := testRoute(t, "lane-429-abort", 2, 2)
 	state := NewState(resolved)
 	first, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -40,7 +40,7 @@ func TestRetryAfterOverCapAbortsWithoutWaiting(t *testing.T) {
 // 同一请求也不能再次选中它（30s×2 的 200s 串行链回归）。
 func TestTimeoutConsumesMemberBudgetForRequest(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-timeout-budget", 2, 2)
+	resolved := testRoute(t, "lane-timeout-budget", 2, 2)
 	state := NewState(resolved)
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -60,7 +60,7 @@ func TestTimeoutConsumesMemberBudgetForRequest(t *testing.T) {
 // 让任一类型的计数继续累加、导致比允许次数更早开断。
 func TestFailsByKindResetsOnDifferentFailure(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-fails-by-kind", 1, 1)
+	resolved := testRoute(t, "lane-fails-by-kind", 1, 1)
 	runtime := Default.For(resolved.Model)
 	key := memberKeyOf(&resolved.Members[0])
 	settings := DefaultCircuitSettings()
@@ -90,7 +90,7 @@ func TestFailsByKindResetsOnDifferentFailure(t *testing.T) {
 // 冷却/减速只能被延长，后到的短失败不得覆盖先前的长冷却。
 func TestCooldownAndPaceAreMonotonic(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-monotonic", 1, 1)
+	resolved := testRoute(t, "lane-monotonic", 1, 1)
 	runtime := Default.For(resolved.Model)
 	key := memberKeyOf(&resolved.Members[0])
 	settings := DefaultCircuitSettings()
@@ -114,7 +114,7 @@ func TestCooldownAndPaceAreMonotonic(t *testing.T) {
 // 配置可疑拒绝才在阈值后写短期冷却。
 func TestRequestScopedRejectDoesNotStreak(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-request-scoped-reject", 1, 1)
+	resolved := testRoute(t, "lane-request-scoped-reject", 1, 1)
 	runtime := Default.For(resolved.Model)
 	key := memberKeyOf(&resolved.Members[0])
 	settings := DefaultCircuitSettings()
@@ -138,7 +138,7 @@ func TestRequestScopedRejectDoesNotStreak(t *testing.T) {
 
 	// 请求级拒绝夹在中间必须中断"连续"：4 次配置可疑 + 1 次请求级 + 1 次配置可疑
 	// 不得触发冷却，否则计数不是连续的。
-	other := testRoute("lane-request-scoped-reset", 1, 1)
+	other := testRoute(t, "lane-request-scoped-reset", 1, 1)
 	otherRuntime := Default.For(other.Model)
 	otherKey := memberKeyOf(&other.Members[0])
 	otherRuntime.withLock(func() {
@@ -156,7 +156,7 @@ func TestRequestScopedRejectDoesNotStreak(t *testing.T) {
 
 func TestPacedMemberIsDeferredButStillSelectable(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-pace-order", 2, 1)
+	resolved := testRoute(t, "lane-pace-order", 2, 1)
 	runtime := Default.For(resolved.Model)
 	keyA := memberKeyOf(&resolved.Members[0])
 	keyB := memberKeyOf(&resolved.Members[1])
@@ -200,7 +200,7 @@ func TestClassifyFailedDependencyAndRequestScopedReject(t *testing.T) {
 // 在飞成功不能绕过探测槽关闭 open；只有携带 ProbeLease 的探测成功才恢复。
 func TestInFlightSuccessDoesNotCloseOpenCircuit(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-inflight-success", 1, 1)
+	resolved := testRoute(t, "lane-inflight-success", 1, 1)
 	runtime := Default.For(resolved.Model)
 	key := memberKeyOf(&resolved.Members[0])
 	settings := DefaultCircuitSettings()
@@ -230,7 +230,7 @@ func TestInFlightSuccessDoesNotCloseOpenCircuit(t *testing.T) {
 
 func TestHealthReportsOverrideErrorAndHidesExpiredAffinity(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-health-truth", 1, 1)
+	resolved := testRoute(t, "lane-health-truth", 1, 1)
 	resolved.Members[0].OverrideError = &model.LaneConfigError{
 		Code: "invalid_value", Message: "bad override", Path: "overrides",
 	}
@@ -253,7 +253,7 @@ func TestHealthReportsOverrideErrorAndHidesExpiredAffinity(t *testing.T) {
 
 func TestStaleMemberMigrationDeletesOldKeys(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-stale-migration", 1, 1)
+	resolved := testRoute(t, "lane-stale-migration", 1, 1)
 	runtime := Default.For(resolved.Model)
 	oldKey := MemberKey{ChannelID: 1, UpstreamModel: "model-1", MemberID: 1}
 	newKey := MemberKey{ChannelID: 1, UpstreamModel: "model-1", MemberID: 2}

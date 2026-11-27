@@ -97,7 +97,7 @@ func TestProbeLeaseConcurrentAcquireRelease(t *testing.T) {
 
 func TestNonOwnerOutcomesDoNotReleaseProbe(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lease-non-owner", 2, 1)
+	resolved := testRoute(t, "lease-non-owner", 2, 1)
 	resolved.Members[0].MemberId = 10
 	resolved.Members[1].MemberId = 11
 	owner := NewState(resolved)
@@ -135,7 +135,7 @@ func TestStateCloseIdempotentAndAfterCloseCleanup(t *testing.T) {
 
 func TestHealthIsReadOnlyWithExpiredLease(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lease-health-readonly", 1, 1)
+	resolved := testRoute(t, "lease-health-readonly", 1, 1)
 	state := NewState(resolved)
 	key := MemberKeyOf(&resolved.Members[0])
 	lease, ok := state.Runtime.AcquireProbe(key, time.Second)
@@ -167,7 +167,7 @@ func TestClearPenaltyExactNegativeZeroAndChannelScope(t *testing.T) {
 
 func TestResetRejectsInflightSuccessAndFailure(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lease-reset-inflight", 1, 1)
+	resolved := testRoute(t, "lease-reset-inflight", 1, 1)
 	state := NewState(resolved)
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -192,7 +192,7 @@ func TestResetRejectsInflightSuccessAndFailure(t *testing.T) {
 
 func TestResetRejectsInflightFailureButKeepsAttemptHistory(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lease-reset-failure", 1, 1)
+	resolved := testRoute(t, "lease-reset-failure", 1, 1)
 	state := NewState(resolved)
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)

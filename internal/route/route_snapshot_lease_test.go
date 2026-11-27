@@ -10,7 +10,7 @@ import (
 )
 
 func TestRouteSnapshotSignatureIncludesChannelAndAdmissionConfig(t *testing.T) {
-	base := testRoute("snapshot-fields", 1, 1)
+	base := testRoute(t, "snapshot-fields", 1, 1)
 	base.Members[0].MemberId = 1
 	base.Members[0].ChannelVersion = 1
 	signature := routeSnapshotSignature(base)

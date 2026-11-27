@@ -69,7 +69,7 @@ func TestClassifyStreamRejectCode(t *testing.T) {
 // 成员级拒绝不得写冷却、不得计熔断分；同一成员在本请求内不再被选中。
 func TestUpstreamRejectSwitchesMemberWithoutCooldown(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-reject", 2, 1))
+	state := NewState(testRoute(t, "lane-reject", 2, 1))
 
 	first, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -106,7 +106,7 @@ func TestUpstreamRejectSwitchesMemberWithoutCooldown(t *testing.T) {
 // 全部成员都拒绝：尝试链走完即"无可用"，由调用方按 §4.2 例外把最后一次上游错误返回。
 func TestUpstreamRejectAllMembersExhausts(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-reject-all", 2, 1))
+	state := NewState(testRoute(t, "lane-reject-all", 2, 1))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -116,7 +116,7 @@ func TestUpstreamRejectAllMembersExhausts(t *testing.T) {
 	assert.False(t, ok, "全部成员拒绝后应报无可用；最后一次错误由调用方原样返回")
 
 	// 拒绝不留任何运行态：下一份请求从头开始（成员仍然可用）。
-	state2 := NewState(testRoute("lane-reject-all", 2, 1))
+	state2 := NewState(testRoute(t, "lane-reject-all", 2, 1))
 	first, _, ok := state2.Next(nil)
 	require.True(t, ok)
 	assert.Equal(t, "channel-a", memberName(first), "拒绝不是故障，不冷却，下一份请求仍从 P1 开始")
@@ -126,7 +126,7 @@ func TestUpstreamRejectAllMembersExhausts(t *testing.T) {
 
 func TestMemberRecoveredPairsCooldown(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-pair-member", 1, 1))
+	state := NewState(testRoute(t, "lane-pair-member", 1, 1))
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
 	// 5xx：预算耗尽 → 冷却事件。
@@ -147,7 +147,7 @@ func TestMemberRecoveredPairsCooldown(t *testing.T) {
 
 func TestLaneUnavailableAndRecoveredPair(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-pair-lane", 1, 1))
+	state := NewState(testRoute(t, "lane-pair-lane", 1, 1))
 	// 模拟"全部成员不可选"的 503 收尾：登记一次 + 重复调用不重复发。
 	state.NoteLaneUnavailable()
 	state.NoteLaneUnavailable()
@@ -167,7 +167,7 @@ func TestLaneUnavailableAndRecoveredPair(t *testing.T) {
 // 404 在尝试循环里应触发 failover，而不是不换人地结束请求。
 func TestNotFoundFromMemberFailsOver(t *testing.T) {
 	withFakeClock(t)
-	state := NewState(testRoute("lane-p2-404-failover", 2, 1))
+	state := NewState(testRoute(t, "lane-p2-404-failover", 2, 1))
 
 	_, _, ok := state.Next(nil)
 	require.True(t, ok)
@@ -180,7 +180,7 @@ func TestNotFoundFromMemberFailsOver(t *testing.T) {
 
 func TestAffinityBypassRecordsSkippedForHigherPriority(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-p2-affinity-skip", 2, 1)
+	resolved := testRoute(t, "lane-p2-affinity-skip", 2, 1)
 	resolved.Config.MemberAffinitySeconds = 300
 	state := NewState(resolved)
 
@@ -216,7 +216,7 @@ func TestAffinityBypassRecordsSkippedForHigherPriority(t *testing.T) {
 // 累计 Score 未达阈值，但近期窗口失败率达标时也必须开断（design-v1 §7.5）。
 func TestRollingWindowFailureRateOpensCircuit(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-p2-rolling-open")
+	runtime := freshRuntime(t, "lane-p2-rolling-open")
 	key := testMemberKey("11:model-rolling-open")
 	settings := DefaultCircuitSettings()
 	// 分数与 allowed_fails 两条证据都设为不可达，确保开断只能来自滚动窗口。
@@ -243,7 +243,7 @@ func TestRollingWindowFailureRateOpensCircuit(t *testing.T) {
 // 样本数不足时不得仅凭窗口失败率开断（保守性守卫）。
 func TestRollingFailureRateNeedsMinimumSamples(t *testing.T) {
 	withFakeClock(t)
-	runtime := Default.For("lane-p2-rolling-min")
+	runtime := freshRuntime(t, "lane-p2-rolling-min")
 	key := testMemberKey("12:model-rolling-min")
 	settings := DefaultCircuitSettings()
 	settings.FailureThreshold = 1000
@@ -268,13 +268,13 @@ func TestRollingFailureRateNeedsMinimumSamples(t *testing.T) {
 func TestPruneStaleIgnoresOlderLaneVersion(t *testing.T) {
 	withFakeClock(t)
 
-	oldRoute := testRoute("lane-p2-stale-version", 1, 1)
+	oldRoute := testRoute(t, "lane-p2-stale-version", 1, 1)
 	oldRoute.LaneVersion = 1
 	NewState(oldRoute)
 	runtime := Default.For(oldRoute.Model)
 
 	// 新配置（版本 2，新增 ch2），先被观测并写入 ch2 的冷却。
-	newRoute := testRoute("lane-p2-stale-version", 2, 1)
+	newRoute := testRoute(t, "lane-p2-stale-version", 2, 1)
 	newRoute.LaneVersion = 2
 	maintainResolvedForTest(t, runtime, newRoute)
 	newKey := memberKeyOf(&newRoute.Members[1])
@@ -290,7 +290,7 @@ func TestPruneStaleIgnoresOlderLaneVersion(t *testing.T) {
 	})
 
 	// 对照：更新版本（3）且成员集合缩小到 {ch1} 时，ch2 应被正常清理（不泄漏）。
-	newer := testRoute("lane-p2-stale-version", 1, 1)
+	newer := testRoute(t, "lane-p2-stale-version", 1, 1)
 	newer.LaneVersion = 3
 	maintainResolvedForTest(t, runtime, newer)
 	runtime.withLock(func() {
@@ -303,9 +303,9 @@ func TestPruneStaleIgnoresOlderLaneVersion(t *testing.T) {
 func TestPruneStaleConcurrentConfigReloadSafe(t *testing.T) {
 	withFakeClock(t)
 
-	oldRoute := testRoute("lane-p2-stale-concurrent", 1, 1)
+	oldRoute := testRoute(t, "lane-p2-stale-concurrent", 1, 1)
 	oldRoute.LaneVersion = 1
-	newRoute := testRoute("lane-p2-stale-concurrent", 2, 1)
+	newRoute := testRoute(t, "lane-p2-stale-concurrent", 2, 1)
 	newRoute.LaneVersion = 2
 
 	runtime := Default.For(oldRoute.Model)
@@ -338,7 +338,7 @@ func TestPruneStaleConcurrentConfigReloadSafe(t *testing.T) {
 // 成员集合未变但版本前进时不应清理（config/mode 改动不涉及成员）。
 func TestPruneStaleNoopWhenMemberSetUnchanged(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-p2-stale-same-set", 1, 1)
+	resolved := testRoute(t, "lane-p2-stale-same-set", 1, 1)
 	resolved.LaneVersion = 1
 	NewState(resolved)
 	runtime := Default.For(resolved.Model)
@@ -346,7 +346,7 @@ func TestPruneStaleNoopWhenMemberSetUnchanged(t *testing.T) {
 	runtime.withLock(func() { runtime.Cooldowns[key] = nowMs() + 60_000 })
 
 	// 版本前进，但成员集合完全相同：状态必须保留。
-	bumped := testRoute("lane-p2-stale-same-set", 1, 1)
+	bumped := testRoute(t, "lane-p2-stale-same-set", 1, 1)
 	bumped.LaneVersion = 2
 	NewState(bumped)
 	runtime.withLock(func() {

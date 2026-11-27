@@ -17,7 +17,7 @@ import (
 // 在并发下失效（routing-spec §2.2/§6，审查 F4）。
 func TestReleaseProbeOnlyReleasesOwnSlot(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-probe-owner", 2, 1)
+	resolved := testRoute(t, "lane-probe-owner", 2, 1)
 	runtime := Default.For(resolved.Model)
 	// 成员 a 冷却已到期 → 下次请求会以"探测"身份选中它。
 	runtime.withLock(func() {
@@ -68,7 +68,7 @@ func TestReleaseProbeOnlyReleasesOwnSlot(t *testing.T) {
 // 失败换人后，本请求对旧成员的探测占用必须一并释放并清空归属。
 func TestProbeOwnershipClearedAfterFailover(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-probe-failover", 2, 1)
+	resolved := testRoute(t, "lane-probe-failover", 2, 1)
 	resolved.Config.MemberCooldownSeconds = 5
 	runtime := Default.For(resolved.Model)
 	runtime.withLock(func() {
@@ -94,7 +94,7 @@ func TestProbeOwnershipClearedAfterFailover(t *testing.T) {
 // 成功路径同样归还探测槽并清空归属。
 func TestProbeOwnershipClearedOnSuccess(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-probe-success", 1, 1)
+	resolved := testRoute(t, "lane-probe-success", 1, 1)
 	runtime := Default.For(resolved.Model)
 	runtime.withLock(func() {
 		runtime.Cooldowns[memberKeyOf(&resolved.Members[0])] = nowMs() - 1

@@ -18,7 +18,7 @@ func TestAppendEventNotifiesSubscriberWithLane(t *testing.T) {
 	SetEventSubscriber(func(ev Event) { ch <- ev })
 	t.Cleanup(func() { SetEventSubscriber(nil) })
 
-	runtime := Default.For("lane-subscribe-test")
+	runtime := freshRuntime(t, "lane-subscribe-test")
 	runtime.withLock(func() {
 		// 硬失败权重 1.0 < 阈值 2：只触发 cooldown 事件，不打开熔断。
 		runtime.recordFailure(MemberKey{ChannelID: 7, UpstreamModel: "model-x"}, KindHardAuth, 60, 0, true, DefaultCircuitSettings())
@@ -45,7 +45,7 @@ func TestEventSubscriberCanBeUnset(t *testing.T) {
 	SetEventSubscriber(func(Event) { called.Store(true) })
 	SetEventSubscriber(nil)
 
-	runtime := Default.For("lane-unset-test")
+	runtime := freshRuntime(t, "lane-unset-test")
 	runtime.withLock(func() {
 		runtime.recordFailure(MemberKey{ChannelID: 7, UpstreamModel: "model-x"}, KindHardAuth, 60, 0, true, DefaultCircuitSettings())
 	})
@@ -61,7 +61,7 @@ func TestResetNotifiesSubscriber(t *testing.T) {
 	SetEventSubscriber(func(ev Event) { ch <- ev })
 	t.Cleanup(func() { SetEventSubscriber(nil) })
 
-	runtime := Default.For("lane-reset-test")
+	runtime := freshRuntime(t, "lane-reset-test")
 	runtime.withLock(func() {
 		runtime.recordFailure(MemberKey{ChannelID: 7, UpstreamModel: "model-x"}, KindHardAuth, 60, 0, true, DefaultCircuitSettings())
 	})

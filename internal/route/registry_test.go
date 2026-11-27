@@ -37,7 +37,7 @@ func TestUnconfiguredModelDoesNotRegisterRuntime(t *testing.T) {
 
 // 非显式来源即使恰好带了成员也不登记：注册表的唯一合法来源是显式车道。
 func TestNonExplicitRouteDoesNotRegisterRuntime(t *testing.T) {
-	resolved := testRoute("lane-non-explicit-registry", 1, 1)
+	resolved := testRoute(t, "lane-non-explicit-registry", 1, 1)
 	resolved.Source = model.RouteSourceUnconfigured
 
 	NewState(resolved)
@@ -47,7 +47,7 @@ func TestNonExplicitRouteDoesNotRegisterRuntime(t *testing.T) {
 
 // 显式且成员非空的车道必须登记，并且重复请求复用同一份运行态。
 func TestExplicitLaneRegistersAndReusesRuntime(t *testing.T) {
-	resolved := testRoute("lane-register-once", 1, 1)
+	resolved := testRoute(t, "lane-register-once", 1, 1)
 	first := NewState(resolved)
 	require.NotNil(t, Default.Get(laneKeyOf(resolved)))
 	assert.Same(t, first.Runtime, NewState(resolved).Runtime,
@@ -58,7 +58,7 @@ func TestExplicitLaneRegistersAndReusesRuntime(t *testing.T) {
 // 删除车道后移除运行态：否则 SnapshotLanes 会一直保留已不存在的车道，
 // 快照每轮都为它解析一次路由（routing-spec §1.3）。
 func TestRegistryRemoveDropsRuntime(t *testing.T) {
-	resolved := testRoute("lane-remove-test", 1, 1)
+	resolved := testRoute(t, "lane-remove-test", 1, 1)
 	NewState(resolved)
 	require.NotNil(t, Default.Get(laneKeyOf(resolved)))
 

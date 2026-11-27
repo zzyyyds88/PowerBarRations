@@ -16,7 +16,7 @@ import (
 func TestNextKeepsImmutableSnapshotBetweenRounds(t *testing.T) {
 	withFakeClock(t)
 
-	resolved := testRoute("lane-immutable-snapshot", 2, 2)
+	resolved := testRoute(t, "lane-immutable-snapshot", 2, 2)
 	old := *resolved
 	old.Members = resolved.Members[:1]
 	old.Config.MemberMaxAttempts = 1
@@ -35,7 +35,7 @@ func TestNextKeepsImmutableSnapshotBetweenRounds(t *testing.T) {
 }
 
 func TestStateAdmissionDeadlineSetOnce(t *testing.T) {
-	state := NewState(testRoute("lane-admission-deadline", 1, 1))
+	state := NewState(testRoute(t, "lane-admission-deadline", 1, 1))
 	first := time.Unix(100, 0)
 	second := time.Unix(200, 0)
 	state.SetAdmissionDeadline(first)
@@ -45,7 +45,7 @@ func TestStateAdmissionDeadlineSetOnce(t *testing.T) {
 
 func TestNextDoesNotReplaceRuntimeOrGeneration(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-immutable-runtime", 2, 1)
+	resolved := testRoute(t, "lane-immutable-runtime", 2, 1)
 	state := NewState(resolved)
 	runtime := state.Runtime
 	generation := state.runtimeGeneration
@@ -64,7 +64,7 @@ func TestNextDoesNotReplaceRuntimeOrGeneration(t *testing.T) {
 // 熔断计分照常。
 func TestManualModeDoesNotWriteCooldownOnFailure(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-manual-no-cooldown", 2, 1)
+	resolved := testRoute(t, "lane-manual-no-cooldown", 2, 1)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-a/model-1"
 	state := NewState(resolved)
@@ -86,7 +86,7 @@ func TestManualModeDoesNotWriteCooldownOnFailure(t *testing.T) {
 // 对照：failover 车道失败必须写冷却，避免把 manual 的豁免误用到其它模式。
 func TestFailoverModeWritesCooldownOnFailure(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-failover-cooldown", 2, 1)
+	resolved := testRoute(t, "lane-failover-cooldown", 2, 1)
 	state := NewState(resolved)
 
 	_, _, ok := state.Next(nil)
@@ -103,7 +103,7 @@ func TestFailoverModeWritesCooldownOnFailure(t *testing.T) {
 // ReportMemberUnavailable 也走 §2.1 的"manual 不写冷却"分支。
 func TestManualReportMemberUnavailableSkipsCooldown(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-manual-report", 2, 1)
+	resolved := testRoute(t, "lane-manual-report", 2, 1)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-a/model-1"
 	state := NewState(resolved)

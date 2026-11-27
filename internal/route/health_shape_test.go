@@ -19,7 +19,7 @@ import (
 // 时间字段必须是 RFC3339 UTC 字符串，且能被 JSON 解析回同一时刻。
 func TestHealthSnapshotTimesAreRFC3339(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-health-rfc3339", 2, 1)
+	resolved := testRoute(t, "lane-health-rfc3339", 2, 1)
 	state := NewState(resolved)
 	key := memberKeyOf(&resolved.Members[0])
 
@@ -58,7 +58,7 @@ func TestHealthSnapshotTimesAreRFC3339(t *testing.T) {
 // JSON 形状必须是字符串/null（不是数字），与 api-spec §6.5 示例一致。
 func TestHealthSnapshotJSONShape(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-health-json", 1, 1)
+	resolved := testRoute(t, "lane-health-json", 1, 1)
 	state := NewState(resolved)
 	key := memberKeyOf(&resolved.Members[0])
 	state.Runtime.withLock(func() {
@@ -79,7 +79,7 @@ func TestHealthSnapshotJSONShape(t *testing.T) {
 // 有亲和时 affinity 为对象，channel/upstream_model 来自当前成员，until 为 RFC3339。
 func TestHealthSnapshotAffinityObject(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-health-affinity", 2, 1)
+	resolved := testRoute(t, "lane-health-affinity", 2, 1)
 	state := NewState(resolved)
 
 	member, _, ok := state.Next(nil)
@@ -100,7 +100,7 @@ func TestHealthSnapshotAffinityObject(t *testing.T) {
 // §2.1：manual 不参与冷却/亲和，快照必须按 mode 过滤残留冷却，展示与实际选路一致。
 func TestHealthSnapshotManualFiltersCooldownAndAffinity(t *testing.T) {
 	withFakeClock(t)
-	resolved := testRoute("lane-health-manual", 2, 1)
+	resolved := testRoute(t, "lane-health-manual", 2, 1)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-a/model-1"
 	state := NewState(resolved)

@@ -12,7 +12,7 @@ import (
 
 // §2.1 manual 不参与冷却：指定成员冷却中仍应可用（否则冷却期内全部 503）。
 func TestManualModeIgnoresCooldown(t *testing.T) {
-	resolved := testRoute("manual-nocool", 2, 1)
+	resolved := testRoute(t, "manual-nocool", 2, 1)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-a/model-1"
 	st := NewState(resolved)
@@ -27,7 +27,7 @@ func TestManualModeIgnoresCooldown(t *testing.T) {
 
 // §2.1 manual 仍过熔断：熔断打开且退避未到 → 无可用。
 func TestManualModeHonorsCircuit(t *testing.T) {
-	resolved := testRoute("manual-circuit", 2, 1)
+	resolved := testRoute(t, "manual-circuit", 2, 1)
 	resolved.Mode = model.LaneModeManual
 	resolved.ActiveMember = "channel-a/model-1"
 	st := NewState(resolved)
@@ -43,7 +43,7 @@ func TestManualModeHonorsCircuit(t *testing.T) {
 
 // failover 仍必须尊重冷却（不能把 manual 的豁免误用到其它模式）。
 func TestFailoverStillHonorsCooldown(t *testing.T) {
-	resolved := testRoute("failover-cool", 2, 1)
+	resolved := testRoute(t, "failover-cool", 2, 1)
 	st := NewState(resolved)
 
 	st.Runtime.withLock(func() {
@@ -61,7 +61,7 @@ func TestFailoverStillHonorsCooldown(t *testing.T) {
 // recordFailure 完全不碰亲和状态，失败成员会在剩余亲和窗口内继续被粘滞，
 // 形成"失败 → 仍粘着 → 再失败"。
 func TestAffinityEndsWhenCurrentMemberFails(t *testing.T) {
-	resolved := testRoute("affinity-fail", 2, 1)
+	resolved := testRoute(t, "affinity-fail", 2, 1)
 	resolved.Config.MemberAffinitySeconds = 300
 	state := NewState(resolved)
 
@@ -90,7 +90,7 @@ func TestAffinityEndsWhenCurrentMemberFails(t *testing.T) {
 
 // health 快照必须含 rolling_success_rate，且随成败变化。
 func TestRollingSuccessRateInHealthSnapshot(t *testing.T) {
-	resolved := testRoute("rolling-rate", 1, 1)
+	resolved := testRoute(t, "rolling-rate", 1, 1)
 	state := NewState(resolved)
 	key := memberKeyOf(&resolved.Members[0])
 

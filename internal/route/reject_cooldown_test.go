@@ -13,7 +13,7 @@ import (
 // 避免每个请求都先白打一个必然拒绝的成员；它不得计入熔断分。
 func TestConsecutiveUpstreamRejectsApplyShortCooldown(t *testing.T) {
 	clock := withFakeClock(t)
-	resolved := testRoute("lane-reject-cooldown", 1, 1)
+	resolved := testRoute(t, "lane-reject-cooldown", 1, 1)
 	resolved.Config.MemberCooldownSeconds = 1
 	reject := apiError(http.StatusBadRequest, "", false)
 	runtime := Default.For(resolved.Model)
@@ -51,7 +51,7 @@ func TestConsecutiveUpstreamRejectsApplyShortCooldown(t *testing.T) {
 // reject → timeout → reject 只能算 1 次连续拒绝，不能累计成 2 次；
 // 429 减速同理，它只是放慢，不是拒绝。
 func TestNonRejectOutcomeBreaksRejectStreak(t *testing.T) {
-	resolved := testRoute("lane-reject-streak", 1, 1)
+	resolved := testRoute(t, "lane-reject-streak", 1, 1)
 	settings := DefaultCircuitSettings()
 	runtime := Default.For(resolved.Model)
 	key := memberKeyOf(&resolved.Members[0])

@@ -15,7 +15,7 @@ import (
 // （LaneVersion / MemberId 都不变），若真名不在签名里，改映射的车道会继续把请求
 // 打到旧上游名，直到进程重启（routing-spec §1.3、ADR 0008）。
 func TestSnapshotSignatureSensitiveToDerivedUpstreamModel(t *testing.T) {
-	resolved := testRoute("lane-upstream-signature", 2, 2)
+	resolved := testRoute(t, "lane-upstream-signature", 2, 2)
 	before := routeSnapshotSignature(resolved)
 
 	// 只改派生真名（模拟渠道映射从 vendor/v1 改成 vendor/v2）。
@@ -28,7 +28,7 @@ func TestSnapshotSignatureSensitiveToDerivedUpstreamModel(t *testing.T) {
 
 // 签名必须对**所选模型**敏感：它是成员身份，改了就是另一个成员（转发目标随之变化）。
 func TestSnapshotSignatureSensitiveToMemberModel(t *testing.T) {
-	resolved := testRoute("lane-model-signature", 2, 2)
+	resolved := testRoute(t, "lane-model-signature", 2, 2)
 	before := routeSnapshotSignature(resolved)
 
 	resolved.Members[0].Model = "another-model"
